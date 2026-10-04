@@ -2,16 +2,26 @@
 //! Native sketch-relation grouping and unit decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::records::operand_tag::NativeOperandTag;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::history::sldprt_with_compact_relation_pair;
+use crate::test_support::history::sldprt_with_nested_sketch_profile;
+use crate::test_support::history::sldprt_with_tagged_compact_relation;
+use crate::test_support::history::sldprt_with_tagged_compact_relation_names;
+use crate::test_support::history::sldprt_with_tagged_compact_relation_scalar;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_owned_native_sketch_relation() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -20,9 +30,11 @@ fn decode_projects_owned_native_sketch_relation() {
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let feature = decoded
         .ir()
         .model
@@ -30,9 +42,11 @@ fn decode_projects_owned_native_sketch_relation() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
-    let cadmpeg_ir::features::FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-    } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+        },
+    ) = feature.evaluation.definition()
     else {
         panic!("bound sketch feature");
     };
@@ -52,7 +66,7 @@ fn decode_projects_owned_native_sketch_relation() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     let constraint = decoded
@@ -68,8 +82,8 @@ fn decode_projects_owned_native_sketch_relation() {
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:relation-instance#")));
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             entities,
             parameter: Some(relation_parameter),
@@ -80,13 +94,15 @@ fn decode_projects_owned_native_sketch_relation() {
             && relation_parameter == &parameter.id
             && operands.len() == 2
             && operands[0].native_kind == "d6"
-            && operands[0].object_index == 0
+            && operands[0].object_index == Some(0)
             && operands[0].native_ref.is_some()
             && operands[1].native_kind == "d6"
-            && operands[1].object_index == 2
+            && operands[1].object_index == Some(2)
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings.is_empty(), "{findings:#?}");
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -98,7 +114,7 @@ fn decode_projects_owned_native_sketch_relation() {
 
 #[test]
 fn decode_groups_compact_relation_scalar_pair() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_compact_relation_pair(&triangle_body());
     source.extend(make_block(
@@ -106,9 +122,11 @@ fn decode_groups_compact_relation_scalar_pair() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let native = sldprt_native(decoded.ir());
     let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
         panic!("one compact relation instance");
@@ -138,8 +156,8 @@ fn decode_groups_compact_relation_scalar_pair() {
         .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
         .expect("projected compact relation");
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             parameter: Some(parameter),
             ..
@@ -187,7 +205,7 @@ fn decode_starts_another_relation_after_two_repeated_operand_scalars() {
 
 #[test]
 fn decode_groups_native_tagged_point_line_relations() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -199,9 +217,11 @@ fn decode_groups_native_tagged_point_line_relations() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let parameter = decoded
         .ir()
         .model
@@ -213,7 +233,7 @@ fn decode_groups_native_tagged_point_line_relations() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     let native = sldprt_native(decoded.ir());
@@ -226,9 +246,9 @@ fn decode_groups_native_tagged_point_line_relations() {
         .all(|(ordinal, reference)| {
             reference.kind
                 == crate::records::FeatureInputOperandKind::Native(if ordinal % 2 == 0 {
-                    0x837b
+                    NativeOperandTag::TAG_837B
                 } else {
-                    0x8386
+                    NativeOperandTag::TAG_8386
                 })
         }));
     let [relation] = lane.relation_instances.as_slice() else {
@@ -246,8 +266,8 @@ fn decode_groups_native_tagged_point_line_relations() {
         .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
         .expect("projected point-line relation");
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             operands,
             ..
@@ -265,7 +285,7 @@ fn decode_groups_native_tagged_point_line_relations() {
 
 #[test]
 fn decode_uses_relation_units_for_bare_integer_dimensions() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -288,13 +308,16 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving vertical-distance parameter");
     assert_eq!(parameter.expression, "25");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(25.0).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
 #[test]
 fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_tagged_compact_relation_scalar(
         &triangle_body(),
@@ -318,13 +341,16 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving distance parameter");
     assert_eq!(parameter.expression, "1");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(1.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(1.0).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
 #[test]
 fn decode_uses_relation_units_for_bare_integer_angles() {
-    use cadmpeg_ir::features::{Angle, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Angle};
 
     let mut source =
         sldprt_with_tagged_compact_relation(&triangle_body(), "sgAnglDim", [[0xda, 0x8d]; 2]);
@@ -344,13 +370,16 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .find(|parameter| parameter.name == "D2")
         .expect("driving angle parameter");
     assert_eq!(parameter.expression, "25");
-    assert_eq!(parameter.value, Some(ParameterValue::Angle(Angle(0.025))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Angle(Angle::new(0.025).unwrap()))
+    );
     assert!(parameter.native_ref.is_some());
 }
 
 #[test]
 fn decode_groups_unary_circle_diameter_relations() {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -362,9 +391,11 @@ fn decode_groups_unary_circle_diameter_relations() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"><Dimension Name="D2">&lt;MOD-DIAM&gt;25mm</Dimension></Sketch></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let native = sldprt_native(decoded.ir());
     let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
         panic!("one circle-diameter relation instance");
@@ -376,7 +407,7 @@ fn decode_groups_unary_circle_diameter_relations() {
     assert_eq!(relation.operands.len(), 1);
     assert_eq!(
         relation.operands[0].kind,
-        crate::records::FeatureInputOperandKind::Native(0x83fe)
+        crate::records::FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE)
     );
     let parameter = decoded
         .ir()
@@ -397,8 +428,8 @@ fn decode_groups_unary_circle_diameter_relations() {
         .any(|constraint| {
             constraint.native_ref.as_deref() == Some(relation.id.as_str())
                 && matches!(
-                    &constraint.definition,
-                    SketchConstraintDefinition::Native {
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::Native {
                         native_kind,
                         parameter: Some(bound_parameter),
                         operands,
@@ -450,7 +481,9 @@ fn decode_groups_each_circle_dimension_operand_tag() {
         };
         assert_eq!(
             operand.kind,
-            crate::records::FeatureInputOperandKind::Native(u16::from_le_bytes(tag))
+            crate::records::FeatureInputOperandKind::Native(
+                u16::from_le_bytes(tag).try_into().unwrap()
+            )
         );
         assert_eq!(operand.entity_index, 0);
     }
@@ -552,7 +585,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Angle(
-                    cadmpeg_ir::features::Angle(0.025)
+                    cadmpeg_ir::scalar::Angle::new(0.025).unwrap()
                 ))
             );
         } else {
@@ -560,7 +593,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Length(
-                    cadmpeg_ir::features::Length(25.0)
+                    cadmpeg_ir::scalar::Length::new(25.0).unwrap()
                 ))
             );
         }
@@ -570,7 +603,9 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
         };
         assert_eq!(relation.family, family);
         assert!(relation.operands.iter().all(|operand| operand.kind
-            == crate::records::FeatureInputOperandKind::Native(u16::from_le_bytes(tag))));
+            == crate::records::FeatureInputOperandKind::Native(
+                u16::from_le_bytes(tag).try_into().unwrap()
+            )));
         assert!(decoded
             .ir()
             .model
@@ -579,8 +614,8 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             .any(|constraint| {
                 constraint.native_ref.as_deref() == Some(relation.id.as_str())
                     && matches!(
-                        &constraint.definition,
-                        cadmpeg_ir::sketches::SketchConstraintDefinition::Native {
+                        constraint.definition.kind(),
+                        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
                             native_kind,
                             ..
                         } if native_kind == class

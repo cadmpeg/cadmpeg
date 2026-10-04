@@ -63,8 +63,6 @@
 //! [`LOCAL_DIGEST_SUFFIX`]. [`is_local_digest_attribute`] is the sole check
 //! for whether a source attribute holds one.
 
-use std::fmt::Write as _;
-
 use serde_json::Value;
 
 /// Relative tolerance for a fractional number in a semantic comparison.
@@ -216,7 +214,12 @@ fn fixed_ascii_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
             return false;
         }
         let agree = if left_bytes[72] == b'P' {
-            texts_agree(card_text(&left_bytes[..64]), card_text(&right_bytes[..64]))
+            let (Some(left_text), Some(right_text)) =
+                (card_text(&left_bytes[..64]), card_text(&right_bytes[..64]))
+            else {
+                return false;
+            };
+            texts_agree(left_text, right_text)
         } else {
             texts_agree(left_line, right_line)
         };
@@ -291,7 +294,14 @@ fn fixed_ascii_non_parameter_cards_agree(left: &str, right: &str) -> bool {
     match left_bytes[72] {
         b'D' => fixed_ascii_directory_cards_agree(left_bytes, right_bytes),
         b'T' => fixed_ascii_terminate_cards_agree(left_bytes, right_bytes),
-        _ => texts_agree(card_text(&left_bytes[..72]), card_text(&right_bytes[..72])),
+        _ => {
+            let (Some(left_text), Some(right_text)) =
+                (card_text(&left_bytes[..72]), card_text(&right_bytes[..72]))
+            else {
+                return false;
+            };
+            texts_agree(left_text, right_text)
+        }
     }
 }
 
@@ -315,8 +325,13 @@ fn fixed_ascii_parameter_streams(lines: &[&str]) -> Vec<(String, String)> {
     let mut streams: Vec<(String, String)> = Vec::new();
     for line in lines.iter().filter(|line| line.as_bytes()[72] == b'P') {
         let bytes = line.as_bytes();
-        let pointer = card_text(&bytes[64..72]);
-        let data = card_text(&bytes[..64]).trim_end_matches(' ');
+        let Some(pointer) = card_text(&bytes[64..72]) else {
+            continue;
+        };
+        let Some(data) = card_text(&bytes[..64]) else {
+            continue;
+        };
+        let data = data.trim_end_matches(' ');
         match streams.last_mut() {
             Some((last_pointer, last_data)) if last_pointer == pointer => last_data.push_str(data),
             _ => streams.push((pointer.to_owned(), data.to_owned())),
@@ -333,8 +348,8 @@ fn fixed_ascii_card_sequence_bytes(line: &[u8]) -> Option<u32> {
     std::str::from_utf8(&line[73..]).ok()?.trim().parse().ok()
 }
 
-fn card_text(bytes: &[u8]) -> &str {
-    std::str::from_utf8(bytes).expect("fixed ASCII card bytes are ASCII")
+fn card_text(bytes: &[u8]) -> Option<&str> {
+    std::str::from_utf8(bytes).ok()
 }
 
 #[derive(Clone, Copy)]
@@ -481,7 +496,9 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
             for (index, (left_child, right_child)) in left_items.iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
-                write!(path, "[{index}]").expect("writing to a String cannot fail");
+                path.push('[');
+                path.push_str(&index.to_string());
+                path.push(']');
                 walk(left_child, right_child, path)?;
                 path.truncate(restore);
             }
@@ -537,8 +554,16 @@ fn disagreement(path: &str, detail: &str) -> String {
 /// in a panic or a report.
 fn truncate(value: &Value) -> String {
     let text = value.to_string();
-    if text.len() > 120 {
-        format!("{}…", &text[..120])
+    let Some((end, last)) = text
+        .char_indices()
+        .take_while(|(index, _)| *index < 120)
+        .last()
+    else {
+        return text;
+    };
+    let end = end + last.len_utf8();
+    if end < text.len() {
+        format!("{}…", &text[..end])
     } else {
         text
     }
@@ -547,6 +572,8 @@ fn truncate(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
+
+    use serde_json::Value;
 
     use super::{
         fixed_ascii_card_texts_agree, floats_agree, is_fixed_ascii_card_text, texts_agree,
@@ -569,10 +596,14 @@ mod tests {
     fn card(payload: &str, section: u8, sequence: u32) -> String {
         if section == b'P' {
             assert!(payload.len() <= 64);
-            format!("{payload:<64}{:>8}{}{sequence:>7}\n", 1, section as char)
+            format!(
+                "{payload:<64}{:>8}{}{sequence:>7}\n",
+                1,
+                char::from(section)
+            )
         } else {
             assert!(payload.len() <= 72);
-            format!("{payload:<72}{}{sequence:>7}\n", section as char)
+            format!("{payload:<72}{}{sequence:>7}\n", char::from(section))
         }
     }
 
@@ -649,12 +680,23 @@ mod tests {
     }
 
     #[test]
+    fn a_long_unicode_string_difference_has_a_bounded_error() {
+        let left = Value::String("é".repeat(100));
+        let right = Value::String("ê".repeat(100));
+        let error = super::values_agree(&left, &right).expect_err("strings differ");
+        assert!(error.contains("…"), "{error}");
+    }
+
+    #[test]
     fn an_integer_never_gets_a_tolerance() {
         // An integer one apart is well inside the relative tolerance at this
         // magnitude, and must still be reported.
         let count = 1_000_000_000_000_000_i64;
         assert!(
-            (1.0_f64) <= FLOAT_TOLERANCE * (count as f64),
+            (1.0_f64)
+                <= FLOAT_TOLERANCE
+                    * (cadmpeg_core::convert::f64_from_i64(count)
+                        .expect("test count is exactly representable")),
             "the magnitudes must make this a genuine test of integer exactness"
         );
         let error = agree(

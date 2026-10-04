@@ -1,13 +1,17 @@
 use super::super::reconcile_direct_circle_dimension_carriers;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-    SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{Feature, FeatureDefinition, FeatureId, FeatureOperation},
+    scalar::Length,
 };
 
 fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
@@ -28,7 +32,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             class_ref: "circle-class".into(),
             feature_ref: feature.into(),
             scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                Vec::new(),
+                vec!["sldprt:test:scalar#unselected-1".into()],
                 None,
                 None,
             )
@@ -36,7 +40,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             operands: vec![FeatureInputOperand {
                 offset: 0,
                 reference_ref: "reference".into(),
-                kind: FeatureInputOperandKind::Native(0x829a),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
                 entity_index: 0,
                 entity_ref: Some(marker.into()),
             }],
@@ -46,30 +50,43 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![SketchInputEntity {
-            id: marker.into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature.into()),
-            ordinal: 0,
-            offset: 0,
-            object_index: None,
-            local_id: None,
-            kind: SketchInputKind::LineOrCircle,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.001, 0.002]),
-            links: None,
+        sketch_entities: vec![{
+            let marker_id: String = marker.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                0,
+                0,
+                SketchInputKind::LineOrCircle,
+            );
+            constructed_marker.feature_ref = Some(feature.into());
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
+            constructed_marker.links = None;
+            constructed_marker
         }],
     }
 }
 
 fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
-    let mut feature = Feature::new(
-        FeatureId::mint("neutral-feature").expect("identity grammar"),
-        0,
-        FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(feature_ref.into());
     feature
 }
@@ -80,48 +97,58 @@ fn sketch(sketch: &SketchId, profiles: Vec<Vec<SketchEntityUse>>) -> Sketch {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
-        profiles,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: Some("lane".into()),
     }
 }
 
 fn native_entity(sketch: &SketchId, id: &str, native_ref: &str) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(id.into()),
+        SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
-        SketchGeometry::Native {
-            native_kind: "native-circle".into(),
-        },
+        SketchGeometry::native(
+            cadmpeg_core::text::NonBlankString::new("native-circle")
+                .expect("nonempty source identity"),
+        ),
     )
     .with_native_ref(Some(native_ref.into()))
 }
 
-#[test]
-fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
+struct DirectCircleFixture {
+    sketch_id: SketchId,
+    typed_id: SketchEntityId,
+    feature: Feature,
+    lane: FeatureInputLane,
+    entities: Vec<SketchEntity>,
+    sketches: Vec<Sketch>,
+}
+
+fn direct_circle_fixture() -> DirectCircleFixture {
     let feature_ref = "feature";
     let marker_ref = "circle-marker";
     let relation_ref = "circle-dimension";
-    let sketch_id = SketchId("sketch".into());
-    let typed_id = SketchEntityId("typed-circle".into());
-    let native_id = SketchEntityId("native-circle".into());
-    let other_id = SketchEntityId("other-native".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let typed_id = SketchEntityId::mint("synthetic:test:id#typed-circle").unwrap();
+    let native_id = SketchEntityId::mint("synthetic:test:id#native-circle").unwrap();
+    let other_id = SketchEntityId::mint("synthetic:test:id#other-native").unwrap();
     let lane = lane(feature_ref, marker_ref, relation_ref);
     let feature = feature(feature_ref, &sketch_id);
     let typed = SketchEntity::new(
         typed_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.0),
-        },
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(marker_ref.into()))
     .with_geometry_ref(Some(relation_ref.into()));
-    let native = native_entity(&sketch_id, native_id.0.as_str(), marker_ref);
-    let other = native_entity(&sketch_id, other_id.0.as_str(), "other-marker");
-    let mut entities = vec![typed, native, other];
-    let mut sketches = vec![sketch(
+    let native = native_entity(&sketch_id, native_id.as_str(), marker_ref);
+    let other = native_entity(&sketch_id, other_id.as_str(), "other-marker");
+    let entities = vec![typed, native, other];
+    let sketches = vec![sketch(
         &sketch_id,
         vec![
             vec![
@@ -141,28 +168,49 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
         ],
     )];
 
+    DirectCircleFixture {
+        sketch_id,
+        typed_id,
+        feature,
+        lane,
+        entities,
+        sketches,
+    }
+}
+
+#[test]
+fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
+    let DirectCircleFixture {
+        sketch_id,
+        typed_id,
+        feature,
+        lane,
+        mut entities,
+        mut sketches,
+    } = direct_circle_fixture();
+
     reconcile_direct_circle_dimension_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
-    assert!(!entities
-        .iter()
-        .any(|entity| entity.id().clone() == SketchEntityId("native-circle".into())));
+    assert!(!entities.iter().any(|entity| entity.id().clone()
+        == SketchEntityId::mint("synthetic:test:id#native-circle").unwrap()));
     assert!(entities
         .iter()
         .any(|entity| entity.id().clone() == typed_id));
-    assert!(entities
-        .iter()
-        .any(|entity| entity.id().clone() == SketchEntityId("other-native".into())));
+    assert!(entities.iter().any(|entity| entity.id().clone()
+        == SketchEntityId::mint("synthetic:test:id#other-native").unwrap()));
     assert_eq!(sketches[0].profiles.len(), 2);
     assert_eq!(sketches[0].profiles[0].len(), 1);
     assert_eq!(
         sketches[0].profiles[0][0].entity,
-        SketchEntityId("typed-circle".into())
+        SketchEntityId::mint("synthetic:test:id#typed-circle").unwrap()
     );
 }
 
@@ -170,23 +218,93 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
 fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
     let feature_ref = "feature";
     let marker_ref = "circle-marker";
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let lane = lane(feature_ref, marker_ref, "circle-dimension");
     let feature = feature(feature_ref, &sketch_id);
-    let mut entities = vec![native_entity(&sketch_id, "native-circle", marker_ref)];
+    let mut entities = vec![native_entity(
+        &sketch_id,
+        "synthetic:test:id#native-circle",
+        marker_ref,
+    )];
     let mut sketches = vec![sketch(&sketch_id, Vec::new())];
 
     reconcile_direct_circle_dimension_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
-        entities[0].geometry,
-        SketchGeometry::Native { .. }
+        *entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { .. }
     ));
+}
+
+#[test]
+fn marker_circle_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let DirectCircleFixture {
+        typed_id,
+        feature,
+        lane,
+        mut entities,
+        mut sketches,
+        ..
+    } = direct_circle_fixture();
+    super::super::project_marker_dimensioned_circles(
+        &service,
+        &mut entities,
+        &mut sketches,
+        &[feature],
+        &[],
+        &[lane],
+    )
+    .unwrap();
+    assert_eq!(entities.len(), 2);
+    assert!(entities.iter().any(|entity| entity.id() == &typed_id));
+    assert_eq!(sketches[0].profiles.len(), 2);
+    assert_eq!(sketches[0].profiles[0].len(), 1);
+    assert_eq!(sketches[0].profiles[0][0].entity, typed_id);
+
+    let DirectCircleFixture {
+        feature,
+        lane,
+        entities,
+        sketches,
+        ..
+    } = direct_circle_fixture();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT circle carrier entity identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            let mut sketches = sketches.clone();
+            let feature = feature.clone();
+            let lane = lane.clone();
+            super::super::project_marker_dimensioned_circles(
+                &limited,
+                &mut entities,
+                &mut sketches,
+                &[feature],
+                &[],
+                &[lane],
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT circle carrier entity identity")
+    );
 }

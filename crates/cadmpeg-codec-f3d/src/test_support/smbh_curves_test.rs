@@ -2,14 +2,26 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_rational_pcurve_block,
+    generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_surfaces_test::append_generated_float_array;
+use crate::test_support::tokens_test::{
+    push_native_enum, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
+    t_u16_string, t_vec,
+};
 
 pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -45,8 +57,10 @@ pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -54,7 +68,7 @@ pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -97,8 +111,10 @@ pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -119,8 +135,10 @@ pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -128,7 +146,7 @@ pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -183,7 +201,7 @@ pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
 
 /// Append a vector-serialized `TRANS` law variable: the operator string, four
 /// `0x14` vectors, a `0x06` scale, and three bare boolean flags.
-pub(crate) fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
+fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
     push_u8_string(bytes, "TRANS");
     for vector in [
         [1.0, 0.0, 0.0],
@@ -241,8 +259,10 @@ pub(crate) fn stamped_law_curve_subtype(primary_name: &str, raw_name: &str) -> V
 pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -250,7 +270,7 @@ pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> 
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -278,8 +298,10 @@ pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> 
 pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -287,7 +309,7 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -329,8 +351,10 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -338,7 +362,7 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -373,8 +397,10 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -382,7 +408,7 @@ pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -427,7 +453,7 @@ pub(crate) fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str
         .windows(modern.len())
         .position(|window| window == modern.as_bytes())
         .expect("generated modern subtype");
-    bytes[position - 1] = legacy.len() as u8;
+    bytes[position - 1] = u8::try_from(legacy.len()).expect("fixture value fits u8");
     bytes.splice(
         position..position + modern.len(),
         legacy.as_bytes().iter().copied(),
@@ -438,8 +464,10 @@ pub(crate) fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str
 pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -447,7 +475,7 @@ pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -489,8 +517,10 @@ pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -498,7 +528,7 @@ pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -544,8 +574,10 @@ pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -553,7 +585,7 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -599,8 +631,10 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
 pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -608,7 +642,7 @@ pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8>
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -686,7 +720,7 @@ pub(crate) fn synthetic_geometry_with_projection_smbh() -> Vec<u8> {
         .windows(b"off_int_cur".len())
         .position(|window| window == b"off_int_cur")
         .expect("generated offset subtype");
-    bytes[subtype - 1] = b"proj_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"proj_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"off_int_cur".len(),
         b"proj_int_cur".iter().copied(),
@@ -757,7 +791,7 @@ pub(crate) fn synthetic_geometry_with_surface_curve_smbh(name: &str) -> Vec<u8> 
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = name.len() as u8;
+    bytes[subtype - 1] = u8::try_from(name.len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         name.as_bytes().iter().copied(),
@@ -779,7 +813,7 @@ pub(crate) fn synthetic_geometry_with_silhouette_smbh(
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = name.len() as u8;
+    bytes[subtype - 1] = u8::try_from(name.len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         name.as_bytes().iter().copied(),
@@ -809,7 +843,7 @@ pub(crate) fn synthetic_geometry_with_surface_offset_smbh() -> Vec<u8> {
         .windows(b"off_int_cur".len())
         .position(|window| window == b"off_int_cur")
         .expect("generated offset subtype");
-    bytes[subtype - 1] = b"off_surf_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"off_surf_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"off_int_cur".len(),
         b"off_surf_int_cur".iter().copied(),
@@ -838,7 +872,7 @@ pub(crate) fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = b"spring_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"spring_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         b"spring_int_cur".iter().copied(),
@@ -857,8 +891,10 @@ pub(crate) fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -866,7 +902,7 @@ pub(crate) fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -936,8 +972,10 @@ pub(crate) fn synthetic_geometry_with_cache_first_curve_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -945,7 +983,7 @@ pub(crate) fn synthetic_geometry_with_cache_first_curve_smbh(
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -1037,7 +1075,9 @@ pub(crate) fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8
                     t_dbl(curve, 5.5);
                     t_long(curve, 6);
                 }
-                _ => unreachable!(),
+                // The tail is mode-specific. A mode outside this set states no
+                // tail, and the decode assertion in the calling test then fails.
+                _ => {}
             }
         },
     )

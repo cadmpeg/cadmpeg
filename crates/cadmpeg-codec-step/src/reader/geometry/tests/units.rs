@@ -8,7 +8,8 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::PositiveReal;
 
 use crate::loss::StepLossCode;
 use crate::StepCodec;
@@ -20,7 +21,7 @@ const DECLARED_CONTEXT_UNCERTAINTY_MM: f64 = 1.0e-7;
 /// Assert one ambiguous linear-uncertainty note that names `values` in
 /// ascending order and the kept `default_linear`.
 fn assert_ambiguous_length_uncertainty(
-    losses: &[cadmpeg_ir::report::LossNote],
+    losses: &[cadmpeg_ir::report::loss::LossNote],
     values: &[f64],
     default_linear: f64,
 ) {
@@ -29,7 +30,7 @@ fn assert_ambiguous_length_uncertainty(
         .filter(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind())
         .collect::<Vec<_>>();
     assert_eq!(ambiguous.len(), 1, "{losses:#?}");
-    assert_eq!(ambiguous[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(ambiguous[0].severity, cadmpeg_ir::report::Severity::Warning);
     // The note names each distinct candidate the file declares and the
     // substituted default.
     let listed = values
@@ -53,6 +54,8 @@ fn assert_ambiguous_length_uncertainty(
     );
 }
 
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn unresolvable_length_unit_reports_an_error_loss() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
@@ -69,7 +72,7 @@ fn unresolvable_length_unit_reports_an_error_loss() {
         })
         .expect("unresolved length unit loss");
     assert_eq!(loss.code, StepLossCode::DocumentLengthUnitUnresolved.kind());
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Error);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert_eq!(
         loss.message,
         "the document length unit did not resolve; coordinates are unscaled and reported as millimetres"
@@ -98,7 +101,7 @@ fn assert_unscoped_cadir_fallback_point(
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#7")
         .expect("unscoped document point");
-    assert_eq!(point.position.x, expected_x);
+    assert_eq!(point.position().get().x, expected_x);
     assert_eq!(
         result
             .report()
@@ -134,7 +137,7 @@ fn one_unscoped_unit_record_can_supply_cadir_fallback_scale() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#2")
         .expect("unscoped point");
-    assert_eq!(point.position.x, 10.0);
+    assert_eq!(point.position().get().x, 10.0);
     assert!(!result
         .report()
         .losses
@@ -144,7 +147,9 @@ fn one_unscoped_unit_record_can_supply_cadir_fallback_scale() {
 
 #[test]
 pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let bytes = include_bytes!("../../../../tests/fixtures/ap242_geometry.p21");
     let result = StepCodec::default()
@@ -159,46 +164,55 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#3")
         .unwrap();
-    assert_eq!(placed.position.x, 1.0);
-    assert_eq!(placed.position.y, 2.0);
-    assert_eq!(placed.position.z, 3.0);
+    assert_eq!(placed.position().get().x, 1.0);
+    assert_eq!(placed.position().get().y, 2.0);
+    assert_eq!(placed.position().get().z, 3.0);
     assert_eq!(result.ir().model.curves.len(), 9);
     assert!(result.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#45"
-            && matches!(curve.geometry, CurveGeometry::Composite { .. })
+            && matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+            )
     }));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Line { origin, direction }
-            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
-                && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
-    )));
-    assert!(!result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51")));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
+                if {
+                    let origin = line_curve.origin().get();
+                    let direction = *line_curve.direction().as_raw();
+                    origin.x == 1.0
+                        && origin.y == 2.0
+                        && origin.z == 3.0
+                        && direction.x == 0.0
+                        && direction.y == 0.0
+                        && direction.z == 1.0
+                })
+    ));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+        == "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; \
+            set dropped"
+    }));
     assert!(result
         .ir()
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Ellipse { major_radius, minor_radius, .. }
-            if major_radius == 6.0 && minor_radius == 2.0
-    )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
+                if {
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    major_radius == 6.0 && minor_radius == 2.0
+                })
+    ));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
-        CurveGeometry::Nurbs(nurbs)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         if nurbs.degree() == 2
-            && nurbs.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && nurbs.weights() == Some(&[1.0, 0.5, 1.0][..])
+            && nurbs.knots().as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && nurbs.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])
     )));
     assert_eq!(result.ir().model.surfaces.len(), 10);
     assert!(result
@@ -259,50 +273,69 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         )));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
-        CurveGeometry::Nurbs(nurbs)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if curve.id.as_str() == "step:data:curve#48"
             && nurbs.degree() == 1
-            && nurbs.knots() == [0.0, 0.0, 1.0, 2.0, 2.0]
+            && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 2.0, 2.0]
     )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Plane { origin, normal, .. }
-            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.frame().axis().as_raw();
+                    origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
+                })
+    ));
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
-        SurfaceGeometry::Nurbs(nurbs)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         if nurbs.u_degree() == 1
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 2
             && nurbs.v_count() == 2
-            && nurbs.u_knots() == [0.0, 0.0, 1.0, 1.0]
-            && nurbs.v_knots() == [0.0, 0.0, 1.0, 1.0]
-            && nurbs.weights() == Some(&[1.0, 1.0, 1.0, 0.75][..])
+            && nurbs.u_knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.v_knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.pole_grid().weights().map(|rows| rows.concat()) == Some(vec![1.0, 1.0, 1.0, 0.75])
     )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if radius == 5.0
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { radius, ratio, half_angle, .. }
-            if radius == 5.0 && ratio == 1.0 && half_angle == 0.25
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Sphere { radius, .. } if radius == 5.0
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Torus { major_radius, minor_radius, .. }
-            if major_radius == 8.0 && minor_radius == 2.0
-    )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Circle { center, radius, .. }
-            if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        if {
+            let radius = cylinder_surface.radius().get();
+            radius == 5.0
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
+                    radius == 5.0 && ratio == 1.0 && half_angle == 0.25
+                })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
+        if {
+            let radius = sphere_surface.radius().get();
+            radius == 5.0
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    major_radius == 8.0 && minor_radius == 2.0
+                })
+    ));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
+                if {
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
+                    center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
+                })
+    ));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
     let cartesian_trim = result
@@ -312,42 +345,46 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
         .expect("Cartesian trimmed curve");
-    assert!(matches!(
-        cartesian_trim.definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-            parameter_range: [start, end],
-            ..
-        } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
+    assert!(match cartesian_trim.definition() {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+            matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
+        _ => false,
+    });
     let (source, parameter_range) = result
         .ir()
         .model
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range,
-                ..
-            } => Some((source, *parameter_range)),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let parameter_range = definition_payload.parameter_range();
+                Some((source, *parameter_range))
+            }
             _ => None,
         })
         .expect("trimmed curve was not retained as a subset construction");
     assert_eq!(source.as_str(), "step:data:curve#8");
-    assert_eq!(parameter_range, [0.0, std::f64::consts::FRAC_PI_2]);
+    assert_eq!(
+        parameter_range.endpoints(),
+        [0.0, std::f64::consts::FRAC_PI_2]
+    );
     assert!(result
         .ir()
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
-                distance: 1.0,
-                self_intersect: None,
-                ..
-            }
-        )));
+        .any(|curve| match curve.definition() {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(matched_payload) =>
+                matches!(
+                    (
+                        matched_payload.distance().get(),
+                        matched_payload.self_intersect(),
+                    ),
+                    (1.0, None,)
+                ),
+            _ => false,
+        }));
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(result
         .ir()
@@ -367,8 +404,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { direction, .. }
-                if direction.z == 2.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
+                if definition_payload.direction().get().z == 2.0
         )));
     assert!(result
         .ir()
@@ -377,22 +414,23 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
-                if axis_direction.z == 1.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
+                if definition_payload.axis_direction().as_raw().z == 1.0
         )));
-    assert!(result
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .any(|surface| matches!(
-            surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
-                distance: 0.5,
-                self_intersect: Some(false),
-                ..
+    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
+        match surface.definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
+                matches!(
+                    (
+                        matched_payload.distance().get(),
+                        matched_payload.self_intersect(),
+                    ),
+                    (0.5, Some(false),)
+                )
             }
-        )));
+            _ => false,
+        }
+    }));
 }
 
 #[test]
@@ -402,17 +440,21 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode degree cone");
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { radius, half_angle, .. }
-            if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    )));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+        if {
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
+            radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
+        })
+    ));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(
         validation
             .findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::CarrierReachability),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::CarrierReachability),
         "{:#?}",
         validation.findings
     );
@@ -426,8 +468,8 @@ pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
         .expect("decode conversion-based units");
 
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 50.8);
-    assert!((result.ir().tolerances.linear - 0.0254).abs() < 1.0e-12);
+    assert_eq!(result.ir().model.points[0].position().get().x, 50.8);
+    assert!((result.ir().tolerances.linear.get() - 0.0254).abs() < EPS_LINEAR_UNCERTAINTY);
 }
 
 #[test]
@@ -437,12 +479,41 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode mixed uncertainty units");
 
-    assert!((result.ir().tolerances.linear - 0.0508).abs() < 1.0e-12);
+    assert!((result.ir().tolerances.linear.get() - 0.0508).abs() < EPS_LINEAR_UNCERTAINTY);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind() }));
+}
+
+#[test]
+fn uncertainty_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid uncertainty exchange");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                .expect("root fits retained policy");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text")
+    );
 }
 
 #[test]
@@ -452,7 +523,7 @@ fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode named uncertainty");
 
-    assert!((result.ir().tolerances.linear - 0.2).abs() < 1.0e-12);
+    assert!((result.ir().tolerances.linear.get() - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
     assert!(!result
         .report()
         .losses
@@ -476,7 +547,7 @@ fn decode_named_uncertainty_selection_is_order_independent() {
                 &DecodeOptions::default(),
             )
             .expect("decode ordered uncertainty");
-        assert!((result.ir().tolerances.linear - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
+        assert!((result.ir().tolerances.linear.get() - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
         assert!(result
             .report()
             .losses
@@ -496,13 +567,13 @@ fn decode_uses_uncertainty_name_not_description() {
         .expect("decode uncertainty labels");
 
     assert_eq!(
-        result.ir().tolerances.linear,
-        cadmpeg_ir::units::Tolerances::default().linear
+        result.ir().tolerances.linear.get(),
+        cadmpeg_ir::units::Tolerances::default().linear.get()
     );
     assert_ambiguous_length_uncertainty(
         &result.report().losses,
         &[0.1, 0.2],
-        cadmpeg_ir::units::Tolerances::default().linear,
+        cadmpeg_ir::units::Tolerances::default().linear.get(),
     );
 }
 
@@ -516,7 +587,7 @@ fn decode_keeps_representation_uncertainty_scoped_to_native_source() {
         )
         .expect("decode scoped uncertainty");
 
-    assert!((result.ir().tolerances.linear - 0.1).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!((result.ir().tolerances.linear.get() - 0.1).abs() < EPS_LINEAR_UNCERTAINTY);
     assert!(result
         .ir()
         .native_unknowns("step")
@@ -538,8 +609,8 @@ fn decode_reports_ambiguous_length_uncertainty() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode ambiguous uncertainty");
 
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
-    assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
+    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
@@ -554,7 +625,7 @@ fn decode_resolves_agreeing_context_uncertainties_without_ambiguity() {
         .expect("decode agreeing context uncertainty");
 
     assert!(
-        (result.ir().tolerances.linear - DECLARED_CONTEXT_UNCERTAINTY_MM).abs()
+        (result.ir().tolerances.linear.get() - DECLARED_CONTEXT_UNCERTAINTY_MM).abs()
             < EPS_LINEAR_UNCERTAINTY
     );
     assert!(result
@@ -577,8 +648,8 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
         )
         .expect("decode distinct context uncertainty");
 
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
-    assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
+    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
@@ -614,8 +685,8 @@ fn decode_does_not_let_a_named_context_uncertainty_mask_another_context() {
     // The named measure of the first context does not answer for the second
     // context, which has no named measure and contributes both of its length
     // measures.
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
-    assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
+    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
@@ -640,13 +711,26 @@ fn decode_scales_geometry_by_its_representation_context() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#8")
         .expect("inch point");
-    assert!((metric.position.x - 10.0).abs() < 1.0e-12);
-    assert!((inch.position.x - 25.4).abs() < 1.0e-12);
+    assert!((metric.position().get().x - 10.0).abs() < 1.0e-12);
+    assert!((inch.position().get().x - 25.4).abs() < 1.0e-12);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
+}
+
+fn resolve_unit_scales_for_test(
+    exchange: &crate::parse::Exchange,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> super::super::UnitScales {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
+        .expect("empty root fits policy");
+    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &ctx)
+        .expect("unit scales fit policy")
 }
 
 #[test]
@@ -663,10 +747,15 @@ fn mapped_target_items_use_their_target_representation_context_units() {
 #10=REPRESENTATION_MAP(#6,#7);
 #11=MAPPED_ITEM('mapped',#10,#9);
 #12=SHAPE_REPRESENTATION('target',(#11),#5);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse mapped units");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("parse mapped units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(&exchange, 1.0, 1.0, &mut losses);
-    assert_eq!(scales.length.get(&8), Some(&25.4));
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
+    assert_eq!(
+        scales.length.get(&8).copied().map(PositiveReal::get),
+        Some(25.4)
+    );
     assert!(losses
         .iter()
         .all(|loss| { loss.code != StepLossCode::ConflictingRepresentationUnits.kind() }));
@@ -675,11 +764,19 @@ fn mapped_target_items_use_their_target_representation_context_units() {
 #[test]
 fn indirect_representation_items_inherit_the_root_context_units() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('indirect units'),'2;1');FILE_NAME('indirect-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('model','3D'));#5=CARTESIAN_POINT('point',(1.,0.,0.));#6=DIRECTION('direction',(1.,0.,0.));#7=VECTOR('vector',#6,2.);#8=LINE('line',#5,#7);#9=SHAPE_REPRESENTATION('line',(#8),#4);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse indirect units");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("parse indirect units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(&exchange, 1.0, 1.0, &mut losses);
-    assert_eq!(scales.length.get(&5), Some(&25.4));
-    assert_eq!(scales.length.get(&8), Some(&25.4));
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
+    assert_eq!(
+        scales.length.get(&5).copied().map(PositiveReal::get),
+        Some(25.4)
+    );
+    assert_eq!(
+        scales.length.get(&8).copied().map(PositiveReal::get),
+        Some(25.4)
+    );
     assert!(losses
         .iter()
         .all(|loss| { loss.code != StepLossCode::ConflictingRepresentationUnits.kind() }));
@@ -688,10 +785,15 @@ fn indirect_representation_items_inherit_the_root_context_units() {
 #[test]
 fn generic_representation_relationships_do_not_transfer_unit_contexts() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('related units'),'2;1');FILE_NAME('related-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('source','3D'));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('related','3D'));#6=CARTESIAN_POINT('source',(1.,0.,0.));#7=SHAPE_REPRESENTATION('source',(#6),#4);#8=CARTESIAN_POINT('related',(1.,0.,0.));#9=SHAPE_REPRESENTATION('related',(#8),#5);#10=REPRESENTATION_RELATIONSHIP('related representations','',#7,#9);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse related units");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("parse related units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(&exchange, 1.0, 1.0, &mut losses);
-    assert_eq!(scales.length.get(&6), Some(&25.4));
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
+    assert_eq!(
+        scales.length.get(&6).copied().map(PositiveReal::get),
+        Some(25.4)
+    );
     assert!(losses
         .iter()
         .all(|loss| { loss.code != StepLossCode::ConflictingRepresentationUnits.kind() }));
@@ -700,10 +802,12 @@ fn generic_representation_relationships_do_not_transfer_unit_contexts() {
 #[test]
 fn shared_representation_items_reject_conflicting_context_units() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('shared units'),'2;1');FILE_NAME('shared-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('metric','3D'));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('inch','3D'));#6=CARTESIAN_POINT('shared',(1.,0.,0.));#7=SHAPE_REPRESENTATION('metric',(#6),#4);#8=SHAPE_REPRESENTATION('inch',(#6),#5);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse shared units");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("parse shared units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(&exchange, 1.0, 1.0, &mut losses);
-    assert_eq!(scales.length.get(&6), None);
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
+    assert_eq!(scales.length.get(&6).copied().map(PositiveReal::get), None);
     assert!(losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));

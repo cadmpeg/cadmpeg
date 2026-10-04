@@ -1,13 +1,18 @@
-use super::*;
+use crate::families::b5::graph::B5ObjectStreamPcurve;
+use crate::families::b5::graph::B5Pcurve;
+use crate::families::b5::graph::B5PcurveParameterization;
 
 fn test_pcurve(object_id: u32, surface: u32) -> B5Pcurve {
     B5Pcurve {
         object_id,
         surface,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -21,6 +26,10 @@ fn object_stream_pcurve(
     distinct_knots: Vec<f64>,
     suffix: Option<f64>,
 ) -> B5ObjectStreamPcurve {
+    let distinct_knots = distinct_knots
+        .into_iter()
+        .map(crate::test_support::test_b5::finite)
+        .collect::<Vec<_>>();
     B5ObjectStreamPcurve {
         class: 0x21,
         surface,
@@ -28,28 +37,9 @@ fn object_stream_pcurve(
             *distinct_knots.first().expect("test knot"),
             *distinct_knots.last().expect("test knot"),
         ],
-        class_21_suffix_scalar: suffix,
+        class_21_suffix_scalar: suffix.map(crate::test_support::test_b5::positive),
         distinct_knots,
     }
-}
-
-fn test_loop_metadata() -> B5LoopMetadata {
-    B5LoopMetadata {
-        framing_controls: [0x05, 0x05],
-        extension: None,
-    }
-}
-
-fn test_loop_members(pcurves: &[u32], edges: &[u32]) -> Vec<B5LoopMember> {
-    pcurves
-        .iter()
-        .zip(edges)
-        .map(|(&pcurve, &edge)| B5LoopMember {
-            pcurve,
-            edge,
-            controls: [1, 1, 1],
-        })
-        .collect()
 }
 
 fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
@@ -63,6 +53,21 @@ fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes
+}
+
+#[test]
+fn terminal_directrix_accepts_matching_wide_finite_spans() {
+    let active = crate::test_support::test_b5::increasing([-9.0e307, 9.0e307]);
+    let mut pcurve = object_stream_pcurve(
+        17,
+        vec![-f64::MAX, -1.6e308, -1.4e308, -1.2e308, -9.0e307, 9.0e307],
+        None,
+    );
+    pcurve.class = 0x20;
+    let pcurves = std::collections::BTreeMap::from([(31, pcurve)]);
+    let directrix = super::terminal_span_directrix(31, active, [0x05, 0x15], &pcurves)
+        .expect("matching wide terminal span");
+    assert_eq!(directrix.parameter_range().endpoints(), active.endpoints());
 }
 
 mod analytic;

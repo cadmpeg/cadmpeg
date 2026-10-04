@@ -64,7 +64,9 @@ fn parser_enforces_the_part21_header_contract() {
     ];
 
     for (source, message) in cases {
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid header");
+        let error =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect_err("invalid header");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -85,21 +87,27 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         "'AP242 { 1 0 10303 442 3 1 4 }'",
         "SCHEMA_POPULATION((('part.step','2026-02-28T00:00:00Z','YWJjZA==')));",
     );
-    crate::parse::parse(valid.as_bytes()).expect("valid header metadata");
+    crate::test_support::with_service_context(valid.as_bytes(), crate::parse::parse_inner)
+        .expect("valid header metadata");
 
     let schema_oid = source(
         "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
         "' AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 } '",
         "",
     );
-    crate::parse::parse(schema_oid.as_bytes()).expect("schema object identifier");
+    crate::test_support::with_service_context(schema_oid.as_bytes(), crate::parse::parse_inner)
+        .expect("schema object identifier");
 
     let named_schema_oid = source(
         "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
         "' AUTOMOTIVE_DESIGN_CC2 { iso standard 10303 part(214) version(1) } '",
         "",
     );
-    crate::parse::parse(named_schema_oid.as_bytes()).expect("named schema object identifier");
+    crate::test_support::with_service_context(
+        named_schema_oid.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("named schema object identifier");
 
     let invalid = [
         source(
@@ -139,14 +147,22 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         ),
     ];
     for source in invalid {
-        assert!(crate::parse::parse(source.as_bytes()).is_err());
+        assert!(crate::test_support::with_service_context(
+            source.as_bytes(),
+            crate::parse::parse_inner
+        )
+        .is_err());
     }
 
     let long_description = "x".repeat(257);
     let long_description_source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('{long_description}'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
     );
-    assert!(crate::parse::parse(long_description_source.as_bytes()).is_err());
+    assert!(crate::test_support::with_service_context(
+        long_description_source.as_bytes(),
+        crate::parse::parse_inner
+    )
+    .is_err());
 
     let long_schema = "A".repeat(1025);
     let long_schema_source = source(
@@ -154,10 +170,18 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         &format!("'{long_schema}'"),
         "",
     );
-    assert!(crate::parse::parse(long_schema_source.as_bytes()).is_err());
+    assert!(crate::test_support::with_service_context(
+        long_schema_source.as_bytes(),
+        crate::parse::parse_inner
+    )
+    .is_err());
 
     let malformed_data_schema = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('main',('AP242 { 1 invalid }'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    assert!(crate::parse::parse(malformed_data_schema.as_bytes()).is_err());
+    assert!(crate::test_support::with_service_context(
+        malformed_data_schema.as_bytes(),
+        crate::parse::parse_inner
+    )
+    .is_err());
 }
 
 #[test]
@@ -182,7 +206,10 @@ fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({schema}));ENDSEC;DATA('main',({data_schema}));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        match crate::parse::parse(source.as_bytes()) {
+        match crate::test_support::with_service_context(
+            source.as_bytes(),
+            crate::parse::parse_inner,
+        ) {
             Ok(_) => admitted.push(description),
             Err(error) => assert!(
                 error
@@ -202,7 +229,8 @@ fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
 fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("an out-of-range component is recoverable");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("an out-of-range component is recoverable");
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
@@ -220,9 +248,9 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
         diagnostics[0].message,
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
     );
-    assert_eq!(exchange.header[2].name, "FILE_SCHEMA");
+    assert_eq!(exchange.header()[2].name, "FILE_SCHEMA");
     assert_eq!(
-        exchange.schema_identifiers(),
+        exchange.schema_identifiers().collect::<Vec<_>>(),
         ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
     );
 }
@@ -256,8 +284,9 @@ fn parser_recovers_every_out_of_range_schema_object_identifier_component() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('{identifier}'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let (_, diagnostics) = crate::parse::parse(source.as_bytes())
-            .unwrap_or_else(|error| panic!("{identifier} is admissible: {error}"));
+        let (_, diagnostics) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .unwrap_or_else(|error| panic!("{identifier} is admissible: {error}"));
         let expected = component.map_or_else(Vec::new, |component| {
             vec![format!(
                 "FILE_SCHEMA identifier AP242 has an out-of-range object identifier component {component}; the object identifier is not admitted"
@@ -278,7 +307,8 @@ fn parser_recovers_every_out_of_range_schema_object_identifier_component() {
 fn parser_admits_a_valid_schema_object_identifier_without_a_loss() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (_, diagnostics) =
-        crate::parse::parse(source.as_bytes()).expect("valid schema object identifier");
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid schema object identifier");
     assert!(diagnostics.is_empty());
 }
 
@@ -302,8 +332,11 @@ fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
         let data_by_identifier = format!(
             "{header}ENDSEC;DATA('main',('{identifier}'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error = crate::parse::parse(data_by_identifier.as_bytes())
-            .expect_err("the object identifier is not an admitted DATA section schema");
+        let error = crate::test_support::with_service_context(
+            data_by_identifier.as_bytes(),
+            crate::parse::parse_inner,
+        )
+        .expect_err("the object identifier is not an admitted DATA section schema");
         assert!(
             error
                 .to_string()
@@ -314,8 +347,11 @@ fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
         let population_by_identifier = format!(
             "{header}FILE_POPULATION('{identifier}','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error = crate::parse::parse(population_by_identifier.as_bytes())
-            .expect_err("the object identifier is not an admitted governing schema");
+        let error = crate::test_support::with_service_context(
+            population_by_identifier.as_bytes(),
+            crate::parse::parse_inner,
+        )
+        .expect_err("the object identifier is not an admitted governing schema");
         assert!(
             error
                 .to_string()
@@ -326,8 +362,11 @@ fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
         let by_name = format!(
             "{header}FILE_POPULATION('AUTOMOTIVE_DESIGN_CC2','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let (_, diagnostics) = crate::parse::parse(by_name.as_bytes())
-            .unwrap_or_else(|error| panic!("{identifier} keeps its schema name: {error}"));
+        let (_, diagnostics) = crate::test_support::with_service_context(
+            by_name.as_bytes(),
+            crate::parse::parse_inner,
+        )
+        .unwrap_or_else(|error| panic!("{identifier} keeps its schema name: {error}"));
         assert_eq!(diagnostics.len(), 1, "{identifier}");
         assert_eq!(
             diagnostics[0].kind,
@@ -340,9 +379,11 @@ fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
 #[test]
 fn parser_retains_unset_file_name_tail_metadata() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'',$,$);FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("unset producer metadata");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("unset producer metadata");
     assert!(matches!(
-        exchange.header[1].parameters[6],
+        exchange.header()[1].parameters[6],
         crate::parse::Value::Omitted
     ));
 }
@@ -350,7 +391,8 @@ fn parser_retains_unset_file_name_tail_metadata() {
 #[test]
 fn parser_allows_an_empty_data_population_in_edition_three() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(source).expect("edition three permits no DATA section");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("edition three permits no DATA section");
 }
 
 #[test]
@@ -391,7 +433,9 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
     ];
 
     for (source, message) in cases {
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid level");
+        let error =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect_err("invalid level");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -402,7 +446,9 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
 #[test]
 fn parser_recovers_an_unknown_implementation_level_with_a_diagnostic() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (_, diagnostics) = crate::parse::parse(source).expect("the declaration is framed");
+    let (_, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("the declaration is framed");
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].kind,
@@ -416,9 +462,10 @@ fn parser_recovers_an_unknown_implementation_level_with_a_diagnostic() {
 fn unknown_implementation_level_uses_the_retained_substitution_for_later_sections() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<item>=#1;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("the substituted 4;3 grammar admits ANCHOR");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("the substituted 4;3 grammar admits ANCHOR");
     assert_eq!(exchange.implementation_level(), "1;1");
-    assert_eq!(exchange.anchors.len(), 1);
+    assert_eq!(exchange.anchors().len(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].kind,
@@ -432,7 +479,8 @@ fn parser_accepts_historical_implementation_level_spellings() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'{level}');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        crate::parse::parse(source.as_bytes()).expect("historical implementation level");
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("historical implementation level");
     }
 }
 
@@ -466,7 +514,9 @@ fn parser_enforces_edition_three_conformance_classes() {
     ];
 
     for (source, message) in cases {
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid conformance class");
+        let error =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect_err("invalid conformance class");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -474,21 +524,25 @@ fn parser_enforces_edition_three_conformance_classes() {
     }
 
     let class_three = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@10=<part.step#value>;ENDSEC;DATA;#1=ITEM(@10,#PI);ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(class_three).expect("class three value occurrences");
+    crate::test_support::with_service_context(class_three, crate::parse::parse_inner)
+        .expect("class three value occurrences");
 }
 
 #[test]
 fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('CONFIG_CONTROL_DESIGN','GEOMETRIC_VALIDATION_PROPERTIES_MIM'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(source).expect("2;1 permits multiple schema identifiers");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("2;1 permits multiple schema identifiers");
 }
 
 #[test]
 fn parser_validates_optional_header_entities_and_data_section_targets() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));!VENDOR(('metadata'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("valid optional header entities");
-    assert_eq!(exchange.data[0].records, vec![1]);
-    assert_eq!(exchange.header[7].name, "!VENDOR");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid optional header entities");
+    assert_eq!(exchange.data()[0].records, vec![1]);
+    assert_eq!(exchange.header()[7].name, "!VENDOR");
 
     let invalid = [
         (
@@ -516,7 +570,9 @@ fn parser_validates_optional_header_entities_and_data_section_targets() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));{extra}ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid header entity");
+        let error =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect_err("invalid header entity");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -524,7 +580,8 @@ fn parser_validates_optional_header_entities_and_data_section_targets() {
     }
 
     let legacy = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(legacy).expect("2;1 permits SCHEMA_POPULATION");
+    crate::test_support::with_service_context(legacy, crate::parse::parse_inner)
+        .expect("2;1 permits SCHEMA_POPULATION");
 }
 
 #[test]
@@ -557,7 +614,9 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
     ];
 
     for (source, message) in cases {
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid DATA section");
+        let error =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect_err("invalid DATA section");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -565,8 +624,10 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
     }
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA('section-1',('AP242'));#1=ITEM();ENDSEC;DATA('section-2',('AP214'));#2=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("valid named DATA sections");
-    assert_eq!(exchange.data.len(), 2);
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid named DATA sections");
+    assert_eq!(exchange.data().len(), 2);
 }
 
 #[test]
@@ -680,7 +741,10 @@ fn part28_configuration_witnesses_are_refused_before_schema_admission() {
             root.attribute("schema") == Some(EXPRESS_SCHEMA),
             schema_matches_ap238
         );
-        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, bytes),
+            Confidence::Medium
+        );
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect_err("Part 28 refusal");
@@ -804,7 +868,10 @@ fn part28_schema_mapping_witnesses_stop_at_the_caller_boundary() {
         include_bytes!("data/ce04_part28_ap238_duplicate_id.xml").as_slice(),
         include_bytes!("data/ce04_part28_ap238_unbound_schema.xml").as_slice(),
     ] {
-        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, bytes),
+            Confidence::Medium
+        );
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect_err("Part 28 refusal");
@@ -854,16 +921,22 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         assert_unsupported_dialect(error, dialect, reason);
     }
     assert_eq!(
-        codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
+        cadmpeg_test_support::detection::confidence(
+            &codec,
+            b"<?xml version='1.0'?><iso_10303_28/>"
+        ),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(b"\x89HDF\r\n\x1a\ncontent"),
+        cadmpeg_test_support::detection::confidence(&codec, b"\x89HDF\r\n\x1a\ncontent"),
         Confidence::Medium
     );
     let mut hdf5_user_block = vec![0u8; 512];
     hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
-    assert_eq!(codec.detect(&hdf5_user_block), Confidence::Medium);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &hdf5_user_block),
+        Confidence::Medium
+    );
     let error = codec
         .decode(&mut Cursor::new(hdf5_user_block), &DecodeOptions::default())
         .expect_err("Part 26 refusal");
@@ -874,7 +947,10 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     );
     let mut invalid_hdf5_offset = vec![0u8; 256];
     invalid_hdf5_offset.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
-    assert_eq!(codec.detect(&invalid_hdf5_offset), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &invalid_hdf5_offset),
+        Confidence::No
+    );
     assert!(matches!(
         codec.decode(
             &mut Cursor::new(invalid_hdf5_offset),
@@ -886,22 +962,37 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             if message == "missing ISO-10303-21 magic"
     ));
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_ap242.xml")),
+        cadmpeg_test_support::detection::confidence(
+            &codec,
+            include_bytes!("data/ce03_part28_ap242.xml")
+        ),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_ap238_step_tools.xml")),
+        cadmpeg_test_support::detection::confidence(
+            &codec,
+            include_bytes!("data/ce03_part28_ap238_step_tools.xml")
+        ),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_configured_uos.xml")),
+        cadmpeg_test_support::detection::confidence(
+            &codec,
+            include_bytes!("data/ce03_part28_configured_uos.xml")
+        ),
         Confidence::Medium
     );
     let canonical = include_bytes!("data/bm01_ap242_bo_model_ed2.stpx");
-    assert_eq!(codec.detect(canonical), Confidence::Medium);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, canonical),
+        Confidence::Medium
+    );
 
     let lookalike = include_bytes!("data/bm01_ap242_bo_model_wrong_namespace.stpx");
-    assert_eq!(codec.detect(lookalike), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, lookalike),
+        Confidence::No
+    );
     assert!(matches!(
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
         Err(cadmpeg_ir::DecodeFailure::Codec(
@@ -914,7 +1005,10 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
 fn bo_model_detection_requires_root_namespace_binding() {
     let codec = StepCodec::default();
     assert_eq!(
-        codec.detect(include_bytes!("data/bm01_ap242_bo_model_ed2.stpx")),
+        cadmpeg_test_support::detection::confidence(
+            &codec,
+            include_bytes!("data/bm01_ap242_bo_model_ed2.stpx")
+        ),
         Confidence::Medium
     );
 
@@ -925,7 +1019,10 @@ fn bo_model_detection_requires_root_namespace_binding() {
         b"<?xml version='1.0'?><note><child xmlns:n0='http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model'/></note>",
     ];
     for xml in false_positives {
-        assert_eq!(codec.detect(xml), Confidence::No);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, xml),
+            Confidence::No
+        );
         assert!(matches!(
             codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
             Err(cadmpeg_ir::DecodeFailure::Codec(
@@ -967,7 +1064,10 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
     }
 
     let codec = StepCodec::default();
-    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bytes),
+        Confidence::Medium
+    );
     let error = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect_err("Part 26 refusal");
@@ -1129,7 +1229,10 @@ fn bo_model_does_not_compose_with_explicit_part21_file_reference() {
             "XML override",
         ),
     ] {
-        assert_eq!(codec.detect(xml), Confidence::Medium);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, xml),
+            Confidence::Medium
+        );
         assert!(xml
             .windows(b"ExternalItem".len())
             .any(|window| { window == b"ExternalItem" }));

@@ -36,15 +36,19 @@ use cadmpeg_ir::{validate_neutral, CadIr};
 
 let mut ir = CadIr::empty(Units::default());
 // Populate ir.model arenas and use typed IDs to connect entities.
-ir.finalize();
+let arena = cadmpeg_core::decode::DecodeArena::new();
+let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+)?;
+ir.finalize(&ctx)?;
 let report = validate_neutral(&ir, Vec::new());
 
 assert!(report.is_ok());
 assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
-`CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` accepts exactly `ir_version: "7"`.
+`CadIr::to_canonical_json` clones and finalizes the document before it emits
+pretty JSON. `CadIr::from_json` accepts exactly `ir_version: "6"`.
 The `model.subds` arena is required, including when empty. `diff` compares
 units, tolerances, annotations, and entity arenas by stable identity.
 
@@ -55,8 +59,10 @@ then decode the selected source:
 ```rust
 use cadmpeg_ir::{Codec, Confidence};
 
-fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
-    codec.detect(prefix) >= Confidence::Medium
+use cadmpeg_core::{CodecError, decode::{DecodeContext, View}};
+
+fn accepts(codec: &dyn Codec, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<bool, CodecError> {
+    Ok(codec.detect(ctx, prefix)? >= Confidence::Medium)
 }
 ```
 

@@ -78,96 +78,99 @@
       {
         "id": "synthetic:v2:subd#directed",
         "scheme": "catmull_clark",
-        "vertices": [
-          {
-            "point": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "tag": "crease"
-          },
-          {
-            "point": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "tag": "smooth"
-          },
-          {
-            "point": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "tag": "corner"
-          }
-        ],
-        "edges": [
-          {
-            "vertices": [
-              0,
-              1
-            ],
-            "sharpness": [
-              0.25,
-              0.75
-            ],ı            "tag": "crease",
-            "sector_coefficients": [
-              0.125,
-              0.875
-            ]
-          },
-          {
-            "vertices": [
-              1,
-              2
-            ],
-            "sharpness": [
-              0.0,
-              0.5
-            ],
-            "tag": "smooth_x",
-            "sector_coefficients": [
-              0.25,
-              0.75
-            ]
-          },
-          {
-            "vertices": [
-              2,
-              0
-            ],
-            "sharpness": [
-              1.0,
-              0.0
-            ],
-            "tag": "smooth",
-            "sector_coefficients": [
-              0.5,
-              0.5
-            ]
-          }
-        ],
-        "faces": [
-          {
-            "edges": [
-              {
-                "edge": 0,
-                "reversed": false
+        "cage": {
+          "vertices": [
+            {
+              "point": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
               },
-              {
-                "edge": 1,
-                "reversed": false
+              "tag": "crease"
+            },
+            {
+              "point": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
               },
-              {
-                "edge": 2,
-                "reversed": false
-              }
-            ]
-          }
-        ]
+              "tag": "smooth"
+            },
+            {
+              "point": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "tag": "corner"
+            }
+          ],
+          "edges": [
+            {
+              "vertices": [
+                0,
+                1
+              ],
+              "sharpness": [
+                0.25,
+                0.75
+              ],
+              "tag": "crease",
+              "sector_coefficients›: [
+                0.125,
+                0.875
+              ]
+            },
+            {
+              "vertices": [
+                1,
+                2
+              ],
+              "sharpness": [
+                0.0,
+                0.5
+              ],
+              "tag": "smooth_x",
+              "sector_coefficients": [
+                0.25,
+                0.75
+              ]
+            },
+            {
+              "vertices": [
+                2,
+                0
+              ],
+              "sharpness": [
+                1.0,
+                0.0
+              ],
+              "tag": "smooth",
+              "sector_coefficients": [
+                0.5,
+                0.5
+              ]
+            }
+          ],
+          "faces": [
+            {
+              "edges": [
+                {
+                  "edge": 0,
+                  "reversed": false
+                },
+                {
+                  "edge": 1,
+                  "reversed": false
+                },
+                {
+                  "edge": 2,
+                  "reversed": false
+                }
+              ]
+            }
+          ]
+        }
       }
     ],
     "pcurves": [],
@@ -183,9 +186,14 @@
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "cache": {
+            "layout": "legacy",
+            "cache": {
+              "fit_tolerance": 1e-9
+            }
           }
-        },
-        "cache_fit_tolerance": 1e-9
+        }
       }
     ],
     "procedural_curves": [],

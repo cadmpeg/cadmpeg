@@ -1,4 +1,28 @@
-use super::*;
+use crate::families::standard::fbb::fbb_population_layouts;
+use crate::families::standard::fbb::parse_edge_tables_at;
+use crate::families::standard::fbb::parse_trim_chain;
+use crate::families::standard::fbb::parse_trim_record;
+use crate::families::standard::fbb::parse_trim_record_layout;
+use crate::families::standard::fbb::population_spine;
+use crate::families::standard::fbb::standard_edge_count;
+use crate::families::standard::fbb::standard_face_count;
+use crate::families::standard::fbb::standard_fbb_groups;
+use crate::families::standard::fbb::EDGE_DELIMITER;
+use crate::families::standard::tests::triangle_packet;
+use crate::families::standard::topology::BoundaryDraft;
+use crate::families::standard::topology::CoedgeUse;
+use crate::families::standard::topology::EdgeBoundaryLayout;
+use crate::families::standard::topology::EdgeRow;
+use crate::families::standard::topology::FaceTopologyDraft;
+use crate::families::standard::topology::StandardTopologyDraft;
+use crate::families::standard::topology::TrimRecord;
+use crate::solve::mesh_gauge::canonicalize_mesh_vertex_labels;
+use crate::solve::mesh_gauge::mesh_candidates_equivalent;
+use crate::solve::mesh_gauge::mesh_candidates_equivalent_with_gauge;
+use crate::solve::mesh_gauge::MeshEdgeGeometry;
+use crate::solve::missing_edge::bounded_endpoint_cycle_orders;
+use crate::solve::missing_edge::bounded_oriented_trail_orders;
+use crate::solve::missing_edge::motif_port_points;
 
 #[test]
 fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
@@ -10,50 +34,127 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
     bytes.extend_from_slice(&first);
     bytes.extend_from_slice(&second);
 
-    let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
-    assert_eq!(records[0].handles, [0, 1, 2]);
-    assert_eq!(records[1].handles, [3, 4, 5]);
-    assert_eq!(records[0].independent_count, 1);
-    assert!(records[0].strip_lengths.is_empty());
-    assert!(records[0].fan_lengths.is_empty());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 2, 2)
+    })
+    .expect("service resource budget")
+    .expect("exact chain");
+    assert_eq!(records[0].packet.handles(), [0, 1, 2]);
+    assert_eq!(records[1].packet.handles(), [3, 4, 5]);
+    assert_eq!(records[0].packet.independent_count(), 1);
+    assert!(records[0].packet.strip_lengths().is_empty());
+    assert!(records[0].packet.fan_lengths().is_empty());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            2,
+            3
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
 fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
-    assert!(bounded_oriented_trail_orders(&trails, 16).is_none());
-    assert_eq!(
-        bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
-        Some(vec![vec![0, 1], vec![1, 0]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert!(bounded_oriented_trail_orders(ctx, &trails, 16)
+            .expect("service budget")
+            .is_none());
+        assert_eq!(
+            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).expect("service budget"),
+            Some(vec![vec![0, 1], vec![1, 0]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    assert_eq!(
-        bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
-        Some(vec![vec![0, 1, 2]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4).expect("service budget"),
+            Some(vec![vec![0, 1, 2]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     let candidates = vec![vec![[0, 0]]; 8];
-    assert!(bounded_endpoint_cycle_orders(&(0..8).collect::<Vec<_>>(), &candidates, 16).is_none());
+    crate::test_support::with_service_context(|ctx| {
+        assert!(
+            bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16)
+                .expect("service budget")
+                .is_none()
+        );
+    });
+}
+
+#[test]
+fn endpoint_order_helpers_refuse_before_counted_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let trails = [vec![0], vec![1]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_oriented_trail_orders(ctx, &trails, 2)
+    };
+    let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(trail_run).expect("service budget"),
+        Some(vec![vec![0, 1], vec![1, 0]])
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(cycle_run).expect("service budget"),
+        Some(vec![vec![0, 1, 2]])
+    );
+    for (result, operation) in [
+        (
+            crate::test_support::with_collection_limit(0, trail_run),
+            "catia_oriented_trail_scratch",
+        ),
+        (
+            crate::test_support::with_collection_limit(0, cycle_run),
+            "catia_endpoint_cycle_missing_edges",
+        ),
+    ] {
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.dimension == ResourceDimension::CollectionItems && error.operation == operation
+        ));
+    }
 }
 
 #[test]
 fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     let bytes = triangle_packet([10, 11, 12]);
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("trim packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("trim packet layout");
     assert_eq!(layout.handle_offset, 8);
     assert_eq!(layout.handle_count, 3);
     assert_eq!(layout.end, bytes.len());
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
-    assert_eq!(record.triangles, [[10, 11, 12]]);
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("materialized trim packet");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| record
+            .packet
+            .triangles(ctx)
+            .expect("service resource budget")
+            .to_vec()),
+        [[10, 11, 12]]
+    );
 }
 
 #[test]
@@ -64,10 +165,20 @@ fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
     bytes.extend_from_slice(&handle_count.to_le_bytes());
     bytes.push(0xff);
     bytes.extend_from_slice(&strip_length.to_le_bytes());
-    bytes.extend(std::iter::repeat_n(0, handle_count as usize));
+    bytes.extend(std::iter::repeat_n(
+        0,
+        cadmpeg_core::decode::index_from_u32(handle_count),
+    ));
 
-    let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete handle span");
-    assert_eq!(layout.handle_count, handle_count as usize);
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 1)
+    })
+    .expect("service resource budget")
+    .expect("complete handle span");
+    assert_eq!(
+        layout.handle_count,
+        cadmpeg_core::decode::index_from_u32(handle_count)
+    );
     assert_eq!(layout.end, bytes.len());
 }
 
@@ -79,16 +190,45 @@ fn trim_record_rejects_invalid_present_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
-    assert!(parse_trim_record(&bytes, 0, 2).is_none());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 1, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            1,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 
     let mut non_finite = bytes[..8].to_vec();
     for value in [f32::NAN, 0.0, 1.0] {
         non_finite.extend_from_slice(&value.to_le_bytes());
     }
     non_finite.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
-    assert!(parse_trim_record_layout(&non_finite, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx,
+            &non_finite,
+            0,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -99,7 +239,10 @@ fn trim_record_accepts_binary32_round_trip_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("binary32 unit vector");
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("binary32 unit vector");
     assert!(record.frame_vector.is_some());
 }
 
@@ -111,7 +254,13 @@ fn trim_record_rejects_frame_vector_outside_binary32_round_trip_bound() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -120,11 +269,16 @@ fn forced_trim_chain_has_no_recursive_depth_limit() {
     let packet = triangle_packet([0, 0, 0]);
     let bytes = packet.repeat(RECORD_COUNT);
 
-    let records =
-        parse_trim_chain(&bytes, bytes.len(), RECORD_COUNT, 2).expect("forced trim packet chain");
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), RECORD_COUNT, 2)
+    })
+    .expect("service resource budget")
+    .expect("forced trim packet chain");
 
     assert_eq!(records.len(), RECORD_COUNT);
-    assert!(records.iter().all(|record| record.handles == [0, 0, 0]));
+    assert!(records
+        .iter()
+        .all(|record| record.packet.handles() == [0, 0, 0]));
 }
 
 #[test]
@@ -135,13 +289,16 @@ fn trim_packet_retains_primitive_partition_lengths() {
     for handle in 0u16..10 {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("mixed primitive packet")
-        .try_into()
-        .expect("one packet");
-    assert_eq!(record.independent_count, 1);
-    assert_eq!(record.strip_lengths, [3]);
-    assert_eq!(record.fan_lengths, [4]);
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("mixed primitive packet")
+    .try_into()
+    .expect("one packet");
+    assert_eq!(record.packet.independent_count(), 1);
+    assert_eq!(record.packet.strip_lengths(), [3]);
+    assert_eq!(record.packet.fan_lengths(), [4]);
 }
 
 #[test]
@@ -156,16 +313,26 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
 
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("width-matched primitive packet")
-        .try_into()
-        .expect("one packet");
-    assert_eq!(record.independent_count, 1);
-    assert_eq!(record.strip_lengths, [3]);
-    assert!(record.fan_lengths.is_empty());
-    assert_eq!(record.frame_vector, Some([1.0, 0.0, 0.0]));
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("width-matched primitive packet")
+    .try_into()
+    .expect("one packet");
+    assert_eq!(record.packet.independent_count(), 1);
+    assert_eq!(record.packet.strip_lengths(), [3]);
+    assert!(record.packet.fan_lengths().is_empty());
+    assert_eq!(
+        record.frame_vector,
+        Some(crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]))
+    );
 
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("unique packet layout");
     assert_eq!(layout.end, bytes.len());
 }
 
@@ -182,10 +349,13 @@ fn standard_edge_row_arity_uses_widened_count_form() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("widened row arity");
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("widened row arity");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].handles, vec![10, 11]);
-    assert_eq!(rows[1].handles, vec![20, 21]);
+    assert_eq!(rows[0].handles(), vec![10, 11]);
+    assert_eq!(rows[1].handles(), vec![20, 21]);
     assert_eq!(vertex_header, bytes.len() - 3);
 }
 
@@ -199,33 +369,38 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
     bytes.extend_from_slice(&EDGE_DELIMITER);
     bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("u8 edge rows");
-    assert_eq!(rows[0].handles, [2, 0]);
-    assert_eq!(rows[1].handles, [0, 1]);
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("u8 edge rows");
+    assert_eq!(rows[0].handles(), [2, 0]);
+    assert_eq!(rows[1].handles(), [0, 1]);
     assert!(rows
         .iter()
-        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun));
+        .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun));
     assert_eq!(vertex_header, bytes.len() - 3);
 }
 
 #[test]
 fn coordinate_rows_canonicalize_logical_vertex_labels() {
-    let topology = |start_vertex, end_vertex| StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: vec![CoedgeUse {
-                    edge_row: 0,
-                    reversed: false,
-                    start_vertex,
-                    end_vertex,
-                }],
-            }],
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let topology = |start_vertex, end_vertex| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
+                edge_row: 0,
+                reversed: false,
+                start_vertex,
+                end_vertex,
+            }])
+            .expect("nonempty topology boundary")],
         }],
-        edge_rows: vec![EdgeRow {
-            kind: 1,
-            handles: vec![0, 1],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        }],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+        ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     };
@@ -233,55 +408,56 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let left_candidate = (topology(0, 1), vec![1, 0]);
     let right_candidate = (topology(1, 0), vec![0, 1]);
     assert_ne!(left_candidate, right_candidate);
-    assert!(mesh_candidates_equivalent(
-        &left_candidate,
-        &right_candidate
-    ));
-    let left = canonicalize_mesh_vertex_labels(&left_candidate.0, &left_candidate.1);
-    let right = canonicalize_mesh_vertex_labels(&right_candidate.0, &right_candidate.1);
+    assert!(
+        mesh_candidates_equivalent(&ctx, &left_candidate, &right_candidate)
+            .expect("service resource budget")
+    );
+    let left = canonicalize_mesh_vertex_labels(&ctx, &left_candidate.0, &left_candidate.1)
+        .expect("service resource budget");
+    let right = canonicalize_mesh_vertex_labels(&ctx, &right_candidate.0, &right_candidate.1)
+        .expect("service resource budget");
 
     assert_eq!(left, right);
     assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
 
-    let forward = canonicalize_mesh_vertex_labels(&topology(0, 1), &[0, 1]);
+    let forward = canonicalize_mesh_vertex_labels(&ctx, &topology(0, 1), &[0, 1])
+        .expect("service resource budget");
     let mut reversed = topology(0, 1);
     reversed.faces[0].boundaries[0].coedges[0].reversed = true;
-    let reversed = canonicalize_mesh_vertex_labels(&reversed, &[0, 1]);
+    let reversed =
+        canonicalize_mesh_vertex_labels(&ctx, &reversed, &[0, 1]).expect("service resource budget");
     assert_eq!(forward, reversed);
 }
 
 #[test]
 fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
-    let mut topology = StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 0,
-                    },
-                ],
-            }],
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let mut topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(vec![
+                CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                },
+                CoedgeUse {
+                    edge_row: 1,
+                    reversed: false,
+                    start_vertex: 1,
+                    end_vertex: 0,
+                },
+            ])
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
-            EdgeRow {
-                kind: 1,
-                handles: vec![0, 1],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            },
-            EdgeRow {
-                kind: 1,
-                handles: vec![1, 0],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            },
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
@@ -291,31 +467,41 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
     let right = (topology, vec![0, 1]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
-    let boundary = |edges: &[(usize, usize, usize)]| Boundary {
-        coedges: edges
-            .iter()
-            .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
-                edge_row,
-                reversed: false,
-                start_vertex,
-                end_vertex,
-            })
-            .collect(),
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let boundary = |edges: &[(usize, usize, usize)]| {
+        BoundaryDraft::new(
+            edges
+                .iter()
+                .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
+                    edge_row,
+                    reversed: false,
+                    start_vertex,
+                    end_vertex,
+                })
+                .collect(),
+        )
+        .expect("nonempty topology boundary")
     };
     let edge_rows = (0..4)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge, edge + 1],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        .map(|edge| {
+            EdgeRow::new(
+                1,
+                vec![edge, edge + 1],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
         })
         .collect::<Vec<_>>();
-    let left_topology = StandardTopology {
-        faces: vec![FaceTopology {
+    let left_topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
             boundaries: vec![
                 boundary(&[(0, 0, 1), (1, 1, 0)]),
                 boundary(&[(2, 2, 3), (3, 3, 2)]),
@@ -343,42 +529,62 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
     let right = (right_topology, vec![0, 1, 2, 3]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 11],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         },
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 12],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 12],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 12],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         },
     ];
-    let topology = |swapped: bool| StandardTopology {
-        faces: vec![FaceTopology {
+    let topology = |swapped: bool| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
             boundaries: vec![
-                Boundary {
-                    coedges: vec![CoedgeUse {
-                        edge_row: usize::from(swapped),
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    }],
-                },
-                Boundary {
-                    coedges: vec![CoedgeUse {
-                        edge_row: usize::from(!swapped),
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 2,
-                    }],
-                },
+                BoundaryDraft::new(vec![CoedgeUse {
+                    edge_row: usize::from(swapped),
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }])
+                .expect("nonempty topology boundary"),
+                BoundaryDraft::new(vec![CoedgeUse {
+                    edge_row: usize::from(!swapped),
+                    reversed: false,
+                    start_vertex: 1,
+                    end_vertex: 2,
+                }])
+                .expect("nonempty topology boundary"),
             ],
         }],
         edge_rows: edge_rows.clone(),
@@ -388,58 +594,79 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let left = (topology(false), vec![0, 1, 2]);
     let right = (topology(true), vec![0, 1, 2]);
 
-    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 11],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         },
-        EdgeRow {
-            kind: 2,
-            handles: vec![20, 21],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![20, 21],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![20, 20, 21],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         },
     ];
-    let topology = |swapped: bool| StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: if swapped {
-                    vec![
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: 0,
-                            end_vertex: 1,
-                        },
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: 1,
-                            end_vertex: 2,
-                        },
-                    ]
-                } else {
-                    vec![
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: 0,
-                            end_vertex: 1,
-                        },
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: 1,
-                            end_vertex: 2,
-                        },
-                    ]
-                },
-            }],
+    let topology = |swapped: bool| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(if swapped {
+                vec![
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    },
+                ]
+            } else {
+                vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    },
+                ]
+            })
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: edge_rows.clone(),
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
@@ -451,20 +678,26 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     let edge_identity_evidence = [false, false];
 
-    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
     assert!(mesh_candidates_equivalent_with_gauge(
+        &ctx,
         &left,
         &right,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    ));
+    )
+    .expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let invalid = (
-        StandardTopology {
+        StandardTopologyDraft {
             faces: Vec::new(),
             edge_rows: Vec::new(),
             vertex_points: Vec::new(),
@@ -473,7 +706,7 @@ fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
         vec![0],
     );
 
-    assert!(!mesh_candidates_equivalent(&invalid, &invalid));
+    assert!(!mesh_candidates_equivalent(&ctx, &invalid, &invalid).expect("service resource budget"));
 }
 
 #[test]
@@ -485,13 +718,21 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
     bytes.extend_from_slice(&row);
     bytes.extend_from_slice(&row);
 
-    assert_eq!(standard_face_count(&bytes), Some(3));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(3)
+    );
 }
 
 #[test]
 fn standard_face_population_accepts_flagged_fbb_rows() {
     let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
-    assert_eq!(standard_face_count(&row.repeat(6)), Some(6));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &row.repeat(6)))
+            .expect("service resource budget"),
+        Some(6)
+    );
 }
 
 #[test]
@@ -501,87 +742,138 @@ fn standard_face_population_rejects_equal_largest_fbb_runs() {
     bytes.push(0);
     bytes.extend_from_slice(&row.repeat(2));
 
-    assert_eq!(standard_face_count(&bytes), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
 fn standard_face_population_withholds_multiple_complete_fbb_groups() {
-    let mut bytes = crate::test_support::standard_quad_topology_stream();
-    bytes.extend(crate::test_support::standard_quad_topology_stream());
+    let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
-    let groups = standard_fbb_groups(&bytes);
+    let groups = crate::test_support::with_service_context(|ctx| standard_fbb_groups(ctx, &bytes))
+        .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        group.face_count == 1
-            && group.topology.face_count() == 1
-            && group.topology.edge_rows().len() == 4
+        let layout =
+            crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+                .expect("service resource budget")
+                .into_iter()
+                .find(|layout| layout.face_run == *group)
+                .expect("matching population layout");
+        let spine =
+            crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, &layout))
+                .expect("service resource budget")
+                .expect("complete population spine");
+        let topology = crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::parse_standard(ctx, spine)
+        })
+        .expect("service resource budget")
+        .expect("complete group topology");
+        group.face_count() == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
-    assert_eq!(standard_face_count(&bytes), None);
-    assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        None
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .is_none());
 }
 
 #[test]
 fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
-    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
     bytes.push(0);
-    bytes.extend(crate::test_support::fbb_only_quad_topology_stream());
+    bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
 
-    let layouts = fbb_population_layouts(&bytes);
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     assert_eq!(layouts.len(), 2);
     assert!(layouts.iter().all(|layout| {
-        layout.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
+        layout.face_run.face_count() == 1 && layout.edge_count == 4 && layout.vertex_count == 4
     }));
 }
 
 #[test]
 fn fbb_population_spine_retains_the_preceding_trim_chain() {
-    let bytes = crate::test_support::fbb_only_quad_topology_stream();
-    let layouts = fbb_population_layouts(&bytes);
+    let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     let [layout] = layouts.as_slice() else {
         panic!("one source-closed FBB population");
     };
 
-    let spine = population_spine(&bytes, layout).expect("isolated FBB spine");
-    let isolated_layouts = fbb_population_layouts(spine);
+    let spine =
+        crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, layout))
+            .expect("service resource budget")
+            .expect("isolated FBB spine");
+    let isolated_layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, spine))
+            .expect("service resource budget");
     let [isolated] = isolated_layouts.as_slice() else {
         panic!("isolated spine remains source-closed");
     };
-    assert_eq!(isolated.face_count, layout.face_count);
+    assert_eq!(isolated.face_run.face_count(), layout.face_run.face_count());
     assert_eq!(isolated.edge_count, layout.edge_count);
     assert_eq!(isolated.vertex_count, layout.vertex_count);
-    assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);
+    assert_eq!(isolated.edge_table_form, layout.edge_table_form);
 }
 
 #[test]
 fn standard_helpers_share_the_source_closed_face_population() {
-    let mut bytes = crate::test_support::standard_quad_topology_stream();
+    let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0x11, 0x22, 0x33, 0x44]);
 
-    assert_eq!(standard_face_count(&bytes), Some(1));
-    assert_eq!(standard_edge_count(&bytes), Some(4));
     assert_eq!(
-        crate::solve::missing_edge::standard_edge_rows(&bytes)
-            .expect("selected edge table")
-            .len(),
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(1)
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_edge_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(4)
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::solve::missing_edge::standard_edge_rows(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("selected edge table")
+        .len(),
         4
     );
     assert_eq!(
-        crate::families::standard::fbb::parse_standard(&bytes)
-            .expect("selected topology")
-            .face_count(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::parse_standard(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("selected topology")
+        .face_count(),
         1
     );
 }
 
 fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
     TrimRecord {
-        triangles: Vec::new(),
+        packet: crate::families::standard::trim_packet::TrimPacket::try_from((
+            0,
+            vec![handles.len()],
+            Vec::new(),
+            handles.to_vec(),
+        ))
+        .expect("complete trim handle partition"),
         frame_vector: None,
-        handles: handles.to_vec(),
-        independent_count: 0,
-        strip_lengths: vec![handles.len()],
-        fan_lengths: Vec::new(),
         kind,
     }
 }
@@ -597,7 +889,10 @@ fn allocation_program_replays_seed_tooth_and_transition() {
         trim(0x42, [50, 51, 40, 41]),
         trim(0x4a, [60, 61, 62, 63]),
     ];
-    let points = motif_port_points(&trims, 20).expect("complete motif allocation");
+    let points =
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 20))
+            .expect("service resource budget")
+            .expect("complete motif allocation");
     let order = [
         20, 21, 2, 3, 0, 1, 22, 23, 32, 33, 30, 31, 40, 41, 50, 51, 60, 61, 62, 63,
     ];
@@ -607,7 +902,31 @@ fn allocation_program_replays_seed_tooth_and_transition() {
 }
 
 #[test]
+fn motif_port_identity_map_refuses_before_counted_growth() {
+    let trims = [
+        trim(0x4a, [0, 1, 2, 3]),
+        trim(0x4a, [10, 11, 12, 13]),
+        trim(0x4a, [20, 21, 22, 23]),
+    ];
+    let points = crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 8))
+        .expect("service resource budget")
+        .expect("complete motif allocation");
+    assert_eq!(points.len(), 8);
+    let refusal =
+        crate::test_support::with_collection_limit(7, |ctx| motif_port_points(ctx, &trims, 8))
+            .expect_err("eighth motif identity exceeds the collection cap");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_motif_port_points")
+    );
+}
+
+#[test]
 fn allocation_program_rejects_an_unconsumed_trim_packet() {
     let trims = [trim(0x4a, [0, 1, 2, 3]), trim(0x41, [4, 5, 6, 7])];
-    assert!(motif_port_points(&trims, 4).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 4))
+            .expect("service resource budget")
+            .is_none()
+    );
 }

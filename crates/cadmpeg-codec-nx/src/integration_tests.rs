@@ -1,34 +1,420 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_test_support::bytes::put_u16;
+
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_bytes::MAGIC;
+use crate::test_support::test_cfb::legacy_cfb_with_partial_ug_part;
+use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
+use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::circle_topology_partition_stream;
+use crate::test_support::test_deltas::cone_topology_partition_stream;
+use crate::test_support::test_deltas::cylinder_topology_partition_stream;
+use crate::test_support::test_deltas::deltas_edge_partition_stream;
+use crate::test_support::test_deltas::deltas_face_vertex_partition_stream;
+use crate::test_support::test_deltas::deltas_fin_partition_stream;
+use crate::test_support::test_deltas::deltas_line_partition_stream;
+use crate::test_support::test_deltas::deltas_loop_partition_stream;
+use crate::test_support::test_deltas::deltas_plane_partition_stream;
+use crate::test_support::test_deltas::deltas_point_partition_stream;
+use crate::test_support::test_deltas::deltas_shell_partition_stream;
+use crate::test_support::test_deltas::ellipse_topology_partition_stream;
+use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_prt::boolean_target_body_lineage_prt;
+use crate::test_support::test_prt::composed_feature_history_prt;
+use crate::test_support::test_prt::extract_body_feature_history_prt;
+use crate::test_support::test_prt::offset_store_primary_body_lineage_prt;
+use crate::test_support::test_prt::prt_with_arrangements;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_streams::blend_surface_topology_partition_stream;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::display_jt_basic_stream;
+use crate::test_support::test_streams::display_jt_scene_graph_stream;
+use crate::test_support::test_streams::display_jt_shape_lod_stream;
+use crate::test_support::test_streams::display_jt_string_property_stream;
+use crate::test_support::test_streams::external_reference_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
-use super::*;
-use crate::test_support::*;
+use super::NxCodec;
 
 mod dialect;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    NxCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized NX part should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        NxCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized NX part should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("nx").is_some());
+}
+
+fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
+    crate::decode::Scan {
+        container: crate::container::Container {
+            data: Vec::new().into(),
+            physical_size: 0,
+            layout: crate::container::test_modern_layout(0x06),
+            entries: Vec::new(),
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        },
+        streams: vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }],
+    }
+}
+
+#[test]
+fn inspect_summary_refuses_entry_slots_at_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("one summary entry exceeds zero collection items");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx summary entries"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_attribute_node_at_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 1;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("one attribute exceeds the summary entry item");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx summary attributes"
+            ));
+        },
+    );
+}
+
+// Two ordered attributes share one backing node: eleven lane pairs plus metadata and padding.
+fn two_summary_attribute_nodes() -> usize {
+    22 * std::mem::size_of::<String>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>())
+}
+
+#[test]
+fn inspect_summary_refuses_attribute_text_at_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    cadmpeg_core::ContainerEntry,
+                >());
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("the first attribute key and value need retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "nx summary attribute text"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_preserves_preview_attributes_under_service_profile() {
+    let mut scan = one_preview_summary_scan();
+    scan.streams[0].file_offset = 123_456_789;
+    let summary =
+        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
+            .expect("preview summary fits the service profile");
+    assert_eq!(summary.entries[0].name, "parasolid#0");
+    assert_eq!(
+        summary.entries[0].attributes,
+        std::collections::BTreeMap::from([
+            ("file_offset".to_string(), "123456789".to_string()),
+            ("kind".to_string(), "preview".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_stream_name_at_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            // One entry, one node and 23 attribute text bytes precede this copy.
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
+            ) + 23;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("the two attributes use the available retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "nx summary stream name"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_directory_name_at_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut scan = one_preview_summary_scan();
+    scan.streams.clear();
+    scan.container.entries.push(crate::container::DirEntry {
+        name: "/Root/test".to_string(),
+        region: crate::container::Region::Header,
+        body: crate::container::DirEntryBody::Directory,
+    });
+    let preceding = "region".len()
+        + crate::container::Region::Header.label().len()
+        + "kind".len()
+        + "directory".len();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            // One entry, one node and the directory attribute text precede its name.
+            policy.limits.max_retained_bytes = u64::try_from(
+                preceding
+                    + std::mem::size_of::<cadmpeg_core::ContainerEntry>()
+                    + two_summary_attribute_nodes(),
+            )
+            .expect("small fixture");
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("the directory attributes use the available retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "nx summary directory name"
+            ));
+        },
+    );
+}
+
+fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
+    let mut scan = one_preview_summary_scan();
+    scan.container.layout = crate::container::ContainerLayout::LegacyCfb { version: 6 };
+    scan.streams[0].inflated = vec![1, 2, 3];
+    scan.streams[0].consumed = 2;
+    scan
+}
+
+#[test]
+fn scan_notes_refuse_first_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = crate::scan_notes::summarize(ctx, &scan)
+                .err()
+                .expect("the first note needs one collection item");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx scan notes"
+            ));
+        },
+    );
+}
+
+#[test]
+fn scan_notes_refuse_text_at_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = one_preview_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+        },
+        |ctx| {
+            let error = crate::scan_notes::summarize(ctx, &scan)
+                .err()
+                .expect("the first note needs retained text bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "nx scan note text"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_combined_storage_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = invalid_legacy_storage_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 6;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("entry, attributes, storage and two scan notes use six slots");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx combined inspection notes"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = invalid_legacy_storage_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 3;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("the entry and attributes use three slots");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx summary storage notes"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let scan = invalid_legacy_storage_summary_scan();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            // One entry, one node and 23 attribute text bytes precede this copy.
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
+            ) + 23;
+        },
+        |ctx| {
+            let error = crate::inspect::summarize(ctx, &scan)
+                .expect_err("the two attributes use the available retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "nx summary storage note"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inspect_summary_preserves_invalid_legacy_storage_note() {
+    let scan = invalid_legacy_storage_summary_scan();
+    let summary =
+        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
+            .expect("storage fallback fits the service profile");
+    assert!(summary.notes.iter().any(|note| {
+        note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
+    }));
 }
 
 #[test]
 fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let bytes = legacy_cfb_with_ug_part();
-    assert_eq!(NxCodec.detect(&bytes), Confidence::High);
-    assert_eq!(NxCodec.detect(&bytes[..8]), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, &bytes),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, &bytes[..8]),
+        Confidence::No
+    );
 
     let summary = NxCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
@@ -45,7 +431,7 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -62,7 +448,7 @@ fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -79,8 +465,8 @@ fn legacy_cfb_catalogues_logical_stream_spans() {
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .expect("legacy UG_PART stream entry");
     assert_eq!(part.role.as_str(), "part-payload");
-    assert!(part.compressed_size > 0);
-    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert!(part.stored_size().is_some_and(|size| size > 0));
+    assert_eq!(part.stored_size(), part.expanded_size());
 }
 
 #[test]
@@ -99,14 +485,14 @@ fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/Extra")
         .expect("legacy extra stream entry");
-    assert_eq!(part.compressed_size, 10 * 512);
-    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert_eq!(part.stored_size(), Some(10 * 512));
+    assert_eq!(part.stored_size(), part.expanded_size());
     assert_eq!(extra.role.as_str(), "named-opaque-stream");
-    assert_eq!(extra.compressed_size, 8 * 512);
-    assert_eq!(extra.compressed_size, extra.uncompressed_size);
+    assert_eq!(extra.stored_size(), Some(8 * 512));
+    assert_eq!(extra.stored_size(), extra.expanded_size());
 
     let result = decode(bytes);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -118,13 +504,19 @@ fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
     }
     put_u16(directory_entry, 64, 12);
 
-    assert_eq!(NxCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, &bytes),
+        Confidence::No
+    );
 }
 
 #[test]
 fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() {
     let bytes = single_part_prt();
-    assert_eq!(NxCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, &bytes),
+        Confidence::High
+    );
     let summary = NxCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("NX inspection");
@@ -141,7 +533,7 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 
@@ -180,18 +572,17 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let mut saw_procedural_curve = false;
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        saw_nurbs |= result
-            .ir()
-            .model
-            .curves
-            .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_)))
-            || result
-                .ir()
-                .model
-                .surfaces
-                .iter()
-                .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+            )
+        }) || result.ir().model.surfaces.iter().any(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            )
+        });
         saw_pcurve |= !result.ir().model.pcurves.is_empty();
         saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
         saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
@@ -265,7 +656,10 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
         .map(|feature| feature.ordinal)
         .collect::<Vec<_>>();
     ordinals.sort_unstable();
-    assert_eq!(ordinals, (0..ordinals.len() as u64).collect::<Vec<_>>());
+    assert_eq!(
+        ordinals,
+        (0..cadmpeg_core::decode::u64_from_index(ordinals.len())).collect::<Vec<_>>()
+    );
     let namespace = result.ir().native.namespace("nx").unwrap();
     assert!(!namespace.arenas()["feature_operation_records"].is_empty());
     assert!(!namespace.arenas()["feature_input_blocks"].is_empty());
@@ -309,7 +703,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
                 assert_eq!(
                     feature
                         .source_properties
-                        .get(&format!("{property_prefix}.{ordinal}"))
+                        .get(format!("{property_prefix}.{ordinal}").as_str())
                         .map(String::as_str),
                     Some(record.id())
                 );
@@ -361,14 +755,14 @@ fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
         .find(|feature| feature.name.as_deref() == Some("EXTRACT_BODY"))
         .expect("EXTRACT_BODY feature");
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::ExtractBody {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::ExtractBody {
             source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
-        } if bodies.len() == 1
+        }) if bodies.len() == 1
             && bodies[0].ends_with(":block#1")
             && native == "nx:om-object-index#1"
     ));
-    assert!(feature.outputs.is_empty());
+    assert!(feature.evaluation.outputs().is_empty());
     assert_valid(&result);
 }
 
@@ -511,9 +905,21 @@ fn container_identity_reaches_only_the_dialect_declaration() {
 
 #[test]
 fn detect_high_on_magic() {
-    assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
-    assert_eq!(NxCodec.detect(&single_part_prt()), Confidence::High);
-    assert_eq!(NxCodec.detect(b"PK\x03\x04 not nx"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, MAGIC),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, &single_part_prt()),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, b"PK\x03\x04 not nx"),
+        Confidence::No
+    );
     // A Creo/Granite .prt shares the extension but not the magic.
-    assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&NxCodec, b"\xe0\x02\xff\xfeGRANITE"),
+        Confidence::No
+    );
 }

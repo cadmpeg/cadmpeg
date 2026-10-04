@@ -1,14 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design holes-extrude transfer unit tests.
 
-use crate::test_support::*;
+use crate::design::tests::{definition, extrusion_definition};
+use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
-    InnerWireTaper, Length, LinearTermination, PathRef,
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
+        FeatureOperation, InnerWireTaper, LinearTermination, PathRef,
+    },
+    scalar::Length,
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+/// Definition of the single `Hole` feature.
+fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
+    result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature")
+        .evaluation
+        .definition()
+}
 
 #[test]
 pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
@@ -64,20 +81,23 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Hole"))
         .expect("hole feature");
-    let cadmpeg_ir::features::FeatureDefinition::Hole {
-        profile,
-        profile_filter,
-        construction,
-        extent,
-        bottom,
-        taper_angle,
-        allow_multi_profile_faces,
-        ..
-    } = &hole.definition
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Hole {
+            profile,
+            profile_filter,
+            shape,
+            extent,
+            bottom,
+            taper_angle,
+            allow_multi_profile_faces,
+            ..
+        },
+    ) = hole.evaluation.definition()
     else {
         panic!("typed hole");
     };
-    let cadmpeg_ir::features::HoleConstruction::Form {
+    let construction = shape.construction();
+    let cadmpeg_ir::features::holes::HoleConstruction::Form {
         kind,
         specification: Some(specification),
     } = construction
@@ -86,39 +106,33 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     };
     assert!(matches!(
         profile,
-        Some(cadmpeg_ir::features::ProfileRef::Sketch(_))
+        Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_))
     ));
     assert_eq!(
         *profile_filter,
-        Some(cadmpeg_ir::features::HoleProfileFilter {
-            points: true,
-            circles: true,
-            arcs: true,
-        })
+        Some(cadmpeg_ir::features::holes::HoleProfileFilter::All)
     );
     assert!(matches!(
-        kind,
-        cadmpeg_ir::features::HoleKind::Counterdrill {
-            diameter: cadmpeg_ir::features::Length(12.0),
-            entry_diameter: None,
-            depth: cadmpeg_ir::features::Length(2.0),
-            angle: cadmpeg_ir::features::Angle(angle),
-        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
+        kind, cadmpeg_ir::features::holes::HoleKind::Counterdrill {
+            diameters,
+
+            depth: actual_depth,
+            angle,
+        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0)));
     assert!(matches!(
         extent,
-        Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
+        Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
     ));
     assert!(matches!(
         bottom,
-        Some(cadmpeg_ir::features::HoleBottom::Angled {
+        Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
             depth_to_tip: true,
             ..
         })
     ));
     assert!(taper_angle.is_some());
     assert_eq!(*allow_multi_profile_faces, Some(true));
-    let cadmpeg_ir::features::HoleSpecification::Threaded {
+    let cadmpeg_ir::features::holes::HoleSpecification::Threaded {
         standard,
         designation,
         class,
@@ -135,40 +149,28 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     assert_eq!(designation.as_deref(), Some("M8"));
     assert_eq!(class.as_deref(), Some("6H"));
     assert!(*modeled && !cosmetic);
-    assert_eq!(*hand, cadmpeg_ir::features::ThreadHand::Left);
+    assert_eq!(*hand, cadmpeg_ir::features::holes::ThreadHand::Left);
     assert!(matches!(
         depth,
-        cadmpeg_ir::features::HoleThreadDepth::Blind {
-            depth: cadmpeg_ir::features::Length(12.0)
-        }
+        cadmpeg_ir::features::holes::HoleThreadDepth::Blind {
+            depth: actual_depth
+        } if actual_depth.get() == 12.0
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
-    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
 
 #[test]
 fn distinguishes_absent_and_malformed_hole_enumerations() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
-    }
-
     let hole_document = |target: &str, type_name: &str, value: &str| {
         let property = if target.is_empty() {
             String::new()
@@ -200,24 +202,18 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 
     let absent = decode(&hole_document("", "", ""));
     assert!(matches!(
-        definition(&absent, "Hole"),
-        FeatureDefinition::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
-                points: false,
-                circles: true,
-                arcs: true,
-            }),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
-                specification: None,
-            },
+        definition(&absent, "Hole"), FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile_filter: Some(cadmpeg_ir::features::holes::HoleProfileFilter::CirclesAndArcs),
+            shape,
             extent: Some(LinearTermination::Blind {
-                length: Length(25.0),
+                length: actual_length,
             }),
-            bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Angled { .. }),
             ..
-        }
-    ));
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
+                specification: None,
+            },) if actual_length.get() == 25.0)));
     assert!(absent.report().losses.is_empty());
 
     let malformed_values = [
@@ -247,13 +243,13 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
             let result = decode(&hole_document(target, type_name, value));
             assert!(matches!(
                 definition(&result, "Hole"),
-                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
                 loss.code.namespace() == "fcstd"
                     && loss.code.local_code() == "feature.native-kind-retained"
-                    && loss.severity == cadmpeg_ir::Severity::Blocking
+                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
             }));
         }
     }
@@ -261,17 +257,6 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 
 #[test]
 fn uses_only_direct_custom_hole_enumeration_labels() {
-    fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Hole"))
-            .expect("hole feature")
-            .definition
-    }
-
     fn retains_thread_size_property(
         result: &cadmpeg_ir::codec::DecodeResult,
         raw_value: &str,
@@ -287,7 +272,7 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             })
             .is_some_and(|properties| {
                 properties.iter().any(|property| {
-                    property.name == "ThreadSize" && property.raw_xml.contains(raw_value)
+                    property.name == "ThreadSize" && property.xml.text().contains(raw_value)
                 })
             })
     }
@@ -372,20 +357,23 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 
     for (case, type_name, value, expected) in cases {
         let result = decode(type_name, value);
-        let FeatureDefinition::Hole {
-            construction:
-                cadmpeg_ir::features::HoleConstruction::Form {
-                    specification: Some(specification),
-                    ..
-                },
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
+            hole_definition(&result)
+        else {
+            panic!("{case}: expected typed hole");
+        };
+        let cadmpeg_ir::features::holes::HoleConstruction::Form {
+            specification: Some(specification),
             ..
-        } = hole_definition(&result)
+        } = shape.construction()
         else {
             panic!("{case}: expected typed hole");
         };
         let designation = match specification.as_ref() {
-            cadmpeg_ir::features::HoleSpecification::Clearance { designation, .. }
-            | cadmpeg_ir::features::HoleSpecification::Threaded { designation, .. } => designation,
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance { designation, .. }
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded { designation, .. } => {
+                designation
+            }
         };
         assert_eq!(designation.as_deref(), expected, "{case}: label selection");
         assert!(result.report().losses.is_empty(), "{case}");
@@ -398,17 +386,6 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 
 #[test]
 fn distinguishes_absent_and_malformed_hole_flags() {
-    fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Hole"))
-            .expect("hole feature")
-            .definition
-    }
-
     let base_properties = [
         (
             "BaseProfileType",
@@ -482,14 +459,14 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     };
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
-            definition(result),
-            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
+            hole_definition(result),
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };
 
@@ -506,20 +483,23 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     for target in targets {
         let result = decode(&hole_document(target, None));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Hole {
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
             taper_angle,
-            construction,
+            shape,
             allow_multi_profile_faces,
             ..
-        } = definition(&result)
+        }) = hole_definition(&result)
         else {
             panic!("{target} absent carrier");
         };
+        let construction = shape.construction();
         let specification = match construction {
-            cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
-            cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+            cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+                specification
+            }
+            cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
                 panic!("{target} native thread")
             }
         };
@@ -527,13 +507,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             panic!("{target} thread specification");
         };
         let (modeled, cosmetic, clearance) = match specification {
-            cadmpeg_ir::features::HoleSpecification::Clearance {
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance {
                 modeled,
                 cosmetic,
                 clearance,
                 ..
             }
-            | cadmpeg_ir::features::HoleSpecification::Threaded {
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded {
                 modeled,
                 cosmetic,
                 clearance,
@@ -543,13 +523,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         match target {
             "Threaded" => assert!(matches!(
                 specification,
-                cadmpeg_ir::features::HoleSpecification::Clearance { .. }
+                cadmpeg_ir::features::holes::HoleSpecification::Clearance { .. }
             )),
             "ModelThread" => assert!(!modeled),
             "CosmeticThread" => assert!(!cosmetic),
             "DrillForDepth" => assert!(matches!(
                 bottom,
-                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
                     depth_to_tip: false,
                     ..
                 })
@@ -559,11 +539,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter {
-                    points: false,
-                    circles: true,
-                    arcs: true,
-                })
+                Some(cadmpeg_ir::features::holes::HoleProfileFilter::CirclesAndArcs)
             ),
             _ => unreachable!(),
         }
@@ -606,20 +582,23 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     for (target, replacement) in valid {
         let result = decode(&hole_document(target, Some(replacement)));
         assert!(result.report().losses.is_empty(), "{target}");
-        let FeatureDefinition::Hole {
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
             taper_angle,
-            construction,
+            shape,
             allow_multi_profile_faces,
             ..
-        } = definition(&result)
+        }) = hole_definition(&result)
         else {
             panic!("{target} valid carrier");
         };
+        let construction = shape.construction();
         let specification = match construction {
-            cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
-            cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+            cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+                specification
+            }
+            cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
                 panic!("{target} native thread")
             }
         };
@@ -627,13 +606,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             panic!("{target} thread specification");
         };
         let (modeled, cosmetic, clearance) = match specification {
-            cadmpeg_ir::features::HoleSpecification::Clearance {
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance {
                 modeled,
                 cosmetic,
                 clearance,
                 ..
             }
-            | cadmpeg_ir::features::HoleSpecification::Threaded {
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded {
                 modeled,
                 cosmetic,
                 clearance,
@@ -643,27 +622,23 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         match target {
             "Threaded" => assert!(matches!(
                 specification,
-                cadmpeg_ir::features::HoleSpecification::Threaded { .. }
+                cadmpeg_ir::features::holes::HoleSpecification::Threaded { .. }
             )),
             "ModelThread" => assert!(modeled),
             "CosmeticThread" => assert!(cosmetic),
             "DrillForDepth" => assert!(matches!(
                 bottom,
-                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
                     depth_to_tip: true,
                     ..
                 })
             )),
             "Tapered" => assert!(taper_angle.is_some()),
-            "UseCustomThreadClearance" => assert_eq!(clearance, Some(Length(0.2))),
+            "UseCustomThreadClearance" => assert_eq!(clearance, Some(Length::new(0.2).unwrap())),
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter {
-                    points: true,
-                    circles: false,
-                    arcs: false,
-                })
+                Some(cadmpeg_ir::features::holes::HoleProfileFilter::Points)
             ),
             _ => unreachable!(),
         }
@@ -739,15 +714,11 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     ));
     assert!(high_bits.report().losses.is_empty());
     assert!(matches!(
-        definition(&high_bits),
-        FeatureDefinition::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
-                points: true,
-                circles: true,
-                arcs: false,
-            }),
+        hole_definition(&high_bits),
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile_filter: Some(cadmpeg_ir::features::holes::HoleProfileFilter::PointsAndCircles),
             ..
-        }
+        })
     ));
 }
 
@@ -782,18 +753,16 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         .find(|feature| feature.name.as_deref() == Some("Hole"))
         .expect("hole feature");
     assert!(matches!(
-        hole.definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Counterbore {
-                    diameter: cadmpeg_ir::features::Length(6.0),
-                    depth: cadmpeg_ir::features::Length(5.0),
+        hole.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
+            shape,
+            ..
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Counterbore {
+                    diameter: actual_diameter,
+                    depth: actual_depth,
                 },
                 ..
-            },
-            ..
-        }
-    ));
+            },) if actual_diameter.get() == 6.0 && actual_depth.get() == 5.0)));
     assert!(result.report().losses.is_empty());
 }
 
@@ -873,57 +842,58 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         )
         .expect("extrusion termination branches");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("ToLast"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ToLast,
+                    termination: LinearTermination::ToLast {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ToFirst"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ToFirst,
+                    termination: LinearTermination::ToFirst {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ToFace"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
-                        offset: Some(Length(2.5)),
+                        offset: Some(actual_offset),
                         ..
                     },
                     ..
                 }
             },
             ..
-        }
+        }) if actual_offset.get() == 2.5
     ));
     assert!(matches!(
         definition("ToShape"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToShape { .. },
@@ -931,24 +901,24 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("ThroughAll"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("Symmetric"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 ..
@@ -956,16 +926,16 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length },
-                    draft: Some(Angle(draft)),
+                    draft: Some(draft),
                     ..
                 }
             },
             ..
-        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.z == -1.0 && length.get() == 12.0 && (draft.get() - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: _,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -976,12 +946,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind { length: first },
-                    draft: Some(Angle(draft)),
+                    draft: Some(draft),
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind { length: second },
-                    draft: Some(Angle(reverse_draft)),
+                    draft: Some(reverse_draft),
                     ..
                 },
             },
@@ -990,18 +960,18 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
             ..
-        } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
-            && (*draft - 2_f64.to_radians()).abs() < 1.0e-12
-            && (*reverse_draft - 4_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.y == 1.0 && first.get() == 7.0 && second.get() == 3.0
+            && (draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (reverse_draft.get() - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
             && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
     assert!(matches!(
         definition("NegativeProfileNormal"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(ExtrusionDirectionSource::ProfileNormal),
+                source: Some(ExtrusionDirectionSource::ProfileNormal {}),
             },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1010,7 +980,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if direction.z == -1.0 && length.0 == 5.0
+        }) if direction.z == -1.0 && length.get() == 5.0
     ));
 }
 
@@ -1036,16 +1006,16 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket feature");
     assert!(matches!(
-        &pocket.definition,
-        FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(_),
+        pocket.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal {}),
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        } if (direction.x - 1.0).abs() < 1.0e-12
+        }) if (direction.x - 1.0).abs() < 1.0e-12
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
@@ -1097,46 +1067,34 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             &DecodeOptions::default(),
         )
         .expect("symmetric Part extrusion");
-    let definition = &result
+    let definition = result
         .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Extrusion"))
         .expect("extrusion")
-        .definition;
+        .evaluation
+        .definition();
     assert!(matches!(
         definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind { length },
-                    draft: Some(cadmpeg_ir::features::Angle(draft)),
+                    draft: Some(draft),
                     ..
                 }
             },
             solid: Some(false),
             ..
-        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1.0e-12
+        }) if length.get() == 12.0 && (draft.get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
 
 #[test]
 fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
-    fn extrusion_definition(
-        result: &cadmpeg_ir::codec::DecodeResult,
-    ) -> &cadmpeg_ir::features::FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Extrusion"))
-            .expect("extrusion feature")
-            .definition
-    }
-
     let malformed_values = [
         "<Integer value=\"bad\"/>",
         "<String value=\"0\"/>",
@@ -1157,21 +1115,21 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
         .expect("absent direction mode");
     assert!(matches!(
         extrusion_definition(&result),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(ExtrusionDirectionSource::Custom),
+                source: Some(ExtrusionDirectionSource::Custom {}),
             },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             ..
-        } if direction.z == 1.0
+        }) if (direction.z == 1.0) && actual_length.get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1198,7 +1156,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             .expect("malformed direction mode");
         assert!(matches!(
             extrusion_definition(&result),
-            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Extrusion"
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Extrusion"
         ));
         assert_valid_document(result.ir());
     }
@@ -1220,15 +1178,15 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
             &DecodeOptions::default(),
         )
         .expect("linkless pad");
-    let definition = &result.ir().model.features[0].definition;
+    let definition = result.ir().model.features[0].evaluation.definition();
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided { .. },
             ..
-        } if profile.ends_with(":Sketch")
+        }) if profile.ends_with(":Sketch")
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1271,11 +1229,11 @@ fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("pad feature");
         assert!(matches!(
-            &feature.definition,
-            FeatureDefinition::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
                 ..
-            } if profile.ends_with(":Profile")
+            }) if profile.ends_with(":Profile")
         ));
     }
     assert!(result.report().losses.is_empty());
@@ -1333,26 +1291,27 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         )
         .expect("mixed extrusion controls");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Mixed"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(-5.0) },
-                    draft: Some(Angle(first_draft)),
+                    termination: LinearTermination::Blind { length: actual_length },
+                    draft: Some(first_draft),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::ToShape { .. },
-                    draft: Some(Angle(second_draft)),
+                    draft: Some(second_draft),
                 },
             },
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
@@ -1364,42 +1323,42 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             length_along_profile_normal: Some(false),
             allow_multi_profile_faces: Some(true),
             ..
-        } if direction.y == 1.0
+        }) if (direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
-            && (*first_draft - 2_f64.to_radians()).abs() < 1.0e-12
-            && (*second_draft + 3_f64.to_radians()).abs() < 1.0e-12
+            && (first_draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (second_draft.get() + 3_f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == -5.0
     ));
     assert!(matches!(
         definition("Symmetric"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
         definition("LegacyTwoLengths"),
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0)
+                        length: actual_length
                     },
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0)
+                        length: actual_length_2
                     },
                     ..
                 },
             },
             ..
-        }
+        }) if actual_length.get() == 6.0 && actual_length_2.get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1409,14 +1368,15 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
     fn pad_definition(
         result: &cadmpeg_ir::codec::DecodeResult,
     ) -> &cadmpeg_ir::features::FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Pad"))
             .expect("pad feature")
-            .definition
+            .evaluation
+            .definition()
     }
 
     let malformed_values = [
@@ -1459,25 +1419,25 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
         if target == "SideType" {
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(6.0)
+                                length: actual_length
                             },
                             ..
                         }
                     },
                     ..
-                }
+                }) if actual_length.get() == 6.0
             ));
         } else {
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Extrude {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
                     extent: ExtrudeExtent::TwoSided { .. },
                     ..
-                }
+                })
             ));
         }
         assert_valid_document(result.ir());
@@ -1525,7 +1485,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                 .expect("malformed extrusion selector");
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Pad"
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Pad"
             ));
             assert_valid_document(result.ir());
         }
@@ -1534,20 +1494,6 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
 
 #[test]
 fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
-    fn feature_definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
-    }
-
     fn flag_document(target: &str, replacement: Option<&str>) -> String {
         let property = |name: &str, value: &str| {
             if target == name {
@@ -1587,8 +1533,8 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
 
     fn assert_typed(result: &cadmpeg_ir::codec::DecodeResult, name: &str) {
         assert!(matches!(
-            feature_definition(result, name),
-            FeatureDefinition::Extrude { .. }
+            definition(result, name),
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
         ));
         assert_valid_document(result.ir());
     }
@@ -1620,61 +1566,61 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Midplane" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        definition(&absent, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::OneSided { .. },
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "AlongSketchNormal" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        definition(&absent, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(true),
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "AllowMultiFace" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        definition(&absent, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(false),
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "Reversed" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        definition(&absent, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == 1.0
+                        }) if direction.x == 1.0
                     ));
                 }
             }
             "UseCustomVector" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
-                        FeatureDefinition::Extrude {
+                        definition(&absent, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.z == 1.0
+                        }) if direction.z == 1.0
                     ));
                 }
             }
@@ -1704,61 +1650,61 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Midplane" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        definition(&valid, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::Symmetric { .. },
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "AlongSketchNormal" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        definition(&valid, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(false),
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "AllowMultiFace" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        definition(&valid, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(true),
                             ..
-                        }
+                        })
                     ));
                 }
             }
             "Reversed" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        definition(&valid, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == -1.0
+                        }) if direction.x == -1.0
                     ));
                 }
             }
             "UseCustomVector" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
-                        FeatureDefinition::Extrude {
+                        definition(&valid, name),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
                                 ..
                             },
                             ..
-                        } if direction.x == 1.0
+                        }) if direction.x == 1.0
                     ));
                 }
             }
@@ -1775,8 +1721,8 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 .expect("malformed extrusion flag");
             for name in ["Pad", "Pocket"] {
                 assert!(matches!(
-                    feature_definition(&result, name),
-                    FeatureDefinition::Native { kind, .. } if kind.as_str() == format!("PartDesign::{name}")
+                    definition(&result, name),
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == format!("PartDesign::{name}")
                 ));
             }
             assert_eq!(result.report().losses.len(), 2);
@@ -1853,8 +1799,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Horizontal { .. }
             )
         }));
     assert!(result
@@ -1864,8 +1810,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
             )
         }));
     let pad = result
@@ -1915,39 +1861,40 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(pocket_length.expression, "Pad.Length / 4");
     assert_eq!(pocket_length.dependencies.len(), 1);
     assert!(matches!(
-        pad.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
+        pad.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(10.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }
+        }) if actual_length.get() == 10.0
     ));
     assert!(matches!(
-        pocket.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        pocket.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(2.5)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }
+        }) if actual_length.get() == 2.5
     ));
-    let native_findings = crate::validate_native(result.ir());
+    let native_findings = crate::test_support::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     let design_findings = validation
         .findings
         .iter()
@@ -1959,4 +1906,73 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         })
         .collect::<Vec<_>>();
     assert!(design_findings.is_empty(), "{design_findings:#?}");
+}
+
+/// `TaperAngle2` states the draft of a second, independent side. A one-sided
+/// pad has no second side, so a malformed value there maps nowhere and the
+/// feature decodes; a two-sided pad carries it, so the same value refuses.
+#[test]
+fn a_second_side_draft_is_read_only_by_the_extent_that_carries_one() {
+    let document = |side_type: u32| {
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Pad" name="Pad" id="3"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Pad"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="{side_type}"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="Type2" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="120"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+
+    let one_sided = FcstdCodec.decode(
+        &mut Cursor::new(archive(&document(0))),
+        &DecodeOptions::default(),
+    );
+    assert!(
+        one_sided.is_ok(),
+        "a one-sided pad states no second side to receive TaperAngle2"
+    );
+
+    let two_sided = FcstdCodec.decode(
+        &mut Cursor::new(archive(&document(1))),
+        &DecodeOptions::default(),
+    );
+    let error = two_sided
+        .expect_err("a two-sided pad carries the second side's draft")
+        .to_string();
+    assert!(error.contains("TaperAngle2"), "{error}");
+}
+
+#[test]
+fn implicit_extrusion_length_preserves_a_large_finite_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Profile"/><Object type="Part::Extrusion" name="Extrusion"/></Objects>
+<ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object>
+<Object name="Extrusion"><Properties Count="4">
+<Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
+<Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1e200"/></Property>
+<Property name="LengthFwd" type="App::PropertyDistance"><Float value="0"/></Property>
+<Property name="LengthRev" type="App::PropertyDistance"><Float value="0"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(matches!(extrusion_definition(&result),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
+                termination: LinearTermination::Blind { length }, .. } }, ..
+        }) if length.get() == 1e200));
 }

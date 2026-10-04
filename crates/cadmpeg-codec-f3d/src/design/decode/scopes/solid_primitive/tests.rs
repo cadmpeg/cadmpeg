@@ -3,10 +3,52 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use crate::design::test_support::dump::*;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::primitives::DesignSolidPrimitive;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::parameters::DesignParameterOwner;
+
+#[test]
+fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
+    for value in [
+        "00000000-0000-0000-0000-000000000000",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        "00000000-0000-0000-0000-00000000000!",
+        "é0000000-0000-0000-0000-000000000000",
+        "short",
+    ] {
+        let mut bytes = u32::try_from(value.encode_utf16().count())
+            .unwrap()
+            .to_le_bytes()
+            .to_vec();
+        for code_unit in value.encode_utf16() {
+            bytes.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        let prior = crate::test_support::with_decode_context(|ctx| {
+            crate::bytes::lp_utf16_bounded_charged(
+                ctx,
+                &bytes,
+                0,
+                36..=36,
+                "retain F3D UTF-16 string",
+            )
+            .unwrap()
+        })
+        .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
+        assert_eq!(
+            crate::design::decode::text::fixed_guid_end(&bytes, 0),
+            prior
+        );
+        bytes.pop();
+        assert_eq!(crate::design::decode::text::fixed_guid_end(&bytes, 0), None);
+    }
+}
 
 #[test]
 fn named_solid_primitives_bind_ordered_parameter_owners() {
@@ -16,34 +58,46 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         local_ordinal: u32,
         value: f64,
     ) -> DesignParameterOwner {
-        DesignParameterOwner {
-            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 100,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        }
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+                byte_offset: u64::from(record_index) + 60,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal,
+                evaluated_value: value,
+                evaluated_value_offset: u64::from(record_index) + 100,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: local_ordinal,
+                variant: Some(0),
+                companion_record_index: record_index + 2,
+            },
+        )
+        .unwrap()
     }
 
-    let mut bytes = vec![0; 100];
+    let mut bytes = vec![0; 200];
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
     bytes[24] = 0;
     bytes[25] = 1;
     let mut box_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#12",
-        crate::records::feature::DesignFeatureKind::BoxPrimitive,
+        crate::records::feature::scope::DesignFeatureKind::BoxPrimitive,
         12,
     );
-    box_scope.frame_length = bytes.len() as u64;
-    box_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+    box_scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(bytes.len());
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let box_owners = vec![
         owner(12, 20, 0, 3.0),
         owner(12, 21, 1, 4.0),
@@ -51,40 +105,55 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         owner(12, 23, 3, 0.5),
         owner(12, 24, 4, -0.25),
     ];
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
         Some(DesignSolidPrimitive::Box(
-            crate::records::feature::DesignBoxPrimitive {
-                length: 3.0,
-                width: 4.0,
-                height: 2.0,
-                offset_x: 0.5,
-                offset_y: -0.25,
+            crate::records::feature::primitives::DesignBoxPrimitive {
+                length,
+                width,
+                height,
+                offset_x,
+                offset_y,
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 20,
                 ..
             }
-        ))
+        )) if length.get() == 3.0 && width.get() == 4.0 && height.get() == 2.0 && offset_x.get() == 0.5 && offset_y.get() == -0.25
     ));
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
     let mut cylinder_scope = box_scope;
-    cylinder_scope.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive.into();
+    cylinder_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
     cylinder_scope.record_index = 13;
-    cylinder_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
+    cylinder_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![30, 31]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
         Some(DesignSolidPrimitive::Cylinder(
-            crate::records::feature::DesignCylinderPrimitive {
-                height: 0.7,
-                diameter: 3.0,
+            crate::records::feature::primitives::DesignCylinderPrimitive {
+                height,
+                diameter,
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 20,
                 ..
             }
-        ))
+        )) if height.get() == 0.7 && diameter.get() == 3.0
     ));
 }
 
@@ -112,21 +181,25 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         value: f64,
         stream: &str,
     ) -> DesignParameterOwner {
-        DesignParameterOwner {
-            id: format!("f3d:{stream}:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("294".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 40,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        }
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:{stream}:owner#{record_index}"),
+                byte_offset: u64::from(record_index),
+                frame_length: 103,
+                class_tag: crate::records::references::DesignClassTag::try_from("294".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal,
+                evaluated_value: value,
+                evaluated_value_offset: u64::from(record_index) + 40,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: local_ordinal,
+                variant: None,
+                companion_record_index: record_index + 2,
+            },
+        )
+        .unwrap()
     }
 
     fn scope(
@@ -140,26 +213,50 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         let id = format!("f3d:{stream}:scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
-            crate::records::feature::DesignFeatureKind::CylinderPrimitive,
+            crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive,
             record_index,
         );
-        scope.byte_offset = 0;
-        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 0;
+                draft.reference_count_offset = draft.byte_offset + 9;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        scope.paired_byte_offset = frame_length as u64;
-        scope.frame_length = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+            crate::records::references::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.paired_byte_offset = u64_from_index(frame_length);
+                draft.frame_length = u64_from_index(frame_length);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(reference_members);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
         let (reference_count, _, kind, feature_ordinal, previous) = if frame_length == 352 {
             (174, 233, 241, 275, 306)
         } else {
             (302, 383, 391, 425, 456)
         };
-        scope.reference_count_offset = reference_count;
+        scope
+            .try_edit(|draft| {
+                draft.reference_count_offset = reference_count;
+                draft.layout_fixture_references();
 
-        scope.kind_offset = kind;
-        scope.feature_ordinal_offset = feature_ordinal;
-        scope.previous_history_state_id_offset = Some(previous);
+                draft.kind_offset = kind;
+                draft.feature_ordinal_offset = feature_ordinal;
+                draft.previous_history_state_id_offset = Some(previous);
+            })
+            .unwrap();
         scope
     }
 
@@ -194,20 +291,20 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
     assert!(matches!(
         exact_solid_primitive(
             &compact,
-            &IndexedRecordOffsets::build(&compact),
+            &crate::design::test_support::indexed_record_offsets_for_test(&compact),
             &compact_scope,
             &compact_owners,
         ),
         Some(DesignSolidPrimitive::Cylinder(
-            crate::records::feature::DesignCylinderPrimitive {
-                height: 0.7,
-                diameter: 3.0,
+            crate::records::feature::primitives::DesignCylinderPrimitive {
+                height,
+                diameter,
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 22,
                 transform: None,
                 ..
             }
-        ))
+        )) if height.get() == 0.7 && diameter.get() == 3.0
     ));
 
     for (class_tag, paired_class_tag) in [("297", "258"), ("375", "258"), ("414", "272")] {
@@ -243,27 +340,27 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         assert!(matches!(
             exact_solid_primitive(
                 &expanded,
-                &IndexedRecordOffsets::build(&expanded),
+                &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
                 &expanded_scope,
                 &expanded_owners,
             ),
             Some(DesignSolidPrimitive::Cylinder(
-                crate::records::feature::DesignCylinderPrimitive {
-                    height: 0.7,
-                    diameter: 3.0,
+                crate::records::feature::primitives::DesignCylinderPrimitive {
+                    height,
+                    diameter,
                     operation: DesignExtrudeOperation::Join,
                     operation_offset: 22,
-                    transform: Some(crate::records::Located { offset: 72, .. }),
+                    transform: Some(crate::records::identity::Located { offset: 72, .. }),
                     ..
                 }
-            ))
+            )) if height.get() == 0.7 && diameter.get() == 3.0
         ));
 
         let mut translated = expanded;
         translated[72 + 3 * 8..72 + 4 * 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert!(exact_solid_primitive(
             &translated,
-            &IndexedRecordOffsets::build(&translated),
+            &crate::design::test_support::indexed_record_offsets_for_test(&translated),
             &expanded_scope,
             &expanded_owners,
         )

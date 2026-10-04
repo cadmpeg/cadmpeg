@@ -1,9 +1,11 @@
 //! Compact-legacy 96-byte profile-roster tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::compact_legacy_96_profile_roster_curve_uses_complete_roster;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 
 fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
     let mut payload = vec![0; legacy_96::LEN + LEGACY_SKETCH_MARKER.len()];
@@ -48,18 +50,18 @@ fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
 
 #[test]
 fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
-    let entity = |id: &str, offset, coordinates_m, kind, object_index| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind, object_index| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle, None);
     let first = entity(
@@ -128,10 +130,16 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first-arc", "second-arc"]
     );
 
@@ -143,16 +151,29 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(&alternate_header, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &alternate_header,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first-arc", "second-arc"]
     );
 
     let mut equal_endpoints = profile_roster_payload([3, 3]);
     assert!(!compact_legacy_96_profile_roster_curve_uses_complete_roster(&equal_endpoints, 0));
-    assert!(roster_curve_endpoint_markers(&equal_endpoints, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &equal_endpoints,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 
     equal_endpoints[legacy_96::TAIL_STATE..legacy_96::TAIL_STATE + 2]
         .copy_from_slice(&u16::MAX.to_le_bytes());
@@ -178,5 +199,12 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         &out_of_range,
         0
     ));
-    assert!(roster_curve_endpoint_markers(&out_of_range, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &out_of_range,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 }

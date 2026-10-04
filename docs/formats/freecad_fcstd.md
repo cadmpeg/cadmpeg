@@ -273,7 +273,13 @@ id, an ordered postfix dictionary, a positive map-node count, and contiguous one
 The optional XML count is retained as native metadata and does not frame the map stream. The
 stream's map, child, and name counts delimit its records.
 Each node contains ordered indexed-name groups. A group contains child-map descriptors followed by
-one persistent-name chain per transient indexed element. Chains terminate with `0`; each name
+one persistent-name chain per transient indexed element. Each child-map descriptor has seven
+whitespace-delimited fields: child index, offset, count, tag, map index, postfix, and string-id list.
+Child index, offset, count, and map index are signed 32-bit decimal integers. Child index and offset
+are nonnegative. The tag is a signed decimal integer. Map index zero states no child map; a positive
+map index names a preceding node and is less than the current node's one-based index. The string-id
+list starts with `0` and appends decimal string ids separated by periods.
+Chains terminate with `0`; each name
 encodes a literal or dictionary-derived base, a postfix-dictionary index, and persistent string-id
 references. The final node owns the shape. Group order and name position establish `Face1`,
 `Edge1`, `Vertex1`, and the corresponding other topology-kind indices. Name position zero is

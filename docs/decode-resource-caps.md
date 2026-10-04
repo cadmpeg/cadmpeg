@@ -12,7 +12,7 @@ charges entities through `DecodeContext`. `cadmpeg-asm` has none.
 | Kind | Meaning                     | Enforcement                                                                                                                                                                            |
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | Format invariant            | Keep. A higher count is an unsupported form. An operator profile must not accept an illegal form or reject a legal file.                                                               |
-| 2    | Per-input allocation bound  | `bounded_len`, `View::read_counted`, or `req_take`. Do not add a `ResourceLimits` field.                                                                                               |
+| 2    | Per-input allocation bound  | `bounded_len`, `View::counted`, or `req_take`. Do not add a `ResourceLimits` field.                                                                                               |
 | 3    | Cumulative resource ceiling | Charge through `DecodeContext` (`charge_entities`, `admit_entities`, `charge_collection_items`, `charge_retained`, `reserve_scoped`, `alloc_filled`, `enter_nested`).                  |
 | 4    | Algorithmic work cap        | `ctx.work_budget(min(format_cap, policy.max_work_units))` / `charge_work`. CATIA `b5` object-stream selection and F3D arrangement walks already do this; do not duplicate those sites. |
 
@@ -71,7 +71,6 @@ constant, and `policy.rs` remains the authority when the two drift.
 | `cadmpeg-codec-rhino`    | `src/instances.rs`                     | `MAX_MEMBERS`                             | `1 << 20`           | 2    | bound       | Instance-definition member UUID list with checked_count_bytes.                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/hatch.rs`                         | `MAX_LOOPS`                               | `1 << 20`           | 2    | bound       | Hatch loop count; BoundedReader::counted against a five-byte minimum record.                                                                                        |
 | `cadmpeg-codec-rhino`    | `src/brep.rs`                          | `MAX_BREP_ITEMS`                          | `1 << 20`           | 2    | bound       | Per-array Brep record count; count() checks remaining payload.                                                                                                      |
-| `cadmpeg-codec-rhino`    | `src/brep.rs`                          | `MAX_BREP_DEPTH`                          | `32`                | 3    | charge      | Polymorphic Brep child nesting. Maps to max_recursion_depth. This layer has no session context today.                                                               |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                          | `MAX_LEVELS`                              | `64`                | 2    | bound       | SubD level count via capped_u32 from the remaining chunk.                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                          | `MAX_COMPONENTS_PER_LEVEL`                | `4_000_000`         | 2    | bound       | Per-level vertex+edge+face count; also checked against remaining/10.                                                                                                |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                          | `MAX_INCIDENT_COMPONENTS`                 | `65_535`            | 1    | keep        | u16 incident-component field width. A larger count is not a legal SubD record.                                                                                      |
@@ -83,7 +82,7 @@ constant, and `policy.rs` remains the authority when the two drift.
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                          | `MAX_DIMENSION`                           | `10_000`            | 2    | bound       | NURBS cage dimension field before control-net allocation.                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                          | `MAX_CONTROL_POINTS`                      | `1 << 20`           | 2    | bound       | Cage control-point count.                                                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                          | `MAX_SCALARS`                             | `1 << 24`           | 2    | bound       | Cage scalar count; also checked against remaining/8.                                                                                                                |
-| `cadmpeg-codec-rhino`    | `src/curves.rs`                        | `MAX_CURVE_DEPTH`                         | `32`                | 3    | charge      | Embedded curve/surface nesting. Maps to max_recursion_depth. This layer has no session context today.                                                               |
+| `cadmpeg-codec-rhino`    | `src/curves.rs`                        | `MAX_CURVE_DEPTH`                         | `32`                | 3    | charge      | Embedded curve/surface nesting uses enter_nested. The local depth slice refuses through the caller context.                                                               |
 | `cadmpeg-codec-rhino`    | `src/settings.rs`                      | `MAX_STRING_BYTES`                        | `1 << 20`           | 2    | bound       | UTF-8/UTF-16 string counts checked against reader.remaining().                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/settings.rs`                      | `MAX_ARRAY_ITEMS`                         | `1 << 16`           | 2    | bound       | Settings array counts via counted reads.                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                      | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`  | 3    | charge      | Per-stream inflate cap. Maps to max_decompressed_bytes_per_expand.                                                                                                  |
@@ -160,13 +159,13 @@ constant, and `policy.rs` remains the authority when the two drift.
 
 ## Totals
 
-Production constants: **122**.
+Production constants: **121**.
 
 | Kind | Meaning                     | Action      | Count |
 | ---- | --------------------------- | ----------- | ----- |
 | 1    | Format invariant            | keep        | 13    |
 | 2    | Per-input allocation bound  | bound       | 41    |
-| 3    | Cumulative resource ceiling | charge      | 32    |
+| 3    | Cumulative resource ceiling | charge      | 31    |
 | 4    | Algorithmic work cap        | work-budget | 36    |
 
 Excluded from the table: `cadmpeg-codec-catia` `MAX_ORIENTED_OPTIONS` and
@@ -195,5 +194,7 @@ the matching `ResourceLimits` field.
   `max_retained_bytes`. Instance expansion charges
   `max_collection_items` / `max_entities` / `max_recursion_depth`.
 - Inventor has only kind 2 constants. SAT has none.
-- Rhino `MAX_BREP_DEPTH` and `MAX_CURVE_DEPTH` have no session context at
-  the payload layer. They stay named recursion caps.
+- Rhino curve payloads use `enter_nested`; `MAX_CURVE_DEPTH` is a local
+  slice whose exhaustion must return a context-backed resource refusal.
+  Brep children decode through these context-taking curve/surface operations;
+  there is no separate `MAX_BREP_DEPTH` constant.

@@ -9,13 +9,36 @@ enum Encoding {
 
 /// Exact compact-index encoding, excluding the `ff` null token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CompactIndexAtom(Encoding);
+pub(crate) struct CompactIndexAtom(Encoding, u8);
+
+/// Serialize one retained compact token as its exact byte sequence.
+#[derive(Clone, Copy)]
+pub(crate) struct RawCompactIndex(pub(crate) CompactIndexAtom);
+
+impl serde::Serialize for RawCompactIndex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.0.raw(), serializer)
+    }
+}
+
+/// Reads one wire compact index, naming the field in the rejection message.
+pub(crate) fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
+    CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
+}
+
+/// Reads a row's compact indices from their wire values and raw tokens.
+pub(crate) fn row_indices<const N: usize>(
+    values: &[u32; N],
+    raw: &[Vec<u8>; N],
+) -> [Result<CompactIndexAtom, String>; N] {
+    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
+}
 
 impl CompactIndexAtom {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first().copied()? {
-            value @ 0..=0x7f => Some(Self(Encoding::Direct(value))),
-            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index))),
+            value @ 0..=0x7f => Some(Self(Encoding::Direct(value), 1)),
+            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index), 2)),
         }
     }
 
@@ -24,6 +47,10 @@ impl CompactIndexAtom {
             Encoding::Direct(value) => u32::from(value),
             Encoding::Extended(index) => index.value(),
         }
+    }
+
+    pub(crate) fn byte_len(self) -> u8 {
+        self.1
     }
 
     pub(crate) fn raw(&self) -> &[u8] {
@@ -68,7 +95,7 @@ pub(crate) struct PositionedIndex<'a, T, O> {
 pub(crate) struct ExtendedCompactIndex([u8; 2]);
 
 impl ExtendedCompactIndex {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes {
             [high @ 0x80..=0xfe, low, ..] => Some(Self([*high, *low])),
             _ => None,
@@ -83,10 +110,8 @@ impl ExtendedCompactIndex {
         &self.0
     }
 
-    // Validate the value against the same borrowed raw byte window used by the reader.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub(crate) fn from_wire(value: u32, raw: &[u8; 2]) -> Result<Self, &'static str> {
-        let index = Self::read(raw).ok_or("invalid two-byte compact index")?;
+    pub(crate) fn from_wire(value: u32, raw: [u8; 2]) -> Result<Self, &'static str> {
+        let index = Self::read(&raw).ok_or("invalid two-byte compact index")?;
         if index.value() != value {
             return Err("index/raw token: value mismatch");
         }
@@ -99,7 +124,7 @@ impl ExtendedCompactIndex {
 pub(crate) struct WrappedCompactIndex(ExtendedCompactIndex);
 
 impl WrappedCompactIndex {
-    pub(crate) fn read(raw: u32) -> Option<Self> {
+    pub(super) fn read(raw: u32) -> Option<Self> {
         let [marker, high, low, terminal] = raw.to_be_bytes();
         (marker == 0x3d && terminal == 0).then_some(())?;
         ExtendedCompactIndex::read(&[high, low]).map(Self)
@@ -129,13 +154,13 @@ pub(crate) struct LocatedCompactIndex<O = usize, T = CompactIndexAtom> {
 }
 
 impl LocatedCompactIndex {
-    pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
         Some(Self {
             atom: CompactIndexAtom::read(bytes.get(offset..)?)?,
             offset,
         })
     }
-    pub(crate) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
+    pub(super) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
         (0..N)
             .map(|_| {
                 let token = Self::read(bytes, *at)?;
@@ -150,8 +175,8 @@ impl LocatedCompactIndex {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NullableCompactIndex {
-    pub(crate) atom: Option<CompactIndexAtom>,
-    pub(crate) offset: usize,
+    pub(super) atom: Option<CompactIndexAtom>,
+    offset: usize,
 }
 
 impl NullableCompactIndex {
@@ -171,34 +196,67 @@ impl NullableCompactIndex {
 
 /// Nonempty members of a byte-counted lane reserving entries for its framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>);
+pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>, u8);
 
 impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
+    pub(crate) fn map_charged<U>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(T) -> Result<U, cadmpeg_core::CodecError>,
+    ) -> Result<CountedIndexMembers<U, RESERVED>, cadmpeg_core::CodecError> {
+        let count = self.0.len();
+        let operation = "NX mapped counted index members";
+        let mut mapped = ctx.collection_vec(count, operation)?;
+        for member in self.0 {
+            mapped.push(map(member)?);
+        }
+        Ok(CountedIndexMembers(mapped, self.1))
+    }
+    pub(super) fn try_map_charged<U>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(T) -> Result<Option<U>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
+        let count = self.0.len();
+        let operation = "NX resolved counted index members";
+        let mut mapped = ctx.collection_vec(count, operation)?;
+        for member in self.0 {
+            let Some(value) = map(member)? else {
+                return Ok(None);
+            };
+            mapped.push(value);
+        }
+        Ok(Some(CountedIndexMembers(mapped, self.1)))
+    }
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
         if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
             return Err("members: must be nonempty and fit the declared byte count");
         }
-        Ok(Self(members))
+        let count = u8::try_from(members.len() + usize::from(RESERVED))
+            .map_err(|_| "members: must be nonempty and fit the declared byte count")?;
+        Ok(Self(members, count))
     }
 
     pub(crate) fn declared_count(&self) -> u8 {
-        (self.0.len() + usize::from(RESERVED)) as u8
+        self.1
     }
 
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.0
     }
 
+    #[cfg(test)]
     pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
-        CountedIndexMembers(self.0.into_iter().map(f).collect())
+        CountedIndexMembers(self.0.into_iter().map(f).collect(), self.1)
     }
 
-    pub(crate) fn try_map<U>(
+    pub(super) fn try_map<U>(
         self,
         f: impl FnMut(T) -> Option<U>,
     ) -> Option<CountedIndexMembers<U, RESERVED>> {
         Some(CountedIndexMembers(
             self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?,
+            self.1,
         ))
     }
 }
@@ -214,7 +272,7 @@ impl<T, const RESERVED: u8> IntoIterator for CountedIndexMembers<T, RESERVED> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CompactIndexAtom, CountedIndexMembers, WrappedCompactIndex};
 
     #[test]
     fn compact_atoms_preserve_direct_and_extended_spellings() {

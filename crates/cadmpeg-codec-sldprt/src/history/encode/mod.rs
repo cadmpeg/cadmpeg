@@ -12,16 +12,23 @@ mod spin;
 mod support;
 mod surface;
 
+use self::misc::HelixDefinition;
+use self::solid::{ExtrudeDefinition, HoleDefinition};
+use self::spin::{LoftDefinition, LoftForm, LoftInterpolation, SweepDefinition};
+use self::surface::ShellDefinition;
 use crate::records::Feature;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole, UnresolvedFamily};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, UnresolvedFamily,
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Native XML kind plus parameter and property maps for a written feature.
 pub(super) struct NeutralFeatureEncoding {
     pub(super) kind: String,
-    pub(super) parameters: BTreeMap<String, String>,
-    pub(super) properties: BTreeMap<String, String>,
+    pub(super) parameters: BTreeMap<NonBlankString, String>,
+    pub(super) properties: BTreeMap<NonBlankString, String>,
 }
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
@@ -34,106 +41,107 @@ pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
     pub(super) feature_sources: &'context HashMap<&'feature_key FeatureId, &'source str>,
     pub(super) sketch_sources: &'context HashMap<cadmpeg_ir::sketches::SketchId, String>,
     pub(super) parent_sources: &'context HashMap<FeatureId, String>,
-    pub(super) resolved_parameter_names: &'context HashMap<String, HashSet<String>>,
+    pub(super) resolved_parameter_names:
+        &'context HashMap<String, HashSet<cadmpeg_core::text::NonBlankString>>,
 }
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
-        match &self.feature.definition {
-            FeatureDefinition::TreeNode {
-                role,
-                children,
-                active_child,
-            } => self.encode_tree_node(role, children, active_child),
-            FeatureDefinition::CosmeticThread {
+        match self.feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode { role, children }) => {
+                self.encode_tree_node(*role, children, children.active_child().as_ref())
+            }
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face,
                 diameter,
                 extent,
-            } => self.encode_cosmetic_thread(face, diameter, extent),
-            FeatureDefinition::SketchBlockDefinition { sketch } => {
-                self.encode_sketch_block_definition(sketch)
+            }) => self.encode_cosmetic_thread(face, diameter.as_ref(), extent.as_ref()),
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch }) => {
+                self.encode_sketch_block_definition(sketch.as_ref())
             }
-            FeatureDefinition::SketchBlockInstance { block, placement } => {
-                self.encode_sketch_block_instance(block, placement)
-            }
-            FeatureDefinition::Native { kind, parameters } => {
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+                block,
+                placement,
+            }) => self.encode_sketch_block_instance(block.as_ref(), placement.as_ref()),
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) => {
                 Ok(self.encode_native(kind, parameters))
             }
-            FeatureDefinition::StoredGeometry => Ok(self.encode_stored_geometry()),
-            FeatureDefinition::DerivedGeometry { .. } => self.encode_derived_geometry(),
-            FeatureDefinition::ImportedGeometry { .. } => self.encode_imported_geometry(),
-            FeatureDefinition::Primitive { .. } => self.encode_primitive(),
-            FeatureDefinition::DatumPrincipalPlane { plane } => {
-                self.encode_datum_principal_plane(plane)
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => {
+                Ok(self.encode_stored_geometry())
             }
-            FeatureDefinition::Unresolved {
+            FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { .. }) => {
+                self.encode_derived_geometry()
+            }
+            FeatureDefinition::Operation(FeatureOperation::ImportedGeometry { .. }) => {
+                self.encode_imported_geometry()
+            }
+            FeatureDefinition::Operation(FeatureOperation::Primitive { .. }) => {
+                self.encode_primitive()
+            }
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
+                self.encode_datum_principal_plane(*plane)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            } => self.encode_datum_plane_unresolved(),
-            FeatureDefinition::Unresolved {
+            }) => self.encode_datum_plane_unresolved(),
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::BoundarySurface,
-            } => self.encode_boundary_surface_unresolved(),
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => self.encode_datum_plane(origin, normal, u_axis),
-            FeatureDefinition::DatumOffsetPlane {
+            }) => self.encode_boundary_surface_unresolved(),
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
+                self.encode_datum_plane(frame)
+            }
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference,
                 distance,
-            } => self.encode_datum_offset_plane(reference, distance),
-            FeatureDefinition::TrimSurface {
-                faces, tool, keep, ..
-            } => self.encode_trim_surface(faces, tool, keep),
-            FeatureDefinition::ExtendSurface {
+            }) => self.encode_datum_offset_plane(reference.as_ref(), *distance),
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces,
+                tool,
+                keep,
+                ..
+            }) => self.encode_trim_surface(faces, tool, keep),
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
                 faces,
                 distance,
                 method,
-            } => self.encode_extend_surface(faces, distance, method),
-            FeatureDefinition::RuledSurface {
+            }) => self.encode_extend_surface(faces, distance.as_ref(), *method),
+            FeatureDefinition::Operation(FeatureOperation::RuledSurface {
                 edges,
                 support_faces,
                 mode,
                 angle,
                 alternate_face,
                 corner,
-            } => {
-                self.encode_ruled_surface(edges, support_faces, mode, angle, alternate_face, corner)
-            }
-            FeatureDefinition::DatumAxis { origin, direction } => {
+            }) => self.encode_ruled_surface(
+                edges,
+                support_faces,
+                mode,
+                angle.as_ref(),
+                *alternate_face,
+                corner.as_ref(),
+            ),
+            FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }) => {
                 self.encode_datum_axis(origin, direction)
             }
-            FeatureDefinition::DatumPoint { position, .. } => self.encode_datum_point(position),
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } => self.encode_datum_coordinate_system(origin, x_axis, y_axis, z_axis),
-            FeatureDefinition::EquationCurve {
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            } => self.encode_equation_curve(
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            ),
-            FeatureDefinition::ProjectedCurve {
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint { position, .. }) => {
+                self.encode_datum_point(position)
+            }
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) => {
+                self.encode_datum_coordinate_system(frame)
+            }
+            FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve }) => {
+                self.encode_equation_curve(curve)
+            }
+            FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
                 source,
                 target_faces,
                 direction,
                 bidirectional,
-            } => self.encode_projected_curve(source, target_faces, direction, bidirectional),
-            FeatureDefinition::CompositeCurve { segments, closed } => {
-                self.encode_composite_curve(segments, closed)
+            }) => self.encode_projected_curve(source, target_faces, direction, *bidirectional),
+            FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed }) => {
+                self.encode_composite_curve(segments, *closed)
             }
-            FeatureDefinition::Helix {
+            FeatureDefinition::Operation(FeatureOperation::Helix {
                 axis_origin,
                 axis_direction,
                 radius,
@@ -143,40 +151,42 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 clockwise,
                 segment_turns,
                 construction_style,
-            } => self.encode_helix(
+            }) => self.encode_helix(HelixDefinition {
                 axis_origin,
                 axis_direction,
                 radius,
                 shape,
                 revolutions,
                 start_angle,
-                clockwise,
-                segment_turns,
-                construction_style,
-            ),
-            FeatureDefinition::HelixNativeAxis {
+                clockwise: *clockwise,
+                segment_turns: segment_turns.as_ref(),
+                construction_style: construction_style.as_ref(),
+            }),
+            FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
                 axis_native_ref,
                 axial_rise,
                 pitch,
                 revolutions,
                 start_angle,
                 clockwise,
-            } => self.encode_helix_native_axis(
-                axis_native_ref,
-                axial_rise,
-                pitch,
-                revolutions,
-                start_angle,
-                clockwise,
+            }) => self.encode_helix_native_axis(
+                axis_native_ref.as_str(),
+                *axial_rise,
+                *pitch,
+                *revolutions,
+                *start_angle,
+                *clockwise,
             ),
-            FeatureDefinition::Wrap {
+            FeatureDefinition::Operation(FeatureOperation::Wrap {
                 profile,
                 face,
                 mode,
-            } => self.encode_wrap(profile, face, mode),
-            FeatureDefinition::Sketch { .. } => self.encode_sketch(),
-            FeatureDefinition::SpatialSketch { .. } => self.encode_spatial_sketch(),
-            FeatureDefinition::Extrude {
+            }) => self.encode_wrap(profile, face, mode),
+            FeatureDefinition::Operation(FeatureOperation::Sketch { .. }) => self.encode_sketch(),
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { .. }) => {
+                self.encode_spatial_sketch()
+            }
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 direction,
                 start,
@@ -187,41 +197,49 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 inner_wire_taper,
                 length_along_profile_normal,
                 allow_multi_profile_faces,
-            } => self.encode_extrude(
+            }) => self.encode_extrude(ExtrudeDefinition {
                 profile,
                 direction,
                 start,
                 extent,
                 op,
-                solid,
-                face_maker,
-                inner_wire_taper,
-                length_along_profile_normal,
-                allow_multi_profile_faces,
-            ),
-            FeatureDefinition::Fillet { groups } => self.encode_fillet(groups),
-            FeatureDefinition::Chamfer {
+                solid: *solid,
+                face_maker: face_maker.as_ref(),
+                inner_wire_taper: inner_wire_taper.as_ref(),
+                length_along_profile_normal: *length_along_profile_normal,
+                allow_multi_profile_faces: *allow_multi_profile_faces,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
+                self.encode_fillet(groups)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction,
-            } => self.encode_chamfer(groups, flip_direction),
-            FeatureDefinition::OffsetShape { .. } => self.encode_offset_shape(),
+            }) => self.encode_chamfer(groups, *flip_direction),
+            FeatureDefinition::Operation(FeatureOperation::OffsetShape { .. }) => {
+                self.encode_offset_shape()
+            }
             FeatureDefinition::PostProcess { .. } => self.encode_post_process(),
-            FeatureDefinition::PointGeometry { .. }
-            | FeatureDefinition::LineSegment { .. }
-            | FeatureDefinition::CircularArc { .. }
-            | FeatureDefinition::EllipticArc { .. }
-            | FeatureDefinition::Polyline { .. }
-            | FeatureDefinition::RegularPolygonCurve { .. }
-            | FeatureDefinition::PlanarPatch { .. }
-            | FeatureDefinition::FaceFromShapes { .. } => self.encode_curve_geometry(),
-            FeatureDefinition::Compound { .. }
-            | FeatureDefinition::RefineShape { .. }
-            | FeatureDefinition::ReverseShape { .. }
-            | FeatureDefinition::RuledBetweenCurves { .. }
-            | FeatureDefinition::SectionShape { .. }
-            | FeatureDefinition::MirrorShape { .. }
-            | FeatureDefinition::ProjectOnSurface { .. } => self.encode_shape_operation(),
-            FeatureDefinition::Shell {
+            FeatureDefinition::Operation(
+                FeatureOperation::PointGeometry { .. }
+                | FeatureOperation::LineSegment { .. }
+                | FeatureOperation::CircularArc { .. }
+                | FeatureOperation::EllipticArc { .. }
+                | FeatureOperation::Polyline { .. }
+                | FeatureOperation::RegularPolygonCurve { .. }
+                | FeatureOperation::PlanarPatch { .. }
+                | FeatureOperation::FaceFromShapes { .. },
+            ) => self.encode_curve_geometry(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Compound { .. }
+                | FeatureOperation::RefineShape { .. }
+                | FeatureOperation::ReverseShape { .. }
+                | FeatureOperation::RuledBetweenCurves { .. }
+                | FeatureOperation::SectionShape { .. }
+                | FeatureOperation::MirrorShape { .. }
+                | FeatureOperation::ProjectOnSurface { .. },
+            ) => self.encode_shape_operation(),
+            FeatureDefinition::Operation(FeatureOperation::Shell {
                 bodies,
                 removed_faces,
                 thickness,
@@ -230,112 +248,134 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 join,
                 resolve_intersections,
                 allow_self_intersections,
-            } => self.encode_shell(
-                bodies,
+            }) => self.encode_shell(ShellDefinition {
+                bodies: bodies.as_ref(),
                 removed_faces,
-                thickness,
-                outward,
-                mode,
-                join,
-                resolve_intersections,
-                allow_self_intersections,
-            ),
-            FeatureDefinition::Thicken {
+                thickness: thickness.as_ref(),
+                outward: *outward,
+                mode: mode.as_ref(),
+                join: join.as_ref(),
+                resolve_intersections: *resolve_intersections,
+                allow_self_intersections: *allow_self_intersections,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces,
                 thickness,
                 side,
-            } => self.encode_thicken(faces, thickness, side),
-            FeatureDefinition::OffsetSurface { faces, distance } => {
-                self.encode_offset_surface(faces, distance)
+            }) => self.encode_thicken(faces, thickness.as_ref(), side.as_ref()),
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) => {
+                self.encode_offset_surface(faces, distance.as_ref())
             }
-            FeatureDefinition::KnitSurface {
+            FeatureDefinition::Operation(FeatureOperation::KnitSurface {
                 faces,
                 merge_entities,
                 create_solid,
                 gap_tolerance,
-            } => self.encode_knit_surface(faces, merge_entities, create_solid, gap_tolerance),
-            FeatureDefinition::FilledSurface {
+            }) => self.encode_knit_surface(
+                faces,
+                *merge_entities,
+                *create_solid,
+                gap_tolerance.as_ref(),
+            ),
+            FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
                 continuity,
                 merge_result,
-            } => self.encode_filled_surface(boundary, support_faces, continuity, merge_result),
-            FeatureDefinition::Draft {
+            }) => self.encode_filled_surface(boundary, support_faces, continuity, *merge_result),
+            FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: face_selection,
                 anchor,
                 angle,
                 outward,
-            } => self.encode_draft(face_selection, anchor, angle, outward),
-            FeatureDefinition::Combine {
-                target,
-                tools,
+            }) => self.encode_draft(face_selection, anchor, angle.as_ref(), *outward),
+            FeatureDefinition::Operation(FeatureOperation::Combine {
+                operands,
+
                 op,
                 keep_tools,
-            } => self.encode_combine(target, tools, op, keep_tools),
-            FeatureDefinition::CutWithSurface {
+            }) => {
+                let target = operands.target();
+                let tools = operands.tools();
+                self.encode_combine(target, tools, *op, *keep_tools)
+            }
+            FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                 targets,
                 tools,
                 reverse,
-            } => self.encode_cut_with_surface(targets, tools, reverse),
-            FeatureDefinition::DeleteBody { bodies, mode } => self.encode_delete_body(bodies, mode),
-            FeatureDefinition::DeleteFace { faces, heal } => self.encode_delete_face(faces, heal),
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } => self.encode_replace_face(targets, replacements),
-            FeatureDefinition::MoveFace { faces, motion } => self.encode_move_face(faces, motion),
-            FeatureDefinition::MoveBody {
+            }) => self.encode_cut_with_surface(targets, tools, *reverse),
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
+                self.encode_delete_body(bodies, *mode)
+            }
+            FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, heal }) => {
+                self.encode_delete_face(faces, *heal)
+            }
+            FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
+                let targets = operands.targets();
+                let replacements = operands.replacements();
+                self.encode_replace_face(targets, replacements)
+            }
+            FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, motion }) => {
+                self.encode_move_face(faces, motion)
+            }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies,
                 translation,
                 rotation,
                 copies,
-            } => self.encode_move_body(bodies, translation, rotation, copies),
-            FeatureDefinition::Dome {
+            }) => self.encode_move_body(bodies, translation, rotation.as_ref(), *copies),
+            FeatureDefinition::Operation(FeatureOperation::Dome {
                 faces,
                 height,
                 elliptical,
                 reverse,
-            } => self.encode_dome(faces, height, elliptical, reverse),
-            FeatureDefinition::Flex { axis, mode } => self.encode_flex(axis, mode),
-            FeatureDefinition::Scale {
+            }) => self.encode_dome(faces, height.as_ref(), *elliptical, *reverse),
+            FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode }) => {
+                self.encode_flex(axis.as_ref(), mode)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Scale {
                 bodies,
                 center,
                 factors,
-            } => self.encode_scale(bodies, center, factors),
-            FeatureDefinition::Hole {
+            }) => self.encode_scale(bodies, center.as_ref(), factors),
+            FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile,
                 profile_filter,
                 face,
                 direction: _,
                 placements,
-                construction,
-                exit_kind,
-                diameter,
+                shape,
+
                 extent,
                 bottom,
                 taper_angle,
                 allow_multi_profile_faces,
-            } => self.encode_hole(
-                profile,
-                profile_filter,
-                face,
-                placements,
-                construction,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                allow_multi_profile_faces,
-            ),
-            FeatureDefinition::Revolve { construction, op } => {
-                self.encode_revolve(construction, op)
+            }) => {
+                let construction = shape.construction();
+                let exit_kind = shape.exit_kind();
+                let diameter = &shape.diameter();
+                self.encode_hole(HoleDefinition {
+                    profile: profile.as_ref(),
+                    profile_filter: profile_filter.as_ref(),
+                    face: face.as_ref(),
+                    placements: placements.as_deref(),
+                    construction,
+                    exit_kind: exit_kind.as_ref(),
+                    diameter: diameter.as_ref(),
+                    extent: extent.as_ref(),
+                    bottom: bottom.as_ref(),
+                    taper_angle: taper_angle.as_ref(),
+                    allow_multi_profile_faces: *allow_multi_profile_faces,
+                })
             }
-            FeatureDefinition::Sweep {
-                section,
-                sections,
+            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) => {
+                self.encode_revolve(construction, *op)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape,
+
                 path,
-                mode,
+
                 orientation,
                 transition,
                 transformation,
@@ -347,24 +387,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 taper,
                 scale,
                 allow_multi_profile_faces,
-            } => self.encode_sweep(
-                section,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                path_tangent,
-                linearize,
-                twist,
-                path_extent,
-                guide_rail,
-                taper,
-                scale,
-                allow_multi_profile_faces,
-            ),
-            FeatureDefinition::Loft {
+            }) => self.encode_sweep(SweepDefinition {
+                shape,
+                path: path.as_ref(),
+                orientation: orientation.as_ref(),
+                transition: transition.as_ref(),
+                transformation: transformation.as_ref(),
+                path_tangent: *path_tangent,
+                linearize: *linearize,
+                twist: twist.as_ref(),
+                path_extent: path_extent.as_ref(),
+                guide_rail: guide_rail.as_ref(),
+                taper: taper.as_ref(),
+                scale: scale.as_ref(),
+                allow_multi_profile_faces: *allow_multi_profile_faces,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections,
                 guidance,
                 op,
@@ -374,35 +412,32 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 linearize,
                 max_degree,
                 allow_multi_profile_faces,
-            } => self.encode_loft(
-                sections,
+            }) => self.encode_loft(LoftDefinition {
+                sections: sections.as_slice(),
                 guidance,
                 op,
-                closed,
-                solid,
-                ruled,
-                linearize,
-                max_degree,
-                allow_multi_profile_faces,
-            ),
-            FeatureDefinition::Rib { construction, op } => self.encode_rib(construction, op),
-            FeatureDefinition::Pattern { seeds, pattern } => self.encode_pattern(seeds, pattern),
-            FeatureDefinition::HelicalSweep { .. } => self.encode_helical_sweep(),
-            FeatureDefinition::Binder { .. } => self.encode_binder(),
-            FeatureDefinition::Unresolved {
-                family:
-                    UnresolvedFamily::DatumPoint
-                    | UnresolvedFamily::DatumCoordinateSystem
-                    | UnresolvedFamily::Loft
-                    | UnresolvedFamily::FreeformSurface
-                    | UnresolvedFamily::Draft,
+                form: LoftForm {
+                    closed: *closed,
+                    solid: *solid,
+                },
+                interpolation: LoftInterpolation {
+                    ruled: *ruled,
+                    linearize: *linearize,
+                },
+                max_degree: max_degree.as_ref(),
+                allow_multi_profile_faces: *allow_multi_profile_faces,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) => {
+                self.encode_rib(construction, *op)
             }
-            | FeatureDefinition::Block { .. }
-            | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::FaceBlend { .. }
-            | FeatureDefinition::SewBodies { .. }
-            | FeatureDefinition::TrimBodies { .. } => self.encode_explicitly_unsupported(),
-            _ => self.encode_unsupported(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
+                self.encode_pattern(seeds.as_slice(), pattern)
+            }
+            FeatureDefinition::Operation(FeatureOperation::HelicalSweep { .. }) => {
+                self.encode_helical_sweep()
+            }
+            FeatureDefinition::Operation(FeatureOperation::Binder { .. }) => self.encode_binder(),
+            FeatureDefinition::Operation(_) => self.encode_unsupported(),
         }
     }
 }

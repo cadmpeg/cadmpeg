@@ -8,23 +8,30 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
 use cadmpeg_ir::features::{
+    patterns::{PatternKind, PatternTransform},
     AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    PatternKind, SurfaceBoundary,
+    SurfaceBoundary,
 };
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{
+    ShadedVertex, Strip, Strips, Tessellation, TessellationId, TessellationLaneError,
+    TessellationMesh,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::identity::source_object_id_checked;
 
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
-use super::super::sketch::normalized;
-use super::super::surfaces::BrepTransferDiagnostics;
+use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
 use super::ir_features::{emit_model_features, finish_feature_transfers};
@@ -32,35 +39,39 @@ use super::ir_geometry::transfer_and_record_scanned_geometry;
 use super::meta::source_meta;
 use super::passthrough::{emit_legacy_arenas, preserve_passthrough_sections};
 use crate::decode::analytic::planes::placed_plane_surfaces;
+use crate::decode::source_carriers::SourceUnitCarriers;
 
 pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
-    pub(in super::super) coverage: cadmpeg_ir::Coverage,
+    pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
+    pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 pub(in super::super) fn build_container_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, coverage) = source_meta(scan, classification);
+    let (meta, coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations);
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
         unknowns,
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
+        transfer_losses: Vec::new(),
     })
 }
 
-pub(in super::super) fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
+pub(super) fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
     matches!(
         selection,
         FaceSelection::Unresolved
@@ -69,14 +80,14 @@ pub(in super::super) fn face_selection_has_unresolved_operands(selection: &FaceS
     )
 }
 
-pub(in super::super) fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
+pub(super) fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
     matches!(
         selection,
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_)
     )
 }
 
-pub(in super::super) fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
+fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
     matches!(
         selection,
         EdgeSelection::Unresolved
@@ -85,58 +96,52 @@ pub(in super::super) fn edge_selection_has_unresolved_operands(selection: &EdgeS
     )
 }
 
-pub(in super::super) fn path_has_unresolved_operands(path: &PathRef) -> bool {
+fn path_has_unresolved_operands(path: &PathRef) -> bool {
     matches!(
         path,
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. }
     )
 }
 
-pub(in super::super) fn surface_boundary_has_unresolved_operands(
-    boundary: &SurfaceBoundary,
-) -> bool {
+pub(super) fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundary) -> bool {
     match boundary {
         SurfaceBoundary::Edges(edges) => edge_selection_has_unresolved_operands(edges),
         SurfaceBoundary::Path(path) => path_has_unresolved_operands(path),
     }
 }
 
-pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
-            direction.is_none()
-        }
-        PatternKind::CurveDriven { path, .. } => {
+pub(super) fn pattern_kind_has_unresolved_operands<
+    C: cadmpeg_ir::features::patterns::CompositeStages,
+>(
+    pattern: &PatternKind<C>,
+) -> bool {
+    match pattern.definition() {
+        PatternTransform::Unresolved { .. } => true,
+        PatternTransform::Linear { direction, .. }
+        | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
+        PatternTransform::CurveDriven { path, .. } => {
             path.as_ref().is_none_or(path_has_unresolved_operands)
         }
-        PatternKind::Scale { center, .. } => {
-            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+        PatternTransform::Scale { center, .. } => {
+            matches!(
+                center,
+                cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
+            )
         }
-        PatternKind::Composite { stages } => {
-            stages.is_empty()
-                || stages
-                    .iter()
-                    .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern))
-        }
-        PatternKind::Circular { .. }
-        | PatternKind::CircularAngles { .. }
-        | PatternKind::Mirror { .. } => false,
-        PatternKind::MirrorReference { .. } => true,
+        PatternTransform::Composite { stages } => stages
+            .stages()
+            .iter()
+            .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern)),
+        PatternTransform::Circular { .. }
+        | PatternTransform::CircularAngles { .. }
+        | PatternTransform::Mirror { .. } => false,
+        PatternTransform::MirrorReference { .. } => true,
     }
 }
 
-pub(in super::super) fn linear_termination_has_unresolved_operands(
-    termination: &LinearTermination,
-) -> bool {
+pub(super) fn linear_termination_has_unresolved_operands(termination: &LinearTermination) -> bool {
     match termination {
-        LinearTermination::Unresolved => true,
+        LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, .. }
         | LinearTermination::OffsetFromFace { face, .. }
         | LinearTermination::ToShape { target: face } => {
@@ -149,18 +154,18 @@ pub(in super::super) fn linear_termination_has_unresolved_operands(
             )
         }
         LinearTermination::Blind { .. }
-        | LinearTermination::ThroughAll
-        | LinearTermination::ThroughNext
-        | LinearTermination::ToFirst
-        | LinearTermination::ToLast => false,
+        | LinearTermination::ThroughAll {}
+        | LinearTermination::ThroughNext {}
+        | LinearTermination::ToFirst {}
+        | LinearTermination::ToLast {} => false,
     }
 }
 
-pub(in super::super) fn angular_termination_has_unresolved_operands(
+pub(super) fn angular_termination_has_unresolved_operands(
     termination: &AngularTermination,
 ) -> bool {
     match termination {
-        AngularTermination::Unresolved => true,
+        AngularTermination::Unresolved {} => true,
         AngularTermination::ToFace { face, .. }
         | AngularTermination::OffsetFromFace { face, .. }
         | AngularTermination::ToShape { target: face } => {
@@ -172,285 +177,560 @@ pub(in super::super) fn angular_termination_has_unresolved_operands(
                 VertexSelection::Unresolved | VertexSelection::Native(_)
             )
         }
-        AngularTermination::ThroughAll
-        | AngularTermination::ThroughNext
-        | AngularTermination::ToFirst
-        | AngularTermination::ToLast
+        AngularTermination::ThroughAll {}
+        | AngularTermination::ThroughNext {}
+        | AngularTermination::ToFirst {}
+        | AngularTermination::ToLast {}
         | AngularTermination::Angle { .. } => false,
     }
 }
 
 fn transfer_reference_lines(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
-    let line3d_id_counts =
-        scan.references
-            .lines
-            .iter()
-            .fold(BTreeMap::<u32, usize>::new(), |mut counts, line| {
-                if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = &line.kind {
-                    *counts.entry(*entity_id).or_default() += 1;
-                }
-                counts
-            });
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
+    let mut line3d_id_counts = BTreeMap::<u32, usize>::new();
     for line in &scan.references.lines {
-        let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
-        let Some(direction) = normalized(direction) else {
+        if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = line.kind() {
+            ctx.admit_btree_entry(
+                &line3d_id_counts,
+                entity_id,
+                "creo reference line3d count nodes",
+            )?;
+            *line3d_id_counts.entry(*entity_id).or_default() += 1;
+        }
+    }
+    for line in &scan.references.lines {
+        let start: [f64; 3] = line.start().get().into();
+        let end: [f64; 3] = line.end().get().into();
+        let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
+        let Some((direction, _)) = crate::vecmath::normalize_with_length(direction) else {
             continue;
         };
-        let (family, native_identity) = match &line.kind {
-            crate::reference::ReferenceLineKind::Line => ("line", line.offset.to_string()),
+        let (id, object_id) = match line.kind() {
+            crate::reference::ReferenceLineKind::Line => (
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_LINE,
+                    line.offset,
+                    "creo reference line identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:line:{}", line.offset),
+                    "creo reference line object identity",
+                )?,
+            ),
             crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
-                let identity = if line3d_id_counts.get(entity_id) == Some(&1) {
-                    entity_id.to_string()
+                if line3d_id_counts.get(entity_id) == Some(&1) {
+                    (
+                        crate::identity::compose_checked::<CurveId>(
+                            ctx,
+                            &crate::identity::MDL_REF_INFO_LINE3D,
+                            entity_id,
+                            "creo reference line3d identity",
+                        )?,
+                        source_object_id_checked(
+                            ctx,
+                            format_args!("MdlRefInfo:line3d:{entity_id}"),
+                            "creo reference line3d object identity",
+                        )?,
+                    )
                 } else {
-                    format!("{entity_id}@{}", line.offset)
-                };
-                ("line3d", identity)
+                    (
+                        crate::identity::compose_checked::<CurveId>(
+                            ctx,
+                            &crate::identity::MDL_REF_INFO_LINE3D,
+                            format_args!("{entity_id}@{}", line.offset),
+                            "creo reference line3d identity",
+                        )?,
+                        source_object_id_checked(
+                            ctx,
+                            format_args!("MdlRefInfo:line3d:{entity_id}@{}", line.offset),
+                            "creo reference line3d object identity",
+                        )?,
+                    )
+                }
             }
         };
-        let prefix = format!("creo:mdl_ref_info:{family}#{native_identity}");
-        let id = CurveId::mint(prefix).expect("identity grammar");
         annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
-            line.offset as u64,
+            cadmpeg_core::decode::u64_from_index(line.offset),
             "reference_line",
             Exactness::Derived,
-        );
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(line.start[0], line.start[1], line.start[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
+        )?;
+        ctx.charge_entities(1, "admit Creo model curves")?;
+        source_carriers.admit_curve(
+            ctx,
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(line.start(), direction),
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:{family}:{native_identity}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        )?;
     }
+    Ok(())
 }
 
 fn transfer_reference_circles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
-    let circle_id_counts =
-        scan.references
-            .circles
-            .iter()
-            .fold(BTreeMap::<u32, usize>::new(), |mut counts, circle| {
-                *counts.entry(circle.entity_id).or_default() += 1;
-                counts
-            });
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
+    let mut circle_id_counts = BTreeMap::<u32, usize>::new();
     for circle in &scan.references.circles {
-        let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
-        let Some(reference) = normalized(radial) else {
+        ctx.admit_btree_entry(
+            &circle_id_counts,
+            &circle.entity_id,
+            "creo reference circle count nodes",
+        )?;
+        *circle_id_counts.entry(circle.entity_id).or_default() += 1;
+    }
+    for circle in &scan.references.circles {
+        let start: [f64; 3] = circle.start().get().into();
+        let center: [f64; 3] = circle.center().get().into();
+        let radial = std::array::from_fn(|axis| start[axis] - center[axis]);
+        let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
         };
-        let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
-            circle.entity_id.to_string()
+        let (id, object_id) = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
+            (
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_ARC_Z,
+                    circle.entity_id,
+                    "creo reference circle identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:arc_z:{}", circle.entity_id),
+                    "creo reference circle object identity",
+                )?,
+            )
         } else {
-            format!("{}@{}", circle.entity_id, circle.offset)
+            (
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_ARC_Z,
+                    format_args!("{}@{}", circle.entity_id, circle.offset),
+                    "creo reference circle identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:arc_z:{}@{}", circle.entity_id, circle.offset),
+                    "creo reference circle object identity",
+                )?,
+            )
         };
-        let id = CurveId::mint(format!("creo:mdl_ref_info:arc_z#{native_identity}"))
-            .expect("identity grammar");
         annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
-            circle.offset as u64,
+            cadmpeg_core::decode::u64_from_index(circle.offset),
             "reference_circle",
             Exactness::Derived,
-        );
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(circle.center[0], circle.center[1], circle.center[2]),
-                axis: Vector3::new(circle.axis[0], circle.axis[1], circle.axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius: circle.radius,
+        )?;
+        ctx.charge_entities(1, "admit Creo model curves")?;
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis(), reference)
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                )
+            })?;
+        source_carriers.admit_curve(
+            ctx,
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        circle.center(),
+                        frame,
+                        circle.radius(),
+                    ),
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:arc_z:{native_identity}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        )?;
     }
+    Ok(())
 }
 
 fn transfer_reference_ellipses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
-    let ellipse_id_counts = scan.references.ellipses.iter().fold(
-        BTreeMap::<u32, usize>::new(),
-        |mut counts, ellipse| {
-            *counts.entry(ellipse.source_entity_id).or_default() += 1;
-            counts
-        },
-    );
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
+    let mut ellipse_id_counts = BTreeMap::<u32, usize>::new();
     for ellipse in &scan.references.ellipses {
-        let native_identity = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
-            ellipse.source_entity_id.to_string()
+        ctx.admit_btree_entry(
+            &ellipse_id_counts,
+            &ellipse.source_entity_id,
+            "creo reference ellipse count nodes",
+        )?;
+        *ellipse_id_counts
+            .entry(ellipse.source_entity_id)
+            .or_default() += 1;
+    }
+    for ellipse in &scan.references.ellipses {
+        let (id, object_id) = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
+            (
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_CONIC,
+                    ellipse.source_entity_id,
+                    "creo reference ellipse identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:conic:{}", ellipse.source_entity_id),
+                    "creo reference ellipse object identity",
+                )?,
+            )
         } else {
-            format!("{}@{}", ellipse.source_entity_id, ellipse.offset)
+            (
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_CONIC,
+                    format_args!("{}@{}", ellipse.source_entity_id, ellipse.offset),
+                    "creo reference ellipse identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!(
+                        "MdlRefInfo:conic:{}@{}",
+                        ellipse.source_entity_id, ellipse.offset
+                    ),
+                    "creo reference ellipse object identity",
+                )?,
+            )
         };
-        let id = CurveId::mint(format!("creo:mdl_ref_info:conic#{native_identity}"))
-            .expect("identity grammar");
         annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
-            ellipse.offset as u64,
+            cadmpeg_core::decode::u64_from_index(ellipse.offset),
             "reference_ellipse",
             Exactness::Derived,
-        );
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Ellipse {
-                center: Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
-                axis: Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
-                major_direction: Vector3::new(
-                    ellipse.major_direction[0],
-                    ellipse.major_direction[1],
-                    ellipse.major_direction[2],
-                ),
-                major_radius: ellipse.major_radius,
-                minor_radius: ellipse.minor_radius,
+        )?;
+        ctx.charge_entities(1, "admit Creo model curves")?;
+        source_carriers.admit_curve(
+            ctx,
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                        ellipse.center(),
+                        cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                            ellipse.axis(),
+                            ellipse.major_direction(),
+                        )
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+                            )
+                        })?,
+                        ellipse.major_radius(),
+                        ellipse.minor_radius(),
+                    )
+                    .map_err(CodecError::malformed)?,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:conic:{native_identity}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        )?;
     }
+    Ok(())
+}
+
+fn display_strip_error(
+    ctx: &DecodeContext<'_>,
+    offset: usize,
+    detail: impl std::fmt::Display,
+) -> Result<CodecError, CodecError> {
+    Ok(CodecError::Malformed(ctx.format_retained(
+        format_args!("SolidPrimdata display triangle strip at byte {offset}: {detail}"),
+        "creo display tessellation malformed text",
+    )?))
+}
+
+fn admitted_display_strips<V>(
+    ctx: &DecodeContext<'_>,
+    vertices: Vec<V>,
+    spans: &[u32],
+) -> Result<Option<Strips<V>>, CodecError> {
+    let mut remaining = vertices.into_iter();
+    let mut strips = Vec::new();
+    ctx.reserve_vec(
+        &mut strips,
+        spans.len(),
+        "creo display tessellation strip rows",
+    )?;
+    for span in spans {
+        let Ok(count) = usize::try_from(*span) else {
+            return Ok(None);
+        };
+        let mut run = Vec::new();
+        ctx.reserve_vec(
+            &mut run,
+            count.min(remaining.len()),
+            "creo display tessellation strip vertices",
+        )?;
+        for _ in 0..count {
+            let Some(vertex) = remaining.next() else {
+                return Ok(None);
+            };
+            run.push(vertex);
+        }
+        let Some(strip) = Strip::new(run) else {
+            return Ok(None);
+        };
+        strips.push(strip);
+    }
+    if remaining.next().is_some() {
+        return Ok(None);
+    }
+    Ok(Strips::new(strips))
 }
 
 fn transfer_display_tessellations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
+    let length_scale = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
-        let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
-        let mut triangles = Vec::new();
-        let mut base = 0u32;
-        for length in &strip.strip_lengths {
-            for index in 0..length.saturating_sub(2) {
-                let a = base + index;
-                let triangle = if index % 2 == 0 {
-                    [a, a + 1, a + 2]
-                } else {
-                    [a, a + 2, a + 1]
-                };
-                triangles.push(triangle);
-            }
-            base += length;
-        }
+        let id: TessellationId = crate::identity::compose_checked(
+            ctx,
+            &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
+            strip.offset,
+            "creo display tessellation identity",
+        )?;
         annotate(
+            ctx,
             annotations,
-            &id,
+            id.as_str(),
             "SolidPrimdata",
-            strip.offset as u64,
+            cadmpeg_core::decode::u64_from_index(strip.offset),
             "display_triangle_strip",
             Exactness::Derived,
-        );
-        ir.model.tessellations.push(
-            Tessellation::from_decoded(
-                id,
-                strip
-                    .positions
-                    .iter()
-                    .map(|point| Point3::new(point[0], point[1], point[2]))
-                    .collect(),
-                triangles,
-                strip.strip_lengths.clone(),
-                strip
-                    .normals
-                    .iter()
-                    .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
-                    .collect(),
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("decoded Creo triangle strip is a valid tessellation"),
-        );
+        )?;
+        ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let mut positions = Vec::new();
+        ctx.reserve_vec(
+            &mut positions,
+            strip.positions().len(),
+            "creo display tessellation positions",
+        )?;
+        for position in strip.positions() {
+            let mut point = Point3::from(position.get());
+            if let Some(scale) = length_scale {
+                point = Point3::new(
+                    point.x * scale.get(),
+                    point.y * scale.get(),
+                    point.z * scale.get(),
+                );
+                if !point.is_finite() {
+                    return Err(CodecError::NotImplemented(ctx.format_retained(
+                        format_args!("SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters", strip.offset),
+                        "creo display tessellation overflow text",
+                    )?));
+                }
+            }
+            let Some(point) = FinitePoint3::new(point) else {
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    "vertices contain a non-finite coordinate",
+                )?);
+            };
+            positions.push(point);
+        }
+        let mesh = if let Some(normals) = strip.normals() {
+            let mut rows = Vec::new();
+            ctx.reserve_vec(
+                &mut rows,
+                positions.len(),
+                "creo display tessellation shaded rows",
+            )?;
+            for (position, normal) in positions.into_iter().zip(normals) {
+                let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
+                    return Err(display_strip_error(
+                        ctx,
+                        strip.offset,
+                        "normals contain a non-finite coordinate",
+                    )?);
+                };
+                rows.push(ShadedVertex { position, normal });
+            }
+            let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())? else {
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    TessellationLaneError::Strips {
+                        spans: strip.strip_lengths().len(),
+                    },
+                )?);
+            };
+            TessellationMesh::ShadedStrips { strips }
+        } else {
+            // An absent normal lane is an unshaded strip set.
+            let Some(strips) = admitted_display_strips(ctx, positions, strip.strip_lengths())?
+            else {
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    TessellationLaneError::Strips {
+                        spans: strip.strip_lengths().len(),
+                    },
+                )?);
+            };
+            TessellationMesh::Strips { strips }
+        };
+        let tessellation = match Tessellation::from_parts(id, mesh, Vec::new()) {
+            Ok(tessellation) => tessellation,
+            Err(error) => return Err(display_strip_error(ctx, strip.offset, error)?),
+        };
+        ctx.reserve_vec(&mut ir.model.tessellations, 1, "creo model tessellations")?;
+        ir.model.tessellations.push(tessellation);
     }
+    Ok(())
 }
 
 fn transfer_datum_plane_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
-        let normal = plane.plane.normal();
-        let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
-            .expect("identity grammar");
+        let normal = plane.plane().normal();
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::ACTDATUM_SURFACE,
+            plane.id,
+            "creo datum plane surface identity",
+        )?;
         annotate(
+            ctx,
             annotations,
             &id,
             "ActDatums",
-            plane.offset_in_payload as u64,
+            cadmpeg_core::decode::u64_from_index(plane.offset_in_payload),
             "datum_plane_outline",
             Exactness::Derived,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(
-                    normal[0] * plane.plane.offset,
-                    normal[1] * plane.plane.offset,
-                    normal[2] * plane.plane.offset,
-                ),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                    normal[0], normal[1], normal[2],
+        )?;
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
+        source_carriers.admit_surface(
+            ctx,
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(
+                            normal[0] * plane.plane().offset(),
+                            normal[1] * plane.plane().offset(),
+                            normal[2] * plane.plane().offset(),
+                        ),
+                        Vector3::from(normal),
+                        cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
+                    )
+                    .map_err(CodecError::malformed)?,
                 )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: source_object_id_checked(
+                        ctx,
+                        format_args!("ActDatums:{}", plane.id),
+                        "creo datum plane object identity",
+                    )?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("ActDatums:{}", plane.id),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        )?;
     }
+    Ok(())
 }
 
 fn transfer_placed_plane_surfaces_into_ir(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
-    for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
-            .expect("identity grammar");
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
+    for frame in &scan.planes.local_systems {
+        if frame.frame().cross_overflow {
+            return Err(CodecError::NotImplemented(ctx.format_retained(
+                format_args!("Creo plane local system at byte {} has a cross product outside the representable range", frame.offset),
+                "creo plane overflow refusal text",
+            )?));
+        }
+    }
+    for (
+        surface_id,
+        crate::decode::analytic::planes::PlacedPlaneSurface {
+            plane,
+            u_axis,
+            offset,
+        },
+    ) in placed_plane_surfaces(ctx, scan)?
+    {
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            surface_id,
+            "creo placed plane surface identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -472,31 +752,45 @@ fn transfer_placed_plane_surfaces_into_ir(
             "plane_local_system"
         };
         annotate(
+            ctx,
             annotations,
             &id,
             "VisibGeom",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             tag,
             Exactness::Derived,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+        )?;
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
+        source_carriers.admit_surface(
+            ctx,
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::from(plane.origin),
+                        Vector3::from(plane.normal),
+                        Vector3::from(u_axis),
+                    )
+                    .map_err(CodecError::malformed)?,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: source_object_id_checked(
+                        ctx,
+                        format_args!("VisibGeom:{surface_id}"),
+                        "creo placed plane object identity",
+                    )?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{surface_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        )?;
     }
+    Ok(())
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
@@ -505,52 +799,69 @@ pub(in super::super) fn build_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, mut coverage) = source_meta(scan, classification);
+    let (meta, mut coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
-    let mut brep_diagnostics = BrepTransferDiagnostics::default();
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations);
-    emit_reference_arenas(scan, &mut ir, &mut annotations)?;
-    transfer_reference_lines(scan, &mut ir, &mut annotations);
-    transfer_reference_circles(scan, &mut ir, &mut annotations);
-    transfer_reference_ellipses(scan, &mut ir, &mut annotations);
-    transfer_display_tessellations(scan, &mut ir, &mut annotations);
-    transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations);
-    transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations);
-    transfer_and_record_scanned_geometry(
+    let mut transfer_losses = Vec::new();
+    let length_scale_mm = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
+    let mut source_carriers = SourceUnitCarriers::new(length_scale_mm);
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    emit_reference_arenas(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_lines(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_reference_circles(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_placed_plane_surfaces_into_ir(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut source_carriers,
+    )?;
+    let brep_diagnostics = transfer_and_record_scanned_geometry(
         ctx,
         scan,
         &mut ir,
         &mut annotations,
         &mut coverage,
-        &mut brep_diagnostics,
+        &mut transfer_losses,
+        &mut source_carriers,
     )?;
-    let geometry_generator_feature_count = emit_model_features(scan, &mut ir, &mut annotations);
-    let (feature_result_topology_count, feature_result_edge_count) =
-        finish_feature_transfers(scan, &mut ir, &mut annotations, &mut coverage);
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
-    if let Some(length_scale_mm) = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
-    {
-        super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
-    }
+    let geometry_generator_feature_count =
+        emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
+    let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut coverage,
+        &mut source_carriers,
+    )?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     collect_feature_coverage(
+        ctx,
         scan,
         &ir,
         geometry_generator_feature_count,
         feature_result_topology_count,
         feature_result_edge_count,
         &mut coverage,
-    );
+    )?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
         unknowns,
         coverage,
         brep_diagnostics,
+        transfer_losses,
     })
 }
+
+#[cfg(test)]
+mod tests;

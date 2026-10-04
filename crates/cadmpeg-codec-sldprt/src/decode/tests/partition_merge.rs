@@ -2,12 +2,31 @@
 //! Partition/deltas merge, override, and topology-recovery decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::sldprt_with_partition_and_deltas;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::bridge_owned;
+use crate::test_support::parasolid::entity51;
+use crate::test_support::parasolid::entity53_color;
+use crate::test_support::parasolid::face_color_definition;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::prefixed_edge_triangle_body;
+use crate::test_support::parasolid::suffix_prefixed_edge_triangle_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::triangle_body_with_overlapping_point;
+use crate::test_support::parasolid::tripled_triangle_body;
+use crate::test_support::parasolid::untyped_triangle;
+use crate::test_support::parasolid::world_point;
+use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
 use crate::SldprtCodec;
 
 #[test]
@@ -29,7 +48,7 @@ fn decode_merges_partition_and_deltas_records() {
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 2000.0));
+        .any(|point| point.position().get().x == 2000.0));
 }
 
 #[test]
@@ -50,7 +69,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
 
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.shells[0].faces.len(), 1);
+    assert_eq!(result.ir().model.shells[0].faces().len(), 1);
     assert!(!result
         .report()
         .losses
@@ -100,12 +119,182 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+}
+
+#[test]
+fn merged_face_color_annotations_retain_site_owners() {
+    let mut first = face_color_definition();
+    first.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    first.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    first.extend(owned_triangle(0, 700, 0.0));
+    let mut second = face_color_definition();
+    second.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
+    second.extend(entity53_color(901, [0.75, 0.5, 0.25]));
+    second.extend(owned_triangle(0, 701, 10.0));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &first),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
+    ));
+
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    let provenance = &result.source_fidelity().annotations.provenance;
+    let first = provenance
+        .iter()
+        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#900@"))
+        .expect("first merged face color provenance");
+    assert_eq!(first.1.stream(), "Contents/Config-0-Partition");
+    let second = provenance
+        .iter()
+        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#901@"))
+        .expect("second merged face color provenance");
+    assert_eq!(second.1.stream(), "Contents/Config-1-Partition");
+}
+
+#[test]
+fn merged_face_colors_keep_same_site_local_attributes_distinct() {
+    let mut first = face_color_definition();
+    first.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    first.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    first.extend(owned_triangle(0, 700, 0.0));
+    let mut second = face_color_definition();
+    second.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    second.extend(entity53_color(900, [0.75, 0.5, 0.25]));
+    second.extend(owned_triangle(0, 701, 10.0));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &first),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
+    ));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let colors = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter(|appearance| appearance.schema.as_deref() == Some("entity-53"))
+        .map(|appearance| appearance.base_color.expect("entity-53 color"))
+        .collect::<Vec<_>>();
+    assert_eq!(colors.len(), 2);
+    assert!(colors.contains(&cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap()));
+    assert!(colors.contains(&cadmpeg_ir::topology::Color::new(0.75, 0.5, 0.25, 1.0).unwrap()));
+}
+
+#[test]
+fn merged_unbound_face_colors_keep_site_local_attributes_distinct() {
+    let mut first = face_color_definition();
+    first.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    first.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    first.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
+    first.extend(entity53_color(901, [0.1, 0.2, 0.3]));
+    first.extend(owned_triangle(0, 700, 0.0));
+    let mut second = face_color_definition();
+    second.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    second.extend(entity53_color(900, [0.75, 0.5, 0.25]));
+    second.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
+    second.extend(entity53_color(901, [0.9, 0.8, 0.7]));
+    second.extend(owned_triangle(0, 700, 10.0));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &first),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
+    ));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let unbound = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter(|appearance| {
+            appearance.schema.as_deref() == Some("entity-53")
+                && appearance.id.as_str().contains("#901@")
+        })
+        .map(|appearance| appearance.base_color.expect("entity-53 color"))
+        .collect::<Vec<_>>();
+    assert_eq!(unbound.len(), 2);
+    assert!(unbound.contains(&cadmpeg_ir::topology::Color::new(0.1, 0.2, 0.3, 1.0).unwrap()));
+    assert!(unbound.contains(&cadmpeg_ir::topology::Color::new(0.9, 0.8, 0.7, 1.0).unwrap()));
 }
 
 #[test]
 fn merged_opaque_geometry_retains_its_owning_site() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
     let mut source = outer_header();
     source.extend(make_block(
@@ -126,7 +315,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             &untyped_triangle(10.0),
         ),
     ));
-    let expected_records = container::scan_bytes(&source)
+    let expected_records = crate::test_support::container::scan(&source)
         .blocks
         .iter()
         .map(|block| {
@@ -145,9 +334,9 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .surfaces
         .iter()
         .map(|surface| {
-            let SurfaceGeometry::Unknown {
+            let Some(SolvedSurfaceGeometry::Unknown {
                 record: Some(record),
-            } = &surface.geometry
+            }) = surface.geometry.solved()
             else {
                 panic!("site surface is not bound to opaque source bytes");
             };
@@ -160,9 +349,9 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .curves
         .iter()
         .map(|curve| {
-            let CurveGeometry::Unknown {
+            let Some(SolvedCurveGeometry::Unknown {
                 record: Some(record),
-            } = &curve.geometry
+            }) = curve.geometry.solved()
             else {
                 panic!("site curve is not bound to opaque source bytes");
             };
@@ -190,9 +379,13 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         assert!(unknowns
             .iter()
             .find(|unknown| unknown.id == record)
-            .is_some_and(|unknown| unknown.links.contains(&geometry)));
+            .is_some_and(|unknown| { unknown.links.iter().any(|link| link.as_str() == geometry) }));
     }
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -213,29 +406,68 @@ fn deltas_full_record_overrides_partition_record() {
         .find(|point| point.id.as_str().ends_with("#60"))
         .expect("overridden point");
 
-    assert_eq!(point.position.x, 2000.0);
+    assert_eq!(point.position().get().x, 2000.0);
 }
 
 #[test]
 fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let partition = triangle_body();
     let deltas = bridge_owned(10, 120, 200, 700);
     let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
     let deltas_payload = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &deltas);
-    let partition_header = crate::parasolid::stream_header(&partition_payload).unwrap();
-    let deltas_header = crate::parasolid::stream_header(&deltas_payload).unwrap();
+    let partition_header = crate::parasolid::stream_header(&ctx, &partition_payload)
+        .unwrap()
+        .unwrap();
+    let deltas_header = crate::parasolid::stream_header(&ctx, &deltas_payload)
+        .unwrap()
+        .unwrap();
 
-    let decoded = crate::brep::decode_bodies(
+    let decoded = crate::brep::graph::decode_bodies(
+        &ctx,
         &[
             (&deltas_payload, &deltas_header),
             (&partition_payload, &partition_header),
         ],
-        "precedence",
-    );
+        &cadmpeg_ir::stream_name!("precedence"),
+    )
+    .expect("valid exactness fields");
 
     assert_eq!(decoded.faces.len(), 1);
     assert_eq!(decoded.faces[0].id.as_str(), "sldprt:brep:face#10");
     assert_eq!(decoded.faces[0].surface.as_str(), "sldprt:brep:surf#10");
+}
+
+#[test]
+fn partition_stream_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let arena = DecodeArena::new();
+    let (header_ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+            .expect("header context");
+    let header = crate::parasolid::stream_header(&header_ctx, &payload)
+        .expect("header read")
+        .expect("header");
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+    assert!(matches!(
+        crate::brep::graph::decode_bodies(
+            &ctx,
+            &[(&payload, &header)],
+            &cadmpeg_ir::stream_name!("precedence"),
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]
@@ -254,8 +486,9 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .model
         .points
         .iter()
-        .all(|point| point.position.x != 10_000.0));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        .all(|point| point.position().get().x != 10_000.0));
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -281,7 +514,11 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -307,7 +544,10 @@ fn deltas_point_index_does_not_replace_partition_coordinates() {
         .iter()
         .find(|point| point.id.as_str().ends_with("#60"))
         .unwrap();
-    assert_eq!(point.position, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        point.position().get(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+    );
 }
 
 #[test]
@@ -336,30 +576,26 @@ fn decode_recovers_tripled_deltas_topology() {
 
 #[test]
 fn decode_resolves_prefixed_deltas_edge_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let mut cur = Cursor::new(sldprt_with_body(&prefixed_edge_triangle_body()));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    )));
 }
 
 #[test]
 fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let mut cur = Cursor::new(sldprt_with_body(&suffix_prefixed_edge_triangle_body()));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    )));
 }

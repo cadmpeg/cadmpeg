@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden inspect and decode snapshots over field-built CFB declarations.
 //!
-//! Inputs are constructed in code by [`crate::test_support::fixture`] and
-//! [`crate::test_support::primary_envelope_fixture`]. Shared harness:
+//! Inputs are constructed in code by [`crate::test_support::test_fixtures::fixture`] and
+//! [`crate::test_support::test_fixtures::primary_envelope_fixture`]. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
+
+use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 
@@ -28,10 +30,13 @@ fn branches() -> [Branch; 2] {
 
 fn inputs() -> Vec<(String, Vec<u8>)> {
     vec![
-        ("structural".to_string(), crate::test_support::fixture(true)),
+        (
+            "structural".to_string(),
+            crate::test_support::test_fixtures::fixture(true),
+        ),
         (
             "primary".to_string(),
-            crate::test_support::primary_envelope_fixture(),
+            crate::test_support::test_fixtures::primary_envelope_fixture(),
         ),
     ]
 }
@@ -46,11 +51,14 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
-        Ok(result) => serde_json::json!({
-            "ir": result.ir(),
-            "report": result.report(),
-            "source_fidelity": result.source_fidelity(),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": result.ir(),
+                "report": result.report(),
+                "source_fidelity": result.source_fidelity(),
+            })
+        }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)

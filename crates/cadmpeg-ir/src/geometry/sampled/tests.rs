@@ -1,0 +1,628 @@
+// SPDX-License-Identifier: Apache-2.0
+use crate::math::Point3;
+
+#[test]
+fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
+    use crate::geometry::sampled::{
+        PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+    };
+    let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let parameterized = |parameters: [f64; 2]| PolylineSamples::Parameterized {
+        vertices: points
+            .iter()
+            .copied()
+            .zip(parameters)
+            .map(|(point, parameter)| PolylineVertex { parameter, point })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("nonempty polyline fixture"),
+    };
+    assert!(PolylineCurve::new(
+        parameterized([1.0, 1.0]),
+        0.0,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polyline construction admission")
+    .is_err());
+    assert!(PolylineCurve::new(
+        parameterized([0.0, f64::INFINITY]),
+        0.0,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polyline construction admission")
+    .is_err());
+    assert!(PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: points
+                .clone()
+                .try_into()
+                .expect("nonempty polyline fixture")
+        },
+        -1.0,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polyline construction admission")
+    .is_err());
+    let mut polyline = PolylineCurve::new(
+        parameterized([2.0, 1.0]),
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .unwrap();
+    let original = polyline.clone();
+    assert!(polyline
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                point.x = f64::NAN;
+                Ok(())
+            })
+        })
+        .is_err());
+    assert_eq!(polyline, original);
+    assert!(polyline
+        .edit_samples(|samples| {
+            if let PolylineSamples::Parameterized { vertices } = samples {
+                vertices[1].parameter = 2.0;
+            }
+            Ok(())
+        })
+        .is_err());
+    assert_eq!(polyline, original);
+    assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());
+    assert_eq!(polyline, original);
+    let mut wire = serde_json::to_value(&polyline).unwrap();
+    assert_eq!(wire["samples"]["kind"], "parameterized");
+    assert_eq!(
+        wire["samples"]["vertices"][0]["parameter"],
+        serde_json::json!(2.0)
+    );
+    assert_eq!(
+        serde_json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
+        polyline
+    );
+    // A parameter travels in its own sample row, so a parameter list that does
+    // not match the sample count has no spelling; a repeated parameter is still
+    // refused by the monotonic mint.
+    wire["samples"]["vertices"][1]["parameter"] = serde_json::json!(2.0);
+    assert!(serde_json::from_value::<PolylineCurve>(wire.clone()).is_err());
+    wire["samples"]["parameters"] = serde_json::json!([1.0, 1.0]);
+    assert!(serde_json::from_value::<PolylineCurve>(wire).is_err());
+    let mut surface = PolygonalSurface::new(
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
+    .unwrap();
+    let original = surface.clone();
+    assert!(surface
+        .edit_vertices(|vertices| {
+            vertices[0].z = f64::INFINITY;
+            Ok(())
+        })
+        .is_err());
+    assert_eq!(surface, original);
+    assert!(surface.set_chordal_deflection(-1.0).is_err());
+    assert_eq!(surface, original);
+    let mut wire = serde_json::to_value(&surface).unwrap();
+    wire["chordal_deflection"] = serde_json::json!(-1.0);
+    assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
+}
+#[test]
+fn a_refused_sample_edit_keeps_the_prior_samples() {
+    use crate::geometry::sampled::{GeometryLayoutError, PolylineCurve, PolylineSamples};
+
+    let mut polyline = PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+                .try_into()
+                .unwrap(),
+        },
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .unwrap();
+    let original = polyline.clone();
+    let mut seen = 0;
+    assert!(polyline
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                seen += 1;
+                if seen == 1 {
+                    point.x = 9.0;
+                    Ok(())
+                } else {
+                    Err(GeometryLayoutError::EditRefused(
+                        "the caller refused this sample".to_string(),
+                    ))
+                }
+            })
+        })
+        .is_err());
+    assert_eq!(seen, 2);
+    assert_eq!(polyline, original);
+}
+
+#[test]
+fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
+    use crate::geometry::sampled::{GeometryLayoutError, PolygonalSurface};
+
+    let mut surface = PolygonalSurface::new(
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
+    .unwrap();
+    let original = surface.clone();
+    assert!(surface
+        .edit_vertices(|vertices| {
+            vertices[0].z = 5.0;
+            Err(GeometryLayoutError::EditRefused(
+                "the caller refused this vertex".to_string(),
+            ))
+        })
+        .is_err());
+    assert_eq!(surface, original);
+}
+
+#[test]
+fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
+    use crate::scalar::NonNegativeReal;
+
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let mut surface = PolygonalSurface::new(
+        vertices.clone(),
+        vec![[0, 1, 2]],
+        0.25,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
+    .unwrap();
+    assert_eq!(
+        surface.chordal_deflection(),
+        NonNegativeReal::new(0.25).unwrap()
+    );
+    surface.set_chordal_deflection(0.5).unwrap();
+    assert_eq!(surface.chordal_deflection().get(), 0.5);
+    surface
+        .edit_vertices(|points| {
+            points[2].z = 2.0;
+            Ok(())
+        })
+        .unwrap();
+    let wire = serde_json::to_value(&surface).unwrap();
+    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.5));
+    assert_eq!(
+        wire["vertices"][2],
+        serde_json::to_value(FinitePoint3::new(Point3::new(0.0, 1.0, 2.0)).unwrap()).unwrap()
+    );
+    assert_eq!(
+        serde_json::from_value::<PolygonalSurface>(wire).unwrap(),
+        surface
+    );
+
+    let samples = PolylineSamples::Unparameterized {
+        points: vertices[..2]
+            .to_vec()
+            .try_into()
+            .expect("nonempty polyline fixture"),
+    };
+    let polyline = PolylineCurve::new(
+        samples,
+        0.125,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .unwrap();
+    assert_eq!(
+        polyline.chordal_deflection(),
+        NonNegativeReal::new(0.125).unwrap()
+    );
+    let wire = serde_json::to_value(&polyline).unwrap();
+    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.125));
+    assert_eq!(
+        serde_json::from_value::<PolylineCurve>(wire).unwrap(),
+        polyline
+    );
+}
+
+#[test]
+fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
+    use crate::scalar::{NonNegativeReal, PositiveReal};
+
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    assert_eq!(
+        PolygonalSurface::from_scaled_deflection(
+            vertices.clone(),
+            vec![[0, 1, 2]],
+            deflection,
+            scale,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polygonal construction admission")
+        .unwrap(),
+        PolygonalSurface::new(
+            vertices.clone(),
+            vec![[0, 1, 2]],
+            0.5,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polygonal construction admission")
+        .unwrap()
+    );
+    let samples = PolylineSamples::Unparameterized {
+        points: vertices[..2].to_vec().try_into().unwrap(),
+    };
+    let checked_samples = PolylineSamples::Unparameterized {
+        points: vertices[..2]
+            .iter()
+            .copied()
+            .map(|point| FinitePoint3::new(point).expect("finite point"))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+    };
+    assert_eq!(
+        PolylineCurve::from_scaled_deflection(
+            checked_samples,
+            deflection,
+            scale,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .unwrap(),
+        PolylineCurve::new(
+            samples,
+            0.5,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .unwrap()
+    );
+
+    let overflow = PositiveReal::new(f64::MAX).unwrap();
+    let deflection = NonNegativeReal::new(2.0).unwrap();
+    let error = PolygonalSurface::from_scaled_deflection(
+        vec![Point3::new(f64::NAN, 0.0, 0.0)],
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
+    .unwrap_err();
+    assert!(error.to_string().contains("at least three vertices"));
+    let error = PolygonalSurface::from_scaled_deflection(
+        vertices,
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("chordal_deflection must be finite and non-negative"));
+}
+
+#[test]
+fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::PolygonalSurface;
+    use crate::scalar::{NonNegativeReal, PositiveReal};
+
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let admitted = vertices
+        .iter()
+        .copied()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect::<Vec<_>>();
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolygonalSurface::from_admitted_scaled_deflection(
+            admitted.clone(),
+            vec![[0, 1, 2]],
+            deflection,
+            scale,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polygonal construction admission")
+        .unwrap(),
+        PolygonalSurface::from_scaled_deflection(
+            vertices,
+            vec![[0, 1, 2]],
+            deflection,
+            scale,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polygonal construction admission")
+        .unwrap()
+    );
+    let overflow = PositiveReal::new(f64::MAX).unwrap();
+    let deflection = NonNegativeReal::new(2.0).unwrap();
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted.clone(),
+        vec![[0, 1, 3]],
+        deflection,
+        overflow,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polygonal construction admission")
+    .unwrap_err()
+    .to_string()
+    .contains("out-of-range triangle index"));
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted,
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polygonal construction admission")
+    .unwrap_err()
+    .to_string()
+    .contains("chordal_deflection must be finite and non-negative"));
+}
+
+#[test]
+fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{
+        GeometryLayoutError, PolylineCurve, PolylineSamples, PolylineVertex,
+    };
+    use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+
+    let raw = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: 0.0,
+                point: Point3::new(0.0, 0.0, 0.0),
+            },
+            PolylineVertex {
+                parameter: 1.0,
+                point: Point3::new(1.0, 0.0, 0.0),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let admitted = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ONE,
+                point: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolylineCurve::from_scaled_deflection(
+            admitted.clone(),
+            deflection,
+            scale,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .unwrap(),
+        PolylineCurve::new(
+            raw,
+            deflection.scaled(scale).unwrap().get(),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .unwrap(),
+    );
+
+    let mut edited = admitted.clone();
+    let error = edited
+        .edit_admitted_points(
+            |point| {
+                if point.x == 1.0 {
+                    Err(GeometryLayoutError::EditRefused(
+                        "refused second point".to_owned(),
+                    ))
+                } else {
+                    Ok(FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap())
+                }
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("sample edit admission")
+        .unwrap_err();
+    assert!(error.to_string().contains("refused second point"));
+    assert_eq!(edited, admitted);
+
+    let duplicate = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    assert!(PolylineCurve::from_scaled_deflection(
+        duplicate,
+        deflection,
+        scale,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("polyline construction admission")
+    .unwrap_err()
+    .to_string()
+    .contains("strictly monotonic"));
+}
+
+#[test]
+fn a_polyline_holds_its_admitted_samples() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use crate::scalar::FiniteReal;
+    let samples = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: 2.0,
+                point: Point3::new(0.0, 0.0, 0.0),
+            },
+            PolylineVertex {
+                parameter: 1.0,
+                point: Point3::new(1.0, 0.0, 0.0),
+            },
+        ]
+        .try_into()
+        .expect("nonempty polyline fixture"),
+    };
+    let mut polyline = PolylineCurve::new(
+        samples.clone(),
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .unwrap();
+    assert_eq!(
+        polyline.points().collect::<Vec<_>>(),
+        [
+            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+        ]
+    );
+    assert_eq!(
+        polyline
+            .parameters()
+            .map(|parameters| parameters.map(FiniteReal::get).collect::<Vec<_>>()),
+        Some(vec![2.0, 1.0])
+    );
+    // A refused edit keeps the admitted samples.
+    let error = polyline
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                point.x = f64::NAN;
+                Ok(())
+            })
+        })
+        .unwrap_err();
+    assert_eq!(error.to_string(), "points must be finite");
+    assert_eq!(
+        polyline,
+        PolylineCurve::new(
+            samples,
+            0.0,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .unwrap()
+    );
+}
+
+#[test]
+fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use crate::scalar::FiniteReal;
+
+    let point = |x| FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("finite point");
+    let parameter = |value| FiniteReal::new(value).expect("finite parameter");
+    let samples = |last| PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: parameter(1.0),
+                point: point(0.0),
+            },
+            PolylineVertex {
+                parameter: parameter(last),
+                point: point(1.0),
+            },
+        ]
+        .try_into()
+        .expect("nonempty samples"),
+    };
+    assert_eq!(
+        PolylineCurve::from_checked_samples(
+            samples(2.0),
+            0.25,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .expect("ordered samples"),
+        PolylineCurve::new(
+            samples(2.0).to_raw(),
+            0.25,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .expect("same raw samples")
+    );
+    assert_eq!(
+        PolylineCurve::from_checked_samples(
+            samples(1.0),
+            0.25,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .expect_err("equal parameters are refused")
+        .to_string(),
+        "parameters must be finite and strictly monotonic"
+    );
+    assert_eq!(
+        PolylineCurve::from_checked_samples(
+            samples(2.0),
+            -0.25,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("polyline construction admission")
+        .expect_err("negative deviation is refused")
+        .to_string(),
+        "chordal_deflection must be finite and non-negative"
+    );
+}
+
+mod construction;
+
+mod polyline_construction;
+
+mod point_edits;

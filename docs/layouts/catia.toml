@@ -187,7 +187,7 @@ anchor = "flags    u32be"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
-contains = "pub const DIR_MAGIC: &[u8; 16] = b\"CATIA_V5 CB0001\\0\";"
+contains = "pub(crate) const DIR_MAGIC: &[u8; 16] = b\"CATIA_V5 CB0001\\0\";"
 note = "The parser's directory magic matches the stated `file[diroff : diroff+16]` value."
 
 # --- §3.5 SurfacicReps roster rows ------------------------------------------

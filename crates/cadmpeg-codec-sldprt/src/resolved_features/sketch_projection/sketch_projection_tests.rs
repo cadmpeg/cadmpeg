@@ -1,53 +1,65 @@
 //! Tests for the `sketch_projection` module.
 
+const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
+
 use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
-use cadmpeg_ir::features::{Angle, Length};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 #[test]
 fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, offset: u64, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(format!("native:{offset}")))
     };
     let mut entities = vec![
-        point("start", 100, Point2::new(1.0, 0.0)),
-        point("center", 200, Point2::new(0.0, 0.0)),
-        point("end", 300, Point2::new(0.0, 1.0)),
+        point("synthetic:test:id#start", 100, Point2::new(1.0, 0.0)),
+        point("synthetic:test:id#center", 200, Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#end", 300, Point2::new(0.0, 1.0)),
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId("arc".into()),
+            SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("native:400".into()))
         .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
     ];
 
-    resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities[3].geometry,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        }
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        })
+        .unwrap()
     );
 }
 
-#[test]
-fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
+fn slot_cycle_fixture() -> (
+    Vec<u8>,
+    [SketchInputEntity; 11],
+    Vec<cadmpeg_ir::sketches::SketchEntity>,
+) {
     let slot_offset = 500;
     let mut payload = vec![0; slot_offset + 140];
     let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
@@ -78,18 +90,17 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         payload[start + 4..start + 8].fill(0xff);
     }
 
-    let input = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let input = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let inputs = [
         input("center-left", 100, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -117,28 +128,32 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         input("bottom", 210, SketchInputKind::LineOrCircle, None),
         input("right", 220, SketchInputKind::Arc, None),
         input("left", 230, SketchInputKind::Arc, None),
-        input("slot", slot_offset as u64, SketchInputKind::Point, None),
+        input(
+            "slot",
+            cadmpeg_core::decode::u64_from_index(slot_offset),
+            SketchInputKind::Point,
+            None,
+        ),
     ];
-    let markers = inputs.iter().collect::<Vec<_>>();
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#model:{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
     let curve = |id: &str, geometry, endpoint_refs: &[&str]| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#model:{id}")).unwrap(),
             sketch.clone(),
             geometry,
         )
         .with_native_ref(Some(id.into()))
         .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
-    let mut entities = vec![
+    let entities = vec![
         point("center-left", Point2::new(0.0, 0.0)),
         point("center-right", Point2::new(2.0, 0.0)),
         point("left-top", Point2::new(0.0, 1.0)),
@@ -147,51 +162,123 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         point("right-bottom", Point2::new(2.0, -1.0)),
         curve(
             "top",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(2.0, 1.0),
-            },
+            })
+            .unwrap(),
             &["left-top", "right-top"],
         ),
         curve(
             "bottom",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, -1.0),
                 end: Point2::new(2.0, -1.0),
-            },
+            })
+            .unwrap(),
             &["left-bottom", "right-bottom"],
         ),
         curve(
             "right",
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(2.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(std::f64::consts::FRAC_PI_2),
-                end_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            },
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                end_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            })
+            .unwrap(),
             &["right-top", "right-bottom"],
         ),
         curve(
             "left",
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
             &[],
         ),
     ];
 
-    resolve_slot_marker_arcs(&payload, &markers, &mut entities, 1.0e-9);
+    (payload, inputs, entities)
+}
+
+#[test]
+fn slot_cycle_refuses_collection_limit() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error =
+        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT slot curves"));
+}
+
+#[test]
+fn slot_cycle_refuses_work_limit() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error =
+        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sort SLDPRT slot curves"));
+}
+
+#[test]
+fn slot_cycle_refuses_retained_limit() {
+    let (payload, inputs, entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT slot endpoint identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            resolve_slot_marker_arcs(
+                &ctx,
+                &payload,
+                &markers,
+                &mut entities,
+                EPS_REFUSAL_GEOMETRY,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT slot endpoint identity"));
+}
+
+#[test]
+fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities[9].endpoint_refs,
         ["left-top".to_string(), "left-bottom".to_string()]
     );
-    assert!(matches!(
-        entities[9].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[9].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
-            radius: Length(radius),
+            radius,
             ..
-        } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        } if center == Point2::new(0.0, 0.0) && radius.get() == 1.0
     ));
 }

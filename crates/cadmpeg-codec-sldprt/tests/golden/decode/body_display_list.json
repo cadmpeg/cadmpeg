@@ -19,27 +19,21 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
@@ -60,16 +54,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -78,9 +75,12 @@
       "faces": [
         {
           "id": "sldprt:brep:face#10",
-          "loops": [
-            "sldprt:brep:loop#20"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
           "surface": "sldprt:brep:surf#10"
@@ -89,12 +89,14 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32"
-          ],
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring"
+          },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
@@ -146,10 +148,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "id": "sldprt:brep:shell#0",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
           "region": "sldprt:brep:region#0"
         }
       ],
@@ -253,25 +258,25 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "dialects": {
-        "extra": [
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@8:Contents/Config-0-Partition+0",
-              "schema": "SCH_SW_33103_11000"
-            },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@8:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
           }
-        ],
-        "primary": {
-          "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
         }
-      },
-      "format": "sldprt"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -282,33 +287,32 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@8:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
         }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -317,7 +321,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -326,7 +332,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -336,165 +343,167 @@
       "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
         "sldprt:brep:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:coedge#30": {
           "offset": 146,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#31": {
           "offset": 169,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#32": {
           "offset": 192,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:edge#40": {
           "offset": 215,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#41": {
           "offset": 245,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#42": {
           "offset": 275,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:face#10": {
           "offset": 91,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0e"
         },
         "sldprt:brep:loop#20": {
           "offset": 130,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0f"
         },
         "sldprt:brep:point#60": {
           "offset": 383,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#61": {
           "offset": 423,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#62": {
           "offset": 463,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:region#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:shell#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:surf#10": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "compact_surface"
         },
         "sldprt:brep:vertex#50": {
           "offset": 305,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#51": {
           "offset": 331,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#52": {
           "offset": 357,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:file:block#247": {
           "offset": 247,
-          "stream": 1,
+          "stream": "Contents/DisplayLists",
           "tag": "tessellation"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 2,
+          "stream": "source",
           "tag": "source_image"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "Contents/DisplayLists",
-        "source"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 544,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
-        "id": "sldprt:file:block#8",
+    "retained_records": {
+      "sldprt:file:block#247": {
+        "bytes": {
+          "data": "dW9UZW1wQm9keVRlc3NEYXRhX2MAAAAAAAAAAHVvVGVtcEZhY2VUZXNzRGF0YV9jAAAAAAAAAAAEAAAACAAAAAIAAAABAAAAAwAAAAwAAABkAAAAAgAAAAMAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAMAAAAZAAAAAIAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAgAAAACAAAAAAAAAAQAAAAIAAAAAgAAAAEAAAAEAAAAAQAAAAgAAAACAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
-        "stream": "Contents/Config-0-Partition"
-      },
-      {
-        "byte_len": 232,
-        "data": "dW9UZW1wQm9keVRlc3NEYXRhX2MAAAAAAAAAAHVvVGVtcEZhY2VUZXNzRGF0YV9jAAAAAAAAAAAEAAAACAAAAAIAAAABAAAAAwAAAAwAAABkAAAAAgAAAAMAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAMAAAAZAAAAAIAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAgAAAACAAAAAAAAAAQAAAAIAAAAAgAAAAEAAAAEAAAAAQAAAAgAAAACAAAAAAAAAA==",
-        "id": "sldprt:file:block#247",
-        "offset": 0,
-        "sha256": "dbdf3decadc69b74b5e80fd5be52df65affb5edc2e10a5b8fa0f98332e8c94db",
         "stream": "Contents/DisplayLists"
       },
-      {
-        "byte_len": 376,
-        "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEEAAACvOZOiUgAAAOgAAAAVAAAANPbmR1bmRzfyRJY3B8YWl8SWN0c3K80PSc0tcMpPqQxJLS52SSxJjE9mgIJSsJxbYnIqphwLAwMDBwMDAxMDAwMjAwMDMwMDAw8DA0MKVAzERwUN9tj4+PVgB8h2Y3MLiA+ikdUAAA==",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:block#8": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "627c9c40b9b6c49367a297f8de5ac2e92e0b08c37b5d0fb7359ec32c21227d1f",
-        "stream": "sldprt"
+        "stream": "Contents/Config-0-Partition"
+      },
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEEAAACvOZOiUgAAAOgAAAAVAAAANPbmR1bmRzfyRJY3B8YWl8SWN0c3K80PSc0tcMpPqQxJLS52SSxJjE9mgIJSsJxbYnIqphwLAwMDBwMDAxMDAwMjAwMDMwMDAw8DA0MKVAzERwUN9tj4+PVgB8h2Y3MLiA+ikdUAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "source"
       }
-    ]
+    }
   }
 }

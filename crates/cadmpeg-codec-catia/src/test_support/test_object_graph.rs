@@ -2,7 +2,8 @@
 //! Object-graph, entity-table, catalog, and value-block CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{be32, outer_container_catpart, standard_catpart};
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{outer_container_catpart, standard_catpart};
 
 pub(crate) fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
     outer_container_catpart(&object_graph_stream())
@@ -12,17 +13,23 @@ pub(crate) fn object_graph_record(head: &[u8], payload: &[u8]) -> Vec<u8> {
     let child_len = 6 + payload.len();
     let total_len = 6 + head.len() + child_len;
     let mut bytes = vec![0x7c, 0x09];
-    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(total_len).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(head);
     bytes.extend_from_slice(&[0x7c, 0x0a]);
-    bytes.extend_from_slice(&(child_len as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(child_len).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(payload);
     bytes
 }
 
 pub(crate) fn inline_object_graph_record(body: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0x7c, 0x09];
-    bytes.extend_from_slice(&(6_u32 + body.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(6_u32 + u32::try_from(body.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(body);
     bytes
 }
@@ -30,7 +37,9 @@ pub(crate) fn inline_object_graph_record(body: &[u8]) -> Vec<u8> {
 pub(crate) fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
     let total_len = 6 + records.iter().map(Vec::len).sum::<usize>();
     let mut bytes = vec![0x7c, 0x08];
-    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(total_len).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for record in records {
         bytes.extend_from_slice(record);
     }
@@ -344,4 +353,27 @@ pub(crate) fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
     let file_len = u32::try_from(file.len()).unwrap();
     file[8..12].copy_from_slice(&be32(file_len));
     file
+}
+
+pub(crate) fn design_object(
+    id: &str,
+    owner_design_object: Option<&str>,
+) -> crate::native::CatiaDesignObject {
+    crate::native::CatiaDesignObject {
+        id: id.to_string(),
+        parent: "graph".to_string(),
+        ordinal: 0,
+        first_field_byte_offset: 0,
+        owner_entity_id: 0,
+        owner_record: None,
+        owner_design_object: owner_design_object.map(str::to_string),
+        owner_class: None,
+        owner_storage_ref: None,
+        fields: Vec::new(),
+        field_classes: Vec::new(),
+        definition_values: Vec::new(),
+        definition_chain_values: Vec::new(),
+        relations: Vec::new(),
+        parallel_reference_table: None,
+    }
 }

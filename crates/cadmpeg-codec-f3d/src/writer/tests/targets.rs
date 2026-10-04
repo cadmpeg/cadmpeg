@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_test_support::wire;
 
-use crate::{loss::F3dLossCode, F3dCodec};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
+
+use crate::loss::F3dLossCode;
+use crate::F3dCodec;
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            cadmpeg_core::dialect::DialectId::parse(dialect).expect("test id has dialect grammar"),
         )),
         std::collections::BTreeMap::new(),
     ));
@@ -24,13 +27,11 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
     fidelity
-        .retained_records
-        .push(RetainedSourceRecord::retained(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            "f3d",
-            0,
-            data,
-        ));
+        .insert_retained_record(
+            crate::ids::file_source_image_id(),
+            RetainedSourceRecord::whole("f3d", data),
+        )
+        .expect("distinct retained source image");
     let plan = Encoder::plan(
         &F3dCodec,
         EncodeInput::new(&ir, Some(&fidelity)),
@@ -38,7 +39,13 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotConsumed {}
+    );
     let displacement = plan
         .report()
         .losses
@@ -64,7 +71,13 @@ fn cross_format_write_has_no_dialect_displacement() {
         TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
     )
     .expect("cross-format synthesis plans");
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotConsumed {}
+    );
     assert!(plan.report().losses.iter().all(|loss| loss.code
         != F3dLossCode::SourceDialectDisplaced.kind()
         && loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
@@ -82,7 +95,13 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
 
     // No fidelity was offered, so the sealed wrapper owns this state and
     // stamps `NotProvided`; the missing-image fact survives as the typed loss.
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotProvided);
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotProvided {}
+    );
     assert!(plan
         .report()
         .losses

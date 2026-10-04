@@ -4,16 +4,37 @@
 use serde::{Deserialize, Serialize};
 
 /// Complete target and linked row lists with a nonnegative descending index range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ColumnIndexRowsWire", into = "ColumnIndexRowsWire")]
-pub(crate) struct ColumnIndexRows {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ColumnIndexRowsWire")]
+pub(in crate::native) struct ColumnIndexRows {
     target_rows: Vec<String>,
     linked_rows: Vec<String>,
     first_target_index: u32,
+    last_target_index: u32,
+}
+
+#[derive(Serialize)]
+struct ColumnIndexRowsRef<'a> {
+    target_rows: &'a [String],
+    linked_rows: &'a [String],
+    first_target_index: u32,
+    last_target_index: u32,
+}
+
+impl Serialize for ColumnIndexRows {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ColumnIndexRowsRef {
+            target_rows: &self.target_rows,
+            linked_rows: &self.linked_rows,
+            first_target_index: self.first_target_index,
+            last_target_index: self.last_target_index(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ColumnIndexRows {
-    pub(crate) fn new(
+    pub(in crate::native) fn new(
         first_target_index: u32,
         target_rows: Vec<String>,
         linked_rows: Vec<String>,
@@ -33,19 +54,20 @@ impl ColumnIndexRows {
             target_rows,
             linked_rows,
             first_target_index,
+            last_target_index: first_target_index - count,
         })
     }
 
-    pub(crate) fn target_rows(&self) -> &[String] {
+    pub(in crate::native) fn target_rows(&self) -> &[String] {
         &self.target_rows
     }
 
-    pub(crate) fn linked_rows(&self) -> &[String] {
+    pub(in crate::native) fn linked_rows(&self) -> &[String] {
         &self.linked_rows
     }
 
-    pub(crate) fn last_target_index(&self) -> u32 {
-        self.first_target_index - (self.target_rows.len() + self.linked_rows.len()) as u32
+    pub(super) fn last_target_index(&self) -> u32 {
+        self.last_target_index
     }
 }
 
@@ -57,6 +79,7 @@ struct ColumnIndexRowsWire {
     last_target_index: u32,
 }
 
+#[cfg(test)]
 impl From<ColumnIndexRows> for ColumnIndexRowsWire {
     fn from(value: ColumnIndexRows) -> Self {
         let last_target_index = value.last_target_index();
@@ -84,13 +107,18 @@ impl TryFrom<ColumnIndexRowsWire> for ColumnIndexRows {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ColumnIndexRows;
+    use serde::Serialize;
 
     #[test]
     fn column_row_bounds_derive_the_last_index_and_reject_disagreement() {
         let wire = r#"{"target_rows":["target"],"linked_rows":["linked"],"first_target_index":4,"last_target_index":2}"#;
         let rows: ColumnIndexRows = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&rows).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&rows).unwrap(),
+            serde_json::to_vec(&super::ColumnIndexRowsWire::from(rows.clone())).unwrap()
+        );
         assert_eq!(rows.first_target_index, 4);
         assert_eq!(rows.last_target_index(), 2);
         assert!(
@@ -99,5 +127,27 @@ mod tests {
         );
         assert!(ColumnIndexRows::new(1, vec!["target".into()], vec!["linked".into()]).is_err());
         assert!(ColumnIndexRows::new(4, vec!["target".into()], Vec::new()).is_err());
+    }
+
+    #[test]
+    fn column_index_rows_native_limit_refuses_before_column_copy() {
+        #[derive(Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            rows: &'a ColumnIndexRows,
+        }
+        let rows = ColumnIndexRows::new(4, vec!["target".into()], vec!["linked".into()]).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &Record {
+                id: "nx:om:column-index-rows#0",
+                rows: &rows,
+            },
+            serde_json::json!({
+                "id": "nx:om:column-index-rows#0",
+                "target_rows": ["target"], "linked_rows": ["linked"],
+                "first_target_index": 4, "last_target_index": 2
+            }),
+        );
     }
 }

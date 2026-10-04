@@ -19,27 +19,21 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
@@ -60,16 +54,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -78,9 +75,12 @@
       "faces": [
         {
           "id": "sldprt:brep:face#10",
-          "loops": [
-            "sldprt:brep:loop#20"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
           "surface": "sldprt:brep:surf#10"
@@ -89,12 +89,14 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32"
-          ],
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring"
+          },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
@@ -146,10 +148,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "id": "sldprt:brep:shell#0",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
           "region": "sldprt:brep:region#0"
         }
       ],
@@ -265,31 +270,36 @@
             "0:sldprt:brep:point#61"
           ],
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 500.0,
-                "v": 1000.0
-              },
-              {
-                "u": 1000.0,
-                "v": 0.0
+            "curve": {
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 500.0,
+                    "v": 1000.0
+                  },
+                  {
+                    "u": 1000.0,
+                    "v": 0.0
+                  }
+                ]
               }
-            ],
-            "degree": 2,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false
+            },
+            "kind": "nurbs"
           },
           "geometry_ref": "0:sldprt:brep:curve#70",
           "id": "sldprt:model:sketch-entity#247:0:0:0",
@@ -345,36 +355,45 @@
             "1:sldprt:brep:point#61"
           ],
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 500.0,
-                "v": 1000.0
-              },
-              {
-                "u": 1000.0,
-                "v": 0.0
+            "curve": {
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "form": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "u": 0.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "u": 500.0,
+                      "v": 1000.0
+                    },
+                    "weight": 0.5
+                  },
+                  {
+                    "point": {
+                      "u": 1000.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
               }
-            ],
-            "degree": 2,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "weights": [
-              1.0,
-              0.5,
-              1.0
-            ]
+            },
+            "kind": "nurbs"
           },
           "geometry_ref": "1:sldprt:brep:curve#70",
           "id": "sldprt:model:sketch-entity#247:1:0:0",
@@ -431,22 +450,24 @@
           "name": "feature input spline sketch",
           "native_ref": "sldprt:feature-input:resolved-features#247",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -471,22 +492,24 @@
           "name": "feature input rational spline sketch",
           "native_ref": "sldprt:feature-input:resolved-features#247",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -752,53 +775,51 @@
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "00632df76d942182285bc213dc95a035ceac582474de632934349bcabaa266e1",
+        "sldprt_native_sketch_sha256": "5dc8c9368ded9fab41a3d89eb84abdc40d2d67d38f2c18fbfbcab2023836326c",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "dialects": {
-        "extra": [
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@8:Contents/Config-0-Partition+0",
-              "schema": "SCH_SW_33103_11000"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@8:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@8:Contents/Config-0-Partition+0"
             },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid",
-            "instance": "block@8:Contents/Config-0-Partition+0"
-          },
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@247:Contents/Config-0-ResolvedFeatures+407",
-              "schema": "SCH_SW_33103_11000"
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@247:Contents/Config-0-ResolvedFeatures+407",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@247:Contents/Config-0-ResolvedFeatures+407"
             },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid",
-            "instance": "block@247:Contents/Config-0-ResolvedFeatures+407"
-          },
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@247:Contents/Config-0-ResolvedFeatures+1154",
-              "schema": "SCH_SW_33103_11000"
-            },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid",
-            "instance": "block@247:Contents/Config-0-ResolvedFeatures+1154"
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@247:Contents/Config-0-ResolvedFeatures+1154",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@247:Contents/Config-0-ResolvedFeatures+1154"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
           }
-        ],
-        "primary": {
-          "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
         }
-      },
-      "format": "sldprt"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -809,54 +830,51 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@8:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@8:Contents/Config-0-Partition+0"
           },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
-          "instance": "block@8:Contents/Config-0-Partition+0"
-        },
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@247:Contents/Config-0-ResolvedFeatures+407",
-            "schema": "SCH_SW_33103_11000"
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@247:Contents/Config-0-ResolvedFeatures+407",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@247:Contents/Config-0-ResolvedFeatures+407"
           },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
-          "instance": "block@247:Contents/Config-0-ResolvedFeatures+407"
-        },
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@247:Contents/Config-0-ResolvedFeatures+1154",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
-          "instance": "block@247:Contents/Config-0-ResolvedFeatures+1154"
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@247:Contents/Config-0-ResolvedFeatures+1154",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@247:Contents/Config-0-ResolvedFeatures+1154"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
         }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -865,7 +883,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -874,7 +894,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -884,292 +905,308 @@
       "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "sldprt:model:sketch#247:0:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch#247:1:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:0:0:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:0:0:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:0:0:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:1:0:3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:1:0:4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-constraint#247:1:0:5": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:0:0:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:0:0:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:0:0:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:1:0:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:1:0:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:model:sketch-entity#247:1:0:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {
         "sldprt:brep:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:coedge#30": {
           "offset": 146,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#31": {
           "offset": 169,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#32": {
           "offset": 192,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:edge#40": {
           "offset": 215,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#41": {
           "offset": 245,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#42": {
           "offset": 275,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:face#10": {
           "offset": 91,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0e"
         },
         "sldprt:brep:loop#20": {
           "offset": 130,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0f"
         },
         "sldprt:brep:point#60": {
           "offset": 383,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#61": {
           "offset": 423,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#62": {
           "offset": 463,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:region#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:shell#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:surf#10": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "compact_surface"
         },
         "sldprt:brep:vertex#50": {
           "offset": 305,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#51": {
           "offset": 331,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#52": {
           "offset": 357,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:feature-input:resolved-features#247": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "ResolvedFeatures"
         },
         "sldprt:feature-input:sketch-entity#247:223": {
           "offset": 223,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "ff_ff_1f_00_03"
         },
         "sldprt:feature-input:sketch-entity#247:315": {
           "offset": 315,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "ff_ff_1f_00_03"
         },
         "sldprt:file:block#247": {
           "offset": 247,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "parasolid"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 2,
+          "stream": "source",
           "tag": "source_image"
         },
         "sldprt:model:sketch#247:0:0": {
           "offset": 407,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile"
         },
         "sldprt:model:sketch#247:1:0": {
           "offset": 1154,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile"
         },
         "sldprt:model:sketch-constraint#247:0:0:0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-constraint#247:0:0:1": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-constraint#247:0:0:2": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-constraint#247:1:0:3": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-constraint#247:1:0:4": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-constraint#247:1:0:5": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-entity#247:0:0:0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         },
         "sldprt:model:sketch-entity#247:0:0:1": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         },
         "sldprt:model:sketch-entity#247:0:0:2": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         },
         "sldprt:model:sketch-entity#247:1:0:0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         },
         "sldprt:model:sketch-entity#247:1:0:1": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         },
         "sldprt:model:sketch-entity#247:1:0:2": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "Contents/Config-0-ResolvedFeatures",
-        "source"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 544,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
-        "id": "sldprt:file:block#8",
+    "retained_records": {
+      "sldprt:file:block#247": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
-        "stream": "Contents/Config-0-Partition"
-      },
-      {
-        "byte_len": 1934,
-        "data": "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",
-        "id": "sldprt:file:block#247",
-        "offset": 0,
-        "sha256": "975c6a3960b4a85303fd832b309bd457bce43ba960f6d18f679d5a4232f5208b",
         "stream": "Contents/Config-0-ResolvedFeatures"
       },
-      {
-        "byte_len": 772,
-        "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEUAAADxEpL10QEAAI4HAAAiAAAANPbmR1bmRzfyNPbmZpZ20gPSJVY39sZnVkZkVhZHVydWN+2UP0/bQBjGf3GQqhZoIepWJfHQoaVCigkjEGgpYuhg8NAxihI3WEQOii9St3qqulXqRj8LUiQ+QSfmfoR8Aq66sx0nOAZadeRZ7n2fu/ePfc97UhZYJujafc8Xhy2/03OlLLBE0P3g+W7KLBJ09wbtiFgI5bV85HCKi6DNCRaaW35Ln4CAdd7zGcGAIR1cLJK0ti9sX+x7gdARxj4WMXallFIZ8lotP881GkCBLBRnxPZVCEnwVWhMbCmrFJUTEeEoSrSAEacMR8q7gbEqOQfj0XTtf8vN7l251TfZDvDik9sSw4Frev7ZUJjBWc/zXTM4dUX7BErOu8Om87FZr1u1etOyarUaG3Rms77hnmiMZ9cMnvIkMi4vfnw/92P2OdCZLvJMUwoVHbBKJT5WZQN4FXW1SjWmTerA64Q2Y7rCJrAW0StR2I3aCVai6NzdtVt2S7qpFFuTUyXdV4rtqR3VWoqdyU6ZLe6DMtvTbu4/L7Mzj86c/8oB9sT7hq01VKSYTsgRxzisq6t6zFFeY43f8yvkdvhFJTQ41sXCyHEyUXn3d0Ai9ZezUh+0hNf3W70HzT9onr/TvHpws5pfukXzycv3a3YG7pqJjMr/wyz8AQ==",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:block#8": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "4f397c55e88886d41793651e8e0b04e0f143396d7213acc5450b12281fddc1b4",
-        "stream": "sldprt"
+        "stream": "Contents/Config-0-Partition"
+      },
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEUAAADxEpL10QEAAI4HAAAiAAAANPbmR1bmRzfyNPbmZpZ20gPSJVY39sZnVkZkVhZHVydWN+2UP0/bQBjGf3GQqhZoIepWJfHQoaVCigkjEGgpYuhg8NAxihI3WEQOii9St3qqulXqRj8LUiQ+QSfmfoR8Aq66sx0nOAZadeRZ7n2fu/ePfc97UhZYJujafc8Xhy2/03OlLLBE0P3g+W7KLBJ09wbtiFgI5bV85HCKi6DNCRaaW35Ln4CAdd7zGcGAIR1cLJK0ti9sX+x7gdARxj4WMXallFIZ8lotP881GkCBLBRnxPZVCEnwVWhMbCmrFJUTEeEoSrSAEacMR8q7gbEqOQfj0XTtf8vN7l251TfZDvDik9sSw4Frev7ZUJjBWc/zXTM4dUX7BErOu8Om87FZr1u1etOyarUaG3Rms77hnmiMZ9cMnvIkMi4vfnw/92P2OdCZLvJMUwoVHbBKJT5WZQN4FXW1SjWmTerA64Q2Y7rCJrAW0StR2I3aCVai6NzdtVt2S7qpFFuTUyXdV4rtqR3VWoqdyU6ZLe6DMtvTbu4/L7Mzj86c/8oB9sT7hq01VKSYTsgRxzisq6t6zFFeY43f8yvkdvhFJTQ41sXCyHEyUXn3d0Ai9ZezUh+0hNf3W70HzT9onr/TvHpws5pfukXzycv3a3YG7pqJjMr/wyz8AQ==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "source"
       }
-    ]
+    }
   }
 }

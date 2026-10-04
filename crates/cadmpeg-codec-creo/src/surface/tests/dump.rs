@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::assert_annotation;
+use crate::test_support::assert_unknown_visible_surface;
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_scalar;
+use crate::test_support::push_named_analytic_prototype;
+use crate::test_support::visibgeom_payload;
+use crate::test_support::world;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use std::io::Cursor;
 
@@ -7,8 +17,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
+
+const EPS_ANALYTIC_FRAME: f64 = 1.0e-12;
 
 #[test]
 fn decode_transfers_positional_line_extrusion_plane() {
@@ -36,26 +47,35 @@ fn decode_transfers_positional_line_extrusion_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("extrusion plane");
-    assert!(matches!(
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0
-            },
-            normal: cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: -1.0,
-                z: 0.0
-            },
-            u_axis: cadmpeg_ir::math::Vector3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0
-            },
+    assert!(match surface.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            matches!(
+                (
+                    plane_surface.origin().get(),
+                    plane_surface.frame().axis().as_raw(),
+                    plane_surface.frame().reference().as_raw(),
+                ),
+                (
+                    cadmpeg_ir::math::Point3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    cadmpeg_ir::math::Vector3 {
+                        x: 0.0,
+                        y: -1.0,
+                        z: 0.0,
+                    },
+                    cadmpeg_ir::math::Vector3 {
+                        x: 1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                )
+            )
         }
-    ));
+        _ => false,
+    });
     let carrier_id = surface.id.clone();
     let construction = result
         .ir()
@@ -66,33 +86,38 @@ fn decode_transfers_positional_line_extrusion_plane() {
             result.ir().model.procedural_surface_owner(&surface.id) == Some(&carrier_id)
         })
         .expect("extrusion construction");
-    assert!(matches!(
-        construction.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: None,
-            direction: cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-            native_position: None,
-            ..
-        }
-    ));
+    assert!(match construction.definition() {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+            (
+                &matched_payload.parameter_interval(),
+                matched_payload.direction().as_raw(),
+                &matched_payload.native_position(),
+            ),
+            (
+                None,
+                cadmpeg_ir::math::Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0
+                },
+                None,
+            )
+        ),
+        _ => false,
+    });
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(record.fields()["surface_type_byte"], 0x2c);
     assert_eq!(record.fields()["extrusion_direction"][0], 0.0);
     assert_eq!(record.fields()["extrusion_direction"][1], 0.0);
     assert_eq!(record.fields()["extrusion_direction"][2], 1.0);
     assert_eq!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -122,26 +147,35 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("extrusion plane");
-    assert!(matches!(
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3 {
-                x: 2.0,
-                y: 0.0,
-                z: 0.0
-            },
-            normal: cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: -1.0,
-                z: 0.0
-            },
-            u_axis: cadmpeg_ir::math::Vector3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0
-            },
+    assert!(match surface.geometry.solved() {
+        Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            matches!(
+                (
+                    plane_surface.origin().get(),
+                    plane_surface.frame().axis().as_raw(),
+                    plane_surface.frame().reference().as_raw(),
+                ),
+                (
+                    cadmpeg_ir::math::Point3 {
+                        x: 2.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    cadmpeg_ir::math::Vector3 {
+                        x: 0.0,
+                        y: -1.0,
+                        z: 0.0,
+                    },
+                    cadmpeg_ir::math::Vector3 {
+                        x: 1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                )
+            )
         }
-    ));
+        _ => false,
+    });
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_ne!(
         record.fields()["scalar_frames"].as_array().unwrap().len(),
@@ -160,14 +194,13 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         4.0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -244,9 +277,11 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode surface parameters");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode surface parameters"),
+    );
 
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"];
     assert_eq!(records.len(), 1);
@@ -321,9 +356,10 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields()["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -360,26 +396,27 @@ fn decode_places_complete_positional_torus() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("positional torus surface");
-    assert!(matches!(
-        surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if (center.x - 1.0).abs() < 1.0e-12
-            && (center.y - 16.74).abs() < 1.0e-12
-            && center.z.abs() < 1.0e-12
-            && axis.x.abs() < 1.0e-12
-            && axis.y.abs() < 1.0e-12
-            && (axis.z - 1.0).abs() < 1.0e-12
-            && (ref_direction.x + 0.999_899_554_583_406_1).abs() < 1.0e-12
-            && (ref_direction.y - 0.014_173_240_416_574_131).abs() < 1.0e-12
-            && ref_direction.z.abs() < 1.0e-12
-            && (major_radius - 4.45).abs() < 1.0e-12
-            && (minor_radius - 0.5).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
+                        && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
+                        && center.z.abs() < EPS_ANALYTIC_FRAME
+                        && axis.x.abs() < EPS_ANALYTIC_FRAME
+                        && axis.y.abs() < EPS_ANALYTIC_FRAME
+                        && (axis.z - 1.0).abs() < EPS_ANALYTIC_FRAME
+                        && (ref_direction.x + 0.999_899_554_583_406_1).abs() < EPS_ANALYTIC_FRAME
+                        && (ref_direction.y - 0.014_173_240_416_574_131).abs() < EPS_ANALYTIC_FRAME
+                        && ref_direction.z.abs() < EPS_ANALYTIC_FRAME
+                        && (major_radius - 4.45).abs() < EPS_ANALYTIC_FRAME
+                        && (minor_radius - 0.5).abs() < EPS_ANALYTIC_FRAME
+                })
+    );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert!(
         (record.fields()["positional_torus_frame"]["major_radius"]
@@ -390,9 +427,10 @@ fn decode_places_complete_positional_torus() {
             < 1.0e-12
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -420,9 +458,10 @@ fn decode_reports_transferred_positional_cylinders() {
         .expect("decode positional cylinder");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -470,25 +509,27 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
             .expect("paired sphere surface");
-        assert!(matches!(
-            surface.geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if center.x == 0.0
-                && center.y == 0.0
-                && (center.z + 15.0).abs() < 1.0e-12
-                && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                && ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && radius == 2.65
-        ));
+        assert!(
+            matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
+                        if {
+                            let center = sphere_surface.center();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
+            let radius = sphere_surface.radius().get();
+                            center.x == 0.0
+                                && center.y == 0.0
+                                && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME
+                                && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                                && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                                && radius == 2.65
+                        })
+        );
     }
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT.as_str()
+        ),
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -527,9 +568,10 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields()["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -583,10 +625,14 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).planes.local_systems[0].offset as u64;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset,
+    );
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
         namespace.arenas()["plane_local_systems"][0].fields()["surface_id"],
@@ -610,11 +656,14 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     assert_eq!(surface.id.as_str(), "creo:visibgeom:surface#7");
     assert_eq!(
         surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -647,23 +696,35 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT.as_str()
+        ),
         0
     );
 }
@@ -688,11 +749,14 @@ fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
 }
 
@@ -715,11 +779,14 @@ fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
 }
 
@@ -763,12 +830,15 @@ fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
 
     assert_eq!(
         cylinder.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            radius: 1.0,
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                1.0
+            )
+            .unwrap()
+        ))
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains(
@@ -822,13 +892,16 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
 
     assert_eq!(
         torus.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-            center: cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 1.0,
-            minor_radius: 1.0,
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                1.0
+            )
+            .unwrap()
+        ))
     );
 }
 
@@ -862,13 +935,16 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
 
     assert_eq!(
         torus.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-            center: cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 1.0,
-            minor_radius: 1.0,
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                1.0
+            )
+            .unwrap()
+        ))
     );
 }
 
@@ -897,9 +973,10 @@ fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
         0.199_999_999_999_999_98
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT.as_str()
+        ),
         1
     );
 }
@@ -927,16 +1004,20 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 
     assert_eq!(
         plane.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -965,7 +1046,7 @@ fn decode_places_named_prototype_before_its_surface_row() {
         .expect("following first plane instance");
     assert!(matches!(
         plane.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
 }
 
@@ -987,9 +1068,10 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
 
     assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1010,9 +1092,10 @@ fn decode_does_not_use_incomplete_frame_for_prototype_join() {
 
     assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1041,9 +1124,10 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
     assert_unknown_visible_surface(&result.ir().model.surfaces, 8);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -1107,7 +1191,7 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let result = CreoCodec
@@ -1120,18 +1204,18 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("first interpolation spline instance");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
 
     assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (3, 3));
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(
-        nurbs.control_points()[0],
+        nurbs.poles().into_iter().next().unwrap(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(
-        nurbs.control_points()[15],
+        nurbs.poles().into_iter().nth(15).unwrap(),
         cadmpeg_ir::math::Point3::new(1.0, 1.0, 2.0)
     );
 }
@@ -1143,24 +1227,30 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
             0x26,
             "torus",
             vec![("radius1", 0.0), ("radius2", 1.0)],
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-                center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                radius: 1.0,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            )),
         ),
         (
             0x26,
             "torus",
             vec![("radius1", 2.0), ("radius2", 1.0)],
-            cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-                center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                major_radius: 2.0,
-                minor_radius: 1.0,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    2.0,
+                    1.0,
+                )
+                .unwrap(),
+            )),
         ),
     ];
 
@@ -1188,15 +1278,6 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
 
 #[test]
 fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
-    fn world(payload: &mut Vec<u8>, value: f64) {
-        let raw = value.to_be_bytes();
-        payload.push(match raw[0] {
-            0x40 => 0x46,
-            0xc0 => 0x2d,
-            _ => panic!("generated FC05 value must use a world-token exponent"),
-        });
-        payload.extend_from_slice(&raw[1..]);
-    }
     fn plane_row(payload: &mut Vec<u8>, id: u8, next: u8, x: f64) {
         payload.extend_from_slice(&[id, 0x22, 4, 0x01, 0, next]);
         for value in [0.0, 1.0, 0.0, 1.0, x, -1.0, -1.0, x, 1.0, 2.0] {
@@ -1248,18 +1329,51 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#10")
         .expect("placed one-cap cylinder");
-    assert!(matches!(
-        one_cap_cylinder.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3 {
-                x: 2.0,
-                y: 5.0,
-                z: 3.0
-            },
-            radius: 1.0,
-            ..
+    assert!(match one_cap_cylinder.geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cylinder_surface,
+        )) if {
+            matches!(
+                (
+                    cylinder_surface.origin().get(),
+                    cylinder_surface.frame().axis().as_raw(),
+                    cylinder_surface.frame().reference().as_raw(),
+                    &cylinder_surface.radius().get(),
+                ),
+                (
+                    cadmpeg_ir::math::Point3 {
+                        x: 2.0,
+                        y: 5.0,
+                        z: 3.0,
+                    },
+                    _,
+                    _,
+                    _,
+                )
+            ) && cylinder_surface.radius().get() == 1.0
+        } =>
+        {
+            matches!(
+                (
+                    cylinder_surface.origin().get(),
+                    cylinder_surface.frame().axis().as_raw(),
+                    cylinder_surface.frame().reference().as_raw(),
+                    &cylinder_surface.radius().get(),
+                ),
+                (
+                    cadmpeg_ir::math::Point3 {
+                        x: 2.0,
+                        y: 5.0,
+                        z: 3.0,
+                    },
+                    _,
+                    _,
+                    _,
+                )
+            )
         }
-    ));
+        _ => false,
+    });
     let one_cap_circle = one_cap
         .ir()
         .model
@@ -1267,23 +1381,58 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .iter()
         .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#20")
         .expect("placed one-cap circle");
-    assert!(matches!(
-        one_cap_circle.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center: cadmpeg_ir::math::Point3 {
-                x: 2.0,
-                y: 5.0,
-                z: 3.0
-            },
-            axis: cadmpeg_ir::math::Vector3 {
-                x: -1.0,
-                y: 0.0,
-                z: 0.0
-            },
-            radius: 1.0,
-            ..
+    assert!(match one_cap_circle.geometry {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
+            if {
+                matches!(
+                    (
+                        circle_curve.center().get(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
+                        &circle_curve.radius().get(),
+                    ),
+                    (
+                        cadmpeg_ir::math::Point3 {
+                            x: 2.0,
+                            y: 5.0,
+                            z: 3.0,
+                        },
+                        cadmpeg_ir::math::Vector3 {
+                            x: -1.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        _,
+                        _,
+                    )
+                ) && circle_curve.radius().get() == 1.0
+            } =>
+        {
+            matches!(
+                (
+                    circle_curve.center().get(),
+                    circle_curve.frame().axis().as_raw(),
+                    circle_curve.frame().reference().as_raw(),
+                    &circle_curve.radius().get(),
+                ),
+                (
+                    cadmpeg_ir::math::Point3 {
+                        x: 2.0,
+                        y: 5.0,
+                        z: 3.0,
+                    },
+                    cadmpeg_ir::math::Vector3 {
+                        x: -1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    _,
+                    _,
+                )
+            )
         }
-    ));
+        _ => false,
+    });
     let mut neutral_chart_payload = payload.clone();
     circle_row(&mut neutral_chart_payload, 22, 11, -5.0, false);
     let neutral_chart = CreoCodec
@@ -1299,17 +1448,29 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .iter()
         .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#22")
         .expect("circle with neutral sample chart");
-    assert!(matches!(
-        neutral_circle.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            ref_direction: cadmpeg_ir::math::Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-            ..
+    assert!(match neutral_circle.geometry {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            matches!(
+                (
+                    circle_curve.center().get(),
+                    circle_curve.frame().axis().as_raw(),
+                    circle_curve.frame().reference().as_raw(),
+                    &circle_curve.radius().get(),
+                ),
+                (
+                    _,
+                    _,
+                    cadmpeg_ir::math::Vector3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                    },
+                    _,
+                )
+            )
         }
-    ));
+        _ => false,
+    });
 
     circle_row(&mut payload, 20, 11, 2.0, true);
     circle_row(&mut payload, 21, 12, -2.0, true);
@@ -1335,24 +1496,65 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .expect("placed cylinder");
     assert_eq!(
         cylinder.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 5.0, 3.0),
-            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),
-            radius: 1.0,
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 5.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),
+                1.0
+            )
+            .unwrap()
+        ))
     );
     assert_eq!(result.ir().model.curves.len(), 2);
-    assert!(result.ir().model.curves.iter().all(|curve| matches!(
-        curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            axis: cadmpeg_ir::math::Vector3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0
-            },
-            radius: 1.0,
-            ..
-        }
-    )));
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .all(|curve| match curve.geometry {
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                circle_curve,
+            )) if {
+                matches!(
+                    (
+                        circle_curve.center().get(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
+                        &circle_curve.radius().get(),
+                    ),
+                    (
+                        _,
+                        cadmpeg_ir::math::Vector3 {
+                            x: 1.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        _,
+                        _,
+                    )
+                ) && circle_curve.radius().get() == 1.0
+            } =>
+            {
+                matches!(
+                    (
+                        circle_curve.center().get(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
+                        &circle_curve.radius().get(),
+                    ),
+                    (
+                        _,
+                        cadmpeg_ir::math::Vector3 {
+                            x: 1.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        _,
+                        _,
+                    )
+                )
+            }
+            _ => false,
+        }));
 }

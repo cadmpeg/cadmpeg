@@ -6,96 +6,15 @@ use std::collections::BTreeMap;
 use crate::examples::unit_cube;
 use crate::features::ExtrudeDirection;
 use crate::math::{Point3, Vector3};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-
-use super::*;
-
-#[test]
-fn zero_count_composite_stage_is_compositionally_invalid() {
-    let stages = [
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Linear {
-                direction: None,
-                spacing: Length(1.0),
-                count: 1,
-                second: None,
-            }),
-            combination: PatternStageCombination::Initialize,
-        },
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Scale {
-                center: crate::features::PatternScaleCenter::FirstSeedCentroid,
-                final_factor: 2.0,
-                count: 0,
-            }),
-            combination: PatternStageCombination::AlignedSlices,
-        },
-    ];
-    assert!(!composite_composition_is_valid(&stages));
-}
-
-#[test]
-fn unresolved_composite_count_can_feed_a_cartesian_stage() {
-    let stages = [
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Unresolved),
-            combination: PatternStageCombination::Initialize,
-        },
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Linear {
-                direction: None,
-                spacing: Length(1.0),
-                count: 2,
-                second: None,
-            }),
-            combination: PatternStageCombination::CartesianProduct,
-        },
-    ];
-    assert!(composite_composition_is_valid(&stages));
-}
-
-#[test]
-fn historical_body_overlap_ignores_set_ordering_form() {
-    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
-
-    let state =
-        FeatureInputTopologyId::mint("test:model:entity#test:input").expect("valid identity");
-    let target = BodySelection::Historical {
-        state: state.clone(),
-        bodies: vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
-        native: "target".into(),
-    };
-    let overlapping = BodySelection::HistoricalUnorderedSet {
-        state: state.clone(),
-        selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
-            vec![
-                HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-            ],
-            vec!["tool-a".into(), "tool-b".into()],
-        )
-        .expect("valid unordered historical body selection"),
-    };
-    let disjoint = BodySelection::HistoricalSet {
-        state,
-        members: crate::features::BodyMembers::try_from_parts(
-            vec![HistoricalBodyId::mint("test:body:5").expect("valid identity")],
-            vec!["tool".into()],
-        )
-        .expect("valid historical body selection rows"),
-    };
-
-    assert!(body_selections_overlap(&target, &overlapping));
-    assert!(!body_selections_overlap(&target, &disjoint));
-}
 
 #[test]
 fn historical_vertex_selection_requires_input_state_membership() {
     use crate::features::{
         DatumPointConstruction, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        VertexSelection,
+        FeatureOperation, VertexSelection,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
     use crate::schema::EntitySchema;
@@ -111,10 +30,26 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vec![historical_vertex.clone()],
+            bodies: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            faces: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            edges: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            vertices: crate::features::DistinctMembers::try_from(
+                vec![historical_vertex.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -122,50 +57,70 @@ fn historical_vertex_selection_requires_input_state_membership() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: crate::math::Point3::new(1.0, 2.0, 3.0),
-            construction: Some(Box::new(DatumPointConstruction::Vertex {
-                vertex: VertexSelection::Historical {
-                    state: state_id.clone(),
-                    vertex: historical_vertex,
-                    native: "vertex:local".into(),
-                },
-            })),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(crate::math::Point3::new(
+                    1.0, 2.0, 3.0,
+                ))
+                .unwrap(),
+                construction: Some(Box::new(DatumPointConstruction::Vertex {
+                    vertex: VertexSelection::historical(
+                        state_id.clone(),
+                        historical_vertex,
+                        "vertex:local".into(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
+                    .unwrap(),
+                })),
+            }),
+        ),
         native_ref: None,
     });
 
     let mut references = Vec::new();
-    ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
+    ir.model.features[0]
+        .visit_references(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut |reference| {
+                references.push(reference.to_owned());
+                Ok(())
+            },
+        )
+        .expect("feature states its typed references");
     assert_eq!(references, vec![state_id.as_str()]);
 
     assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-vertex#missing";
-    let FeatureDefinition::DatumPoint {
-        construction: Some(construction),
-        ..
-    } = &mut ir.model.features[0].definition
-    else {
-        unreachable!("test feature is a constructed datum point")
-    };
-    let DatumPointConstruction::Vertex {
-        vertex: VertexSelection::Historical { vertex, .. },
-    } = construction.as_mut()
-    else {
-        unreachable!("test datum point uses a historical vertex")
-    };
-    *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+            construction: Some(construction),
+            ..
+        }) = definition
+        else {
+            unreachable!("test feature is a constructed datum point")
+        };
+        let DatumPointConstruction::Vertex {
+            vertex: VertexSelection::Historical { vertex, .. },
+        } = construction.as_mut()
+        else {
+            unreachable!("test datum point uses a historical vertex")
+        };
+        *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
+    });
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -176,132 +131,23 @@ fn historical_vertex_selection_requires_input_state_membership() {
 }
 
 #[test]
-fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureInputTopology, VertexSelection,
-    };
-    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
-
-    let feature_id =
-        FeatureId::mint("test:model:feature#three-point-plane").expect("identity grammar");
-    let first_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-a")
-        .expect("valid identity");
-    let second_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-b")
-        .expect("valid identity");
-    let vertices = [
-        HistoricalVertexId::mint("test:model:historical-vertex#1").expect("valid identity"),
-        HistoricalVertexId::mint("test:model:historical-vertex#2").expect("valid identity"),
-        HistoricalVertexId::mint("test:model:historical-vertex#3").expect("valid identity"),
-    ];
-    let other_vertex =
-        HistoricalVertexId::mint("test:model:historical-vertex#4").expect("valid identity");
-    let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
-        VertexSelection::Historical {
-            state: state.clone(),
-            vertex: vertex.clone(),
-            native: native.into(),
-        }
-    };
-
-    let mut ir = CadIr::empty();
-    ir.model.feature_input_topologies.extend([
-        FeatureInputTopology {
-            id: first_state.clone(),
-            input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vertices.to_vec(),
-            native_ref: None,
-        },
-        FeatureInputTopology {
-            id: second_state.clone(),
-            input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vec![other_vertex.clone()],
-            native_ref: None,
-        },
-    ]);
-    ir.model.features.push(Feature {
-        id: feature_id,
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumThreePointPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            points: Box::new([
-                historical(&first_state, &vertices[0], "native:1"),
-                historical(&first_state, &vertices[1], "native:2"),
-                historical(&first_state, &vertices[2], "native:3"),
-            ]),
-        },
-        native_ref: None,
-    });
-
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    assert!(!findings
-        .iter()
-        .any(|finding| finding.message.contains("three-point datum-plane")));
-
-    let set_third = |ir: &mut CadIr, point| {
-        let FeatureDefinition::DatumThreePointPlane { points, .. } =
-            &mut ir.model.features[0].definition
-        else {
-            unreachable!("test feature is a three-point datum plane")
-        };
-        points[2] = point;
-    };
-    set_third(
-        &mut ir,
-        historical(&first_state, &vertices[0], "different-native-identity"),
-    );
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "three-point datum plane requires three distinct vertices"
-        }));
-
-    set_third(
-        &mut ir,
-        historical(&second_state, &other_vertex, "native:4"),
-    );
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "three-point datum-plane vertices use different input topologies"
-        }));
-}
-
-#[test]
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        LinearTermination, PathRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
     };
     use crate::sketches::SketchId;
 
-    let sketch = SketchId("synthetic:test:sketch#missing".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
     let definitions = [
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch.clone()),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone())),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: crate::features::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(10.0),
+                        length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -312,12 +158,18 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
-        FeatureDefinition::Sweep {
-            section: crate::features::SweepSection::Profile(ProfileRef::Sketch(sketch.clone())),
-            sections: Vec::new(),
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: crate::features::SweepShape::sheet_sections(
+                crate::features::SweepMode::Solid {
+                    op: crate::features::SolidSweepOperation::NewBody,
+                },
+                crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
+                Vec::new(),
+            ),
+
             path: Some(PathRef::Sketch(sketch.clone())),
-            mode: crate::features::SweepMode::NewBody,
+
             orientation: None,
             transition: None,
             transformation: None,
@@ -329,7 +181,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             taper: None,
             scale: None,
             allow_multi_profile_faces: None,
-        },
+        }),
     ];
     let json = serde_json::to_string(&definitions).unwrap();
     assert_eq!(
@@ -337,23 +189,24 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         definitions
     );
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#sketch-ref").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: definitions[1].clone(),
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert_eq!(
         report
             .findings
@@ -368,54 +221,69 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureSourceContent, LinearTermination, ParameterId, ProfileRef,
+        FeatureId, FeatureOperation, FeatureSourceContent, LinearTermination, ParameterId,
+        PlanarProfileRef, ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature_id = FeatureId::mint("synthetic:test:feature#invalid").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: vec![feature_id.clone(), feature_id.clone()],
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![feature_id.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: vec![
+        source_content: (vec![
             FeatureSourceContent::Parameter(
                 ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
             ),
             FeatureSourceContent::Feature(feature_id.clone()),
-        ],
-        outputs: vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Faces(vec![
-                FaceId::mint("synthetic:test:face#profile-missing").expect("valid identity")
-            ]),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::ToFace {
-                        face: FaceSelection::Faces(vec![FaceId::mint(
-                            "synthetic:test:face#termination-missing",
-                        )
-                        .expect("valid identity")]),
-                        offset: None,
+        ])
+        .try_into()
+        .unwrap(),
+
+        evaluation: crate::features::FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Faces(vec![FaceId::mint(
+                    "synthetic:test:face#profile-missing",
+                )
+                .expect("valid identity")])),
+                direction: ExtrudeDirection::ProfileNormal {},
+                start: crate::features::ExtrudeStart::ProfilePlane {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ToFace {
+                            face: FaceSelection::Faces(vec![FaceId::mint(
+                                "synthetic:test:face#termination-missing",
+                            )
+                            .expect("valid identity")]),
+                            offset: None,
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
-            },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+            crate::features::DistinctMembers::try_from(
+                vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -423,27 +291,29 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Marker".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Marker".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
         native_ref: None,
     });
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for fragment in [
         "does not precede",
         "missing output body",
         "missing profile face",
         "missing termination face",
         "repeats feature ordinal",
-        "repeats dependency",
         "missing content parameter",
         "content child",
     ] {
@@ -459,26 +329,30 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 
 #[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#parameters").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
         native_ref: None,
     });
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
@@ -491,14 +365,15 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             expression: "1mm".into(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: crate::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         });
     }
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
@@ -511,10 +386,12 @@ fn feature_parameters_require_unique_names_and_ordinals() {
 
 #[test]
 fn parameter_dependencies_must_exist_and_precede_consumers() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner =
         FeatureId::mint("synthetic:test:feature#dependency-owner").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -522,16 +399,18 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
         native_ref: None,
     });
     let first = ParameterId::mint("synthetic:test:parameter#first").expect("identity grammar");
@@ -552,13 +431,19 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies,
+            dependencies: crate::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
@@ -571,26 +456,30 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
 
 #[test]
 fn document_parameters_can_feed_feature_parameters() {
-    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
         native_ref: None,
     });
     let document =
@@ -603,7 +492,7 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "60 mm".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -616,238 +505,133 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "Width / 2".into(),
         display: None,
         value: None,
-        dependencies: vec![document],
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![document],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
-    ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings
+        .is_empty());
 }
 
 #[test]
 fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
-    use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
+    use crate::{
+        features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, FeatureOperation},
+        scalar::Length,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
         "synthetic:test:feature#offset",
         0,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(principal.clone())),
-            distance: Length(5.0),
-        },
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature {
+                feature: principal.clone(),
+            }),
+            distance: Length::new(5.0).unwrap(),
+        }),
     ));
     ir.model.features.push(feature(
         principal.as_str(),
         1,
-        FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+            frame: crate::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        }),
     ));
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report
         .findings
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
 
     let offset = ir.model.features[0].id.clone();
-    ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Feature(offset)),
-        distance: Length(5.0),
-    };
-    let report = validate_neutral(&ir, Vec::new());
+    ir.model.features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature { feature: offset }),
+                distance: Length::new(5.0).unwrap(),
+            },
+        ));
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
-}
 
-#[test]
-fn feature_extent_magnitudes_are_validated() {
-    use crate::features::{
-        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureId, Length, LinearTermination, ProfileRef, RevolveConstruction,
-        RevolveExtent,
-    };
-
-    let side = |termination: LinearTermination| ExtrudeSide {
-        termination,
-        draft: None,
-    };
-    for extent in [
-        ExtrudeExtent::OneSided {
-            side: side(LinearTermination::Blind {
-                length: Length(0.0),
-            }),
-        },
-        ExtrudeExtent::TwoSided {
-            first: side(LinearTermination::Blind {
-                length: Length(1.0),
-            }),
-            second: side(LinearTermination::Blind {
-                length: Length(f64::NAN),
-            }),
-        },
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
     ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#invalid-extent").expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Native("profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
-                start: crate::features::ExtrudeStart::ProfilePlane,
-                extent,
-                op: BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            },
-            native_ref: None,
-        });
-        assert!(validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "feature extent magnitude is invalid"));
-    }
-
-    let mut ir = unit_cube();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-angle").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Revolve {
-            construction: RevolveConstruction::new(
-                None,
-                None,
-                Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(-1.0) },
-                }),
-                None,
-                None,
-                None,
-                None,
-            ),
-            op: BooleanOp::NewBody,
-        },
-        native_ref: None,
-    });
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "feature extent magnitude is invalid"));
-}
-
-#[test]
-fn block_placement_must_be_proper_rigid() {
-    use crate::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
-
-    let rotated = crate::transform::Transform::from_rows([
-        [0.0, -1.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ])
-    .expect("affine transform");
-    assert!(rotated.is_proper_rigid());
-
-    for placement in [
-        crate::transform::Transform::from_rows([
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-        crate::transform::Transform::from_rows([
-            [1.0, 0.25, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-        crate::transform::Transform::from_rows([
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-    ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#invalid-block-placement")
-                .expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(placement),
-                op: BooleanOp::NewBody,
-            },
-            native_ref: None,
-        });
-        assert!(validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "block placement is invalid"));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error =
+            super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
+        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        assert_eq!(
+            ctx.finish_session().unwrap_err().to_string(),
+            error.to_string()
+        );
     }
 }
 
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        GeneratedVertexRef, LinearTermination, ProfileRef, VertexSelection,
+        BooleanOp, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeExtent,
+        ExtrudeSide, Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedVertexRef,
+        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let source =
         FeatureId::mint("synthetic:test:feature#0-vertex-source").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -855,16 +639,18 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
-            construction: None,
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -872,42 +658,51 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Native("test:profile".into()),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::ToVertex {
-                        vertex: VertexSelection::Generated {
-                            vertex: GeneratedVertexRef {
-                                feature: source.clone(),
-                                local_id: "vertex-0".into(),
-                            },
-                            native: "test:vertex-selection".into(),
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Native("test:profile".into())),
+                direction: ExtrudeDirection::ProfileNormal {},
+                start: crate::features::ExtrudeStart::ProfilePlane {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ToVertex {
+                            vertex: VertexSelection::generated(
+                                GeneratedVertexRef::new(
+                                    source.clone(),
+                                    "vertex-0".into(),
+                                    &cadmpeg_test_support::service_decode_context(),
+                                )
+                                .expect("selection reference admission")
+                                .unwrap(),
+                                "test:vertex-selection".into(),
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("selection reference admission")
+                            .unwrap(),
                         },
+                        draft: None,
                     },
-                    draft: None,
                 },
-            },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
         native_ref: None,
     });
 
     let message = "generated termination vertex is invalid";
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -917,26 +712,34 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Vertex".into(),
+        name: Some("Vertex".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
             extrude.clone(),
             ConfigurationFeatureState {
                 evaluation: crate::features::ConfigurationEvaluation::Active {
-                    outputs: Vec::new(),
+                    outputs: crate::features::DistinctMembers::default(),
                 },
-                dependencies: Vec::new(),
-                definition: ir.model.features[1].definition.clone(),
+                dependencies: crate::features::DistinctMembers::default(),
+                definition: ir.model.features[1].evaluation.definition().clone(),
             },
         )]),
         native_ref: None,
     });
-    ir.model.features[1].dependencies.push(source.clone());
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -946,6 +749,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == configuration_message));
@@ -954,194 +758,45 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .feature_states
         .get_mut(&extrude)
         .expect("configured extrude");
-    state.dependencies.push(source);
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&extrude)
-        .expect("configured extrude");
-    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    let ExtrudeExtent::OneSided { side } = extent else {
-        unreachable!()
-    };
-    let LinearTermination::ToVertex {
-        vertex: VertexSelection::Generated { native, .. },
-    } = &mut side.termination
-    else {
-        unreachable!()
-    };
-    native.clear();
+    state
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "configuration generated termination vertex is invalid"
-        }));
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&extrude)
-        .expect("configured extrude");
-    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    let ExtrudeExtent::OneSided { side } = extent else {
-        unreachable!()
-    };
-    side.termination = LinearTermination::Blind {
-        length: crate::features::Length(f64::NAN),
-    };
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "configuration feature extent magnitude is invalid" }));
-}
-
-#[test]
-fn body_combine_requires_exactly_one_resolved_target() {
-    use crate::features::{BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId};
-    use crate::ids::BodyId;
-
-    let mut ir = unit_cube();
-    let body = ir.model.bodies[0].id.clone();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-combine-target")
-            .expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Combine {
-            target: BodySelection::Bodies(vec![
-                body.clone(),
-                BodyId::mint("synthetic:test:body#other-target").expect("valid identity"),
-            ]),
-            tools: BodySelection::Bodies(vec![body]),
-            op: BooleanKind::Join,
-            keep_tools: false,
-        },
-        native_ref: None,
-    });
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "body combine target is invalid",
-        "body combine operands overlap",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
-}
-
-#[test]
-fn feature_operand_roles_must_be_disjoint() {
-    use crate::features::{
-        BodySelection, BodyTrimSide, FaceSelection, Feature, FeatureDefinition, FeatureId, Length,
-        RadiusSpec,
-    };
-
-    let mut ir = unit_cube();
-    let body = ir.model.bodies[0].id.clone();
-    let body_key = body.as_str().to_owned();
-    let face = ir.model.faces[0].id.clone();
-    for (ordinal, definition) in [
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Faces(vec![face.clone()]),
-            second_faces: FaceSelection::Faces(vec![face]),
-            radius: RadiusSpec::Constant {
-                radius: Length(1.0),
-            },
-        },
-        FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#targets".into(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#tools".into(),
-            },
-            keep: BodyTrimSide::Forward,
-        },
-        FeatureDefinition::SectionShape {
-            first: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#first".into(),
-            },
-            second: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#second".into(),
-            },
-            approximate: Some(false),
-        },
-        FeatureDefinition::ReplaceFace {
-            targets: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
-            replacements: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
-        },
-        FeatureDefinition::SewBodies {
-            bodies: BodySelection::Local {
-                bodies: vec![body_key],
-                native: "test:selection#sew".into(),
-            },
-            gap_tolerance: None,
-        },
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#overlap-{ordinal}"))
-                .expect("identity grammar"),
-            ordinal: ordinal as u64,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        });
-    }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "face blend supports overlap",
-        "body trim operands overlap",
-        "section operands overlap",
-        "replacement face operands overlap",
-        "sew requires at least two bodies",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+    use crate::features::{
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
     ir.model.features.push(Feature {
         id: seed.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
-            construction: None,
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1149,19 +804,26 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::Mirror {
-                plane_origin: Point3::new(0.0, 0.0, 0.0),
-                plane_normal: Vector3::new(1.0, 0.0, 0.0),
-            },
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: vec![PatternSeed::Feature(seed.clone())],
+                pattern: PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                })
+                .unwrap(),
+            }),
+        ),
         native_ref: None,
     });
     let message = format!(
@@ -1169,12 +831,21 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         seed.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
 
-    ir.model.features[1].dependencies.push(seed);
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            seed,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -1182,15 +853,19 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 
 #[test]
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
-    use crate::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
-        DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-        ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef, Length,
-        LinearTermination, PatternKind, PatternSeed, ProfileRef,
+    use crate::{
+        features::{
+            patterns::{PatternKind, PatternSeed, PatternTransform},
+            BooleanOp, ConfigurationFeatureState, ConfigurationId, DatumPlaneReference,
+            DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedCurveRef,
+            LinearTermination, PlanarProfileRef, ProfileRef,
+        },
+        scalar::Length,
     };
     use std::collections::{BTreeMap, HashSet};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let source = FeatureId::mint("synthetic:test:feature#0-source").expect("identity grammar");
     let offset = FeatureId::mint("synthetic:test:feature#1-offset").expect("identity grammar");
     let derived = FeatureId::mint("synthetic:test:feature#2-derived").expect("identity grammar");
@@ -1204,81 +879,99 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features = vec![
         feature(
             source.clone(),
             0,
-            FeatureDefinition::DatumPlane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+                frame: crate::features::FeatureDatumPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            }),
         ),
         feature(
             offset.clone(),
             1,
-            FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(source.clone())),
-                distance: Length(5.0),
-            },
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: source.clone(),
+                }),
+                distance: Length::new(5.0).unwrap(),
+            }),
         ),
         feature(
             derived.clone(),
             2,
-            FeatureDefinition::DerivedGeometry {
+            FeatureDefinition::Operation(FeatureOperation::DerivedGeometry {
                 source: source.clone(),
-            },
+            }),
         ),
         feature(
             pattern.clone(),
             3,
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(source.clone())],
-                pattern: PatternKind::Mirror {
-                    plane_origin: Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-            },
+                pattern: PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                })
+                .unwrap(),
+            }),
         ),
         feature(
             block.clone(),
             4,
-            FeatureDefinition::SketchBlockDefinition { sketch: None },
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None }),
         ),
         feature(
             instance.clone(),
             5,
-            FeatureDefinition::SketchBlockInstance {
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
                 block: Some(block.clone()),
                 placement: Some(crate::transform::Transform::identity()),
-            },
+            }),
         ),
         feature(
             profile.clone(),
             6,
-            FeatureDefinition::Extrude {
-                profile: ProfileRef::Generated {
-                    curves: vec![GeneratedCurveRef {
-                        feature: source.clone(),
-                        local_id: "curve-0".into(),
-                    }],
-                    native: "synthetic:test:profile-selection".into(),
-                },
-                direction: ExtrudeDirection::ProfileNormal,
-                start: ExtrudeStart::ProfilePlane,
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(
+                    PlanarProfileRef::generated(
+                        vec![GeneratedCurveRef::new(
+                            source.clone(),
+                            "curve-0".into(),
+                            &cadmpeg_test_support::service_decode_context(),
+                        )
+                        .expect("selection reference admission")
+                        .unwrap()],
+                        "synthetic:test:profile-selection".into(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
+                    .unwrap(),
+                ),
+                direction: ExtrudeDirection::ProfileNormal {},
+                start: ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(5.0),
+                            length: crate::scalar::NonZeroLength::new(5.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1289,23 +982,44 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            },
+            }),
         ),
     ];
-    ir.model.features[2].dependencies.push(source.clone());
-    ir.model.features[3].dependencies.push(source.clone());
-    ir.model.features[6].dependencies.push(source.clone());
+    ir.model.features[2]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[3]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[6]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
             .expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Offset".into(),
+        name: Some("Offset".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         feature_states: [
             (offset.clone(), 1),
@@ -1320,10 +1034,10 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 feature,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: crate::features::DistinctMembers::default(),
                     },
-                    dependencies: Vec::new(),
-                    definition: ir.model.features[index].definition.clone(),
+                    dependencies: crate::features::DistinctMembers::default(),
+                    definition: ir.model.features[index].evaluation.definition().clone(),
                 },
             )
         })
@@ -1332,6 +1046,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     });
 
     let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
         .map(|finding| finding.message)
@@ -1357,227 +1072,55 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         block.as_str()
     )));
 
-    ir.model.features[1].dependencies.push(source.clone());
-    ir.model.features[5].dependencies.push(block.clone());
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[5]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            block.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
             .get_mut(feature)
             .expect("configuration feature state")
             .dependencies
-            .push(source.clone());
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                source.clone(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
     }
     ir.model.configurations[0]
         .feature_states
         .get_mut(&instance)
         .expect("block-instance state")
         .dependencies
-        .push(block);
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&offset)
-        .expect("offset-plane state");
-    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    *distance = Length(f64::NAN);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "configuration datum-plane offset is invalid" }));
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&offset)
-        .expect("offset-plane state");
-    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    *distance = Length(5.0);
-    let report = validate_neutral(&ir, Vec::new());
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            block,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
-}
-
-#[test]
-fn resolved_datum_geometry_must_be_finite_and_coherent() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
-
-    let definitions = [
-        FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 1.0),
-        },
-        FeatureDefinition::DatumAxis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 0.0),
-        },
-        FeatureDefinition::DatumPoint {
-            position: Point3::new(f64::NAN, 0.0, 0.0),
-            construction: None,
-        },
-        FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
-            construction: Some(Box::new(
-                crate::features::DatumPointConstruction::DistanceOnEdge {
-                    edge: crate::features::EdgeSelection::Unresolved,
-                    fraction: 1.5,
-                },
-            )),
-        },
-    ];
-    let mut ir = unit_cube();
-    for (ordinal, definition) in definitions.into_iter().enumerate() {
-        ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#invalid-datum-{ordinal}"))
-                .expect("identity grammar"),
-            ordinal: ordinal as u64,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        });
-    }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "datum-plane frame is invalid",
-        "datum-axis frame is invalid",
-        "datum-point position is invalid",
-        "datum-point path fraction is invalid",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
-}
-
-#[test]
-fn explicit_extrusion_direction_must_be_nonzero() {
-    use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        LinearTermination, ProfileRef,
-    };
-
-    let mut ir = unit_cube();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-extrude-direction")
-            .expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Native("profile".into()),
-            direction: ExtrudeDirection::Explicit {
-                vector: Vector3::new(0.0, 0.0, 0.0),
-                source: None,
-            },
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(1.0),
-                    },
-                    draft: None,
-                },
-            },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
-        native_ref: None,
-    });
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "extrusion direction is invalid"));
-}
-
-#[test]
-fn extrusion_side_drafts_are_validated() {
-    use crate::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, LinearTermination, ProfileRef,
-    };
-
-    let side = |length: f64, draft: Option<Angle>| ExtrudeSide {
-        termination: LinearTermination::Blind {
-            length: Length(length),
-        },
-        draft,
-    };
-    for (extent, expected_invalid) in [
-        (
-            ExtrudeExtent::TwoSided {
-                first: side(1.0, None),
-                second: side(2.0, Some(Angle(0.25))),
-            },
-            false,
-        ),
-        (
-            ExtrudeExtent::TwoSided {
-                first: side(1.0, None),
-                second: side(2.0, Some(Angle(f64::NAN))),
-            },
-            true,
-        ),
-        (
-            ExtrudeExtent::Symmetric {
-                side: side(1.0, Some(Angle(std::f64::consts::FRAC_PI_2))),
-            },
-            true,
-        ),
-    ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#side-draft").expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Native("profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
-                start: crate::features::ExtrudeStart::ProfilePlane,
-                extent,
-                op: BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            },
-            native_ref: None,
-        });
-        let has_draft_finding = validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "extrusion draft is invalid");
-        assert_eq!(has_draft_finding, expected_invalid);
-    }
 }
 
 #[test]
 fn generated_body_selection_must_name_a_declared_producer_result() {
     use crate::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureResultTopology,
-        GeneratedBodyRef,
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureResultTopology, GeneratedBodyRef,
     };
     use crate::ids::FeatureResultTopologyId;
 
@@ -1588,63 +1131,94 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "producer".into(),
-            parameters: BTreeMap::default(),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "producer".into(),
+                parameters: BTreeMap::default(),
+            }),
+        ),
         native_ref: None,
     });
-    ir.model
-        .feature_result_topologies
-        .push(FeatureResultTopology {
-            id: FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
-                .expect("valid identity"),
-            output_of: producer.clone(),
-            bodies: vec!["body#declared".into()],
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: Vec::new(),
-            native_ref: None,
-        });
+    ir.model.feature_result_topologies.push(
+        crate::features::FeatureResultMembers::new(
+            vec![cadmpeg_core::nonblank_literal!("body#declared")],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+            "validate feature result members",
+        )
+        .expect("result membership admission")
+        .map(|members| {
+            FeatureResultTopology::new(
+                FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
+                    .expect("valid identity"),
+                producer.clone(),
+                members,
+                None,
+            )
+        })
+        .unwrap(),
+    );
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#1-consumer").expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: vec![producer.clone()],
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![producer.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Generated {
-                bodies: vec![GeneratedBodyRef {
-                    feature: producer,
-                    local_id: "body#declared".into(),
-                }],
-                native: "synthetic:native-selection#0".into(),
-            },
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: BodySelection::generated(
+                    vec![GeneratedBodyRef {
+                        feature: producer,
+                        local_id: "body#declared".to_owned().try_into().unwrap(),
+                    }],
+                    "synthetic:native-selection#0".into(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("body selection admission")
+                .unwrap(),
+            }),
+        ),
         native_ref: None,
     });
 
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.is_empty(), "{:?}", report.findings);
-    let FeatureDefinition::BaseFeature {
-        bodies: BodySelection::Generated { bodies, .. },
-    } = &mut ir.model.features[1].definition
-    else {
-        panic!("test consumer must retain its generated body selection");
-    };
-    bodies[0].local_id = "body#undeclared".into();
+    ir.model.features[1].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Generated { bodies, .. },
+        }) = definition
+        else {
+            panic!("test consumer must retain its generated body selection");
+        };
+        *bodies = vec![GeneratedBodyRef::new(
+            bodies[0].feature.clone(),
+            "body#undeclared".into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("selection reference admission")
+        .unwrap()]
+        .try_into()
+        .unwrap();
+    });
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
@@ -1653,122 +1227,123 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
 #[test]
 fn reference_images_require_valid_assets_and_plane_placements() {
     use crate::assets::{Asset, AssetContent, AssetId};
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::math::Point2;
 
     let asset_id = AssetId::mint("synthetic:test:asset#reference-image").expect("identity grammar");
     let feature_id =
         FeatureId::mint("synthetic:test:feature#reference-image").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.assets.push(Asset {
-        id: asset_id.clone(),
-        name: Some("reference.png".into()),
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded {
-            data: vec![1, 2, 3],
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            asset_id.clone(),
+            Some("reference.png".into()),
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![1, 2, 3]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::ReferenceImage {
-            asset: asset_id,
-            visible: true,
-            mirror_u: false,
-            mirror_v: false,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-            bounds: [Point2::new(-10.0, -5.0), Point2::new(10.0, 5.0)],
-            opacity: Some(0.75),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::ReferenceImage {
+                asset: asset_id,
+                visible: true,
+                mirror_u: false,
+                mirror_v: false,
+                frame: crate::features::FeatureUnitPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+                bounds: crate::features::FeatureImageBounds::new([
+                    Point2::new(-10.0, -5.0),
+                    Point2::new(10.0, 5.0),
+                ])
+                .unwrap(),
+                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
+            }),
+        ),
         native_ref: None,
     });
-    ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
     );
 
     ir.model.assets.clear();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message.contains("reference-image asset")
-    }));
-
-    let FeatureDefinition::ReferenceImage { ref mut v_axis, .. } = ir.model.features[0].definition
-    else {
-        unreachable!();
-    };
-    *v_axis = Vector3::new(1.0, 0.0, 0.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == "reference-image placement is invalid"
     }));
 }
 
 #[test]
 fn decals_require_valid_assets_faces_and_opacity() {
     use crate::assets::{Asset, AssetContent, AssetId};
-    use crate::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId};
+    use crate::features::{
+        DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
-    ir.model.assets.push(Asset {
-        id: asset_id.clone(),
-        name: Some("decal.png".into()),
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded {
-            data: vec![1, 2, 3],
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            asset_id.clone(),
+            Some("decal.png".into()),
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![1, 2, 3]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Decal {
-            asset: asset_id,
-            faces: FaceSelection::Faces(vec![face_id]),
-            mapping: DecalMapping::FitToFaces,
-            opacity: Some(0.75),
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Decal {
+                asset: asset_id,
+                faces: FaceSelection::Faces(vec![face_id]),
+                mapping: DecalMapping::FitToFaces,
+                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
+            }),
+        ),
         native_ref: None,
     });
-    ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-
-    let FeatureDefinition::Decal {
-        ref mut opacity, ..
-    } = ir.model.features.last_mut().unwrap().definition
-    else {
-        unreachable!();
-    };
-    *opacity = Some(2.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == "decal opacity is invalid"
-    }));
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }

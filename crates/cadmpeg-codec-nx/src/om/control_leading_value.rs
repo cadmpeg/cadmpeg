@@ -12,7 +12,7 @@ enum LeadingBytes {
 }
 
 impl ControlLeadingValue {
-    pub(crate) fn read(width: usize, mut bytes: impl Iterator<Item = u8>) -> Option<Self> {
+    pub(super) fn read(width: usize, mut bytes: impl Iterator<Item = u8>) -> Option<Self> {
         Some(Self(match width {
             1 => LeadingBytes::One(bytes.next()?),
             2 => LeadingBytes::Two([bytes.next()?, bytes.next()?]),

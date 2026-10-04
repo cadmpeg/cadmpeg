@@ -1,43 +1,90 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use super::card;
+use super::curve_entity;
+use super::encode_file;
+use super::ensure_version_support;
+use super::face_loop_order;
+use super::face_outer_loop;
+use super::generated_global;
+use super::generated_minimum_resolution;
+use super::generation_timestamp;
+use super::hyperbola_point;
+use super::isoparametric_flag;
+use super::number;
+use super::oriented_curve_entity;
+use super::orthonormal_pair;
+use super::surface_entities;
+use super::validate_arc_sweep;
+use super::CurveSpan;
+use super::RevolutionSweep;
+use super::WRITER_ENDPOINT_RELATIVE_TOLERANCE;
+use super::WRITER_NATIVE_FILE_NAME;
+use super::WRITER_SENDER_PRODUCT;
+use super::WRITER_UNITS_NAME;
+use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
 use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::topology::IncreasingParameterInterval;
+use cadmpeg_ir::topology::Loop;
+use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
 use cadmpeg_ir::CadIr;
+use std::f64::consts::TAU;
 use std::io::Cursor;
+use std::time::UNIX_EPOCH;
+
+#[test]
+fn generated_card_sequence_exhaustion_is_not_implemented() {
+    let error = card(b"", b'D', 10_000_000).expect_err("seven-digit sequence field");
+    assert!(matches!(error, CodecError::NotImplemented(_)));
+}
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{
-    fixed_ascii_with_global, parametrically_bounded_plane_file, point_file_with_global,
-    trimmed_plane_file, trimmed_plane_with_inner_loop_file,
-};
+use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
+use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
+use crate::test_support::test_solids_and_structure::parametrically_bounded_plane_file;
+use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod allocation;
 mod encode;
+mod extrusion_directrix;
+mod pcurve_orientation;
 mod quarantine;
 mod roundtrip;
 
-fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-            | cadmpeg_ir::LossTaxonomy::ProceduralReduced
-            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
+            | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
     )
 }
 
-fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
     )
 }
 
@@ -49,8 +96,13 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             &DecodeOptions::default(),
         )
         .expect("synthetic mixed-loop fixture decodes");
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let model_only_loop_id = decoded.ir().model.faces[0].loops[0].clone();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let model_only_loop_id = decoded.ir().model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("a decoded face states a loop")
+        .clone();
     {
         let mut ir = decoded.ir_mut();
         for face in &mut ir.model.faces {
@@ -160,6 +212,11 @@ fn generation_timestamp_uses_the_declared_version_width() {
     );
 }
 
+/// A finite test value as the formatter's checked input.
+fn real(value: f64) -> FiniteReal {
+    FiniteReal::new(value).expect("a finite test value")
+}
+
 #[test]
 fn number_preserves_distinct_finite_values() {
     for value in [
@@ -169,7 +226,7 @@ fn number_preserves_distinct_finite_values() {
         1.802_581_857_082_682,
         1.802_581_857_082_681_5,
     ] {
-        let encoded = number(value);
+        let encoded = number(real(value));
         let decoded = encoded
             .replace('D', "E")
             .parse::<f64>()
@@ -187,16 +244,18 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
-        Point {
-            id: point_start.clone(),
-            source_object: None,
-            position: Point3::new(2_000_000.0, 0.0, 0.0),
-        },
-        Point {
-            id: point_end.clone(),
-            source_object: None,
-            position: Point3::new(2_000_001.0, 0.0, 0.0),
-        },
+        Point::new(
+            point_start.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            point_end.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -212,33 +271,40 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ]);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2_000_000.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(2_000_000.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        )),
         source_object: None,
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
-        curve: Some(curve_id),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+            .expect("valid edge carrier"),
         start: vertex_start,
         end: vertex_end,
-        param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
-    assert!((generated_minimum_resolution(&ir) - expected).abs() <= f64::EPSILON * 64.0);
+    assert!(
+        (generated_minimum_resolution(&ir).expect("evaluation resources") - expected).abs()
+            <= f64::EPSILON * 64.0
+    );
 }
 
 #[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("test:model:point#global-profile").expect("identity grammar"),
-        source_object: None,
-        position: Point3::new(123.0, -4.0, 5.0),
-    });
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#global-profile").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
 
     let plan = crate::IgesCodec
         .plan(
@@ -249,17 +315,12 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut written = Vec::new();
     plan.write_to(&mut written)
         .expect("generated IGES bytes are writable");
-    let scan = crate::card::scan(&written).expect("generated IGES cards scan");
-    let (global, _) = crate::global::parse(&scan).expect("generated Global record parses");
-    assert_eq!(
-        global.sender_product().as_deref(),
-        Some(WRITER_SENDER_PRODUCT)
-    );
-    assert_eq!(
-        global.native_file_name().as_deref(),
-        Some(WRITER_NATIVE_FILE_NAME)
-    );
-    assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
+    let scan = crate::test_support::scan(&written).expect("generated IGES cards scan");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("generated Global record parses");
+    assert_eq!(global.sender_product(), Some(WRITER_SENDER_PRODUCT));
+    assert_eq!(global.native_file_name(), Some(WRITER_NATIVE_FILE_NAME));
+    assert_eq!(global.units_name(), Some(WRITER_UNITS_NAME));
     assert_eq!(
         global
             .declared_version()
@@ -297,10 +358,12 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, 0.001, 1000.0);
+        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
         let fixture = fixed_ascii_with_global(&global_bytes);
-        let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
-        let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
+        let scan =
+            crate::test_support::scan(&fixture).expect("versioned generated Global cards scan");
+        let (global, losses) =
+            crate::test_support::parse_global(&scan).expect("versioned Global parses");
         assert_eq!(
             global
                 .declared_version()
@@ -332,12 +395,14 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 #[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
-    ir.tolerances.linear = 2.5;
-    ir.model.points.push(Point {
-        id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
-        source_object: None,
-        position: Point3::new(1.0, 2.0, 3.0),
-    });
+    ir.tolerances.linear =
+        cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
 
     let plan = crate::IgesCodec
         .plan(
@@ -349,8 +414,9 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let report = plan
         .write_to(&mut written)
         .expect("neutral tolerance floor output is writable");
-    let scan = crate::card::scan(&written).expect("neutral tolerance floor output scans");
-    let (global, _) = crate::global::parse(&scan).expect("neutral tolerance floor Global parses");
+    let scan = crate::test_support::scan(&written).expect("neutral tolerance floor output scans");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("neutral tolerance floor Global parses");
 
     assert_eq!(
         global
@@ -371,7 +437,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
             &DecodeOptions::default(),
         )
         .expect("source resolution witness decodes");
-    assert_eq!(decoded.ir().tolerances.linear, 0.001);
+    assert_eq!(decoded.ir().tolerances.linear.get(), 0.001);
 
     let plan = crate::IgesCodec
         .plan(
@@ -383,8 +449,9 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
     let report = plan
         .write_to(&mut written)
         .expect("source resolution witness output is writable");
-    let scan = crate::card::scan(&written).expect("source resolution output scans");
-    let (global, _) = crate::global::parse(&scan).expect("source resolution output Global parses");
+    let scan = crate::test_support::scan(&written).expect("source resolution output scans");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("source resolution output Global parses");
 
     assert_eq!(
         global
@@ -436,7 +503,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: Vec::new(),
+        parameter_body: Vec::new(),
         transform: None,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
@@ -487,7 +554,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form: 0,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: b"102,1,@R0@;".to_vec(),
+        parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
     };
     assert!(matches!(
@@ -553,56 +620,76 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
 fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     let cases = [
         (
-            SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             190,
         ),
         (
-            SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             192,
         ),
         (
-            SurfaceGeometry::Cone {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-                ratio: 1.0,
-                half_angle: std::f64::consts::FRAC_PI_6,
-            },
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                    1.0,
+                    std::f64::consts::FRAC_PI_6,
+                )
+                .expect("valid ConeSurface fixture"),
+            )),
             194,
         ),
         (
-            SurfaceGeometry::Sphere {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid SphereSurface fixture"),
+            )),
             196,
         ),
         (
-            SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 2.0,
-                minor_radius: 1.0,
-            },
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    1.0,
+                )
+                .expect("valid TorusSurface fixture"),
+            )),
             198,
         ),
     ];
     for (geometry, expected_type) in cases {
-        let entities = surface_entities(&geometry, 0, IgesVersion::V5_3)
-            .expect("analytic surface has a carrier");
+        let entities = surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            geometry.solved().expect("solved carrier"),
+            0,
+            IgesVersion::V5_3,
+        )
+        .expect("analytic surface has a carrier");
         let surface = entities
             .last()
             .expect("analytic surface emits a surface entity");
@@ -612,39 +699,130 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 }
 
 #[test]
+fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
+    let cone = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+        -0.5,
+    )
+    .expect("the IR admits a finite signed cone angle");
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Cone(cone),
+            0,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn negative_sphere_radius_is_not_implemented() {
+    let sphere = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        -1.0,
+    )
+    .expect("the IR admits a negative nonzero sphere radius");
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Sphere(sphere),
+            0,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn torus_radii_outside_iges_interval_are_not_implemented() {
+    for minor_radius in [-1.0, 3.0] {
+        let torus = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            minor_radius,
+        )
+        .expect("the IR admits any finite nonzero tube radius");
+        assert!(matches!(
+            surface_entities(
+                &cadmpeg_test_support::service_decode_context(),
+                &SolvedSurfaceGeometry::Torus(torus),
+                0,
+                IgesVersion::V5_3
+            ),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+}
+
+#[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
-    let geometry = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 3.0,
-    };
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            3.0,
+        )
+        .expect("valid HyperbolaCurve fixture"),
+    ));
     let range = [0.2, 1.1];
     let span = CurveSpan {
-        range,
-        start: curve_point(&geometry, range[0]).expect("start evaluates"),
-        end: curve_point(&geometry, range[1]).expect("end evaluates"),
+        range: cadmpeg_ir::units::FiniteVector::new(range).expect("finite test range"),
+        start: cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            range[0],
+        )
+        .expect("start evaluates")
+        .get(),
+        end: cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            range[1],
+        )
+        .expect("end evaluates")
+        .get(),
     };
-    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
-        .expect("a bounded hyperbola can be reversed exactly");
+    let entity = oriented_curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
+        &geometry,
+        &span,
+        Sense::Reversed,
+        IgesVersion::V5_3,
+    )
+    .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
-        entity.transform.expect("hyperbola has a placement").rows,
+        entity
+            .transform
+            .expect("hyperbola has a placement")
+            .rows
+            .map(|row| row.map(FiniteReal::get)),
         [
             [1.0, 0.0, 0.0, 1.0],
             [0.0, -1.0, 0.0, 2.0],
             [0.0, 0.0, -1.0, 3.0]
         ]
     );
-    let start = hyperbola_point(2.0, 3.0, -range[1]).expect("reflected start evaluates");
-    let end = hyperbola_point(2.0, 3.0, -range[0]).expect("reflected end evaluates");
+    let start =
+        hyperbola_point(real(2.0), real(3.0), -range[1]).expect("reflected start evaluates");
+    let end = hyperbola_point(real(2.0), real(3.0), -range[0]).expect("reflected end evaluates");
     assert_eq!(
-        String::from_utf8(entity.parameters).expect("parameters are ASCII"),
+        String::from_utf8(entity.parameter_text()).expect("parameters are ASCII"),
         format!(
             "104,{},0,{},0,0,-1,0,{},{},{},{};",
-            number(1.0 / 4.0),
-            number(-1.0 / 9.0),
+            number(real(1.0 / 4.0)),
+            number(real(-1.0 / 9.0)),
             number(start[0]),
             number(start[1]),
             number(end[0]),
@@ -654,36 +832,29 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
 }
 
 #[test]
-fn orthonormal_pair_repairs_float32_scale_frame_noise() {
-    let (axis, reference) = orthonormal_pair(
+fn orthonormal_pair_repairs_skew_within_the_frame_tolerance() {
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 0.03),
-        "test frame",
+        Vector3::new(1.0, 0.0, 5.0e-10),
     )
-    .expect("float32-scale skew is representation noise");
+    .expect("a skew within the frame tolerance is admitted");
+    let (axis, reference) = orthonormal_pair(&frame);
     assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(reference, Vector3::new(1.0, 0.0, 0.0));
 }
 
 #[test]
-fn orthonormal_pair_accepts_the_declared_repair_bound() {
-    orthonormal_pair(
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT),
-        "test frame",
+fn orthonormal_pair_normalizes_an_admitted_axis_off_unit_length() {
+    // The frame admits an axis within 1e-9 of unit length; a Type 124 matrix
+    // is read at 17 significant digits.
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+        Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
+        Vector3::new(1.0, 0.0, 0.0),
     )
-    .expect("the declared frame policy bound is admissible");
-}
-
-#[test]
-fn orthonormal_pair_refuses_skew_beyond_the_repair_bound() {
-    let error = orthonormal_pair(
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 1.1),
-        "test frame",
-    )
-    .expect_err("material skew must not be silently changed");
-    assert!(error.to_string().contains("exceeds the frame repair bound"));
+    .expect("a length within the unit tolerance is admitted");
+    let (axis, reference) = orthonormal_pair(&frame);
+    assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(reference, Vector3::new(1.0, 0.0, 0.0));
 }
 
 #[test]
@@ -698,7 +869,7 @@ fn generated_reals_round_trip_without_writer_quantization() {
         1.0e-20,
         5.0e-13,
     ] {
-        let encoded = number(value);
+        let encoded = number(real(value));
         assert!(encoded.contains('D'), "{value}: {encoded}");
         let decoded = encoded
             .replace('D', "E")
@@ -706,44 +877,127 @@ fn generated_reals_round_trip_without_writer_quantization() {
             .expect("generated real must parse");
         assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
     }
-    assert_eq!(number(0.0), "0");
-    assert_eq!(number(-0.0), "0");
+    assert_eq!(number(real(0.0)), "0");
+    assert_eq!(number(real(-0.0)), "0");
 }
 
 #[test]
 fn generated_parameter_cards_preserve_field_boundaries() {
-    let token = number(f64::MAX);
-    let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
-        .expect("ordinary generated real tokens fit one card");
-    assert!(fragments.len() > 1);
-    assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
-    let compact = fragments
-        .concat()
-        .into_iter()
-        .filter(|byte| *byte != b' ')
-        .collect::<Vec<_>>();
-    assert_eq!(compact, parameters.as_bytes());
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let token = number(real(f64::MAX));
+        let parameters = format!("128,{token},{token},{token},{token};");
+        let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
+            .expect("ordinary generated real tokens fit one card");
+        assert!(fragments.len() > 1);
+        assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
+        let compact = fragments
+            .concat()
+            .into_iter()
+            .filter(|byte| *byte != b' ')
+            .collect::<Vec<_>>();
+        assert_eq!(compact, parameters.as_bytes());
+    });
 }
 
 #[test]
 fn generated_parameter_field_wider_than_a_card_is_refused() {
-    let parameters = format!("{};", "1".repeat(65));
-    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
-        .expect_err("a field wider than the data area must fail");
-    assert!(error.to_string().contains("field exceeds one card"));
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let parameters = format!("{};", "1".repeat(65));
+        let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
+            .expect_err("a field wider than the data area must fail");
+        assert!(error.to_string().contains("field exceeds one card"));
+    });
+}
+
+#[test]
+fn generated_file_parameter_layout_obeys_default_decode_limits() {
+    let ordinary = super::Entity {
+        type_code: 110,
+        form: 0,
+        label: "TEST",
+        status: super::EntityStatus::Independent,
+        parameter_body: b"0,0,0,1,0,0;".to_vec(),
+        transform: None,
+    };
+    assert!(encode_file(
+        std::slice::from_ref(&ordinary),
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .is_ok());
+
+    let omitted_fields = usize::try_from(
+        cadmpeg_core::decode::DecodePolicy::default()
+            .limits
+            .max_collection_items,
+    )
+    .expect("test collection limit fits usize");
+    let mut parameter_body = vec![b','; omitted_fields];
+    parameter_body.push(b';');
+    let oversized = super::Entity {
+        parameter_body,
+        ..ordinary
+    };
+    let error = encode_file(
+        &[oversized],
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .expect_err("default policy must refuse the oversized parameter stream");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && refusal.operation == "iges parameter layout fields"
+                && refusal.used == u64::try_from(omitted_fields).expect("default collection limit fits u64")
+                && refusal.additional == 1
+    ));
+}
+
+#[test]
+fn generated_parameter_layout_uses_its_own_input_allowance() {
+    let payload_len = 20 * 1024 * 1024;
+    let mut parameter_body = format!("{payload_len}H").into_bytes();
+    parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
+    parameter_body.push(b';');
+    let entity = super::Entity {
+        type_code: 110,
+        form: 0,
+        label: "TEST",
+        status: super::EntityStatus::Independent,
+        parameter_body,
+        transform: None,
+    };
+    assert!(encode_file(
+        &[entity],
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .is_ok());
 }
 
 #[test]
 fn generated_full_circle_has_lexically_identical_endpoints() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
-    let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    let entity = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
+        geometry.solved().expect("solved carrier"),
+        None,
+        IgesVersion::V5_3,
+    )
+    .expect("full circle is writable");
+    let parameters = String::from_utf8(entity.parameter_text()).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
         .split(',')
@@ -753,18 +1007,26 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
 
 #[test]
 fn generated_circle_refuses_a_zero_length_edge_span() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
     let span = CurveSpan {
-        range: [0.5, 0.5],
+        range: cadmpeg_ir::units::FiniteVector::new([0.5, 0.5]).expect("finite test range"),
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let Err(error) = curve_entity(&geometry, Some(&span), IgesVersion::V5_3) else {
+    let Err(error) = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
+        geometry.solved().expect("solved carrier"),
+        Some(&span),
+        IgesVersion::V5_3,
+    ) else {
         panic!("zero-length span must not become a full revolution");
     };
     assert!(error.to_string().contains("non-zero ordered span"));
@@ -774,6 +1036,45 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
 fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
     assert!(validate_arc_sweep([0.0, TAU + ANGULAR_TOLERANCE]).is_ok());
     assert!(validate_arc_sweep([0.0, TAU + ANGULAR_TOLERANCE * 1.01]).is_err());
+}
+
+#[test]
+fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
+    let start = 0.25_f64;
+    let increasing = |terminate: f64| {
+        IncreasingParameterInterval::new([start, terminate]).expect("increasing angular interval")
+    };
+    let inside = RevolutionSweep::classify(increasing(start + TAU + ANGULAR_TOLERANCE / 2.0))
+        .expect("a sweep within the angular tolerance of a full turn is a full turn");
+    assert!(matches!(inside, RevolutionSweep::Full));
+    assert_eq!(inside.terminate_angle(start), start + TAU);
+
+    let partial = RevolutionSweep::classify(increasing(start + TAU / 4.0)).expect("partial sweep");
+    assert!(matches!(partial, RevolutionSweep::Partial(_)));
+    assert_eq!(partial.terminate_angle(start), start + TAU / 4.0);
+
+    let Err(error) = RevolutionSweep::classify(increasing(start + TAU + 2.0 * ANGULAR_TOLERANCE))
+    else {
+        panic!("a sweep beyond the angular tolerance of a full turn must be refused");
+    };
+    assert!(matches!(error, CodecError::InvalidInput(_)));
+    let text = error.to_string();
+    assert!(text.contains("angular_interval"));
+    assert!(text.contains("outside (0, ") && text.contains(" + ") && text.ends_with(']'));
+}
+
+#[test]
+fn revolution_sweep_that_overflows_between_finite_endpoints_is_refused() {
+    let interval = IncreasingParameterInterval::new([-f64::MAX, f64::MAX])
+        .expect("finite strictly increasing endpoints");
+    let Err(error) = RevolutionSweep::classify(interval) else {
+        panic!("a sweep that overflows must be refused");
+    };
+    assert!(matches!(error, CodecError::InvalidInput(_)));
+    let text = error.to_string();
+    assert!(text.contains("angular_interval"));
+    assert!(text.contains("sweep overflows"));
+    assert!(!text.contains("not finite"));
 }
 
 #[test]
@@ -790,7 +1091,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::classified(
-            Some(outer_id.clone()),
+            outer_id.clone(),
             vec![inner_id.clone()],
         ),
         name: None,
@@ -804,10 +1105,12 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -816,10 +1119,12 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -857,10 +1162,12 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -869,10 +1176,12 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -881,4 +1190,301 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
     assert!(face_outer_loop(&face, &ordered).is_none());
+}
+
+#[test]
+fn conic_coefficients_preserve_extreme_finite_radii() {
+    for radius in [1e-308, 1e-200, 1.0, 1e200, 1e308] {
+        let [a, c, f] = super::conic_coefficients(radius, radius)
+            .expect("scaled circle coefficients remain representable")
+            .map(FiniteReal::get);
+        assert!(a.is_finite() && a > 0.0 && c == a && f.is_finite() && f < 0.0);
+        let recovered = (-f).sqrt() / a.sqrt();
+        assert!((recovered / radius - 1.0).abs() <= 16.0 * f64::EPSILON);
+    }
+    assert_eq!(
+        super::conic_coefficients(2.0, 1.0)
+            .expect("ordinary ellipse coefficients remain representable")
+            .map(FiniteReal::get),
+        [0.25, 1.0, -1.0]
+    );
+    assert!(super::conic_coefficients(1e-200, 1e200).is_err());
+}
+
+#[test]
+fn unrepresentable_conic_coefficients_are_not_implemented() {
+    let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1e200,
+        1e-200,
+    )
+    .expect("the IR admits finite ordered positive ellipse radii");
+    assert!(matches!(
+        curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedCurveGeometry::Ellipse(ellipse),
+            None,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn negative_nurbs_weights_are_not_implemented() {
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, -1.0]),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("the IR admits finite nonzero signed NURBS weights");
+    assert!(matches!(
+        curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedCurveGeometry::Nurbs(curve),
+            Some(&CurveSpan {
+                range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(1.0, 0.0, 0.0),
+            }),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+
+    let axis =
+        || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        axis(),
+        axis(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            Some(vec![vec![1.0, 1.0], vec![1.0, -1.0]]),
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("the IR admits finite nonzero signed NURBS weights");
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            0,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn empty_nurbs_surface_domain_is_not_implemented() {
+    let axis =
+        || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.0, 0.0], false);
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        axis(),
+        axis(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("the IR admits a nondecreasing knot vector with an empty active domain");
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            0,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
+    let expected = (720.0 + 1e-10_f64.ln()).exp() * 0.5;
+    for parameter in [-720.0_f64, 720.0] {
+        let point = hyperbola_point(real(1e-10), real(1e-10), parameter)
+            .expect("a hyperbola endpoint at parameter magnitude 720 stays finite")
+            .map(FiniteReal::get);
+        assert!((point[0] / expected - 1.).abs() < 1024.0 * f64::EPSILON);
+        assert_eq!(point[1], point[0] * parameter.signum());
+    }
+    assert!(hyperbola_point(real(1.), real(1.), 2000.).is_err());
+}
+
+#[test]
+fn hyperbola_endpoint_overflow_is_not_implemented() {
+    let hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+    )
+    .expect("the IR admits finite positive hyperbola radii");
+    let span = CurveSpan {
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 2000.0]).expect("finite test range"),
+        start: Point3::new(1.0, 0.0, 0.0),
+        end: Point3::new(1.0, 0.0, 0.0),
+    };
+    assert!(matches!(
+        curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedCurveGeometry::Hyperbola(hyperbola),
+            Some(&span),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn parabola_endpoint_overflow_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        f64::MAX,
+    )
+    .expect("the IR admits a finite positive focal distance");
+    let span = CurveSpan {
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite test range"),
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    assert!(matches!(
+        curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedCurveGeometry::Parabola(parabola),
+            Some(&span),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn zero_conic_parameter_span_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .expect("valid parabola");
+    let hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+    )
+    .expect("valid hyperbola");
+    let span = CurveSpan {
+        range: cadmpeg_ir::units::FiniteVector::new([1.0, 1.0]).expect("finite test range"),
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    for geometry in [
+        SolvedCurveGeometry::Parabola(parabola),
+        SolvedCurveGeometry::Hyperbola(hyperbola),
+    ] {
+        assert!(matches!(
+            curve_entity(
+                &cadmpeg_test_support::service_decode_context(),
+                &geometry,
+                Some(&span),
+                IgesVersion::V5_3
+            ),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+}
+
+#[test]
+fn decreasing_polyline_parameters_are_not_implemented() {
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+
+    let vertices = vec![
+        PolylineVertex {
+            parameter: 1.0,
+            point: Point3::new(0.0, 0.0, 0.0),
+        },
+        PolylineVertex {
+            parameter: 0.0,
+            point: Point3::new(1.0, 0.0, 0.0),
+        },
+    ]
+    .try_into()
+    .expect("nonempty polyline samples");
+    let polyline = PolylineCurve::new(
+        PolylineSamples::Parameterized { vertices },
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .expect("the IR admits finite strictly decreasing polyline parameters");
+    assert!(matches!(
+        curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedCurveGeometry::Polyline(polyline),
+            Some(&CurveSpan {
+                range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(1.0, 0.0, 0.0),
+            }),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+/// The Type 104 parabola coefficient `-4f` of a finite focal distance
+/// between a quarter and a half of the largest finite `f64` is not finite,
+/// while the endpoints `(-2ft, ft^2)` are. It is refused, where it was
+/// written as `-inf`, which is no IGES real.
+#[test]
+fn parabola_coefficient_that_overflows_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        5.0e307,
+    )
+    .expect("the IR admits a finite positive focal distance");
+    let span = CurveSpan {
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0e-160]).expect("finite test range"),
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    let written = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
+        &SolvedCurveGeometry::Parabola(parabola),
+        Some(&span),
+        IgesVersion::V5_3,
+    );
+    let Err(CodecError::NotImplemented(message)) = written else {
+        panic!(
+            "{:?}",
+            written.map(|entity| String::from_utf8_lossy(&entity.parameter_body).into_owned())
+        );
+    };
+    assert!(message.contains("parabola"), "{message}");
 }

@@ -2,102 +2,236 @@
 //! Typed geometry arrays from expanded `SolidPrimdata` sections.
 
 use crate::{psb, scalar};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
+
+/// Named scalar-array field in a primitive record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrimitiveArrayField {
+    /// First primitive point.
+    P1,
+    /// Second primitive point.
+    P2,
+    /// Primitive points.
+    Points,
+    /// Consecutive vertex positions.
+    VertexPositions,
+    /// Interleaved vertex normals and positions.
+    VertexNormalsAndPositions,
+}
+
+impl PrimitiveArrayField {
+    /// Stored field spelling.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::P1 => "p1",
+            Self::P2 => "p2",
+            Self::Points => "pts",
+            Self::VertexPositions => "mv_p_xyz",
+            Self::VertexNormalsAndPositions => "mv_p_NxNyNzxyz",
+        }
+    }
+}
 
 /// One bounded, named scalar array in a primitive record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveScalarArray {
+pub(crate) struct PrimitiveScalarArray {
     /// Named field containing the array.
-    pub field: String,
+    pub(crate) field: PrimitiveArrayField,
     /// Byte offset of the named-record header in the expanded section.
-    pub offset: usize,
-    /// Declared scalar count.
-    pub count: u32,
+    pub(crate) offset: usize,
     /// Completely decoded scalar values.
-    pub values: Vec<f64>,
+    pub(crate) values: Vec<FiniteReal>,
 }
 
-/// One complete triangle-strip primitive.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveTriangleStrip {
-    /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
-    pub offset: usize,
-    /// Consecutive model-space positions.
-    pub positions: Vec<[f64; 3]>,
-    /// Per-vertex normals when the primitive uses the interleaved normal and
-    /// position lane.
-    pub normals: Vec<[f64; 3]>,
-    /// Vertex count of each consecutive triangle strip.
-    pub strip_lengths: Vec<u32>,
+struct PrimitiveShadedVertex {
+    position: FiniteVector<3>,
+    normal: FiniteVector<3>,
+}
+#[derive(Debug, Clone, PartialEq)]
+enum PrimitiveVertices {
+    Unshaded(Vec<FiniteVector<3>>),
+    Shaded(Vec<PrimitiveShadedVertex>),
+}
+
+/// A strip set with complete vertex lanes and exact, nonempty span coverage.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PrimitiveTriangleStrip {
+    pub(crate) offset: usize,
+    vertices: PrimitiveVertices,
+    strip_lengths: Vec<u32>,
+}
+impl PrimitiveTriangleStrip {
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        offset: usize,
+        positions: Vec<FiniteVector<3>>,
+        normals: Option<Vec<FiniteVector<3>>>,
+        strip_lengths: Vec<u32>,
+    ) -> Result<Option<Self>, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(strip_lengths.len()),
+            "creo primitive strip validation",
+        )?;
+        let Some(total) = strip_lengths.iter().try_fold(0usize, |total, length| {
+            if *length < 3 {
+                return None;
+            }
+            total.checked_add(usize::try_from(*length).ok()?)
+        }) else {
+            return Ok(None);
+        };
+        if strip_lengths.is_empty()
+            || total != positions.len()
+            || normals
+                .as_ref()
+                .is_some_and(|normals| normals.len() != positions.len())
+        {
+            return Ok(None);
+        }
+        let vertices = match normals {
+            None => PrimitiveVertices::Unshaded(positions),
+            Some(normals) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(positions.len()),
+                    "creo primitive vertex pairing",
+                )?;
+                PrimitiveVertices::Shaded(
+                    ctx.collect_retained_vec(
+                        positions
+                            .into_iter()
+                            .zip(normals)
+                            .map(|(position, normal)| PrimitiveShadedVertex { position, normal }),
+                        "creo primitive shaded vertices",
+                    )?,
+                )
+            }
+        };
+        Ok(Some(Self {
+            offset,
+            vertices,
+            strip_lengths,
+        }))
+    }
+    pub(crate) fn positions(&self) -> impl ExactSizeIterator<Item = &FiniteVector<3>> {
+        let count = match &self.vertices {
+            PrimitiveVertices::Unshaded(rows) => rows.len(),
+            PrimitiveVertices::Shaded(rows) => rows.len(),
+        };
+        (0..count).map(|index| match &self.vertices {
+            PrimitiveVertices::Unshaded(rows) => &rows[index],
+            PrimitiveVertices::Shaded(rows) => &rows[index].position,
+        })
+    }
+    pub(crate) fn normals(&self) -> Option<impl ExactSizeIterator<Item = &FiniteVector<3>>> {
+        match &self.vertices {
+            PrimitiveVertices::Unshaded(_) => None,
+            PrimitiveVertices::Shaded(rows) => Some(rows.iter().map(|row| &row.normal)),
+        }
+    }
+    pub(crate) fn strip_lengths(&self) -> &[u32] {
+        &self.strip_lengths
+    }
 }
 
 /// Complete triangle strips and conflicts found in one primitive-data stream.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveTriangleStripScan {
+pub(crate) struct PrimitiveTriangleStripScan {
     /// Triangle-strip records whose cumulative counts and geometry agree.
-    pub strips: Vec<PrimitiveTriangleStrip>,
+    pub(crate) strips: Vec<PrimitiveTriangleStrip>,
     /// Records with complete position or normal representations that disagree.
-    pub conflicting_representation_count: usize,
+    pub(crate) conflicting_representation_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum TriangleStripGeometryError {
     Missing,
     Conflicting,
+    Resource(CodecError),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct TriangleStripGeometry {
-    positions: Vec<[f64; 3]>,
-    normals: Vec<[f64; 3]>,
+    positions: Vec<FiniteVector<3>>,
+    normals: Option<Vec<FiniteVector<3>>>,
 }
 
 fn triangle_strip_geometry(
+    ctx: &DecodeContext<'_>,
     arrays: &[PrimitiveScalarArray],
     vertex_count: u32,
 ) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
     let vertex_count =
         usize::try_from(vertex_count).map_err(|_| TriangleStripGeometryError::Missing)?;
-    let mut positions = None::<Vec<[f64; 3]>>;
-    let mut normals = None::<Vec<[f64; 3]>>;
+    let mut positions = None::<Vec<FiniteVector<3>>>;
+    let mut normals = None::<Vec<FiniteVector<3>>>;
     for array in arrays {
-        let (candidate_positions, candidate_normals) = match array.field.as_str() {
-            "mv_p_xyz"
+        let (candidate_positions, candidate_normals) = match array.field {
+            PrimitiveArrayField::VertexPositions => {
                 if array.values.len()
-                    == vertex_count
+                    != vertex_count
                         .checked_mul(3)
-                        .ok_or(TriangleStripGeometryError::Missing)? =>
-            {
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
+                }
                 (
-                    array
-                        .values
-                        .chunks_exact(3)
-                        .map(|point| [point[0], point[1], point[2]])
-                        .collect(),
+                    {
+                        let mut points = Vec::new();
+                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
+                            .map_err(TriangleStripGeometryError::Resource)?;
+                        points.extend(
+                            array
+                                .values
+                                .chunks_exact(3)
+                                .map(|point| FiniteVector::from([point[0], point[1], point[2]])),
+                        );
+                        points
+                    },
                     None,
                 )
             }
-            "mv_p_NxNyNzxyz"
+            PrimitiveArrayField::VertexNormalsAndPositions => {
                 if array.values.len()
-                    == vertex_count
+                    != vertex_count
                         .checked_mul(6)
-                        .ok_or(TriangleStripGeometryError::Missing)? =>
-            {
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
+                }
                 (
-                    array
-                        .values
-                        .chunks_exact(6)
-                        .map(|tuple| [tuple[3], tuple[4], tuple[5]])
-                        .collect(),
-                    Some(
-                        array
-                            .values
-                            .chunks_exact(6)
-                            .map(|tuple| [tuple[0], tuple[1], tuple[2]])
-                            .collect(),
-                    ),
+                    {
+                        let mut points = Vec::new();
+                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
+                            .map_err(TriangleStripGeometryError::Resource)?;
+                        points.extend(
+                            array
+                                .values
+                                .chunks_exact(6)
+                                .map(|tuple| FiniteVector::from([tuple[3], tuple[4], tuple[5]])),
+                        );
+                        points
+                    },
+                    Some({
+                        let mut normals = Vec::new();
+                        ctx.reserve_vec(&mut normals, vertex_count, "creo triangle strip normals")
+                            .map_err(TriangleStripGeometryError::Resource)?;
+                        normals.extend(
+                            array
+                                .values
+                                .chunks_exact(6)
+                                .map(|tuple| FiniteVector::from([tuple[0], tuple[1], tuple[2]])),
+                        );
+                        normals
+                    }),
                 )
             }
-            _ => continue,
+            PrimitiveArrayField::P1 | PrimitiveArrayField::P2 | PrimitiveArrayField::Points => {
+                continue
+            }
         };
         if positions
             .as_ref()
@@ -118,26 +252,41 @@ fn triangle_strip_geometry(
     }
     Ok(TriangleStripGeometry {
         positions: positions.ok_or(TriangleStripGeometryError::Missing)?,
-        normals: normals.unwrap_or_default(),
+        normals,
     })
 }
 
 /// Decode named triangle-strip primitives and representation conflicts.
-pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
+pub(crate) fn triangle_strips(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<PrimitiveTriangleStripScan, CodecError> {
     const RECORD: &[u8] = b"value(prim_tristripsetwithatt)\0";
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
     let mut strips = Vec::new();
     let mut conflicting_representation_count = 0usize;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len()),
+        "creo primitive strip discovery",
+    )?;
     for (offset, _) in data
         .windows(RECORD.len())
         .enumerate()
         .filter(|(_, window)| *window == RECORD)
     {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - offset - RECORD.len()),
+            "creo primitive strip boundary scan",
+        )?;
         let end = data[offset + RECORD.len()..]
             .windows(b"\xe0\x00value(".len())
             .position(|window| window == b"\xe0\x00value(")
             .map_or(data.len(), |relative| offset + RECORD.len() + relative);
         let record = &data[offset..end];
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record.len()),
+            "creo primitive cumulative label scan",
+        )?;
         let Some(accum) = record
             .windows(ACCUM.len())
             .position(|window| window == ACCUM)
@@ -149,7 +298,16 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
             continue;
         }
         let (count, mut cursor) = psb::compact_int(record, accum + 1);
+        if cadmpeg_core::decode::bounded_len(u64::from(count), 1, record.len() - cursor).is_none() {
+            continue;
+        }
+        ctx.charge_work(u64::from(count), "creo primitive cumulative parsing")?;
         let mut cumulative = Vec::new();
+        ctx.reserve_vec(
+            &mut cumulative,
+            index_from_u32(count),
+            "creo triangle strip cumulative counts",
+        )?;
         for _ in 0..count {
             let (value, next) = psb::compact_int(record, cursor);
             if next == cursor {
@@ -163,7 +321,16 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
             continue;
         };
         let mut previous = 0;
-        let mut strip_lengths = Vec::with_capacity(cumulative.len());
+        let mut strip_lengths = Vec::new();
+        ctx.reserve_vec(
+            &mut strip_lengths,
+            cumulative.len(),
+            "creo triangle strip lengths",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(cumulative.len()),
+            "creo primitive strip length construction",
+        )?;
         for current in cumulative {
             let Some(length) = current.checked_sub(previous).filter(|length| *length >= 3) else {
                 strip_lengths.clear();
@@ -175,26 +342,31 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
         if strip_lengths.is_empty() {
             continue;
         }
-        let arrays = scalar_arrays(record);
-        let geometry = match triangle_strip_geometry(&arrays, vertex_count) {
+        let arrays = scalar_arrays(ctx, record)?;
+        let geometry = match triangle_strip_geometry(ctx, &arrays, vertex_count) {
             Ok(geometry) => geometry,
             Err(TriangleStripGeometryError::Missing) => continue,
             Err(TriangleStripGeometryError::Conflicting) => {
                 conflicting_representation_count += 1;
                 continue;
             }
+            Err(TriangleStripGeometryError::Resource(error)) => return Err(error),
         };
-        strips.push(PrimitiveTriangleStrip {
+        ctx.reserve_vec(&mut strips, 1, "creo triangle strip records")?;
+        if let Some(strip) = PrimitiveTriangleStrip::new(
+            ctx,
             offset,
-            positions: geometry.positions,
-            normals: geometry.normals,
+            geometry.positions,
+            geometry.normals,
             strip_lengths,
-        });
+        )? {
+            strips.push(strip);
+        }
     }
-    PrimitiveTriangleStripScan {
+    Ok(PrimitiveTriangleStripScan {
         strips,
         conflicting_representation_count,
-    }
+    })
 }
 
 /// Decode model-space scalar arrays from an expanded primitive-data section.
@@ -204,19 +376,32 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
 /// positive-Y unit vector, and signed four-byte values replace the IEEE-754
 /// high byte with a compact exponent byte. Only complete arrays whose declared
 /// count is satisfied are returned.
-pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
-    const FIELDS: &[&str] = &["p1", "p2", "pts", "mv_p_xyz", "mv_p_NxNyNzxyz"];
+pub(crate) fn scalar_arrays(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<PrimitiveScalarArray>, CodecError> {
+    const FIELDS: [PrimitiveArrayField; 5] = [
+        PrimitiveArrayField::P1,
+        PrimitiveArrayField::P2,
+        PrimitiveArrayField::Points,
+        PrimitiveArrayField::VertexPositions,
+        PrimitiveArrayField::VertexNormalsAndPositions,
+    ];
     let mut arrays = Vec::new();
     for field in FIELDS {
-        let mut marker = vec![psb::token::NAMED_RECORD, 0x06];
-        marker.extend_from_slice(field.as_bytes());
-        marker.push(0);
-        for (offset, _) in data
-            .windows(marker.len())
-            .enumerate()
-            .filter(|(_, window)| *window == marker)
-        {
-            let opener = offset + marker.len();
+        let name = field.as_str().as_bytes();
+        let marker_len = name.len() + 3;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "creo primitive scalar discovery",
+        )?;
+        for (offset, _) in data.windows(marker_len).enumerate().filter(|(_, window)| {
+            window[0] == psb::token::NAMED_RECORD
+                && window[1] == 0x06
+                && window[2..2 + name.len()] == *name
+                && window[marker_len - 1] == 0
+        }) {
+            let opener = offset + marker_len;
             if data.get(opener) != Some(&psb::token::ARRAY_OPEN) {
                 continue;
             }
@@ -224,33 +409,45 @@ pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
             if start == opener + 1 {
                 continue;
             }
-            let Ok(capacity) = usize::try_from(count) else {
+            let Some(capacity) =
+                cadmpeg_core::decode::bounded_len(u64::from(count), 1, data.len() - start)
+            else {
                 continue;
             };
-            let mut values = Vec::with_capacity(capacity);
+            ctx.charge_work(u64::from(count), "creo primitive scalar parsing")?;
+            let mut values = Vec::new();
+            ctx.reserve_vec(&mut values, capacity, "creo primitive scalar values")?;
             let mut cursor = psb::Cursor::at(data, start);
             while values.len() < capacity {
                 if capacity - values.len() >= 3 && cursor.take_slice_if(&[0x00, 0x28, 0x00]) {
-                    values.extend([0.0, 1.0, 0.0]);
+                    values.extend([FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ZERO]);
                     continue;
                 }
                 let Some(value) = cursor.take_with(primitive_scalar) else {
                     break;
                 };
+                let Some(value) = FiniteReal::new(value) else {
+                    break;
+                };
                 values.push(value);
             }
-            if values.len() == capacity && values.iter().all(|value| value.is_finite()) {
+            if values.len() == capacity {
+                ctx.reserve_vec(&mut arrays, 1, "creo primitive scalar arrays")?;
                 arrays.push(PrimitiveScalarArray {
-                    field: (*field).to_string(),
+                    field,
                     offset,
-                    count,
                     values,
                 });
             }
         }
     }
-    arrays.sort_by_key(|array| array.offset);
-    arrays
+    ctx.stable_sort_by(
+        &mut arrays,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo primitive scalar array ordering",
+    )?;
+    Ok(arrays)
 }
 
 fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
@@ -264,7 +461,7 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
             };
             // Compact exponent byte is remapped into the IEEE high byte; the
             // four-byte argument is assembled, not a contiguous in-order window.
-            let value = scalar::be_f32([ieee_high, *b1, *b2, *b3]) as f64;
+            let value = f64::from(scalar::be_f32([ieee_high, *b1, *b2, *b3]));
             Some((value, offset + 4))
         }
         _ => None,
@@ -273,7 +470,233 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
+        PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
+    };
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::units::FiniteVector;
+
+    fn with_context<T>(
+        bytes: &[u8],
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+    ) -> T {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the primitive fixture fits the root limit");
+        f(&ctx)
+    }
+
+    fn with_collection_limit<T>(
+        bytes: &[u8],
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> Result<T, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the primitive fixture fits the root limit");
+        f(&ctx)
+    }
+
+    #[test]
+    fn primitive_miss_searches_refuse_work() {
+        crate::test_support::assert_work_boundaries(&["creo primitive scalar discovery"], |ctx| {
+            scalar_arrays(ctx, &[0; 64])
+        });
+        crate::test_support::assert_work_boundaries(&["creo primitive strip discovery"], |ctx| {
+            triangle_strips(ctx, &[0; 64])
+        });
+    }
+
+    #[test]
+    fn primitive_scalar_values_refuse_before_declared_count_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = named("p1", &[0], 1);
+        assert_eq!(
+            with_collection_limit(&bytes, 2, |ctx| scalar_arrays(ctx, &bytes))
+                .expect("one scalar array admitted")
+                .len(),
+            1
+        );
+        let error = with_collection_limit(&bytes, 0, |ctx| scalar_arrays(ctx, &bytes))
+            .expect_err("the scalar needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo primitive scalar values")
+        );
+    }
+
+    #[test]
+    fn primitive_scalar_array_refuses_before_result_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = named("p1", &[0], 1);
+        let error = with_collection_limit(&bytes, 1, |ctx| scalar_arrays(ctx, &bytes))
+            .expect_err("the result array needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo primitive scalar arrays")
+        );
+    }
+
+    #[test]
+    fn primitive_scalar_ordering_refuses_work_and_index_scratch_before_sorting() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
+        let scratch = u64::try_from(21 * 2 * std::mem::size_of::<usize>()).expect("scratch bytes");
+        let work = 5 * u64::try_from(bytes.len()).expect("scan work")
+            + 21
+            + 21 * u64::try_from(std::mem::size_of::<PrimitiveScalarArray>())
+                .expect("record bytes")
+                * 6
+                * 8;
+        let run = |materialized, work_limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Twenty-one arrays plus the stable sort's two index slots per value.
+            policy.limits.max_collection_items = 21 + 2 * 21;
+            policy.limits.max_materialized_bytes = materialized;
+            policy.limits.max_work_units = work_limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root admitted");
+            let result = scalar_arrays(&ctx, &bytes);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(resource));
+            }
+            result
+        };
+        let admitted = run(scratch, work).expect("exact work and scratch admit ordering");
+        assert_eq!(admitted.len(), 21);
+        assert!(admitted
+            .windows(2)
+            .all(|pair| pair[0].offset < pair[1].offset));
+        for (dimension, materialized, work_limit, need) in [
+            (
+                ResourceDimension::MaterializedBytes,
+                scratch - 1,
+                work,
+                scratch,
+            ),
+            (ResourceDimension::WorkUnits, scratch, work - 1, work),
+        ] {
+            let error = run(materialized, work_limit).expect_err("ordering needs admission");
+            let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
+                panic!("ordering resource refusal expected");
+            };
+            assert_eq!(resource.dimension, dimension);
+            assert_eq!(resource.operation, "creo primitive scalar array ordering");
+            assert_eq!(resource.used + resource.additional, need);
+            assert_eq!(resource.limit, need - 1);
+        }
+    }
+
+    fn minimal_strip() -> Vec<u8> {
+        let mut bytes =
+            b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
+        bytes.extend(named("mv_p_xyz", &[0; 9], 9));
+        bytes
+    }
+
+    #[test]
+    fn triangle_strip_cumulative_counts_refuse_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = minimal_strip();
+        assert_eq!(
+            with_collection_limit(&bytes, 16, |ctx| triangle_strips(ctx, &bytes))
+                .expect("one triangle strip admitted")
+                .strips
+                .len(),
+            1
+        );
+        let error = with_collection_limit(&bytes, 0, |ctx| triangle_strips(ctx, &bytes))
+            .expect_err("cumulative count needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo triangle strip cumulative counts")
+        );
+    }
+
+    #[test]
+    fn triangle_strip_lengths_refuse_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = minimal_strip();
+        let error = with_collection_limit(&bytes, 1, |ctx| triangle_strips(ctx, &bytes))
+            .expect_err("strip length needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo triangle strip lengths")
+        );
+    }
+
+    #[test]
+    fn triangle_strip_positions_refuse_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = minimal_strip();
+        let error = with_collection_limit(&bytes, 12, |ctx| triangle_strips(ctx, &bytes))
+            .expect_err("strip positions need admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo triangle strip positions")
+        );
+    }
+
+    #[test]
+    fn triangle_strip_records_refuse_before_result_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = minimal_strip();
+        let error = with_collection_limit(&bytes, 15, |ctx| triangle_strips(ctx, &bytes))
+            .expect_err("strip record needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo triangle strip records")
+        );
+    }
+
+    #[test]
+    fn triangle_strip_normals_refuse_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let arrays = [PrimitiveScalarArray {
+            field: PrimitiveArrayField::VertexNormalsAndPositions,
+            offset: 0,
+            values: finite_values(vec![0.0; 18]),
+        }];
+        let error = with_collection_limit(&[], 3, |ctx| {
+            triangle_strip_geometry(ctx, &arrays, 3).map_err(|error| match error {
+                TriangleStripGeometryError::Resource(error) => error,
+                other => panic!("unexpected geometry refusal: {other:?}"),
+            })
+        })
+        .expect_err("normals need admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo triangle strip normals")
+        );
+    }
+
+    fn finite_values(values: Vec<f64>) -> Vec<FiniteReal> {
+        values
+            .into_iter()
+            .map(|value| FiniteReal::new(value).expect("finite test scalar"))
+            .collect()
+    }
+
+    fn finite_points(points: Vec<[f64; 3]>) -> Vec<FiniteVector<3>> {
+        points
+            .into_iter()
+            .map(|point| FiniteVector::new(point).expect("finite test point"))
+            .collect()
+    }
 
     fn named(name: &str, values: &[u8], count: u8) -> Vec<u8> {
         let mut bytes = vec![0xe0, 0x06];
@@ -290,17 +713,20 @@ mod tests {
             &[0x00, 0x48, 0xa6, 0x66, 0x66, 0x38, 0x86, 0x66, 0x66],
             3,
         );
-        let arrays = scalar_arrays(&bytes);
+        let arrays = with_context(&bytes, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].values[0], 0.0);
-        assert!((arrays[0].values[1] - 20.8).abs() < 1.0e-5);
-        assert!((arrays[0].values[2] + 16.8).abs() < 1.0e-5);
+        assert_eq!(arrays[0].values[0].get(), 0.0);
+        assert!((arrays[0].values[1].get() - 20.8).abs() < 1.0e-5);
+        assert!((arrays[0].values[2].get() + 16.8).abs() < 1.0e-5);
     }
 
     #[test]
     fn rejects_truncated_declared_array() {
         let bytes = named("pts", &[0x48, 0xa6, 0x66, 0x66], 2);
-        assert!(scalar_arrays(&bytes).is_empty());
+        assert!(with_context(&bytes, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("the primitive fixture fits service limits")
+            .is_empty());
     }
 
     #[test]
@@ -310,9 +736,10 @@ mod tests {
             0x66,
         ];
         let bytes = named("mv_p_NxNyNzxyz", &tuple, 6);
-        let arrays = scalar_arrays(&bytes);
+        let arrays = with_context(&bytes, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].count, 6);
+        assert_eq!(arrays[0].values.len(), 6);
     }
 
     #[test]
@@ -324,9 +751,10 @@ mod tests {
             ],
             3,
         );
-        let arrays = scalar_arrays(&bytes);
+        let arrays = with_context(&bytes, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].field, "mv_p_xyz");
+        assert_eq!(arrays[0].field.as_str(), "mv_p_xyz");
         assert_eq!(arrays[0].values.len(), 3);
     }
 
@@ -341,12 +769,13 @@ mod tests {
             ],
             9,
         ));
-        let scan = triangle_strips(&bytes);
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(scan.conflicting_representation_count, 0);
         let strips = scan.strips;
         assert_eq!(strips.len(), 1);
-        assert_eq!(strips[0].positions.len(), 3);
-        assert!(strips[0].normals.is_empty());
+        assert_eq!(strips[0].positions().len(), 3);
+        assert!(strips[0].normals().is_none());
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
@@ -361,69 +790,91 @@ mod tests {
         ];
         bytes.extend(named("mv_p_NxNyNzxyz", &tuple, 18));
 
-        let scan = triangle_strips(&bytes);
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(scan.conflicting_representation_count, 0);
         let strips = scan.strips;
         assert_eq!(strips.len(), 1);
         assert_eq!(
-            strips[0].positions,
+            strips[0]
+                .positions()
+                .map(|position| position.get())
+                .collect::<Vec<_>>(),
             [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(strips[0].normals, [[0.0, 1.0, 0.0]; 3]);
+        assert_eq!(
+            strips[0]
+                .normals()
+                .map(|normals| normals.copied().collect::<Vec<_>>()),
+            Some(finite_points(vec![[0.0, 1.0, 0.0]; 3]))
+        );
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
     #[test]
     fn agreeing_triangle_strip_representations_select_normals_independent_of_order() {
         let xyz = PrimitiveScalarArray {
-            field: "mv_p_xyz".to_string(),
+            field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            count: 9,
-            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            values: finite_values(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
         };
         let normal_xyz = PrimitiveScalarArray {
-            field: "mv_p_NxNyNzxyz".to_string(),
+            field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            count: 18,
-            values: vec![
+            values: finite_values(vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
-            ],
+            ]),
         };
 
         let expected = TriangleStripGeometry {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: vec![[0.0, 0.0, 1.0]; 3],
+            positions: finite_points(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            normals: Some(finite_points(vec![[0.0, 0.0, 1.0]; 3])),
         };
         assert_eq!(
-            triangle_strip_geometry(&[xyz.clone(), normal_xyz.clone()], 3),
-            Ok(expected.clone())
+            with_context(&[], |ctx| triangle_strip_geometry(
+                ctx,
+                &[xyz.clone(), normal_xyz.clone()],
+                3
+            ))
+            .expect("the primitive fixture fits service limits"),
+            expected.clone()
         );
-        assert_eq!(triangle_strip_geometry(&[normal_xyz, xyz], 3), Ok(expected));
+        assert_eq!(
+            with_context(&[], |ctx| triangle_strip_geometry(
+                ctx,
+                &[normal_xyz, xyz],
+                3
+            ))
+            .expect("the primitive fixture fits service limits"),
+            expected
+        );
     }
 
     #[test]
     fn conflicting_triangle_strip_representations_are_withheld() {
         let xyz = PrimitiveScalarArray {
-            field: "mv_p_xyz".to_string(),
+            field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            count: 9,
-            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            values: finite_values(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
         };
         let conflicting_xyz = PrimitiveScalarArray {
-            field: "mv_p_NxNyNzxyz".to_string(),
+            field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            count: 18,
-            values: vec![
+            values: finite_values(vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
-            ],
+            ]),
         };
 
-        assert_eq!(
-            triangle_strip_geometry(&[xyz, conflicting_xyz], 3),
+        assert!(matches!(
+            with_context(&[], |ctx| triangle_strip_geometry(
+                ctx,
+                &[xyz, conflicting_xyz],
+                3
+            )),
             Err(TriangleStripGeometryError::Conflicting)
-        );
+        ));
 
         let mut bytes =
             b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
@@ -445,7 +896,8 @@ mod tests {
             ],
             18,
         ));
-        let arrays = scalar_arrays(&bytes);
+        let arrays = with_context(&bytes, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert_eq!(
             arrays
                 .iter()
@@ -453,12 +905,63 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["mv_p_xyz", "mv_p_NxNyNzxyz"]
         );
-        assert_eq!(
-            triangle_strip_geometry(&arrays, 3),
+        assert!(matches!(
+            with_context(&bytes, |ctx| triangle_strip_geometry(ctx, &arrays, 3)),
             Err(TriangleStripGeometryError::Conflicting)
-        );
-        let scan = triangle_strips(&bytes);
+        ));
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("the primitive fixture fits service limits");
         assert!(scan.strips.is_empty());
         assert_eq!(scan.conflicting_representation_count, 1);
+    }
+    #[test]
+    fn primitive_impossible_counts_do_not_allocate() {
+        let scalar = b"\xe0\x06p1\0\xf8\xbf\xff";
+        assert!(
+            with_collection_limit(scalar, 0, |ctx| scalar_arrays(ctx, scalar))
+                .expect("truncated candidate")
+                .is_empty()
+        );
+        let strip = b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\xbf\xff";
+        assert!(
+            with_collection_limit(strip, 0, |ctx| triangle_strips(ctx, strip))
+                .expect("truncated strip")
+                .strips
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn checked_primitive_strips_reject_invalid_lanes_and_spans() {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let positions = || finite_points(vec![[0.0; 3]; 3]);
+            for spans in [vec![], vec![2], vec![4], vec![3, 3]] {
+                assert!(
+                    super::PrimitiveTriangleStrip::new(ctx, 0, positions(), None, spans)
+                        .expect("service")
+                        .is_none()
+                );
+            }
+            assert!(super::PrimitiveTriangleStrip::new(
+                ctx,
+                0,
+                positions(),
+                Some(finite_points(vec![[0.0; 3]; 2])),
+                vec![3]
+            )
+            .expect("service")
+            .is_none());
+            let shaded = super::PrimitiveTriangleStrip::new(
+                ctx,
+                0,
+                positions(),
+                Some(finite_points(vec![[0.0, 1.0, 0.0]; 3])),
+                vec![3],
+            )
+            .expect("service")
+            .expect("paired strip");
+            assert_eq!(shaded.positions().len(), 3);
+            assert_eq!(shaded.normals().expect("shaded").len(), 3);
+        });
     }
 }

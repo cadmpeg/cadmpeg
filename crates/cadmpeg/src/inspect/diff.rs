@@ -7,25 +7,56 @@
 //! fields. An inserted byte shifts everything after it and shows up as one long
 //! run, which is itself the signal that the files are not positional variants.
 
+use std::num::NonZeroU64;
+
 /// A maximal span of differing bytes, after gap coalescing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DiffRun {
-    /// Offset of the first differing byte in the run.
-    pub start: u64,
-    /// Number of bytes the run covers, including coalesced equal bytes.
-    pub len: u64,
+pub(super) struct DiffRun {
+    start: u64,
+    len: NonZeroU64,
 }
 
 impl DiffRun {
+    /// Returns a run covering the single byte at `start`.
+    const fn single(start: u64) -> Self {
+        Self {
+            start,
+            len: NonZeroU64::MIN,
+        }
+    }
+
+    /// Returns the offset of the first differing byte in the run.
+    pub(super) const fn start(self) -> u64 {
+        self.start
+    }
+
+    /// Returns the number of bytes the run covers, including coalesced equal bytes.
+    pub(super) const fn len(self) -> NonZeroU64 {
+        self.len
+    }
+
     /// Returns the exclusive end offset of the run.
-    pub const fn end(self) -> u64 {
-        self.start + self.len
+    pub(super) const fn end(self) -> u64 {
+        self.start + self.len.get()
+    }
+
+    /// Grows the run so that it covers the byte at `offset`, and does nothing
+    /// for an offset the run already covers.
+    fn extend_to(&mut self, offset: u64) {
+        let Some(covered) = offset
+            .checked_sub(self.start)
+            .and_then(|distance| distance.checked_add(1))
+            .and_then(NonZeroU64::new)
+        else {
+            return;
+        };
+        self.len = self.len.max(covered);
     }
 }
 
 /// A positional comparison of two byte strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiffSummary {
+pub(in crate::inspect) struct DiffSummary {
     /// Length of the first input.
     len_a: u64,
     /// Length of the second input.
@@ -38,37 +69,37 @@ pub struct DiffSummary {
 
 impl DiffSummary {
     /// Returns the first differing offset.
-    pub fn first(&self) -> Option<u64> {
+    pub(super) fn first(&self) -> Option<u64> {
         self.runs.first().map(|run| run.start)
     }
 
     /// Returns `len_a` for the compared inputs.
-    pub const fn len_a(&self) -> u64 {
+    pub(super) const fn len_a(&self) -> u64 {
         self.len_a
     }
 
     /// Returns `len_b` for the compared inputs.
-    pub const fn len_b(&self) -> u64 {
+    pub(super) const fn len_b(&self) -> u64 {
         self.len_b
     }
 
     /// Returns `compared` for the compared inputs.
-    pub fn compared(&self) -> u64 {
+    pub(super) fn compared(&self) -> u64 {
         self.len_a.min(self.len_b)
     }
 
     /// Returns `differing` for the compared inputs.
-    pub const fn differing(&self) -> u64 {
+    pub(super) const fn differing(&self) -> u64 {
         self.differing
     }
 
     /// Returns the coalesced differing spans.
-    pub fn runs(&self) -> &[DiffRun] {
+    pub(super) fn runs(&self) -> &[DiffRun] {
         &self.runs
     }
 
     /// Returns true when the inputs are byte identical.
-    pub const fn identical(&self) -> bool {
+    pub(super) const fn identical(&self) -> bool {
         self.len_a == self.len_b && self.differing == 0
     }
 }
@@ -78,7 +109,7 @@ impl DiffSummary {
 /// Two differing spans separated by `gap` or fewer equal bytes are reported as
 /// one run, so a changed multi-field record reads as a single region instead of
 /// one run per byte.
-pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
+pub(super) fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
     let compared = a.len().min(b.len());
     let mut runs: Vec<DiffRun> = Vec::new();
     let mut differing = 0u64;
@@ -87,20 +118,19 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
             continue;
         }
         differing += 1;
-        let offset = offset as u64;
+        let offset = cadmpeg_core::decode::u64_from_index(offset);
         match runs.last_mut() {
-            Some(last) if offset <= last.end().saturating_add(gap) => {
-                last.len = offset - last.start + 1;
-            }
-            _ => runs.push(DiffRun {
-                start: offset,
-                len: 1,
-            }),
+            Some(last) => match last.end().checked_add(gap) {
+                Some(end) if offset <= end => last.extend_to(offset),
+                None => last.extend_to(offset),
+                Some(_) => runs.push(DiffRun::single(offset)),
+            },
+            None => runs.push(DiffRun::single(offset)),
         }
     }
     DiffSummary {
-        len_a: a.len() as u64,
-        len_b: b.len() as u64,
+        len_a: cadmpeg_core::decode::u64_from_index(a.len()),
+        len_b: cadmpeg_core::decode::u64_from_index(b.len()),
         differing,
         runs,
     }
@@ -108,7 +138,20 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{compare, DiffRun};
+
+    fn run(start: u64, len: u64) -> DiffRun {
+        let mut run = DiffRun::single(start);
+        run.extend_to(start + len - 1);
+        run
+    }
+
+    #[test]
+    fn unrepresentable_diff_span_does_not_extend_a_run() {
+        let mut run = DiffRun::single(0);
+        run.extend_to(u64::MAX);
+        assert_eq!(run.len().get(), 1);
+    }
 
     #[test]
     fn identical_inputs_produce_no_runs() {
@@ -135,10 +178,7 @@ mod tests {
         let summary = compare(b"abcde", b"aXcYe", 0);
         assert_eq!(summary.first(), Some(1));
         assert_eq!(summary.differing, 2);
-        assert_eq!(
-            summary.runs,
-            [DiffRun { start: 1, len: 1 }, DiffRun { start: 3, len: 1 },]
-        );
+        assert_eq!(summary.runs, [DiffRun::single(1), DiffRun::single(3),]);
     }
 
     #[test]
@@ -146,22 +186,19 @@ mod tests {
         // Differ at 1 and 3, so one equal byte lies between them.
         let summary = compare(b"abcde", b"aXcYe", 1);
         assert_eq!(summary.differing, 2);
-        assert_eq!(summary.runs, [DiffRun { start: 1, len: 3 }]);
+        assert_eq!(summary.runs, [run(1, 3)]);
 
         // Differ at 0 and 4, so three equal bytes lie between them.
         let wide = compare(b"abcde", b"XbcdY", 1);
-        assert_eq!(
-            wide.runs,
-            [DiffRun { start: 0, len: 1 }, DiffRun { start: 4, len: 1 },]
-        );
+        assert_eq!(wide.runs, [DiffRun::single(0), DiffRun::single(4),]);
         let merged = compare(b"abcde", b"XbcdY", 3);
-        assert_eq!(merged.runs, [DiffRun { start: 0, len: 5 }]);
+        assert_eq!(merged.runs, [run(0, 5)]);
     }
 
     #[test]
     fn a_run_of_adjacent_differences_merges_at_any_gap() {
         let summary = compare(&[0, 0, 0, 0], &[0, 1, 2, 3], 0);
-        assert_eq!(summary.runs, [DiffRun { start: 1, len: 3 }]);
+        assert_eq!(summary.runs, [run(1, 3)]);
         assert_eq!(summary.differing, 3);
     }
 

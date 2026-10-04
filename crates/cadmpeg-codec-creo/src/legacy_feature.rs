@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-owned joins from the legacy ASCII persistence graph.
 
+use crate::legacy::value_index;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::PositiveReal;
 
 const ROUND_SCHEMA_CLASS: i32 = 913;
 const DIMENSION_TYPE: i32 = 8;
@@ -16,7 +20,7 @@ pub(crate) enum LegacyRoundRadius {
     /// The complete dimension table has no radius row for this feature.
     NotPresent,
     /// All feature-owned radius rows carry the same positive value.
-    Constant(f64),
+    Constant(PositiveReal),
     /// A matching radius row is malformed, non-positive, or disagrees with
     /// another matching row.
     Ambiguous,
@@ -42,10 +46,10 @@ pub(crate) struct LegacyFeatureScan {
     pub(crate) rounds: Vec<LegacyRoundFeature>,
 }
 
-type ObjectIndex<'a> = BTreeMap<&'a str, &'a ObjectRecord>;
-type ChildrenIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a ObjectRecord>>;
-type IntegerIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::RealRecord>>;
+type ObjectIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
+type ChildrenIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>;
+type IntegerIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
+type RealIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>;
 
 struct Index<'a> {
     objects: ObjectIndex<'a>,
@@ -55,108 +59,122 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn build(persistence: &'a Persistence) -> Option<Self> {
+    fn build(
+        ctx: &DecodeContext<'_>,
+        persistence: &'a Persistence,
+    ) -> Result<Option<Self>, CodecError> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in &persistence.objects {
-            if objects.insert(object.id.as_str(), object).is_some() {
-                return None;
+            let id = legacy::checked_object_node_id(
+                ctx,
+                object.offset,
+                "creo legacy feature object index IDs",
+            )?;
+            ctx.admit_btree_entry(&objects, &id, "creo legacy feature object index nodes")?;
+            match objects.entry(id) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(object);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Ok(None),
             }
-            if let Some(parent) = object.parent.as_deref() {
-                children
-                    .entry((parent, object.name.as_str()))
-                    .or_insert_with(Vec::new)
-                    .push(object);
+            if let Some(parent) = object.parent {
+                let key = (parent, object.name.as_str());
+                ctx.admit_btree_entry(&children, &key, "creo legacy feature child index nodes")?;
+                match children.entry(key) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        let mut rows = Vec::new();
+                        ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;
+                        rows.push(object);
+                        entry.insert(rows);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        let rows = entry.get_mut();
+                        ctx.reserve_vec(rows, 1, "creo legacy feature child index rows")?;
+                        rows.push(object);
+                    }
+                }
             }
         }
-        Some(Self {
+        let mut integers = BTreeMap::new();
+        value_index(ctx, &persistence.integer_values.rows, &mut integers)?;
+        let mut reals = BTreeMap::new();
+        value_index(ctx, &persistence.real_values.rows, &mut reals)?;
+        Ok(Some(Self {
             objects,
             children,
-            integers: value_index(&persistence.integer_values),
-            reals: value_index(&persistence.real_values),
-        })
+            integers,
+            reals,
+        }))
     }
 
-    fn children(&self, parent: &str, name: &str) -> Vec<&'a ObjectRecord> {
+    fn children(&self, parent: usize, name: &'static str) -> &[&'a ObjectRecord] {
         self.children
             .get(&(parent, name))
-            .cloned()
-            .unwrap_or_default()
+            .map_or(&[], Vec::as_slice)
     }
 
-    fn unique_child(&self, parent: &str, name: &str) -> Option<&ObjectRecord> {
+    fn unique_child(&self, parent: usize, name: &'static str) -> Option<&ObjectRecord> {
         let children = self.children(parent, name);
-        let [child] = children.as_slice() else {
+        let [child] = children else {
             return None;
         };
         Some(*child)
     }
 
-    fn unique_integer_scalar(&self, parent: &str, name: &str) -> Option<i32> {
+    fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
         let records = self.integers.get(&(parent, name))?;
         let [record] = records.as_slice() else {
             return None;
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 
-    fn unique_real_scalar(&self, parent: &str, name: &str) -> Option<f64> {
+    fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
         let records = self.reals.get(&(parent, name))?;
         let [record] = records.as_slice() else {
             return None;
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
-}
-
-fn value_index<T>(
-    records: &[legacy::ValueRecord<T>],
-) -> BTreeMap<(&str, &str), Vec<&legacy::ValueRecord<T>>> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        if let Some(parent) = record.parent.as_deref() {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_insert_with(Vec::new)
-                .push(record);
-        }
-    }
-    index
 }
 
 /// Decode feature-owned round records from one legacy persistence graph.
 pub(crate) fn scan(
+    ctx: &DecodeContext<'_>,
     persistence: &Persistence,
     topology_rows: &[CurveTopologyRow],
-) -> LegacyFeatureScan {
-    let Some(index) = Index::build(persistence) else {
-        return LegacyFeatureScan::default();
+) -> Result<LegacyFeatureScan, CodecError> {
+    let Some(index) = Index::build(ctx, persistence)? else {
+        return Ok(LegacyFeatureScan::default());
     };
     let Some(features_root) = unique_root(&index, "Sld_Features") else {
-        return LegacyFeatureScan::default();
+        return Ok(LegacyFeatureScan::default());
     };
-    let radius_rows = full_data_dimension_rows(&index);
+    let radius_rows = full_data_dimension_rows(ctx, &index)?;
     let mut rounds = BTreeMap::new();
     let mut ambiguous_feature_ids = BTreeSet::new();
-    let mut feature_nodes = index.children(features_root.id.as_str(), "first_feat_ptr");
-    feature_nodes.extend(index.children(features_root.id.as_str(), "next_feat_ptr"));
-    for feature in &feature_nodes {
+    let feature_nodes = index
+        .children(features_root.offset, "first_feat_ptr")
+        .iter()
+        .chain(index.children(features_root.offset, "next_feat_ptr"));
+    for feature in feature_nodes {
         let Some(feature_id) = index
-            .unique_integer_scalar(&feature.id, "id")
+            .unique_integer_scalar(feature.offset, "id")
             .and_then(|value| u32::try_from(value).ok())
         else {
             continue;
         };
-        let Some(feature_type_object) = index.unique_child(&feature.id, "feat_type_ptr") else {
+        let Some(feature_type_object) = index.unique_child(feature.offset, "feat_type_ptr") else {
             continue;
         };
-        let Some(schema_class) = index.unique_integer_scalar(&feature_type_object.id, "type")
+        let Some(schema_class) = index.unique_integer_scalar(feature_type_object.offset, "type")
         else {
             continue;
         };
@@ -170,59 +188,87 @@ pub(crate) fn scan(
                 .map_or(LegacyRoundRadius::NotPresent, |rows| {
                     round_radius(rows, &index, feature_id)
                 }),
-            edge_ids: unique_feature_edge_ids(topology_rows, feature_id),
+            edge_ids: unique_feature_edge_ids(ctx, topology_rows, feature_id)?,
             offset: feature.offset,
         };
-        if rounds.insert(feature_id, round).is_some() {
-            ambiguous_feature_ids.insert(feature_id);
+        ctx.admit_btree_entry(&rounds, &feature_id, "creo legacy round index nodes")?;
+        match rounds.entry(feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(round);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(round);
+                ctx.insert_btree_set(
+                    &mut ambiguous_feature_ids,
+                    feature_id,
+                    "creo legacy ambiguous round IDs",
+                )?;
+            }
         }
     }
-    LegacyFeatureScan {
-        rounds: rounds
-            .into_iter()
-            .filter_map(|(feature_id, round)| {
-                (!ambiguous_feature_ids.contains(&feature_id)).then_some(round)
-            })
-            .collect(),
-    }
+    let mut visible_rounds = Vec::new();
+    ctx.reserve_vec(
+        &mut visible_rounds,
+        rounds.len() - ambiguous_feature_ids.len(),
+        "creo legacy round results",
+    )?;
+    visible_rounds.extend(rounds.into_iter().filter_map(|(feature_id, round)| {
+        (!ambiguous_feature_ids.contains(&feature_id)).then_some(round)
+    }));
+    Ok(LegacyFeatureScan {
+        rounds: visible_rounds,
+    })
 }
 
 fn unique_root<'a>(index: &'a Index<'a>, name: &str) -> Option<&'a ObjectRecord> {
-    let roots = index
+    let mut roots = index
         .objects
         .values()
         .filter(|object| object.name == name && object.parent.is_none())
-        .copied()
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return None;
-    };
-    Some(*root)
+        .copied();
+    let root = roots.next()?;
+    roots.next().is_none().then_some(root)
 }
 
-fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRecord>> {
-    let root = unique_root(index, "Sld_FullData")?;
-    let arrays = index.children(root.id.as_str(), "dim_array");
-    let [array] = arrays.as_slice() else {
-        return None;
+fn full_data_dimension_rows<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &'a Index<'a>,
+) -> Result<Option<Vec<&'a ObjectRecord>>, CodecError> {
+    let Some(root) = unique_root(index, "Sld_FullData") else {
+        return Ok(None);
+    };
+    let arrays = index.children(root.offset, "dim_array");
+    let [array] = arrays else {
+        return Ok(None);
     };
     let array = *array;
     if !array.payload.is_complete() {
-        return None;
+        return Ok(None);
     }
     let ObjectPayload::Array { elements, .. } = &array.payload else {
-        return None;
+        return Ok(None);
     };
     let mut seen = BTreeSet::new();
-    elements
-        .iter()
-        .map(|element_id| {
-            seen.insert(element_id.as_str()).then_some(())?;
-            let element = index.objects.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str()) && element.name == "dim_array")
-                .then_some(element)
-        })
-        .collect()
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, elements.len(), "creo legacy dimension rows")?;
+    for element_id in elements {
+        if seen.contains(element_id.as_str()) {
+            return Ok(None);
+        }
+        ctx.insert_btree_set(
+            &mut seen,
+            element_id.as_str(),
+            "creo legacy dimension identities",
+        )?;
+        let Some(element) = index.objects.get(element_id.as_str()).copied() else {
+            return Ok(None);
+        };
+        if element.parent != Some(array.offset) || element.name != "dim_array" {
+            return Ok(None);
+        }
+        rows.push(element);
+    }
+    Ok(Some(rows))
 }
 
 fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> LegacyRoundRadius {
@@ -230,12 +276,12 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
         return LegacyRoundRadius::NotPresent;
     };
     let mut found = false;
-    let mut values = Vec::new();
+    let mut first_value: Option<PositiveReal> = None;
     for row in rows {
         let fields = (
-            index.unique_integer_scalar(&row.id, "type"),
-            index.unique_integer_scalar(&row.id, "dim_type"),
-            index.unique_integer_scalar(&row.id, "feat_id"),
+            index.unique_integer_scalar(row.offset, "type"),
+            index.unique_integer_scalar(row.offset, "dim_type"),
+            index.unique_integer_scalar(row.offset, "feat_id"),
         );
         if fields
             != (
@@ -247,64 +293,117 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
             continue;
         }
         found = true;
-        let Some(dimension_data) = index.unique_child(&row.id, "dim_dat_ptr") else {
+        let Some(dimension_data) = index.unique_child(row.offset, "dim_dat_ptr") else {
             return LegacyRoundRadius::Ambiguous;
         };
-        let Some(value) = index.unique_real_scalar(&dimension_data.id, "value") else {
+        let Some(value) = index.unique_real_scalar(dimension_data.offset, "value") else {
             return LegacyRoundRadius::Ambiguous;
         };
-        if !value.is_finite() || value <= 0.0 {
+        let Some(value) = PositiveReal::new(value) else {
             return LegacyRoundRadius::Ambiguous;
+        };
+        match first_value {
+            Some(first) if value.get().to_bits() != first.get().to_bits() => {
+                return LegacyRoundRadius::Ambiguous;
+            }
+            None => first_value = Some(value),
+            _ => {}
         }
-        values.push(value);
     }
     if !found {
         return LegacyRoundRadius::NotPresent;
     }
-    let Some(first) = values.first().copied() else {
+    let Some(first) = first_value else {
         return LegacyRoundRadius::Ambiguous;
     };
-    if values
-        .iter()
-        .all(|value| value.to_bits() == first.to_bits())
-    {
-        LegacyRoundRadius::Constant(first)
-    } else {
-        LegacyRoundRadius::Ambiguous
-    }
+    LegacyRoundRadius::Constant(first)
 }
 
-fn unique_feature_edge_ids(rows: &[CurveTopologyRow], feature_id: u32) -> Option<Vec<u32>> {
+fn unique_feature_edge_ids(
+    ctx: &DecodeContext<'_>,
+    rows: &[CurveTopologyRow],
+    feature_id: u32,
+) -> Result<Option<Vec<u32>>, CodecError> {
     let mut ids = Vec::new();
     let mut seen = BTreeSet::new();
     for row in rows.iter().filter(|row| row.feature_id == feature_id) {
-        if !seen.insert(row.id) {
-            return None;
+        if seen.contains(&row.id) {
+            return Ok(None);
         }
+        ctx.insert_btree_set(&mut seen, row.id, "creo legacy round edge identities")?;
+        ctx.reserve_vec(&mut ids, 1, "creo legacy round edge IDs")?;
         ids.push(row.id);
     }
-    (!ids.is_empty()).then_some(ids)
+    Ok((!ids.is_empty()).then_some(ids))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, LegacyRoundRadius};
+    use super::{scan as scan_checked, LegacyRoundRadius};
     use crate::curve::CurveTopologyRow;
     use crate::legacy::{
-        IntegerPayload, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload, ValueRecord,
+        IntegerPayload, ObjectPayload, Persistence, Real, RealPayload, ValueRecord,
     };
+    use crate::test_support::{fixture_offset, object};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
-    fn object(id: &str, name: &str, parent: Option<&str>, payload: ObjectPayload) -> ObjectRecord {
-        ObjectRecord {
-            id: id.to_string(),
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: parent.map(str::to_string),
-            depth: 0,
-            payload,
-            offset: 0,
-        }
+    fn scan(
+        persistence: &Persistence,
+        topology_rows: &[crate::curve::CurveTopologyRow],
+    ) -> super::LegacyFeatureScan {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence, topology_rows).expect("service admits legacy features")
+    }
+
+    fn scan_with_collection_limit(
+        persistence: &Persistence,
+        topology_rows: &[CurveTopologyRow],
+        limit: u64,
+    ) -> Result<super::LegacyFeatureScan, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence, topology_rows)
+    }
+
+    fn scan_with_retained_limit(
+        persistence: &Persistence,
+        limit: u64,
+    ) -> Result<super::LegacyFeatureScan, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence, &[])
+    }
+
+    fn assert_collection_refusal(
+        persistence: &Persistence,
+        topology_rows: &[CurveTopologyRow],
+        operation: &'static str,
+    ) {
+        let refusal = (0..512).find_map(|limit| {
+            let Err(CodecError::ResourceLimit(refusal)) =
+                scan_with_collection_limit(persistence, topology_rows, limit)
+            else {
+                return None;
+            };
+            (refusal.operation == operation).then_some(refusal)
+        });
+        assert!(
+            matches!(
+                refusal,
+                Some(limit) if limit.dimension == ResourceDimension::CollectionItems
+            ),
+            "missing collection refusal for {operation}"
+        );
     }
 
     fn integer(
@@ -314,11 +413,10 @@ mod tests {
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            id: format!("{parent}:{name}:{offset}"),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: IntegerPayload::Scalar { value },
             offset,
@@ -327,11 +425,10 @@ mod tests {
 
     fn real(parent: &str, value: f64, offset: usize) -> crate::legacy::RealRecord {
         ValueRecord {
-            id: format!("{parent}:value:{offset}"),
             name: "value".to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: RealPayload::Scalar {
                 value: Real::from_bits(value.to_bits()),
@@ -396,8 +493,14 @@ mod tests {
             },
         ));
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -411,7 +514,7 @@ mod tests {
             directions: [1, 1],
             faces: [None, None],
             next_edges: [0, 0],
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         }
     }
 
@@ -420,7 +523,12 @@ mod tests {
         let result = scan(&persistence(&[2.0, 2.0]), &[topology(7), topology(8)]);
         assert_eq!(result.rounds.len(), 1);
         assert_eq!(result.rounds[0].feature_id, 139);
-        assert_eq!(result.rounds[0].radius, LegacyRoundRadius::Constant(2.0));
+        assert_eq!(
+            result.rounds[0].radius,
+            LegacyRoundRadius::Constant(
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius")
+            )
+        );
         assert_eq!(result.rounds[0].edge_ids, Some(vec![7, 8]));
     }
 
@@ -439,8 +547,8 @@ mod tests {
     #[test]
     fn ignores_non_round_dimension_rows() {
         let mut persistence = persistence(&[2.0]);
-        persistence.integer_values.retain(|record| {
-            !(record.parent.as_deref() == Some("dimension_0") && record.name == "dim_type")
+        persistence.integer_values.rows.retain(|record| {
+            !(record.parent == Some(fixture_offset("dimension_0")) && record.name == "dim_type")
         });
         let result = scan(&persistence, &[]);
         assert_eq!(result.rounds[0].radius, LegacyRoundRadius::NotPresent);
@@ -449,5 +557,107 @@ mod tests {
     #[test]
     fn ignores_persistence_without_feature_root() {
         assert!(scan(&Persistence::default(), &[]).rounds.is_empty());
+    }
+
+    #[test]
+    fn legacy_feature_object_index_nodes_refuse_before_insertion() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy feature object index nodes");
+    }
+
+    #[test]
+    fn legacy_feature_object_index_ids_refuse_before_string_growth() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert!(matches!(
+            scan_with_retained_limit(&fixture, 0),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "creo legacy feature object index IDs"
+        ));
+    }
+
+    #[test]
+    fn legacy_feature_child_index_nodes_refuse_before_insertion() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy feature child index nodes");
+    }
+
+    #[test]
+    fn legacy_feature_child_index_rows_refuse_before_vec_growth() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy feature child index rows");
+    }
+
+    #[test]
+    fn legacy_dimension_rows_refuse_before_vec_growth() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy dimension rows");
+    }
+
+    #[test]
+    fn legacy_dimension_identities_refuse_before_insertion() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy dimension identities");
+    }
+
+    #[test]
+    fn legacy_round_edge_identities_refuse_before_insertion() {
+        let fixture = persistence(&[2.0]);
+        let edges = [topology(7), topology(8)];
+        assert_eq!(scan(&fixture, &edges).rounds[0].edge_ids, Some(vec![7, 8]));
+        assert_collection_refusal(&fixture, &edges, "creo legacy round edge identities");
+    }
+
+    #[test]
+    fn legacy_round_edge_ids_refuse_before_vec_growth() {
+        let fixture = persistence(&[2.0]);
+        let edges = [topology(7), topology(8)];
+        assert_eq!(scan(&fixture, &edges).rounds[0].edge_ids, Some(vec![7, 8]));
+        assert_collection_refusal(&fixture, &edges, "creo legacy round edge IDs");
+    }
+
+    #[test]
+    fn legacy_round_index_nodes_refuse_before_insertion() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy round index nodes");
+    }
+
+    #[test]
+    fn legacy_ambiguous_round_ids_refuse_before_insertion() {
+        let mut fixture = persistence(&[2.0]);
+        fixture.objects.extend([
+            object(
+                "duplicate_feature",
+                "next_feat_ptr",
+                Some("features"),
+                ObjectPayload::Arrow,
+            ),
+            object(
+                "duplicate_type",
+                "feat_type_ptr",
+                Some("duplicate_feature"),
+                ObjectPayload::Arrow,
+            ),
+        ]);
+        fixture.integer_values.rows.extend([
+            integer("duplicate_feature", "id", 139, 90),
+            integer("duplicate_type", "type", 913, 91),
+        ]);
+        assert!(scan(&fixture, &[]).rounds.is_empty());
+        assert_collection_refusal(&fixture, &[], "creo legacy ambiguous round IDs");
+    }
+
+    #[test]
+    fn legacy_round_results_refuse_before_vec_growth() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert_collection_refusal(&fixture, &[], "creo legacy round results");
     }
 }

@@ -9,7 +9,7 @@ use std::ops::Add;
 pub(crate) struct BodyWriteIndex(StateIndexToken);
 
 impl BodyWriteIndex {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let token = StateIndexToken::read_at(bytes, 0)?;
         let canonical = matches!(
             (token.value(), token.raw()),
@@ -87,7 +87,7 @@ impl<O> BodyWriteFrame<O> {
         self.body_image
     }
     pub(crate) fn byte_len(&self) -> u8 {
-        9 + self.group_node.raw().len() as u8 + self.body_image.raw().len() as u8
+        9 + self.group_node.0.byte_len() + self.body_image.0.byte_len()
     }
 }
 
@@ -99,9 +99,9 @@ impl<O: Copy + Add<Output = O> + From<u8>> BodyWriteFrame<O> {
         self.offset + O::from(3)
     }
     pub(crate) fn body_image_offset(&self) -> O {
-        self.offset + O::from(8 + self.group_node.raw().len() as u8)
+        self.offset + O::from(8 + self.group_node.0.byte_len())
     }
-    pub(crate) fn end_offset(&self) -> O {
+    pub(super) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())
     }
 }
@@ -134,7 +134,7 @@ positioned_frame!(u64);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 
     #[test]
     fn body_write_indices_preserve_packed_aliases_and_canonical_feature_widths() {

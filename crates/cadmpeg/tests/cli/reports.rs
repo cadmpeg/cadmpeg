@@ -5,15 +5,19 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[test]
 fn artifact_reports_cover_success_and_semantic_refusal() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let success_report = dir.path().join("success-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -34,10 +38,15 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
-    assert_eq!(value["export"]["format"], "step");
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(value["export"]["identity"]["target"], "step:ap214");
     assert_eq!(value["export"]["census"]["basis"], "target_records");
     assert!(value["export"]["census"]["counts"].is_object());
-    assert_eq!(value["export"]["fidelity"]["status"], "not_provided");
+    assert_eq!(value["export"]["write_path"]["path"], "synthesized");
+    assert_eq!(
+        value["export"]["write_path"]["fidelity"]["status"],
+        "not_provided"
+    );
     assert!(value["export"]["losses"].is_array());
     assert!(value["export"]["notes"].is_array());
 
@@ -73,7 +82,11 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
 #[test]
 fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("collision.step");
 
     Command::cargo_bin("cadmpeg")
@@ -99,7 +112,11 @@ fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
 #[test]
 fn report_write_failure_does_not_replace_a_typed_refusal() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -124,7 +141,11 @@ fn report_write_failure_does_not_replace_a_typed_refusal() {
 #[test]
 fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.step");
 
     Command::cargo_bin("cadmpeg")
@@ -152,7 +173,11 @@ fn report_write_failure_does_not_reclassify_a_completed_conversion() {
 #[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.f3d");
     let report = dir.path().join("f3d-report.json");
     Command::cargo_bin("cadmpeg")
@@ -170,7 +195,11 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["export"]["format"], "f3d");
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(
+        value["export"]["identity"]["target"],
+        "f3d:manifest-3-2-0-0"
+    );
     assert!(value["export"]["notes"]
         .as_array()
         .unwrap()
@@ -183,7 +212,11 @@ fn f3d_export_report_identifies_regenerated_output() {
 #[test]
 fn reporting_commands_emit_json_only_on_stdout() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let validate = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["check", input.to_str().unwrap(), "--json"])
@@ -240,14 +273,24 @@ fn inspect_report_writes_summary_to_file() {
         .stdout(predicate::str::contains("format: rhino (detected high)"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "inspect");
-    assert_eq!(value["confidence"], "high");
-    assert_eq!(value["summary"]["format"], "rhino");
+    assert_eq!(value["selection"]["kind"], "detected");
+    assert_eq!(value["selection"]["confidence"], "high");
+    assert!(
+        value["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("rhino:")),
+        "{value}"
+    );
 }
 
 #[test]
 fn validate_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("validate-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -341,7 +384,11 @@ fn inspect_classifies_and_reports_an_unsupported_dialect() {
 #[test]
 fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("report.json");
 
     for (command, path_flag) in [
@@ -380,7 +427,7 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
 fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     // findings under `.check_report.findings` in the written report.
     let dir = tempdir().unwrap();
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let absent = format!("{}-absent", ir.model.faces[0].surface);
     ir.model.faces[0].surface = absent.try_into().expect("valid identity");
     let input = fixture(dir.path(), "broken.cadir.json", &ir);
@@ -420,7 +467,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
 #[test]
 fn diff_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
-    let cube = unit_cube();
+    let cube = unit_cube().expect("unit cube fixture is admitted");
     let a = fixture(dir.path(), "a.cadir.json", &cube);
     let b = fixture(dir.path(), "b.cadir.json", &cube);
     let report = dir.path().join("diff-report.json");

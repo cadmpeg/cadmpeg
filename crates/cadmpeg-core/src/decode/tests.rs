@@ -6,12 +6,48 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::CodecError;
 
-use super::*;
+use super::u64_from_index;
+use super::{
+    refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
+    ResourceDimension, ResourceLimits, WorkBudget,
+};
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
     let mut policy = DecodePolicy::default();
     edit(&mut policy.limits);
     policy
+}
+
+#[test]
+fn copy_retained_text_refuses_before_allocation_and_succeeds_under_service_profile() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_retained_bytes = 4);
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    assert!(matches!(
+        ctx.copy_retained_text("hello", "retained text test"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(
+        ctx.copy_retained_text("hello", "retained text test")
+            .unwrap(),
+        "hello"
+    );
+}
+
+#[test]
+fn allocation_failed_constructor_sets_refusal_fields() {
+    let limit =
+        super::ResourceLimit::allocation_failed(ResourceDimension::Codec("test"), 12, 5, "test");
+    assert_eq!(limit.dimension, ResourceDimension::Codec("test"));
+    assert_eq!(limit.reason, super::ResourceFailure::AllocationFailed);
+    assert_eq!(limit.limit, 12);
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, 5);
+    assert_eq!(limit.operation, "test");
 }
 
 #[test]
@@ -29,7 +65,7 @@ fn root_limit_is_enforced() {
 #[test]
 fn read_root_uses_sized_and_fallback_read_paths() {
     let bytes = vec![0_u8; 32];
-    let policy = policy_with(|limits| limits.max_input_bytes = bytes.len() as u64);
+    let policy = policy_with(|limits| limits.max_input_bytes = u64_from_index(bytes.len()));
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());
@@ -96,13 +132,13 @@ fn exact_expansion_enforces_size_and_limit() {
         limits.max_decompressed_bytes_total = 8;
         limits.max_decompressed_bytes_per_expand = 8;
     });
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let mut writer = ctx.begin_expand(root, ExpandSpec::Exact(4)).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut writer = ctx.begin_expand(ExpandSpec::Exact(4)).unwrap();
     writer.write(&[1, 2, 3, 4]).unwrap();
     let view = writer.finalize().unwrap();
     assert_eq!(view.window(), &[1, 2, 3, 4]);
 
-    let mut writer = ctx.begin_expand(root, ExpandSpec::Unknown).unwrap();
+    let mut writer = ctx.begin_expand(ExpandSpec::Unknown).unwrap();
     assert!(matches!(
         writer.write(&[0; 9]),
         Err(CodecError::ResourceLimit(_))
@@ -140,14 +176,40 @@ fn scoped_reservations_release_and_commit_without_double_counting() {
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     {
-        let mut reservation = ctx.reserve_scoped(3, "temporary", None).unwrap();
+        let mut reservation = ctx.reserve_scoped(3, "temporary").unwrap();
         reservation.grow(2).unwrap();
-        assert_eq!(reservation.bytes(), 5);
     }
-    ctx.reserve_scoped(5, "released", None).unwrap();
-    let reservation = ctx.reserve_scoped(2, "retained", None).unwrap();
+    ctx.reserve_scoped(5, "released").unwrap();
+    let reservation = ctx.reserve_scoped(2, "retained").unwrap();
     reservation.commit().unwrap();
-    ctx.charge_retained(5, "retained", None).unwrap();
+    ctx.charge_retained(5, "retained").unwrap();
+}
+
+#[test]
+fn lossy_utf8_copy_charges_replacement_bytes_before_retention() {
+    let source = b"A\xffB\xe2\x82";
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_retained_bytes = 7);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
+        .expect_err("two replacements need eight bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "lossy UTF-8 fixture"));
+
+    let policy = policy_with(|limits| limits.max_retained_bytes = 8);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        ctx.copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
+            .expect("eight retained bytes fit"),
+        String::from_utf8_lossy(source)
+    );
+    assert_eq!(
+        ctx.copy_retained_lossy_utf8(&[], "empty UTF-8 fixture")
+            .expect("empty text needs no bytes"),
+        ""
+    );
 }
 
 #[test]
@@ -171,12 +233,12 @@ fn every_session_dimension_refuses_and_fuses() {
 
     assert_dimension(
         |limits| limits.max_materialized_bytes = 1,
-        |ctx| ctx.reserve_scoped(2, "materialize", None).map(drop),
+        |ctx| ctx.reserve_scoped(2, "materialize").map(drop),
         ResourceDimension::MaterializedBytes,
     );
     assert_dimension(
         |limits| limits.max_retained_bytes = 1,
-        |ctx| ctx.charge_retained(2, "retain", None),
+        |ctx| ctx.charge_retained(2, "retain"),
         ResourceDimension::RetainedBytes,
     );
     assert_dimension(
@@ -200,7 +262,7 @@ fn every_session_dimension_refuses_and_fuses() {
     );
     assert_dimension(
         |limits| limits.max_recursion_depth = 0,
-        |ctx| ctx.enter_nested("nested", None).map(drop),
+        |ctx| ctx.enter_nested("nested").map(drop),
         ResourceDimension::RecursionDepth,
     );
     assert_dimension(
@@ -225,7 +287,7 @@ fn tiny_resource_limits_refuse_entities_and_materialized_bytes() {
     let policy = policy_with(|limits| limits.max_materialized_bytes = 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     assert!(matches!(
-        ctx.reserve_scoped(2, "materialize", None),
+        ctx.reserve_scoped(2, "materialize"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
@@ -255,31 +317,31 @@ fn depth_is_scoped_and_work_budget_is_sticky() {
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     {
-        let _guard = ctx.enter_nested("first", None).unwrap();
+        let _guard = ctx.enter_nested("first").unwrap();
     }
-    ctx.enter_nested("second", None).unwrap();
+    ctx.enter_nested("second").unwrap();
 
     let budget = ctx.work_budget(10);
     assert!(budget.charge_by(2));
     let child = budget.child_slice(1);
     assert!(child.charge());
-    assert!(budget.consume_child(&child));
+    assert!(matches!(budget.consume_child(&child), Ok(())));
     assert_eq!(budget.consumed(), 3);
     assert!(!budget.charge());
     assert!(budget.exhausted());
     assert!(!budget.charge_by(0));
     assert!(
-        matches!(budget.refuse("solver"), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
     );
 }
 
 #[test]
 fn local_limit_refusal_uses_codec_dimension() {
     assert!(matches!(
-        refuse_local_limit("records", 4, 5, None),
+        refuse_local_limit("records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("records")
-                && limit.context.operation == "records"
+                && limit.operation == "records"
     ));
 }
 
@@ -288,7 +350,7 @@ fn codec_limit_refusal_fuses_the_decode_session() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
     assert!(matches!(
-        ctx.refuse_codec_limit("nested_records", 4, 5, None),
+        ctx.refuse_codec_limit("nested_records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("nested_records")
                 && limit.limit == 4
@@ -324,62 +386,32 @@ fn committed_reads_preserve_truncation_location_and_operation() {
 }
 
 #[test]
-fn unresolved_address_does_not_invent_a_root_step() {
-    let address = resolve_address(
-        &[],
-        SourceLocation {
-            space: SpaceId::ROOT,
-            offset: 7,
-        },
-    );
-    assert!(address.steps.is_empty());
-    assert_eq!(
-        address.inspect_commands("part.FCStd"),
-        ["cadmpeg inspect hex part.FCStd --offset 7 --len 64"]
-    );
-}
-
-#[test]
-fn nested_member_address_is_inspect_replayable() {
-    let descriptors = vec![
-        SpaceDescriptor {
-            label: "root".into(),
-            derivation: SpaceDerivation::Root,
-        },
-        SpaceDescriptor {
-            label: "GuiDocument.xml".into(),
-            derivation: SpaceDerivation::Expanded {
-                parent: SpaceId::ROOT,
-                source_range: ByteRange { start: 30, end: 90 },
-            },
-        },
-    ];
-    let address = resolve_address(
-        &descriptors,
-        SourceLocation {
-            space: SpaceId::from_index(1),
-            offset: 120,
-        },
-    );
-    assert_eq!(address.path(), "root/GuiDocument.xml@120");
-    assert_eq!(address.steps[1].kind, AddressStepKind::Member);
-    let commands = address.inspect_commands("part.FCStd");
-    assert_eq!(
-        commands,
-        [
-            "cadmpeg inspect extract part.FCStd GuiDocument.xml -o part.FCStd.member".to_string(),
-            "cadmpeg inspect hex part.FCStd.member --offset 120 --len 64".to_string(),
-        ]
-    );
-}
-
-#[test]
 fn forced_child_exhaustion_charges_its_full_slice() {
     let parent = WorkBudget::new(10);
     let child = parent.child_slice(4);
     assert!(child.charge());
     child.exhaust();
-    assert!(parent.consume_child(&child));
+    assert!(matches!(parent.consume_child(&child), Ok(())));
     assert_eq!(parent.remaining(), 6);
     assert!(!child.charge_by(0));
+}
+
+#[test]
+fn stored_expanded_and_concatenated_spaces_have_distinct_zero_based_locations() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"abcd", &arena, &policy).unwrap();
+    let stored = ctx
+        .register_slice(root, ByteRange { start: 0, end: 4 })
+        .unwrap();
+    let expanded = ctx
+        .begin_expand(ExpandSpec::Exact(0))
+        .unwrap()
+        .finalize()
+        .unwrap();
+    let concat = ctx.concat_views(&[root, stored]).unwrap();
+    for (index, view) in [root, stored, expanded, concat].into_iter().enumerate() {
+        assert_eq!(view.space().index(), index);
+        assert_eq!(view.location().offset, 0);
+    }
 }

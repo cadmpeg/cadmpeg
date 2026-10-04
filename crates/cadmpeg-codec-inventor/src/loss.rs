@@ -18,7 +18,10 @@
 //! added later, and the categories this codec spans have no honest common
 //! default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one Inventor transfer loss.
 ///
@@ -26,7 +29,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// string form (via [`InventorLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum InventorLossCode {
+pub(crate) enum InventorLossCode {
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -71,6 +74,8 @@ pub enum InventorLossCode {
     AppearanceDefaultUnresolved,
     /// Protein catalog asset GUIDs collide; ambiguous texture joins were refused.
     ProteinGuidAmbiguous,
+    /// A Protein texture states a distance with no length conversion.
+    MaterialDistanceUnitUntyped,
     /// The Inventor Protein stream is malformed.
     ProteinStreamMalformed,
     /// `PmGraphics` face appearance overrides did not resolve.
@@ -95,8 +100,8 @@ pub enum InventorLossCode {
 
 impl InventorLossCode {
     /// Every code, in declaration order.
-    #[allow(dead_code)] // Catalog for crate tests and harness oracles.
-    pub const ALL: &'static [InventorLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [InventorLossCode] = &[
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
@@ -119,6 +124,7 @@ impl InventorLossCode {
         Self::ProteinAppearanceAbsent,
         Self::AppearanceDefaultUnresolved,
         Self::ProteinGuidAmbiguous,
+        Self::MaterialDistanceUnitUntyped,
         Self::ProteinStreamMalformed,
         Self::AppearanceFaceOverrideUnresolved,
         Self::UfrxTableMalformed,
@@ -133,7 +139,7 @@ impl InventorLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
@@ -159,6 +165,7 @@ impl InventorLossCode {
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
             Self::AppearanceDefaultUnresolved => "appearance.default-unresolved",
             Self::ProteinGuidAmbiguous => "protein.guid-ambiguous",
+            Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ProteinStreamMalformed => "protein.stream-malformed",
             Self::AppearanceFaceOverrideUnresolved => "appearance.face-override-unresolved",
             Self::UfrxTableMalformed => "ufrx.table-malformed",
@@ -174,7 +181,7 @@ impl InventorLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryKernelCarrierNotTransferred => Severity::Blocking,
             _ => Severity::Warning,
@@ -211,6 +218,7 @@ impl InventorLossCode {
             | Self::ProteinAppearanceAbsent
             | Self::AppearanceDefaultUnresolved
             | Self::ProteinGuidAmbiguous
+            | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
             Self::UfrxSchemaUnsupportedAssembly | Self::AssemblyComponentExternal => {
                 LossTaxonomy::AssemblyComponentsExternal
@@ -224,8 +232,17 @@ impl InventorLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("inventor", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("inventor") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -233,7 +250,7 @@ impl InventorLossCode {
     /// The structured code is `inventor/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -272,6 +289,7 @@ mod tests {
                 "protein.appearance-absent",
                 "appearance.default-unresolved",
                 "protein.guid-ambiguous",
+                "material.distance-unit-untyped",
                 "protein.stream-malformed",
                 "appearance.face-override-unresolved",
                 "ufrx.table-malformed",

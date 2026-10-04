@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -12,12 +14,13 @@ use crate::archive::tests::{
     codec_detects_and_inspects_ap242_exchange_structure,
     codec_inspects_edition3_sections_and_external_references,
 };
+use crate::export::write_step;
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
-use crate::reader::geometry::tests::{
+use crate::reader::geometry::tests::analytic::procedural_step_geometry_round_trips_as_native_entities;
+use crate::reader::geometry::tests::units::{
     decode_conical_apex_and_context_plane_angle_units,
     decode_resolves_conversion_units_and_linear_uncertainty,
     decode_transfers_placed_analytic_geometry_in_millimetres,
-    procedural_step_geometry_round_trips_as_native_entities,
 };
 use crate::reader::pmi::tests::{
     ap242_dimension_kinds_emit_concrete_schema_entities,
@@ -45,14 +48,14 @@ use crate::reader::tests::{
     decode_accounts_for_every_part21_byte,
     decode_preserves_named_opaque_records_with_exact_byte_spans,
 };
-use crate::reader::topology::tests::{
+use crate::reader::topology::tests::faces::face_outer_bound_is_canonicalized_ahead_of_inner_bounds;
+use crate::reader::topology::tests::sheets::{
     decode_and_write_singular_vertex_loops, decode_builds_a_valid_ap203_sheet_brep,
-    decode_builds_a_valid_connected_sheet_brep, every_region_of_a_body_is_retained_as_a_shape_item,
-    face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
-    reader_recovers_a_valid_solid_from_writer_output,
+    decode_builds_a_valid_connected_sheet_brep, reader_recovers_a_valid_solid_from_writer_output,
 };
+use crate::reader::topology::tests::shells::every_region_of_a_body_is_retained_as_a_shape_item;
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
-use crate::writer::tests::{
+use crate::writer::tests::round_trips::{
     analytic_conics_round_trip_through_step,
     ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,
     nurbs_surface_grid_orientation_is_u_major,
@@ -60,10 +63,11 @@ use crate::writer::tests::{
     writer_round_trips_edge_based_wire_bodies, writer_round_trips_product_body_ownership,
     writer_round_trips_rational_nurbs_pcurves, writer_round_trips_rigid_body_placements,
 };
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("step").is_some());
 }
@@ -84,7 +88,7 @@ fn geometry_pipeline_composes_analytic_conic_nurbs_procedural_and_unit_conversio
     decode_conical_apex_and_context_plane_angle_units();
     decode_resolves_conversion_units_and_linear_uncertainty();
     procedural_step_geometry_round_trips_as_native_entities();
-    writer_round_trips_rational_nurbs_pcurves();
+    writer_round_trips_rational_nurbs_pcurves().expect("sheet pcurve lanes pair");
     analytic_conics_round_trip_through_step();
     nurbs_surface_grid_orientation_is_u_major();
 }
@@ -135,7 +139,7 @@ fn pmi_pipeline_composes_semantic_presentation_dimension_datum_and_tolerance_ent
 
 #[test]
 fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_strict_output() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     for schema in [
         StepSchema::Ap203Edition1,
         StepSchema::Ap203Edition2,
@@ -153,10 +157,15 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             bytes, repeated,
             "STEP output must be deterministic for {schema:?}"
         );
-        assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("STEP cube decode");
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes),
+            Confidence::High
+        );
+        let result = EditableDecodeResult::from(
+            StepCodec::default()
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("STEP cube decode"),
+        );
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 6);
         assert_valid(&result);
@@ -167,7 +176,8 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .points
             .first_mut()
             .expect("unit cube has a point")
-            .position
+            .position()
+            .get()
             .x += 1.0;
         let expected_model = edited.model.clone();
         let codec = StepCodec {
@@ -179,22 +189,30 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
                 TargetRequest::Inherit,
             )
             .expect("edited STEP document plan");
-        assert_eq!(
+        assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::WritePath::Synthesized
-        );
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
         assert_eq!(
-            &plan.report().fidelity(),
-            &cadmpeg_ir::FidelityResolution::NotConsumed
+            &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+                plan.report().write_path(),
+                "fidelity"
+            ),
+            &cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
         );
         let mut edited_bytes = Vec::new();
         let export = plan
             .write_to(&mut edited_bytes)
             .expect("edited STEP document write");
-        assert_eq!(export.write_path(), cadmpeg_ir::WritePath::Synthesized);
-        let edited_result = codec
-            .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
-            .expect("edited STEP document decode");
+        assert!(matches!(
+            export.write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
+        let edited_result = EditableDecodeResult::from(
+            codec
+                .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
+                .expect("edited STEP document decode"),
+        );
         assert_valid(&edited_result);
         assert_eq!(
             edited_result.ir().model.bodies.len(),
@@ -207,14 +225,14 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         let expected_points = expected_model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let actual_points = edited_result
             .ir()
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         assert_eq!(actual_points.len(), expected_points.len());
         let mut matched = vec![false; actual_points.len()];

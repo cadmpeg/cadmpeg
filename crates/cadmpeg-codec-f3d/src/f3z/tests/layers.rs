@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::test_support::assembly_test::{
+    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_header_test::synthetic_smbh;
+use crate::test_support::zip_test::{f3d_with_smbh, f3d_with_smbh_and_manifest_version};
+use crate::F3dCodec;
+use crate::F3dLossCode;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use std::io::Cursor;
 
 /// The outer archive's row survives the inner member's decode.
 ///
@@ -399,19 +409,27 @@ fn merged_member_losses_keep_their_xref_context() {
 
 #[test]
 fn duplicate_member_layer_identity_is_a_recorded_loss() {
-    let mut target =
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::F3dDialect::classify_f3z(&[
-            "part.f3d",
-        ]));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test input");
+    let mut target = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_f3z(&ctx, &["part.f3d"]).unwrap(),
+    );
     let first = cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::F3dDialect::classify_document("3-2-0-0"),
+        crate::dialect::F3dDialect::classify_document(&ctx, "3-2-0-0").unwrap(),
     );
     let later = cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::F3dDialect::classify_document("3-3-0-0"),
+        crate::dialect::F3dDialect::classify_document(&ctx, "3-3-0-0").unwrap(),
     );
 
-    assert!(crate::f3z::archive::merge_member_layers(&mut target, &first, "part.f3d").is_empty());
-    let losses = crate::f3z::archive::merge_member_layers(&mut target, &later, "part.f3d");
+    assert!(
+        crate::f3z::archive::merge_member_layers(&ctx, &mut target, &first, "part.f3d")
+            .unwrap()
+            .is_empty()
+    );
+    let losses =
+        crate::f3z::archive::merge_member_layers(&ctx, &mut target, &later, "part.f3d").unwrap();
 
     assert_eq!(target.iter().count(), 2);
     assert!(target.iter().any(|layer| {
@@ -421,4 +439,93 @@ fn duplicate_member_layer_identity_is_a_recorded_loss() {
     assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
     assert!(losses[0].message.contains("f3d"));
     assert!(losses[0].message.contains("part.f3d"));
+}
+
+fn member_layer_collection_refusal(max_items: u64, collision: bool) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (normal, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &normal_policy).unwrap();
+    let mut target = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_f3z(&normal, &["part.f3d"]).unwrap(),
+    );
+    let member = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_document(&normal, "3-2-0-0").unwrap(),
+    );
+    if collision {
+        crate::f3z::archive::merge_member_layers(&normal, &mut target, &member, "part.f3d")
+            .unwrap();
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::f3z::archive::merge_member_layers(&limited, &mut target, &member, "part.f3d")
+        .unwrap_err()
+}
+
+#[test]
+fn f3z_member_layer_clone_refuses_collection_limit() {
+    let error = member_layer_collection_refusal(0, false);
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy dialect layers"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn f3z_archive_member_declaration_refuses_collection_limit() {
+    let error = member_layer_collection_refusal(1, false);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "declare F3Z archive member")
+    );
+}
+
+#[test]
+fn f3z_member_layer_collection_refuses_limit() {
+    let error = member_layer_collection_refusal(2, false);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z member dialect layers")
+    );
+}
+
+#[test]
+fn f3z_layer_collision_loss_refuses_collection_limit() {
+    let error = member_layer_collection_refusal(2, true);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z report losses")
+    );
+}
+
+#[test]
+fn f3z_layer_instance_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (normal, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
+    let mut target = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_f3z(&normal, &["part.f3d"]).unwrap(),
+    );
+    let member =
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"),
+        ));
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        crate::f3z::archive::merge_member_layers(&limited, &mut target, &member, "part.f3d")
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z dialect layer instance")
+    );
 }

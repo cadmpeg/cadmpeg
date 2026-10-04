@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::native::features::extrude_32::FeatureExtrudePayload32Branch;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
 use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
+use crate::native::features::FeatureBlockDimensions;
+use crate::native::features::FeatureBooleanOperation;
+use crate::native::features::FeatureDatumCsysDescriptor;
+use crate::native::features::FeatureDatumCsysPayloadFixedPair;
+use crate::native::features::FeatureDatumPlaneDescriptor;
+use crate::native::features::FeatureInputBlockIdentityGroup;
+use crate::native::features::FeatureOperationBodyReferenceLane;
+use crate::native::features::FeatureSketchPayloadFixedPair;
+use crate::native::features::FeatureSketchPayloadMixedPair;
+use crate::native::features::FeatureSketchPayloadScalarLane;
 
 #[test]
 fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() {
@@ -411,12 +420,11 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
     let compact = r#"{"id":"lane","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":28,"encoding":"compact_index","object_indices":[4096,28673],"raw_object_indices":[[144,0],[240,1]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#;
     let payload = r#"{"id":"lane","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":[[240,1],[241,1,0]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#;
     for json in [compact, payload] {
-        let lane: super::FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
+        let lane: FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&lane).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["object_indices"][0] = serde_json::json!(2);
-        let error =
-            serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(wire).unwrap_err();
         assert!(error.to_string().contains("object_indices"), "{error}");
     }
     for (json, raw) in [
@@ -432,8 +440,7 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["raw_object_indices"][0] = serde_json::json!(raw);
-        let error =
-            serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(wire).unwrap_err();
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }

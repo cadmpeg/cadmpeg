@@ -21,7 +21,7 @@ pub(crate) struct BlendBoundState {
 }
 
 impl BlendBoundState {
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: u32,
         header: [u32; 5],
         sense: bool,

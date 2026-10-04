@@ -25,7 +25,7 @@ impl CommonFramePrefix {
         Ok(prefix)
     }
 
-    pub(crate) fn read(bytes: &[u8], marker: [u8; 3]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], marker: [u8; 3]) -> Option<Self> {
         let widths = match marker {
             [1, 3, 2] => [1, 2, 2],
             [1, 1, 1] => [1, 1, 1],
@@ -43,8 +43,12 @@ impl CommonFramePrefix {
     pub(crate) fn indices(self) -> [u32; 3] {
         self.0.map(CompactIndexAtom::value)
     }
+    #[cfg(test)]
     pub(crate) fn raw_indices(self) -> [Vec<u8>; 3] {
         self.0.map(|token| token.raw().to_vec())
+    }
+    pub(crate) fn raw_indices_ref(&self) -> [&[u8]; 3] {
+        self.0.each_ref().map(super::compact::CompactIndexAtom::raw)
     }
     pub(crate) fn marker(self) -> [u8; 3] {
         if self.0[1].raw().len() == 1 {
@@ -53,7 +57,7 @@ impl CommonFramePrefix {
             [1, 3, 2]
         }
     }
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         self.0.iter().map(|token| token.raw().len()).sum::<usize>() + 3
     }
     fn index_offsets(self) -> [usize; 3] {
@@ -95,7 +99,7 @@ impl CommonFrameSuffix {
         })
     }
 
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let local_ordinal = CanonicalFeatureReferenceToken::read(bytes)?;
         let width = local_ordinal.raw().len();
         (bytes.get(width..2 * width) == Some(local_ordinal.raw())).then_some(())?;
@@ -152,7 +156,7 @@ impl<T> CommonFrameSuffix<T> {
     fn object_offset(&self) -> usize {
         2 * self.local_ordinal.raw().len()
     }
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         self.object_offset() + self.raw_object_index().len() + 1
     }
 }
@@ -213,7 +217,7 @@ impl<O, T> TerminalFrame<O, T> {
 }
 
 macro_rules! frame_positions {
-    ($offset:ty) => {
+    ($offset:ty, $widen:path) => {
         impl<T> CommonFrame<$offset, T> {
             pub(crate) fn new(
                 prefix: CommonFramePrefix,
@@ -227,14 +231,14 @@ macro_rules! frame_positions {
                     suffix,
                     offset,
                 };
-                offset.checked_add(frame.byte_len() as $offset)?;
+                offset.checked_add($widen(frame.byte_len()))?;
                 Some(frame)
             }
             pub(crate) fn offset(&self) -> $offset {
                 self.offset
             }
             pub(crate) fn state_offset(&self) -> $offset {
-                self.offset + self.prefix.byte_len() as $offset
+                self.offset + $widen(self.prefix.byte_len())
             }
             pub(crate) fn local_ordinal_offset(&self) -> $offset {
                 self.state_offset() + 8
@@ -242,7 +246,7 @@ macro_rules! frame_positions {
         }
         impl<T> TerminalFrame<$offset, T> {
             pub(crate) fn new(suffix: CommonFrameSuffix<T>, offset: $offset) -> Option<Self> {
-                offset.checked_add(suffix.byte_len() as $offset)?;
+                offset.checked_add($widen(suffix.byte_len()))?;
                 Some(Self { suffix, offset })
             }
             pub(crate) fn offset(&self) -> $offset {
@@ -251,11 +255,11 @@ macro_rules! frame_positions {
         }
     };
 }
-frame_positions!(usize);
-frame_positions!(u64);
+frame_positions!(usize, std::convert::identity);
+frame_positions!(u64, cadmpeg_core::decode::u64_from_index);
 
 impl<T> CommonFrame<usize, T> {
-    pub(crate) fn end_offset(&self) -> usize {
+    pub(super) fn end_offset(&self) -> usize {
         self.offset + self.byte_len()
     }
 }
@@ -264,28 +268,29 @@ impl<T> CommonFrame<u64, T> {
     pub(crate) fn index_offsets(&self) -> [u64; 3] {
         self.prefix
             .index_offsets()
-            .map(|offset| self.offset + offset as u64)
+            .map(|offset| self.offset + cadmpeg_core::decode::u64_from_index(offset))
     }
     pub(crate) fn object_index_offset(&self) -> u64 {
-        self.local_ordinal_offset() + self.suffix.object_offset() as u64
+        self.local_ordinal_offset()
+            + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
     }
 }
 
 impl<T> TerminalFrame<usize, T> {
-    pub(crate) fn end_offset(&self) -> usize {
+    pub(super) fn end_offset(&self) -> usize {
         self.offset + self.suffix.byte_len()
     }
 }
 
 impl<T> TerminalFrame<u64, T> {
     pub(crate) fn object_index_offset(&self) -> u64 {
-        self.offset + self.suffix.object_offset() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 
     #[test]
     fn suffix_requires_exact_repetition_canonical_indices_and_terminator() {

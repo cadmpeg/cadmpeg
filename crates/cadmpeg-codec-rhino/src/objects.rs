@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino object-record identity and framing.
 
+use crate::loss::Diagnostics;
+use cadmpeg_core::decode::DecodeContext;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{
     chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError,
+    BoundedReader, ChecksumStatus, Chunk, FramingError,
 };
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
-use crate::wire::Uuid;
+use crate::wire::{finite, read_finite, uuid, Uuid};
+use cadmpeg_ir::scalar::FiniteReal;
 
 const OBJECT_RECORD_TYPE: u32 = 0x8200_0071;
 const OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
@@ -35,6 +38,34 @@ pub(crate) const OBSOLETE_CUSTOM_MESH_USERDATA: Uuid = Uuid::from_canonical([
 pub(crate) const PER_OBJECT_MESH_PARAMETERS_USERDATA: Uuid = Uuid::from_canonical([
     0xb5, 0x62, 0x8c, 0xa9, 0x82, 0xc4, 0x4c, 0xae, 0x98, 0x83, 0x48, 0x7b, 0x3e, 0x4a, 0xb2, 0x8b,
 ]);
+
+/// Reads the class UUID a `CLASS_UUID` chunk carries.
+///
+/// The specification states the body outright: twenty bytes, the sixteen-byte
+/// UUID and then its checksum. Both facts are proved here, so the answer is the
+/// array the UUID needs and no later read restates the width.
+fn class_uuid_wire(
+    bytes: &[u8],
+    uuid_chunk: &Chunk,
+) -> Result<[u8; class_uuid_body::CRC32], FramingError> {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
+        return Err(FramingError::structural(
+            uuid_chunk.header_start,
+            "class UUID chunk must have a 20-byte body",
+        ));
+    }
+    bytes
+        .get(uuid_chunk.body().start..)
+        .and_then(<[u8]>::first_chunk::<{ class_uuid_body::CRC32 }>)
+        .copied()
+        .ok_or_else(|| {
+            FramingError::structural(
+                uuid_chunk.header_start,
+                "class UUID chunk body runs past the archive",
+            )
+        })
+}
+
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -110,13 +141,45 @@ impl AttributeUserdataDescriptor {
 }
 
 /// Raw object attributes decoded from an object-attributes chunk.
+/// Which source an object's display color is taken from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ColorSource {
+    Layer,
+    Object,
+    Material,
+    Parent,
+    /// A selector outside the documented set, retained as written.
+    Invalid(u8),
+}
+
+impl ColorSource {
+    fn parse(raw: u8) -> Self {
+        match raw {
+            0 => Self::Layer,
+            1 => Self::Object,
+            2 => Self::Material,
+            3 => Self::Parent,
+            other => Self::Invalid(other),
+        }
+    }
+
+    pub(crate) fn as_byte(self) -> u8 {
+        match self {
+            Self::Layer => 0,
+            Self::Object => 1,
+            Self::Material => 2,
+            Self::Parent => 3,
+            Self::Invalid(raw) => raw,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ObjectAttributes {
     /// Complete source range.
-    pub(crate) source: SourceRange,
+    source: SourceRange,
     /// Packed attribute version.
-    pub(crate) version: (u8, u8),
+    version: (u8, u8),
     /// Raw object UUID.
     pub(crate) object_id: Uuid,
     /// Raw layer archive index.
@@ -126,17 +189,17 @@ pub(crate) struct ObjectAttributes {
     /// Raw object color.
     pub(crate) color: [u8; 4],
     /// Obsolete line style width.
-    pub(crate) obsolete_line_style: i16,
+    obsolete_line_style: i16,
     /// Obsolete line style index.
-    pub(crate) obsolete_line_style_index: i16,
+    obsolete_line_style_index: i16,
     /// Obsolete thickness.
-    pub(crate) obsolete_thickness: f64,
+    obsolete_thickness: FiniteReal,
     /// Obsolete scale.
-    pub(crate) obsolete_scale: f64,
+    obsolete_scale: FiniteReal,
     /// Raw visibility.
     pub(crate) visible: bool,
-    /// Raw color source selector.
-    pub(crate) color_source: u8,
+    /// Color source selector.
+    pub(crate) color_source: ColorSource,
     /// Raw linetype source selector.
     pub(crate) linetype_source: u8,
     /// Raw material source selector.
@@ -149,8 +212,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) linetype_index: i32,
     /// Raw plot color.
     pub(crate) plot_color: [u8; 4],
-    /// Raw plot weight in millimeters.
-    pub(crate) plot_weight: f64,
+    /// Plot weight in millimeters.
+    pub(crate) plot_weight: FiniteReal,
     /// Raw object mode.
     pub(crate) object_mode: u8,
     /// Raw decoration flags.
@@ -174,51 +237,61 @@ pub(crate) struct ObjectAttributes {
     /// Display order.
     pub(crate) display_order: i32,
     /// Clipping-plane participation selector.
-    pub(crate) clip_participation_source: u8,
-    /// Clipping proof flag.
-    pub(crate) clipping_proof: bool,
+    clip_participation_source: u8,
+    /// Clipping participation flags.
+    pub(crate) clipping: ObjectClippingFlags,
     /// Clipping-plane UUIDs.
     pub(crate) clipping_plane_ids: Vec<Uuid>,
     /// Section-attributes source selector.
-    pub(crate) section_attributes_source: u8,
+    section_attributes_source: u8,
     /// Hatch-pattern archive index.
     pub(crate) hatch_pattern_index: i32,
     /// Section-hatch scale.
-    pub(crate) section_hatch_scale: f64,
+    pub(crate) section_hatch_scale: FiniteReal,
     /// Section-hatch rotation.
-    pub(crate) section_hatch_rotation: f64,
+    pub(crate) section_hatch_rotation: FiniteReal,
     /// Linetype-pattern scale.
-    pub(crate) linetype_pattern_scale: f64,
+    pub(crate) linetype_pattern_scale: FiniteReal,
     /// Hatch background color.
     pub(crate) hatch_background: [u8; 4],
-    /// Whether hatch boundaries are visible.
-    pub(crate) hatch_boundary_visible: bool,
-    /// Whether a detail requests its display-mode background.
-    pub(crate) detail_background_visible: bool,
+    /// Hatch and detail display flags.
+    pub(crate) display: ObjectDisplayFlags,
     /// Object frame transform.
-    pub(crate) object_frame: Option<Xform>,
+    object_frame: Option<Xform>,
     /// Section-fill rule.
     pub(crate) section_fill_rule: u8,
     /// Obsolete line-cap source.
-    pub(crate) line_cap_source: u8,
+    line_cap_source: u8,
     /// Obsolete line-cap style.
-    pub(crate) line_cap_style: u8,
+    line_cap_style: u8,
     /// Obsolete line-join source.
-    pub(crate) line_join_source: u8,
+    line_join_source: u8,
     /// Obsolete line-join style.
-    pub(crate) line_join_style: u8,
+    line_join_style: u8,
     /// Clipping-plane label style.
     pub(crate) clipping_plane_label_style: u8,
-    /// Obsolete selective-clipping-list flag.
-    pub(crate) selective_clipping_list: bool,
     /// Direct embedded linetype.
-    pub(crate) embedded_linetype: Option<settings::EmbeddedDescriptor>,
+    embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
-    pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
+    embedded_section_style: Option<settings::EmbeddedDescriptor>,
     /// Per-object custom render-mesh settings.
     pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
     /// Per-object mesh modifier userdata.
     pub(crate) mesh_modifiers: Option<crate::mesh_modifiers::MeshModifiers>,
+}
+
+/// Clipping participation switches in object attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ObjectClippingFlags {
+    pub(crate) proof: bool,
+    pub(crate) selective_list: bool,
+}
+
+/// Hatch and detail display switches in object attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ObjectDisplayFlags {
+    pub(crate) hatch_boundary_visible: bool,
+    pub(crate) detail_background_visible: bool,
 }
 
 /// Resolved source identity and display state for one object.
@@ -257,22 +330,17 @@ pub(crate) struct LayerRef {
     pub(crate) name: String,
 }
 
-/// Builds a stable source ID without minting a `CadIr` entity ID.
-pub(crate) fn stable_source_id(scope: &str, kind: &str, key: &str) -> String {
-    format!("rhino:{scope}:{kind}#{key}")
-}
-
 /// A bounded object-history descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HistoryDescriptor {
     /// Complete history wrapper range.
-    pub(crate) range: Range<usize>,
+    range: Range<usize>,
     /// Packed history version.
-    pub(crate) version: (u8, u8),
+    version: (u8, u8),
     /// History header child range.
-    pub(crate) header_range: Option<Range<usize>>,
+    header_range: Option<Range<usize>>,
     /// History data child range.
-    pub(crate) data_range: Option<Range<usize>>,
+    data_range: Option<Range<usize>>,
 }
 
 /// Attribute payload admission state for a framed object.
@@ -316,15 +384,13 @@ pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
     /// Unknown bounded trailer child ranges.
     pub(crate) unknown_trailer: Vec<Range<usize>>,
     /// Checksum warning messages.
-    pub(crate) checksum_warnings: Vec<String>,
+    pub(crate) checksum_warnings: Diagnostics,
     /// Object-local attribute and identity warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// A scanned object record: framed contents, or a degraded outer range.
 #[derive(Debug, Clone, PartialEq)]
-// Framed records are the common case; retain their descriptors inline during table traversal.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum ObjectRecord<I = SourceIdentity> {
     /// Bounded inner framing was malformed; only the outer range survived.
     Degraded {
@@ -334,7 +400,7 @@ pub(crate) enum ObjectRecord<I = SourceIdentity> {
         warning: String,
     },
     /// Fully framed object record.
-    Framed(ObjectDescriptor<I>),
+    Framed(Box<ObjectDescriptor<I>>),
 }
 
 impl<I> ObjectRecord<I> {
@@ -376,10 +442,6 @@ pub(crate) struct ClassDescriptor {
     pub(crate) class_data_range: Range<usize>,
 }
 
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
-}
-
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
     if chunk.typecode != typecode || chunk.short() {
         return Err(FramingError::structural(
@@ -394,7 +456,7 @@ fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), Frami
 }
 
 fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || !chunk.short() || chunk.value() != 0 {
+    if chunk.typecode != typecode || !chunk.short() || chunk.value()? != 0 {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -407,10 +469,11 @@ fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(),
 }
 
 fn checksum_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    match verify_checksum(bytes, chunk)? {
+    match verify_checksum(ctx, bytes, chunk)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -420,12 +483,13 @@ fn checksum_warning(
 }
 
 fn checksum_warning_excluding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body(), children)?;
-    match verify_checksum_ranges(bytes, chunk, &direct)? {
+    let direct = direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    match verify_checksum_ranges(ctx, bytes, chunk, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -436,22 +500,36 @@ fn checksum_warning_excluding(
 
 /// Parses a table-record Rhino class wrapper without decoding its payload.
 pub(crate) fn parse_class_wrapper(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ClassDescriptor, FramingError> {
-    parse_class_wrapper_with_userdata(bytes, body, archive, warnings)
-        .map(|(descriptor, _)| descriptor)
+    scan_class_wrapper(ctx, bytes, body, archive, warnings, None)
 }
 
 /// Parses a class wrapper and retains its ordered class-userdata descriptors.
 pub(crate) fn parse_class_wrapper_with_userdata(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
+    let mut userdata = Vec::new();
+    let descriptor = scan_class_wrapper(ctx, bytes, body, archive, warnings, Some(&mut userdata))?;
+    Ok((descriptor, userdata))
+}
+
+fn scan_class_wrapper(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    body: Range<usize>,
+    archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
+    mut retained: Option<&mut Vec<UserdataDescriptor>>,
+) -> Result<ClassDescriptor, FramingError> {
     let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
     let uuid_chunk = chunk_at(
@@ -462,20 +540,15 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         true,
     )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
-        return Err(FramingError::structural(
-            uuid_chunk.header_start,
-            "class UUID chunk must have a 20-byte body",
-        ));
+    let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
+    if let Some(note) = checksum_warning(ctx, bytes, &uuid_chunk)? {
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
-    if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push(note);
-    }
-    let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body().start..uuid_chunk.body().start + class_uuid_body::CRC32]
-            .try_into()
-            .expect("UUID length checked"),
-    );
+    let class_uuid = Uuid::from_wire(class_uuid_bytes);
     if class_uuid == Uuid::nil() {
         if uuid_chunk.next_offset() != wrapper.body().end {
             return Err(FramingError::structural(
@@ -483,13 +556,10 @@ pub(crate) fn parse_class_wrapper_with_userdata(
                 "null class wrapper has trailing bytes",
             ));
         }
-        return Ok((
-            ClassDescriptor {
-                class_uuid,
-                class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
-            },
-            Vec::new(),
-        ));
+        return Ok(ClassDescriptor {
+            class_uuid,
+            class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
+        });
     }
     let data_chunk = chunk_at(
         bytes,
@@ -504,12 +574,17 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     // so it must not report a checksum result for this mixed payload.
     let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
-    let mut userdata = Vec::new();
     while offset < wrapper.body().end {
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
+            if let Some(values) = retained.as_mut() {
+                ctx.reserve_vec(values, 1, "Rhino class userdata")
+                    .map_err(crate::chunks::FramingError::from)?;
+                values.push(parse_userdata(ctx, bytes, &item, archive, warnings)?);
+            } else {
+                parse_userdata(ctx, bytes, &item, archive, warnings)?;
+            }
             offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
@@ -524,21 +599,19 @@ pub(crate) fn parse_class_wrapper_with_userdata(
             "class wrapper has trailing bytes",
         ));
     }
-    Ok((
-        ClassDescriptor {
-            class_uuid,
-            class_data_range: data_chunk.body(),
-        },
-        userdata,
-    ))
+    Ok(ClassDescriptor {
+        class_uuid,
+        class_data_range: data_chunk.body(),
+    })
 }
 
 /// Parses one class-userdata chunk shared by object and render-settings wrappers.
 pub(crate) fn parse_userdata(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<UserdataDescriptor, FramingError> {
     let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
@@ -552,8 +625,12 @@ pub(crate) fn parse_userdata(
         let transform_range = transform_start..reader.position();
         let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
-        if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
-            warnings.push(note);
+        if let Some(note) = checksum_warning_excluding(ctx, bytes, wrapper, &[payload.range()])? {
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )?;
         }
         return Ok(UserdataDescriptor::Known(ClassUserdata {
             range: wrapper.range(),
@@ -576,8 +653,12 @@ pub(crate) fn parse_userdata(
     }
     let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
-    if let Some(note) = checksum_warning(bytes, &header)? {
-        warnings.push(note);
+    if let Some(note) = checksum_warning(ctx, bytes, &header)? {
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
     let mut header_reader = BoundedReader::new(bytes, header.body().start, header.body().end)?;
     let class_uuid = uuid(&mut header_reader)?;
@@ -617,9 +698,13 @@ pub(crate) fn parse_userdata(
     reader.skip(payload.next_offset() - reader.position())?;
     reader.skip_remaining()?;
     if let Some(note) =
-        checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
+        checksum_warning_excluding(ctx, bytes, wrapper, &[header.range(), payload.range()])?
     {
-        warnings.push(note);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
     Ok(UserdataDescriptor::Known(ClassUserdata {
         range: wrapper.range(),
@@ -636,6 +721,7 @@ pub(crate) fn parse_userdata(
 
 /// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
 pub(crate) fn parse_user_string_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
@@ -659,7 +745,9 @@ pub(crate) fn parse_user_string_list(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let mut values = Vec::with_capacity(count_bytes);
+    let mut values = ctx
+        .collection_vec(count_bytes, "Rhino user-string entries")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count_bytes {
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
@@ -672,8 +760,8 @@ pub(crate) fn parse_user_string_list(
                 "user-string entry version is unsupported",
             ));
         }
-        let key = settings::utf16(&mut entry_reader)?;
-        let value = settings::utf16(&mut entry_reader)?;
+        let key = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string key")?;
+        let value = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
         entry_reader.skip_remaining()?;
         values.push((key, value));
         reader.skip(entry.next_offset() - reader.position())?;
@@ -726,17 +814,6 @@ fn bounded_count(
     width: usize,
 ) -> Result<usize, FramingError> {
     crate::chunks::checked_count_bytes(count, width, reader.remaining(), 1 << 16, reader.position())
-}
-
-fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, FramingError> {
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(FramingError::structural(
-            offset,
-            format!("{label} is not finite"),
-        ))
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -880,12 +957,13 @@ impl AttributeItem {
 }
 
 pub(crate) fn parse_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     body_range: Range<usize>,
     source_range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<ObjectAttributes, FramingError> {
     let mut reader = crate::chunks::BoundedReader::new(bytes, body_range.start, body_range.end)?;
     let version = {
@@ -902,25 +980,29 @@ pub(crate) fn parse_attributes(
                 "unsupported fixed object-attributes version",
             ));
         }
-        let object_id = uuid_reader(&mut reader)?;
+        let object_id = uuid(&mut reader)?;
         let layer_index = reader.i32()?;
         let material_index = reader.i32()?;
-        let color = reader.take(4)?.try_into().expect("color width checked");
+        let color = reader.array::<4>()?;
         let obsolete_line_style = reader.i16()?;
         let obsolete_line_style_index = reader.i16()?;
+        let obsolete_thickness_offset = reader.position();
         let obsolete_thickness = reader.f64()?;
+        let obsolete_scale_offset = reader.position();
         let obsolete_scale = reader.f64()?;
         let wire_density = reader.i32()?;
         let object_mode = reader.u8()?;
-        let color_source = reader.u8()?;
+        let color_source = ColorSource::parse(reader.u8()?);
         let linetype_source = reader.u8()?;
         let material_source = reader.u8()?;
-        let name = settings::utf16(&mut reader)?;
-        let url = settings::utf16(&mut reader)?;
+        let name = settings::utf16_retained(ctx, &mut reader, "Rhino object name")?;
+        let url = settings::utf16_retained(ctx, &mut reader, "Rhino object URL")?;
         let groups = if version.1 >= 1 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 4)?;
-            let mut values = Vec::with_capacity(bytes / 4);
+            let mut values = ctx
+                .collection_vec(bytes / 4, "Rhino object groups")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 4 {
                 values.push(reader.i32()?);
             }
@@ -936,9 +1018,11 @@ pub(crate) fn parse_attributes(
         let display_materials = if version.1 >= 3 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = Vec::with_capacity(bytes / 32);
+            let mut values = ctx
+                .collection_vec(bytes / 32, "Rhino object display materials")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
-                values.push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             values
         } else {
@@ -949,21 +1033,23 @@ pub(crate) fn parse_attributes(
                 (
                     reader.i32()?,
                     reader.u8()?,
-                    reader.take(4)?.try_into().expect("color width checked"),
+                    reader.array::<4>()?,
                     reader.u8()?,
-                    finite_attribute(reader.f64()?, reader.position(), "plot weight")?,
+                    read_finite(&mut reader, "plot weight")?,
                 )
             } else {
-                (0, 0, [0; 4], 0, 0.0)
+                (0, 0, [0; 4], 0, FiniteReal::ZERO)
             };
         let linetype_index = if version.1 >= 5 { reader.i32()? } else { -1 };
         let (active_space, viewport_id, explicit_display_materials) = if version.1 >= 6 {
             let active_space = reader.u8()?;
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = Vec::with_capacity(bytes / 32);
+            let mut values = ctx
+                .collection_vec(bytes / 32, "Rhino object explicit display materials")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
-                values.push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             (active_space, Uuid::nil(), values)
         } else {
@@ -971,6 +1057,7 @@ pub(crate) fn parse_attributes(
         };
         let rendering_range = if version.1 >= 7 {
             Some(settings::parse_rendering_attributes(
+                ctx,
                 bytes,
                 &mut reader,
                 archive,
@@ -980,9 +1067,12 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        let obsolete_thickness =
-            finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
-        let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
+        let obsolete_thickness = finite(
+            obsolete_thickness_offset,
+            obsolete_thickness,
+            "obsolete thickness",
+        )?;
+        let obsolete_scale = finite(obsolete_scale_offset, obsolete_scale, "obsolete scale")?;
         reader.skip_remaining()?;
         return Ok(ObjectAttributes {
             source: SourceRange {
@@ -1022,16 +1112,21 @@ pub(crate) fn parse_attributes(
             viewport_id,
             display_order: 0,
             clip_participation_source: 0,
-            clipping_proof: false,
+            clipping: ObjectClippingFlags {
+                proof: false,
+                selective_list: false,
+            },
             clipping_plane_ids: Vec::new(),
             section_attributes_source: 0,
             hatch_pattern_index: -1,
-            section_hatch_scale: 1.0,
-            section_hatch_rotation: 0.0,
-            linetype_pattern_scale: 1.0,
+            section_hatch_scale: FiniteReal::ONE,
+            section_hatch_rotation: FiniteReal::ZERO,
+            linetype_pattern_scale: FiniteReal::ONE,
             hatch_background: [0; 4],
-            hatch_boundary_visible: false,
-            detail_background_visible: false,
+            display: ObjectDisplayFlags {
+                hatch_boundary_visible: false,
+                detail_background_visible: false,
+            },
             object_frame: None,
             section_fill_rule: 0,
             line_cap_source: 0,
@@ -1039,7 +1134,6 @@ pub(crate) fn parse_attributes(
             line_join_source: 0,
             line_join_style: 0,
             clipping_plane_label_style: 0,
-            selective_clipping_list: false,
             embedded_linetype: None,
             embedded_section_style: None,
             custom_render_mesh: None,
@@ -1052,7 +1146,7 @@ pub(crate) fn parse_attributes(
             "unsupported tagged object-attributes version",
         ));
     }
-    let object_id = uuid_reader(&mut reader)?;
+    let object_id = uuid(&mut reader)?;
     let layer_index = reader.i32()?;
     let mut attributes = ObjectAttributes {
         source: SourceRange {
@@ -1065,17 +1159,17 @@ pub(crate) fn parse_attributes(
         color: [0; 4],
         obsolete_line_style: 0,
         obsolete_line_style_index: 0,
-        obsolete_thickness: 0.0,
-        obsolete_scale: 1.0,
+        obsolete_thickness: FiniteReal::ZERO,
+        obsolete_scale: FiniteReal::ONE,
         visible: true,
-        color_source: 0,
+        color_source: ColorSource::Layer,
         linetype_source: 0,
         material_source: 0,
         plot_color_source: 0,
         plot_weight_source: 0,
         linetype_index: -1,
         plot_color: [0; 4],
-        plot_weight: 0.0,
+        plot_weight: FiniteReal::ZERO,
         object_mode: 0,
         decoration: 0,
         wire_density: 1,
@@ -1088,16 +1182,21 @@ pub(crate) fn parse_attributes(
         viewport_id: Uuid::nil(),
         display_order: 0,
         clip_participation_source: 0,
-        clipping_proof: false,
+        clipping: ObjectClippingFlags {
+            proof: false,
+            selective_list: false,
+        },
         clipping_plane_ids: Vec::new(),
         section_attributes_source: 0,
         hatch_pattern_index: -1,
-        section_hatch_scale: 1.0,
-        section_hatch_rotation: 0.0,
-        linetype_pattern_scale: 1.0,
+        section_hatch_scale: FiniteReal::ONE,
+        section_hatch_rotation: FiniteReal::ZERO,
+        linetype_pattern_scale: FiniteReal::ONE,
         hatch_background: [0; 4],
-        hatch_boundary_visible: false,
-        detail_background_visible: false,
+        display: ObjectDisplayFlags {
+            hatch_boundary_visible: false,
+            detail_background_visible: false,
+        },
         object_frame: None,
         section_fill_rule: 0,
         line_cap_source: 0,
@@ -1105,7 +1204,6 @@ pub(crate) fn parse_attributes(
         line_join_source: 0,
         line_join_style: 0,
         clipping_plane_label_style: 0,
-        selective_clipping_list: false,
         embedded_linetype: None,
         embedded_section_style: None,
         custom_render_mesh: None,
@@ -1136,12 +1234,17 @@ pub(crate) fn parse_attributes(
         }
         last_item = Some(attribute_item);
         match attribute_item {
-            AttributeItem::Name => attributes.name = settings::utf16(&mut reader)?,
-            AttributeItem::Url => attributes.url = settings::utf16(&mut reader)?,
+            AttributeItem::Name => {
+                attributes.name = settings::utf16_retained(ctx, &mut reader, "Rhino object name")?;
+            }
+            AttributeItem::Url => {
+                attributes.url = settings::utf16_retained(ctx, &mut reader, "Rhino object URL")?;
+            }
             AttributeItem::LinetypeIndex => attributes.linetype_index = reader.i32()?,
             AttributeItem::MaterialIndex => attributes.material_index = reader.i32()?,
             AttributeItem::RenderingAttributes => {
                 attributes.rendering_range = Some(settings::parse_rendering_attributes(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
@@ -1150,14 +1253,13 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             AttributeItem::Color => {
-                attributes.color = reader.take(4)?.try_into().expect("color width checked");
+                attributes.color = reader.array::<4>()?;
             }
             AttributeItem::PlotColor => {
-                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked");
+                attributes.plot_color = reader.array::<4>()?;
             }
             AttributeItem::PlotWeight => {
-                attributes.plot_weight =
-                    finite_attribute(reader.f64()?, reader.position(), "plot weight")?;
+                attributes.plot_weight = read_finite(&mut reader, "plot weight")?;
             }
             AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
             AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
@@ -1165,7 +1267,9 @@ pub(crate) fn parse_attributes(
                 attributes.visible = reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
-            AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
+            AttributeItem::ColorSource => {
+                attributes.color_source = ColorSource::parse(reader.u8()?);
+            }
             AttributeItem::PlotColorSource => attributes.plot_color_source = reader.u8()?,
             AttributeItem::PlotWeightSource => attributes.plot_weight_source = reader.u8()?,
             AttributeItem::MaterialSource => attributes.material_source = reader.u8()?,
@@ -1173,21 +1277,25 @@ pub(crate) fn parse_attributes(
             AttributeItem::Groups => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 4)?;
-                attributes.groups.clear();
+                attributes.groups = ctx
+                    .collection_vec(bytes / 4, "Rhino object groups")
+                    .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 4 {
                     attributes.groups.push(reader.i32()?);
                 }
             }
             AttributeItem::ActiveSpace => attributes.active_space = reader.u8()?,
-            AttributeItem::ViewportId => attributes.viewport_id = uuid_reader(&mut reader)?,
+            AttributeItem::ViewportId => attributes.viewport_id = uuid(&mut reader)?,
             AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
-                attributes.display_materials.clear();
+                attributes.display_materials = ctx
+                    .collection_vec(bytes / 32, "Rhino object display materials")
+                    .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 32 {
                     attributes
                         .display_materials
-                        .push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                        .push((uuid(&mut reader)?, uuid(&mut reader)?));
                 }
             }
             AttributeItem::DisplayOrder => attributes.display_order = reader.i32()?,
@@ -1199,35 +1307,32 @@ pub(crate) fn parse_attributes(
                 attributes.clip_participation_source = reader.u8()?;
             }
             AttributeItem::Clipping => {
-                attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
-                attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
+                attributes.clipping.proof = reader.bool_with_writer_version(writer_version)?;
+                attributes.clipping_plane_ids = read_uuid_list(ctx, &mut reader, archive)?;
             }
             AttributeItem::SectionAttributesSource => {
                 attributes.section_attributes_source = reader.u8()?;
             }
             AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
             AttributeItem::SectionHatchScale => {
-                attributes.section_hatch_scale =
-                    finite_attribute(reader.f64()?, reader.position(), "section hatch scale")?;
+                attributes.section_hatch_scale = read_finite(&mut reader, "section hatch scale")?;
             }
             AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
-                    finite_attribute(reader.f64()?, reader.position(), "section hatch rotation")?;
+                    read_finite(&mut reader, "section hatch rotation")?;
             }
             AttributeItem::LinetypePatternScale => {
-                attributes.linetype_pattern_scale =
-                    finite_attribute(reader.f64()?, reader.position(), "linetype scale")?;
+                attributes.linetype_pattern_scale = read_finite(&mut reader, "linetype scale")?;
             }
             AttributeItem::HatchBackground => {
-                attributes.hatch_background =
-                    reader.take(4)?.try_into().expect("color width checked");
+                attributes.hatch_background = reader.array::<4>()?;
             }
             AttributeItem::HatchBoundaryVisible => {
-                attributes.hatch_boundary_visible =
+                attributes.display.hatch_boundary_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::DetailBackgroundVisible => {
-                attributes.detail_background_visible =
+                attributes.display.detail_background_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectFrame => {
@@ -1236,6 +1341,7 @@ pub(crate) fn parse_attributes(
             AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
             AttributeItem::EmbeddedLinetype => {
                 attributes.embedded_linetype = Some(settings::parse_direct_linetype(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
@@ -1244,6 +1350,7 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::EmbeddedSectionStyle => {
                 attributes.embedded_section_style = Some(settings::parse_direct_section_style(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
@@ -1254,7 +1361,7 @@ pub(crate) fn parse_attributes(
                 attributes.clipping_plane_label_style = reader.u8()?;
             }
             AttributeItem::SelectiveClippingList => {
-                attributes.selective_clipping_list =
+                attributes.clipping.selective_list =
                     reader.bool_with_writer_version(writer_version)?;
             }
         }
@@ -1266,6 +1373,7 @@ pub(crate) fn parse_attributes(
 }
 
 pub(crate) fn read_uuid_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<Uuid>, FramingError> {
@@ -1293,53 +1401,61 @@ pub(crate) fn read_uuid_list(
     }
     let count = payload.i32()?;
     let bytes = bounded_count(&payload, count, 16)?;
-    let mut values = Vec::with_capacity(bytes / 16);
+    let mut values = ctx
+        .collection_vec(bytes / 16, "Rhino UUID list")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 16 {
-        values.push(uuid_reader(&mut payload)?);
+        values.push(uuid(&mut payload)?);
     }
     payload.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(values)
 }
 
-fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("UUID width checked"),
-    ))
-}
-
 pub(crate) fn parse_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) -> Vec<AttributeUserdataDescriptor> {
+    warnings: &mut Diagnostics,
+) -> Result<Vec<AttributeUserdataDescriptor>, FramingError> {
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
         let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
-                warnings.push(format!("attribute userdata degraded at {offset}: {error}"));
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("attribute userdata degraded at {offset}: {error}"),
+                )?;
                 break;
             }
         };
         if item.typecode == CLASS_END {
             if let Err(error) = require_short_zero(&item, CLASS_END) {
-                warnings.push(format!("attribute userdata end degraded: {error}"));
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("attribute userdata end degraded: {error}"),
+                )?;
             }
             break;
         }
         if item.typecode != CLASS_USERDATA || item.short() {
-            warnings.push(format!(
-                "unknown attribute userdata chunk {:#x} at {}",
-                item.typecode, item.header_start
-            ));
+            warnings.push_admitted(
+                ctx,
+                format_args!(
+                    "unknown attribute userdata chunk {:#x} at {}",
+                    item.typecode, item.header_start
+                ),
+            )?;
+            ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                .map_err(crate::chunks::FramingError::from)?;
             result.push(AttributeUserdataDescriptor::Unknown {
                 range: item.range(),
             });
         } else {
-            match parse_userdata(bytes, &item, archive, warnings) {
+            match parse_userdata(ctx, bytes, &item, archive, warnings) {
                 Ok(UserdataDescriptor::Known(ClassUserdata {
                     range,
                     class_uuid,
@@ -1348,58 +1464,80 @@ pub(crate) fn parse_attribute_userdata(
                     save_context,
                     payload_range,
                     ..
-                })) => result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
-                    range,
-                    class_uuid,
-                    item_uuid,
-                    application_uuid,
-                    writer_version: save_context
-                        .map(|value| i64::from(value.writer_version as u32)),
-                    payload_range,
-                })),
+                })) => {
+                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                        .map_err(crate::chunks::FramingError::from)?;
+                    result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
+                        range,
+                        class_uuid,
+                        item_uuid,
+                        application_uuid,
+                        writer_version: save_context
+                            .map(|value| i64::from(value.writer_version.cast_unsigned())),
+                        payload_range,
+                    }));
+                }
                 Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {
+                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                        .map_err(crate::chunks::FramingError::from)?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
-                Err(error) => warnings.push(format!(
-                    "attribute userdata at {} degraded: {error}",
-                    item.header_start
-                )),
+                Err(error @ FramingError::Resource(_)) => return Err(error),
+                Err(error) => warnings.push_admitted(
+                    ctx,
+                    format_args!(
+                        "attribute userdata at {} degraded: {error}",
+                        item.header_start
+                    ),
+                )?,
             }
         }
         offset = item.next_offset();
     }
-    result
+    Ok(result)
 }
 
 /// Applies the recognized carriers owned by one object-attributes stream.
 pub(crate) fn apply_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     attributes: &mut ObjectAttributes,
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) {
-    let modern_custom_mesh = parse_per_object_mesh_userdata(bytes, descriptors, archive, warnings);
+    warnings: &mut Diagnostics,
+) -> Result<(), FramingError> {
+    let modern_custom_mesh =
+        parse_per_object_mesh_userdata(ctx, bytes, descriptors, archive, warnings)?;
     let obsolete_custom_mesh =
-        parse_obsolete_custom_mesh_userdata(bytes, descriptors, archive, warnings);
+        parse_obsolete_custom_mesh_userdata(ctx, bytes, descriptors, archive, warnings)?;
     attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
-    attributes.mesh_modifiers =
-        crate::mesh_modifiers::parse_attribute_userdata(bytes, descriptors, archive, warnings);
+    attributes.mesh_modifiers = crate::mesh_modifiers::parse_attribute_userdata(
+        ctx,
+        bytes,
+        descriptors,
+        archive,
+        warnings,
+    )?;
+    Ok(())
 }
 
 fn parse_obsolete_custom_mesh_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) -> Option<settings::MeshParameters> {
-    let descriptor = descriptors
+    warnings: &mut Diagnostics,
+) -> Result<Option<settings::MeshParameters>, FramingError> {
+    let Some(descriptor) = descriptors
         .iter()
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|descriptor| {
             descriptor.class_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
                 && descriptor.item_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
-        })?;
+        })
+    else {
+        return Ok(None);
+    };
     let payload_range = descriptor.payload_range.clone();
     let parsed = (|| {
         let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
@@ -1412,34 +1550,42 @@ fn parse_obsolete_custom_mesh_userdata(
         // userdata, whose setter forces these two logical fields.
         mesh.custom_settings_enabled = Some(in_use);
         mesh.custom_settings = Some(true);
-        mesh.compute_curvature = false;
+        mesh.generation.compute_curvature = false;
         Ok::<_, FramingError>(mesh)
     })();
     match parsed {
-        Ok(mesh) => Some(mesh),
+        Ok(mesh) => Ok(Some(mesh)),
+        Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
-            warnings.push(format!(
-                "obsolete custom mesh userdata at {} dropped: {error}",
-                descriptor.range.start
-            ));
-            None
+            warnings.push_admitted(
+                ctx,
+                format_args!(
+                    "obsolete custom mesh userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ),
+            )?;
+            Ok(None)
         }
     }
 }
 
 fn parse_per_object_mesh_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) -> Option<settings::MeshParameters> {
-    let descriptor = descriptors
+    warnings: &mut Diagnostics,
+) -> Result<Option<settings::MeshParameters>, FramingError> {
+    let Some(descriptor) = descriptors
         .iter()
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|descriptor| {
             descriptor.class_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
                 && descriptor.item_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
-        })?;
+        })
+    else {
+        return Ok(None);
+    };
     let payload_range = descriptor.payload_range.clone();
     let parsed = (|| {
         let outer = chunk_at(
@@ -1467,7 +1613,7 @@ fn parse_per_object_mesh_userdata(
             false,
         )?;
         require_long(&inner, ANONYMOUS)?;
-        if inner.value() <= 0 || inner.body().is_empty() {
+        if inner.value()? <= 0 || inner.body().is_empty() {
             return Err(FramingError::structural(
                 inner.header_start,
                 "per-object mesh userdata mesh child is empty",
@@ -1481,90 +1627,139 @@ fn parse_per_object_mesh_userdata(
         // ON_PerObjectMeshParameters::Read applies these class invariants after
         // reading the nested mesh body.
         mesh.custom_settings = Some(true);
-        mesh.compute_curvature = false;
+        mesh.generation.compute_curvature = false;
         Ok::<_, FramingError>(mesh)
     })();
     match parsed {
-        Ok(mesh) => Some(mesh),
+        Ok(mesh) => Ok(Some(mesh)),
+        Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
-            warnings.push(format!(
-                "per-object mesh userdata at {} dropped: {error}",
-                descriptor.range.start
-            ));
-            None
+            warnings.push_admitted(
+                ctx,
+                format_args!(
+                    "per-object mesh userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ),
+            )?;
+            Ok(None)
         }
     }
 }
 
 fn resolve_identity(
+    ctx: &DecodeContext<'_>,
     descriptor: &ObjectDescriptor<()>,
-    layers: &HashMap<i32, &crate::settings::LayerRecord>,
-    warnings: &mut Vec<String>,
+    layers: &LayerLookup<'_>,
+    warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
-) -> SourceIdentity {
+) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
-    let layer = layers.get(&layer_index).copied();
-    if attributes.is_some() && layer.is_none() {
-        warnings.push(format!(
-            "object {object_id} references missing layer index {layer_index}"
-        ));
-    }
+    let layer = match layers.resolve(layer_index) {
+        LayerMatch::Unique(layer) => Some(layer),
+        LayerMatch::Ambiguous => {
+            if attributes.is_some() {
+                warnings.push_coded_admitted(ctx,
+                    crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                    format_args!(
+                        "object {object_id} references ambiguous layer index {layer_index}; layer binding withheld"
+                    ),
+                )?;
+            }
+            None
+        }
+        LayerMatch::Missing => {
+            if attributes.is_some() {
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("object {object_id} references missing layer index {layer_index}"),
+                )?;
+            }
+            None
+        }
+    };
     let object_color = attributes.map(|value| value.color);
     let object_visible = attributes.is_none_or(|value| value.visible);
     let visible = object_visible && layer.is_none_or(|value| value.visible);
-    let name = attributes.map_or_else(String::new, |value| value.name.clone());
+    let name = attributes.map_or(Ok(String::new()), |value| {
+        ctx.copy_retained_text(&value.name, "Rhino identity object name")
+    })?;
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
-    let color_selector = attributes.map_or(0, |value| value.color_source);
+    let color_selector = attributes.map_or(ColorSource::Layer, |value| value.color_source);
     let color = match color_selector {
-        0 => layer.map(|value| value.color),
-        1 => object_color,
-        2 => {
-            warnings.push(format!(
-                "object {object_id} material color remains unresolved"
-            ));
+        ColorSource::Layer => layer.map(|value| value.color),
+        ColorSource::Object => object_color,
+        ColorSource::Material => {
+            warnings.push_admitted(
+                ctx,
+                format_args!("object {object_id} material color remains unresolved"),
+            )?;
             None
         }
-        3 if definition_member => {
-            warnings.push(format!(
-                "object {object_id} parent color remains unresolved"
-            ));
+        ColorSource::Parent if definition_member => {
+            warnings.push_admitted(
+                ctx,
+                format_args!("object {object_id} parent color remains unresolved"),
+            )?;
             None
         }
-        3 => layer.map(|value| value.color),
-        _ => {
-            warnings.push(format!(
-                "object {object_id} has invalid color source {color_selector}"
-            ));
+        ColorSource::Parent => layer.map(|value| value.color),
+        ColorSource::Invalid(raw) => {
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::EnumerationValueDegraded,
+                format_args!("object {object_id} has invalid color source {raw}"),
+            )?;
             None
         }
     };
-    let source_key = if object_id.is_nil() {
-        warnings.push(format!(
-            "object at {} has nil object UUID",
-            descriptor.range.start
-        ));
-        format!("record-{index:06}-offset-{}", descriptor.range.start)
-    } else if !seen_ids.insert(object_id) {
-        warnings.push(format!("duplicate object UUID {object_id}"));
-        format!("record-{index:06}-offset-{}", descriptor.range.start)
+    let source_id = if object_id.is_nil() {
+        warnings.push_admitted(
+            ctx,
+            format_args!("object at {} has nil object UUID", descriptor.range.start),
+        )?;
+        ctx.format_retained(
+            format_args!(
+                "rhino:object:record#record-{index:06}-offset-{}",
+                descriptor.range.start
+            ),
+            "Rhino identity source ID",
+        )?
+    } else if seen_ids.contains(&object_id) {
+        warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
+        ctx.format_retained(
+            format_args!(
+                "rhino:object:record#record-{index:06}-offset-{}",
+                descriptor.range.start
+            ),
+            "Rhino identity source ID",
+        )?
     } else {
-        object_id.to_string()
+        ctx.reserve_set(seen_ids, 1, "Rhino identity seen UUIDs")?;
+        seen_ids.insert(object_id);
+        ctx.format_retained(
+            format_args!("rhino:object:record#{object_id}"),
+            "Rhino identity source ID",
+        )?
     };
-    let source_id = stable_source_id("object", "record", &source_key);
-    SourceIdentity {
+    let layer = layer
+        .map(|value| {
+            Ok::<LayerRef, cadmpeg_core::CodecError>(LayerRef {
+                id: value.id,
+                name: ctx.copy_retained_text(&value.name, "Rhino identity layer name")?,
+            })
+        })
+        .transpose()?;
+    Ok(SourceIdentity {
         source_id,
         object_id,
         class_uuid: descriptor.class_uuid,
         name,
         layer_index,
-        layer: layer.map(|value| LayerRef {
-            id: value.id,
-            name: value.name.clone(),
-        }),
+        layer,
         effective_color: color,
         effective_visible: visible,
         object_mode,
@@ -1572,18 +1767,19 @@ fn resolve_identity(
         source: SourceRange {
             range: descriptor.range.clone(),
         },
-    }
+    })
 }
 
 /// Parses one bounded object record and returns identity plus child ranges.
 pub(crate) fn parse_object_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    global_warnings: &mut Vec<String>,
+    global_warnings: &mut Diagnostics,
 ) -> Result<ObjectRecord<()>, FramingError> {
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
             record.range.start,
@@ -1598,7 +1794,7 @@ pub(crate) fn parse_object_record(
             "object type must be the first short child",
         ));
     }
-    let object_type = u32::try_from(type_chunk.value())
+    let object_type = u32::try_from(type_chunk.value()?)
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
     offset = type_chunk.next_offset();
     let class = chunk_at(bytes, offset, record.body().end, archive, false)?;
@@ -1606,20 +1802,15 @@ pub(crate) fn parse_object_record(
     offset = class.body().start;
     let uuid_chunk = chunk_at(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
-        return Err(FramingError::structural(
-            uuid_chunk.header_start,
-            "class UUID chunk must have a 20-byte body",
-        ));
+    let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
+    if let Some(note) = checksum_warning(ctx, bytes, &uuid_chunk)? {
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
-    if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push(note);
-    }
-    let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body().clone()]
-            .try_into()
-            .expect("UUID length checked"),
-    );
+    let class_uuid = Uuid::from_wire(class_uuid_bytes);
     offset = uuid_chunk.next_offset();
     let data_chunk = chunk_at(bytes, offset, class.body().end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
@@ -1633,7 +1824,9 @@ pub(crate) fn parse_object_record(
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
+            ctx.reserve_vec(&mut userdata, 1, "Rhino object userdata")
+                .map_err(crate::chunks::FramingError::from)?;
+            userdata.push(parse_userdata(ctx, bytes, &item, archive, &mut warnings)?);
             offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
@@ -1682,19 +1875,34 @@ pub(crate) fn parse_object_record(
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
                 let descriptor = parse_history(bytes, &item, archive)?;
-                let children = descriptor
-                    .header_range
-                    .iter()
-                    .chain(descriptor.data_range.iter())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if let Some(note) = checksum_warning_excluding(bytes, &item, &children)? {
-                    warnings.push(note);
+                let checksum = match (&descriptor.header_range, &descriptor.data_range) {
+                    (Some(header), Some(data)) => checksum_warning_excluding(
+                        ctx,
+                        bytes,
+                        &item,
+                        &[header.clone(), data.clone()],
+                    )?,
+                    (Some(header), None) => {
+                        checksum_warning_excluding(ctx, bytes, &item, std::slice::from_ref(header))?
+                    }
+                    (None, Some(data)) => {
+                        checksum_warning_excluding(ctx, bytes, &item, std::slice::from_ref(data))?
+                    }
+                    (None, None) => checksum_warning_excluding(ctx, bytes, &item, &[])?,
+                };
+                if let Some(note) = checksum {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
+                        format_args!("{note}"),
+                    )?;
                 }
                 history = Some(descriptor);
                 phase = 3;
             }
             _ if !item.short() => {
+                ctx.reserve_vec(&mut unknown_trailer, 1, "Rhino object unknown trailer")
+                    .map_err(crate::chunks::FramingError::from)?;
                 unknown_trailer.push(item.range());
                 phase = 3;
             }
@@ -1713,51 +1921,61 @@ pub(crate) fn parse_object_record(
             "object record is missing object end",
         ));
     }
-    let mut attributes = attributes_chunk
-        .as_ref()
-        .map_or(AttributeState::Missing, |chunk| {
-            match parse_attributes(
-                bytes,
-                chunk.body(),
-                chunk.range(),
-                archive,
-                writer_version,
-                &mut warnings,
-            ) {
-                Ok(value) => AttributeState::Parsed(Box::new(value)),
-                Err(error) => {
-                    warnings.push(format!(
+    let mut attributes = if let Some(chunk) = attributes_chunk.as_ref() {
+        match parse_attributes(
+            ctx,
+            bytes,
+            chunk.body(),
+            chunk.range(),
+            archive,
+            writer_version,
+            &mut warnings,
+        ) {
+            Ok(value) => AttributeState::Parsed(Box::new(value)),
+            Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+            Err(error) => {
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
                         "object attributes at {} degraded: {error}",
                         chunk.body().start
-                    ));
-                    AttributeState::Degraded
-                }
+                    ),
+                )?;
+                AttributeState::Degraded
             }
-        });
+        }
+    } else {
+        AttributeState::Missing
+    };
     if let Some(item) = attributes_chunk.as_ref() {
-        let children = attributes
+        let rendering_range = attributes
             .parsed()
-            .and_then(|value| value.rendering_range.clone())
-            .into_iter()
-            .collect::<Vec<_>>();
-        if let Some(note) = checksum_warning_excluding(bytes, item, &children)? {
-            warnings.push(note);
+            .and_then(|value| value.rendering_range.clone());
+        let children = rendering_range.as_slice();
+        if let Some(note) = checksum_warning_excluding(ctx, bytes, item, children)? {
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )?;
         }
     }
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
-        .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
+        .map(|range| parse_attribute_userdata(ctx, bytes, range.clone(), archive, &mut warnings))
+        .transpose()?
         .unwrap_or_default();
     if let AttributeState::Parsed(attributes) = &mut attributes {
         apply_attribute_userdata(
+            ctx,
             bytes,
             attributes,
             &attributes_userdata,
             archive,
             &mut warnings,
-        );
+        )?;
     }
-    Ok(ObjectRecord::Framed(ObjectDescriptor {
+    Ok(ObjectRecord::Framed(Box::new(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
         class_uuid,
@@ -1769,47 +1987,67 @@ pub(crate) fn parse_object_record(
         history,
         unknown_trailer,
         checksum_warnings: {
-            global_warnings.extend(warnings.iter().cloned());
+            global_warnings.extend_cloned_admitted(ctx, &warnings)?;
             warnings
         },
-        warnings: Vec::new(),
-    }))
+        warnings: Diagnostics::new(),
+    })))
 }
 
 /// Builds a range-preserving descriptor for a malformed bounded object record.
-pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectRecord<()> {
-    ObjectRecord::Degraded {
+pub(crate) fn degraded_object_record(
+    ctx: &DecodeContext<'_>,
+    record: &Record,
+    error: &FramingError,
+) -> Result<ObjectRecord<()>, cadmpeg_core::CodecError> {
+    Ok(ObjectRecord::Degraded {
         range: record.range.clone(),
-        warning: format!(
-            "bounded object record at {} degraded: {error}",
-            record.range.start
-        ),
-    }
+        warning: ctx.format_retained(
+            format_args!(
+                "bounded object record at {} degraded: {error}",
+                record.range.start
+            ),
+            "Rhino degraded object warning",
+        )?,
+    })
 }
 
 /// Resolves per-object source identity after document layer metadata is known.
 pub(crate) fn resolve_identities(
+    ctx: &DecodeContext<'_>,
     objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
-    warnings: &mut Vec<String>,
-) -> Vec<ObjectRecord> {
+    warnings: &mut Diagnostics,
+) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
-    let mut layers = HashMap::with_capacity(metadata.layers.len());
+    let mut layers = LayerLookup::new();
     for layer in &metadata.layers {
-        layers.entry(layer.index).or_insert(layer);
+        layers.insert(ctx, layer)?;
     }
-    objects
-        .into_iter()
-        .enumerate()
-        .map(|(index, object)| match object {
+    let mut resolved = Vec::new();
+    for (index, object) in objects.into_iter().enumerate() {
+        ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
+        resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
             ObjectRecord::Framed(mut object) => {
-                let mut local_warnings = Vec::new();
-                let identity =
-                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
-                warnings.extend(local_warnings.iter().cloned());
-                object.warnings.extend(local_warnings);
-                ObjectRecord::Framed(ObjectDescriptor {
+                let mut local_warnings = Diagnostics::new();
+                let identity = resolve_identity(
+                    ctx,
+                    &object,
+                    &layers,
+                    &mut local_warnings,
+                    index,
+                    &mut seen_ids,
+                )?;
+                for warning in &local_warnings {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        warning.code,
+                        format_args!("{}", warning.message),
+                    )?;
+                }
+                object.warnings.append_admitted(ctx, &mut local_warnings)?;
+                ObjectRecord::Framed(Box::new(ObjectDescriptor {
                     identity,
                     range: object.range,
                     object_type: object.object_type,
@@ -1822,10 +2060,61 @@ pub(crate) fn resolve_identities(
                     unknown_trailer: object.unknown_trailer,
                     checksum_warnings: object.checksum_warnings,
                     warnings: object.warnings,
-                })
+                }))
             }
-        })
-        .collect()
+        });
+    }
+    Ok(resolved)
+}
+
+struct LayerLookup<'a> {
+    entries: HashMap<i32, LayerEntry<'a>>,
+}
+
+enum LayerEntry<'a> {
+    Unique(&'a crate::settings::LayerRecord),
+    Ambiguous,
+}
+
+enum LayerMatch<'a> {
+    Unique(&'a crate::settings::LayerRecord),
+    Ambiguous,
+    Missing,
+}
+
+impl<'a> LayerLookup<'a> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        layer: &'a crate::settings::LayerRecord,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !self.entries.contains_key(&layer.index) {
+            ctx.reserve_map(&mut self.entries, 1, "Rhino identity layer lookup")?;
+        }
+        match self.entries.entry(layer.index) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(LayerEntry::Unique(layer));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(LayerEntry::Ambiguous);
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve(&self, index: i32) -> LayerMatch<'a> {
+        match self.entries.get(&index) {
+            None => LayerMatch::Missing,
+            Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
+            Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
+        }
+    }
 }
 
 #[cfg(test)]

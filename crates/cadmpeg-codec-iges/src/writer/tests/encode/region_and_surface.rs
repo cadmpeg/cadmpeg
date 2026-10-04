@@ -1,5 +1,43 @@
-use super::*;
-use cadmpeg_ir::codec::write::TargetRequest;
+use crate::test_support::test_owned::explicit_void_solid_file;
+use crate::test_support::test_solids_and_structure::explicit_non_manifold_open_shell_file;
+use crate::test_support::test_surface_fixtures::trimmed_plane_file;
+use crate::IgesCodec;
+use crate::IgesVersion;
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::CadIr;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
+
+fn emitted_label(ir: &CadIr, entity_type: i64) -> String {
+    let record = ir.native.namespace("iges").expect("IGES native").arenas()["entities"]
+        .iter()
+        .find(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(entity_type)
+        })
+        .expect("owning entity");
+    let bytes = record
+        .field("label")
+        .and_then(|value| value.as_array().cloned())
+        .expect("Directory label")
+        .iter()
+        .map(|value| u8::try_from(value.as_u64().expect("label byte")).expect("ASCII byte"))
+        .collect::<Vec<_>>();
+    String::from_utf8(bytes)
+        .expect("ASCII label")
+        .trim()
+        .to_owned()
+}
 
 #[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
@@ -16,9 +54,9 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .model
         .shells
         .iter()
-        .find(|shell| Some(&shell.id) == source_region.void_shells().next())
+        .find(|shell| Some(&shell.id) == source_region.shells.get(1))
         .unwrap()
-        .faces
+        .faces()
         .iter()
         .all(|face_id| decoded
             .ir()
@@ -61,7 +99,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .iter()
         .find(|shell| shell.id == region.shells[1])
         .unwrap();
-    assert!(void_shell.faces.iter().all(|face_id| {
+    assert!(void_shell.faces().iter().all(|face_id| {
         round_trip
             .ir()
             .model
@@ -75,8 +113,375 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn synthesized_solid_preserves_long_name_color_and_visibility() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    let body = ir.model.bodies.first_mut().expect("body");
+    body.name = Some("Hidden Red Body".into());
+    body.color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    body.visible = Some(false);
+
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(!generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+    }));
+    assert_eq!(generated.counts.get("406_name_property"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    let body = round_trip
+        .ir()
+        .model
+        .bodies
+        .first()
+        .expect("round-trip body");
+    assert_eq!(emitted_label(round_trip.ir(), 186), "SOLID");
+    assert_eq!(body.name.as_deref(), Some("Hidden Red Body"));
+    assert_eq!(body.color, ir.model.bodies[0].color);
+    assert_eq!(body.visible, Some(false));
+}
+
+#[test]
+fn synthesized_solid_writes_short_body_name_to_directory() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("RED_BODY".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(!generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+    }));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(emitted_label(round_trip.ir(), 186), "RED_BODY");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("RED_BODY")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_long_body_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("A LONGER BODY NAME".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(!generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+    }));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("A LONGER BODY NAME")
+    );
+    let rewritten = crate::writer::synthesize(round_trip.ir(), IgesVersion::V5_3)
+        .expect("decoded name writes again");
+    let redecoded = IgesCodec
+        .decode(&mut Cursor::new(rewritten.bytes), &DecodeOptions::default())
+        .expect("rewritten IGES decodes");
+    assert_eq!(
+        redecoded.ir().model.bodies[0].name.as_deref(),
+        Some("A LONGER BODY NAME")
+    );
+}
+
+#[test]
+fn decoded_body_name_edit_writes_updated_property() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("FIRST NAME".into());
+    let first = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("first synthesis");
+    let mut decoded = IgesCodec
+        .decode(&mut Cursor::new(first.bytes), &DecodeOptions::default())
+        .expect("first IGES decodes")
+        .ir()
+        .clone();
+    decoded.model.bodies[0].name = Some("SECOND NAME".into());
+    let updated =
+        crate::writer::synthesize(&decoded, IgesVersion::V5_3).expect("updated synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(updated.bytes), &DecodeOptions::default())
+        .expect("updated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("SECOND NAME")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_iges_string_sensitive_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some(" A,B;7H@R0@ ".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some(" A,B;7H@R0@ ")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_name_across_parameter_cards() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    let name = "NAME WITH PUNCTUATION,;H".repeat(12);
+    ir.model.bodies[0].name = Some(name.clone());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some(name.as_str())
+    );
+}
+
+#[test]
+fn synthesized_solid_reports_unencodable_body_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("Café".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+            && loss.message.contains("Type 406 Form 15")
+    }));
+    assert_eq!(generated.counts.get("406_name_property"), None);
+}
+
+#[test]
+fn synthesized_solid_writes_custom_rgb_and_reports_opacity() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(!generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyColorNotRepresented.kind()
+    }));
+    assert!(generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyOpacityNotRepresented.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+    }));
+    assert_eq!(generated.counts.get("314_color_definition"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].color,
+        cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
+    );
+    assert!(!round_trip.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("Directory color number or definition pointer is invalid")
+            || loss
+                .message
+                .contains("color definition Directory fields are invalid")
+    }));
+}
+
+#[test]
+fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0);
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let generated = crate::writer::synthesize(&ir, version).expect("synthesis");
+        assert_eq!(generated.counts.get("314_color_definition"), Some(&1));
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .expect("generated IGES decodes");
+        let body = round_trip
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("round-trip sheet");
+        assert_eq!(
+            body.color,
+            cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
+        );
+    }
+}
+
+#[test]
+fn synthesized_trimmed_sheet_round_trips_name_in_legacy_versions() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.name = Some("LEGACY SHEET NAME".into());
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let generated = crate::writer::synthesize(&ir, version).expect("synthesis");
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .expect("generated IGES decodes");
+        let body = round_trip
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("round-trip sheet");
+        assert_eq!(body.name.as_deref(), Some("LEGACY SHEET NAME"));
+    }
+}
+
+#[test]
+fn synthesized_trimmed_sheet_presents_owning_body() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.name = Some("SHEET_A".into());
+    body.color = cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0);
+    body.visible = Some(false);
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(emitted_label(round_trip.ir(), 144), "SHEET_A");
+    let body = round_trip
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("round-trip sheet");
+    assert_eq!(
+        body.color,
+        ir.model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("source sheet")
+            .color
+    );
+    assert_eq!(body.visible, Some(false));
+    assert_eq!(body.name.as_deref(), Some("SHEET_A"));
+}
+
+#[test]
+fn synthesized_brep_sheet_presents_owning_shell() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source shell");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.name = Some("SHELL_A".into());
+    body.color = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
+    body.visible = Some(false);
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(emitted_label(round_trip.ir(), 514), "SHELL_A");
+    let body = round_trip
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("round-trip sheet");
+    assert_eq!(body.name.as_deref(), Some("SHELL_A"));
+    assert_eq!(
+        body.color,
+        ir.model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("source sheet")
+            .color
+    );
+    assert_eq!(body.visible, Some(false));
 }
 
 #[test]
@@ -97,7 +502,18 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
     assert_eq!(exterior, &source_void);
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 
-    let entities = crate::writer::brep_entities(&ir, crate::IgesVersion::V5_3).unwrap();
+    let entities = crate::writer::brep_entities(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::writer::validate_brep_topology(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            crate::IgesVersion::V5_3,
+        )
+        .unwrap(),
+        &mut std::collections::BTreeMap::new(),
+        &mut Vec::new(),
+    )
+    .unwrap();
     let shell_indices = entities
         .iter()
         .enumerate()
@@ -113,10 +529,7 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
         crate::writer::reference_marker(shell_indices[0]),
         crate::writer::reference_marker(shell_indices[1])
     );
-    assert_eq!(
-        String::from_utf8(solid.parameters.clone()).unwrap(),
-        expected
-    );
+    assert_eq!(String::from_utf8(solid.parameter_text()).unwrap(), expected);
 }
 
 #[test]
@@ -124,7 +537,8 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
             "planar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -135,12 +549,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid planar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "unique-planar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -151,12 +567,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid unique-planar-open NURBS"),
             [1, 0, 1, 0],
         ),
         (
             "nonplanar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
                 vec![
@@ -168,12 +586,14 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid nonplanar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "closed-planar",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -184,18 +604,21 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid closed-planar NURBS"),
             [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 Some(vec![2.0, 2.0]),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid equal-weight rational NURBS"),
             [0, 0, 1, 0],
         ),
@@ -204,7 +627,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
-            geometry: CurveGeometry::Nurbs(nurbs),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: None,
         });
         let plan = IgesCodec

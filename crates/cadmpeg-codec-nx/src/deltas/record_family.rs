@@ -5,8 +5,10 @@ use super::attdef_state::AttdefSlots;
 use super::group::{GroupReferenceStatus, GroupSelector};
 use super::record_kind::RecordKind;
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::iter_wire::IterWire;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
@@ -33,11 +35,41 @@ impl From<PointCoordinates> for [f64; 3] {
     }
 }
 
-use crate::intersection::finite_point::FinitePoint;
+use cadmpeg_ir::units::FiniteVector;
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FixedPosition {
+    Point(PointCoordinates),
+    Finite(FiniteVector<3>),
+}
+
+impl FixedPosition {
+    pub(super) fn new(kind: u16, position: [f64; 3]) -> Option<Self> {
+        if kind == 29 {
+            Some(Self::Point(PointCoordinates::try_from(position).ok()?))
+        } else {
+            Some(Self::Finite(FiniteVector::new(position)?))
+        }
+    }
+
+    fn point(self) -> Option<PointCoordinates> {
+        match self {
+            Self::Point(position) => Some(position),
+            Self::Finite(_) => None,
+        }
+    }
+
+    fn finite(self) -> Option<FiniteVector<3>> {
+        match self {
+            Self::Finite(position) => Some(position),
+            Self::Point(_) => None,
+        }
+    }
+}
 
 /// Semantic family of one admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum RecordFamily {
+pub(crate) enum RecordFamily {
     Body {
         references: Vec<u32>,
         node_id: u32,
@@ -75,17 +107,17 @@ pub enum RecordFamily {
         position: PointCoordinates,
     },
     Line {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Circle {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Ellipse {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
@@ -97,27 +129,27 @@ pub enum RecordFamily {
     TermUse,
     Type45,
     Plane {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Cylinder {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Cone {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Sphere {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Torus {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
@@ -181,7 +213,7 @@ pub enum RecordFamily {
     Multiplicities,
     Knots,
     TrimmedCurve {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 6],
         node_id: u32,
     },
@@ -203,10 +235,152 @@ pub enum RecordFamily {
     SupportUv,
 }
 
+/// Borrowed reference column for the native deltas-record wire.
+pub(crate) struct RecordFamilyReferences<'a>(pub(crate) &'a RecordFamily);
+
+impl Serialize for RecordFamilyReferences<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            RecordFamily::Body { references, .. } => references.serialize(serializer),
+            RecordFamily::Shell { references, .. } => references.serialize(serializer),
+            RecordFamily::Face { references, .. } => references.serialize(serializer),
+            RecordFamily::Loop { references, .. } => references.serialize(serializer),
+            RecordFamily::Edge { references, .. } => references.serialize(serializer),
+            RecordFamily::Fin { references, .. } => references.serialize(serializer),
+            RecordFamily::Vertex { references, .. } => references.serialize(serializer),
+            RecordFamily::Region { references, .. } => references.serialize(serializer),
+            RecordFamily::Point { references, .. } => references.serialize(serializer),
+            RecordFamily::Line { references, .. } => references.serialize(serializer),
+            RecordFamily::Circle { references, .. } => references.serialize(serializer),
+            RecordFamily::Ellipse { references, .. } => references.serialize(serializer),
+            RecordFamily::Intersection { references, .. } => references.serialize(serializer),
+            RecordFamily::Plane { references, .. } => references.serialize(serializer),
+            RecordFamily::Cylinder { references, .. } => references.serialize(serializer),
+            RecordFamily::Cone { references, .. } => references.serialize(serializer),
+            RecordFamily::Sphere { references, .. } => references.serialize(serializer),
+            RecordFamily::Torus { references, .. } => references.serialize(serializer),
+            RecordFamily::BlendSurf { references, .. } => references.serialize(serializer),
+            RecordFamily::BlendBound { references, .. } => references.serialize(serializer),
+            RecordFamily::OffsetSurf { references, .. } => references.serialize(serializer),
+            RecordFamily::Type67 { references, .. } => references.serialize(serializer),
+            RecordFamily::Type70 {
+                references,
+                trailing_reference,
+                ..
+            } => IterWire(
+                references
+                    .iter()
+                    .copied()
+                    .chain([u32::from(*trailing_reference); 2]),
+            )
+            .serialize(serializer),
+            RecordFamily::AttdefList { slots } => {
+                IterWire(std::iter::once(1).chain(slots.references())).serialize(serializer)
+            }
+            RecordFamily::Entity51 {
+                leading_references,
+                trailing_references,
+            } => IterWire(
+                leading_references
+                    .iter()
+                    .copied()
+                    .chain(trailing_references.values().iter().copied()),
+            )
+            .serialize(serializer),
+            RecordFamily::Group { references, .. } => references.serialize(serializer),
+            RecordFamily::IntersectionData { references, .. } => references.serialize(serializer),
+            RecordFamily::Type91 { references, .. } => references.serialize(serializer),
+            RecordFamily::Type101 { references, .. } => references.serialize(serializer),
+            RecordFamily::BSurface { references, .. } => references.serialize(serializer),
+            RecordFamily::TrimmedCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::BCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::BCurveDescriptor { references } => match references {
+                CurveDescriptorReferences::Compact(values) => values.serialize(serializer),
+                CurveDescriptorReferences::Status(values) => {
+                    IterWire(values.iter().copied().map(u32::from)).serialize(serializer)
+                }
+            },
+            RecordFamily::SpCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::Type141 { references } => references.serialize(serializer),
+            RecordFamily::Chart
+            | RecordFamily::TermUse
+            | RecordFamily::Type45
+            | RecordFamily::Entity52
+            | RecordFamily::Entity53
+            | RecordFamily::Entity54
+            | RecordFamily::Entity55
+            | RecordFamily::Entity56
+            | RecordFamily::Entity57
+            | RecordFamily::Entity58
+            | RecordFamily::Entity59
+            | RecordFamily::Entity62
+            | RecordFamily::BSurfaceData
+            | RecordFamily::BSurfaceDescriptor
+            | RecordFamily::Multiplicities
+            | RecordFamily::Knots
+            | RecordFamily::BCurveData
+            | RecordFamily::SupportUv => [0_u32; 0].serialize(serializer),
+        }
+    }
+}
+
 impl RecordFamily {
     /// Numeric Parasolid node type for this family.
-    pub const fn kind(&self) -> u16 {
-        self.record_kind().code() as u16
+    pub(crate) const fn kind(&self) -> u16 {
+        match self.record_kind() {
+            RecordKind::Body => 12,
+            RecordKind::Shell => 13,
+            RecordKind::Face => 14,
+            RecordKind::Loop => 15,
+            RecordKind::Edge => 16,
+            RecordKind::Fin => 17,
+            RecordKind::Vertex => 18,
+            RecordKind::Region => 19,
+            RecordKind::Point => 29,
+            RecordKind::Line => 30,
+            RecordKind::Circle => 31,
+            RecordKind::Ellipse => 32,
+            RecordKind::Intersection => 38,
+            RecordKind::Chart => 40,
+            RecordKind::TermUse => 41,
+            RecordKind::Type45 => 45,
+            RecordKind::Plane => 50,
+            RecordKind::Cylinder => 51,
+            RecordKind::Cone => 52,
+            RecordKind::Sphere => 53,
+            RecordKind::Torus => 54,
+            RecordKind::BlendSurf => 56,
+            RecordKind::BlendBound => 59,
+            RecordKind::OffsetSurf => 60,
+            RecordKind::Type67 => 67,
+            RecordKind::Type70 => 70,
+            RecordKind::AttdefList => 74,
+            RecordKind::Entity51 => 81,
+            RecordKind::Entity52 => 82,
+            RecordKind::Entity53 => 83,
+            RecordKind::Entity54 => 84,
+            RecordKind::Entity55 => 85,
+            RecordKind::Entity56 => 86,
+            RecordKind::Entity57 => 87,
+            RecordKind::Entity58 => 88,
+            RecordKind::Entity59 => 89,
+            RecordKind::Entity62 => 98,
+            RecordKind::Group => 90,
+            RecordKind::Type91 => 91,
+            RecordKind::Type101 => 101,
+            RecordKind::BSurface => 124,
+            RecordKind::BSurfaceData => 125,
+            RecordKind::BSurfaceDescriptor => 126,
+            RecordKind::Multiplicities => 127,
+            RecordKind::Knots => 128,
+            RecordKind::TrimmedCurve => 133,
+            RecordKind::BCurve => 134,
+            RecordKind::BCurveData => 135,
+            RecordKind::BCurveDescriptor => 136,
+            RecordKind::SpCurve => 137,
+            RecordKind::Type141 => 141,
+            RecordKind::SupportUv => 204,
+        }
     }
 
     const fn record_kind(&self) -> RecordKind {
@@ -267,7 +441,7 @@ impl RecordFamily {
     }
 
     /// Kernel node identifier when this family serializes one.
-    pub const fn node_id(&self) -> Option<u32> {
+    pub(crate) const fn node_id(&self) -> Option<u32> {
         match self {
             Self::Body { node_id, .. }
             | Self::Shell { node_id, .. }
@@ -326,7 +500,7 @@ impl RecordFamily {
     }
 
     /// The record's last position tuple in Parasolid metres.
-    pub fn position(&self) -> Option<[f64; 3]> {
+    pub(crate) fn position(&self) -> Option<[f64; 3]> {
         match self {
             Self::Point { position, .. } => Some(position.0),
             Self::Line { position, .. }
@@ -337,13 +511,13 @@ impl RecordFamily {
             | Self::Cone { position, .. }
             | Self::Sphere { position, .. }
             | Self::Torus { position, .. }
-            | Self::TrimmedCurve { position, .. } => Some((*position).into()),
+            | Self::TrimmedCurve { position, .. } => Some(position.get()),
             _ => None,
         }
     }
 
     /// Stable family name used by the deltas census and native records.
-    pub const fn family_name(&self) -> &'static str {
+    pub(crate) const fn family_name(&self) -> &'static str {
         match self {
             Self::IntersectionData { .. } => "INTERSECTION_DATA",
             _ => self.record_kind().name(),
@@ -351,7 +525,8 @@ impl RecordFamily {
     }
 
     /// Ordered references retained by this record layout.
-    pub fn references(&self) -> Vec<u32> {
+    #[cfg(test)]
+    pub(crate) fn references(&self) -> Vec<u32> {
         match self {
             Self::Body { references, .. } => references.clone(),
             Self::Shell { references, .. } => references.to_vec(),
@@ -424,10 +599,24 @@ impl RecordFamily {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn from_fixed(
         kind: u16,
         node_id: Option<u32>,
         position: Option<[f64; 3]>,
+        references: Vec<u32>,
+    ) -> Option<Self> {
+        let position = match position {
+            Some(value) => Some(FixedPosition::new(kind, value)?),
+            None => None,
+        };
+        Self::from_fixed_admitted(kind, node_id, position, references)
+    }
+
+    pub(super) fn from_fixed_admitted(
+        kind: u16,
+        node_id: Option<u32>,
+        position: Option<FixedPosition>,
         references: Vec<u32>,
     ) -> Option<Self> {
         Some(match kind {
@@ -461,20 +650,20 @@ impl RecordFamily {
             29 => Self::Point {
                 references: references.try_into().ok()?,
                 node_id: node_id?,
-                position: position?.try_into().ok()?,
+                position: position?.point()?,
             },
             30 => Self::Line {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             31 => Self::Circle {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             32 => Self::Ellipse {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -483,27 +672,27 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             50 => Self::Plane {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             51 => Self::Cylinder {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             52 => Self::Cone {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             53 => Self::Sphere {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             54 => Self::Torus {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -520,7 +709,7 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             133 => Self::TrimmedCurve {
-                position: position?.try_into().ok()?,
+                position: position?.finite()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -583,17 +772,17 @@ impl RecordFamily {
                 position: position?.try_into().ok()?,
             },
             "LINE" => Self::Line {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CIRCLE" => Self::Circle {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "ELLIPSE" => Self::Ellipse {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -614,27 +803,27 @@ impl RecordFamily {
                 Self::Type45
             }
             "PLANE" => Self::Plane {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CYLINDER" => Self::Cylinder {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CONE" => Self::Cone {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "SPHERE" => Self::Sphere {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "TORUS" => Self::Torus {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -746,7 +935,7 @@ impl RecordFamily {
                 Self::Knots
             }
             "TRIMMED_CURVE" => Self::TrimmedCurve {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },

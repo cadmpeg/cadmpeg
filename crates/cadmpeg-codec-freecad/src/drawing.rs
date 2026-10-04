@@ -3,111 +3,196 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, DrawingRole, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{
+    sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
+};
+
+fn drawing_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "fcstd drawing diagnostic")
+}
 
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<DrawingRecord>, CodecError> {
-    let by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(&property.owner).or_default().push(property);
-            map
-        },
-    );
-    objects
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD drawing owner storage")?;
+    let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        if !by_owner.contains_key(property.owner.as_str()) {
+            owner_storage
+                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd drawing owner index"))?;
+            by_owner.insert(&property.owner, Vec::new());
+        }
+        if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
+            owner_storage
+                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd drawing owner properties"))?;
+            owned.push(property);
+        }
+    }
+    let mut drawings = ctx.collection_vec(objects.len(), "fcstd drawing records")?;
+    for object in objects
         .iter()
         .filter(|object| is_registered_drawing_type(&object.type_name))
-        .map(|object| {
-            let owned = by_owner
-                .get(object.id.as_str())
-                .cloned()
-                .unwrap_or_default();
-            ensure_unique_property_names(&owned)?;
-            let role = if is_page_type(&object.type_name) {
-                DrawingRole::Page {
-                    views: typed_links(&owned, "Views", "App::PropertyLinkList")?
-                        .into_iter()
-                        .filter_map(|link| link.object().map(str::to_owned))
-                        .collect(),
-                    template: typed_single_link(&owned, "Template", "App::PropertyLink")?
-                        .and_then(|link| link.object().map(str::to_owned)),
+    {
+        let source = by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let mut owned = owner_storage.with_storage(|| {
+            ctx.collection_vec(source.len(), "fcstd drawing selected properties")
+        })?;
+        owned.extend_from_slice(source);
+        ensure_unique_property_names(ctx, &owned)?;
+        let kind = if is_page_type(&object.type_name) {
+            let view_links = typed_property(ctx, &owned, "Views", "App::PropertyLinkList")?
+                .map_or(&[][..], PropertyRecord::links);
+            let mut views = ctx.collection_vec(view_links.len(), "fcstd drawing page views")?;
+            for link in view_links.iter().flatten() {
+                if let Some(name) = link.object() {
+                    views.push(ctx.copy_retained_text(name, "fcstd drawing page view")?);
                 }
-            } else {
-                DrawingRole::Other
-            };
-            Ok(DrawingRecord {
-                id: crate::native::native_id("drawing", &object.name),
-                object: object.id.clone(),
-                kind: object.type_name.clone(),
-                role,
-                sources: [
-                    "Source",
-                    "XSource",
-                    "Sources",
-                    "References2D",
-                    "References3D",
-                    "Source3d",
-                ]
-                .into_iter()
-                .map(|name| source_links(&owned, name))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten()
-                .collect(),
-                relationships: owned
-                    .iter()
-                    .filter(|property| !property.links().is_empty())
-                    .map(|property| (property.name.clone(), property.links().to_vec()))
-                    .collect(),
-                parameters: drawing_parameters(&owned)?,
-                side_entries: owned
-                    .iter()
-                    .flat_map(|property| property.side_entries())
-                    .cloned()
-                    .collect(),
-            })
-        })
-        .collect()
+            }
+            let template_link = typed_single_link(ctx, &owned, "Template", "App::PropertyLink")?;
+            let template = template_link
+                .and_then(|link| link.object())
+                .map(|name| ctx.copy_retained_text(name, "fcstd drawing page template"))
+                .transpose()?;
+            TechDrawKind::Page {
+                runtime: if object.type_name == "TechDraw::DrawPage" {
+                    crate::native::TechDrawPageKind::Page
+                } else {
+                    crate::native::TechDrawPageKind::Python
+                },
+                views,
+                template,
+            }
+        } else {
+            TechDrawKind::try_new(
+                ctx.copy_retained_text(&object.type_name, "fcstd drawing runtime type")?,
+                Vec::new(),
+                None,
+            )
+            .map_err(CodecError::malformed)?
+        };
+        let mut sources = Vec::new();
+        for name in [
+            "Source",
+            "XSource",
+            "Sources",
+            "References2D",
+            "References3D",
+            "Source3d",
+        ] {
+            let links = source_links(ctx, &owned, name)?;
+            ctx.reserve_vec(&mut sources, links.len(), "fcstd drawing source links")?;
+            sources.extend(links);
+        }
+        let mut relationships = BTreeMap::new();
+        for property in owned.iter().filter(|property| !property.links().is_empty()) {
+            let mut links =
+                ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
+            for link in property.links() {
+                links.push(
+                    link.as_ref()
+                        .map(|link| link.clone_with_context(ctx))
+                        .transpose()?,
+                );
+            }
+            ctx.insert_btree_map(
+                &mut relationships,
+                ctx.copy_retained_text(&property.name, "fcstd drawing relationship name")?,
+                links,
+                "fcstd drawing relationships",
+            )?;
+        }
+        let mut side_entries = Vec::new();
+        for property in &owned {
+            for name in property.side_entries() {
+                ctx.reserve_vec(&mut side_entries, 1, "fcstd drawing side entries")?;
+                side_entries.push(ctx.copy_retained_text(name, "fcstd drawing side entry")?);
+            }
+        }
+        drawings.push(DrawingRecord {
+            id: crate::native::native_id_charged(ctx, "drawing", object.name())?,
+            object: ctx.copy_retained_text(object.id(), "fcstd drawing object")?,
+            kind,
+            sources,
+            relationships,
+            parameters: drawing_parameters(ctx, &owned)?,
+            side_entries,
+        });
+    }
+    Ok(drawings)
 }
 
 pub(crate) fn transfer_neutral(
+    ctx: &DecodeContext<'_>,
     model: &mut Model,
     records: &[DrawingRecord],
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
-    let neutral_ids = records
-        .iter()
-        .map(|record| {
-            (
+    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD drawing neutral lookup")?;
+    let mut neutral_ids = HashMap::new();
+    lookup_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut neutral_ids,
+            records.len(),
+            "fcstd drawing neutral identities",
+        )
+    })?;
+    for record in records {
+        lookup_storage.with_storage(|| {
+            neutral_ids.insert(
                 record.object.as_str(),
-                crate::native::model_id("drawing", &record.object, "entity"),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+                DrawingId::mint(crate::native::model_id_charged(
+                    ctx,
+                    "drawing",
+                    &record.object,
+                    "entity",
+                )?)
+                .map_err(CodecError::malformed)?,
+            );
+            Ok::<_, CodecError>(())
+        })?;
+    }
     for (order, record) in records.iter().enumerate() {
-        let owned = properties
+        let count = properties
             .iter()
             .filter(|property| property.owner == record.object)
-            .collect::<Vec<_>>();
-        let relationship = |link: &crate::native::LinkTarget| {
+            .count();
+        let mut owned = lookup_storage
+            .with_storage(|| ctx.collection_vec(count, "fcstd neutral drawing properties"))?;
+        owned.extend(
+            properties
+                .iter()
+                .filter(|property| property.owner == record.object),
+        );
+        let relationship = |link: &Option<crate::native::LinkTarget>| {
+            let Some(link) = link.as_ref() else {
+                return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
+            };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: document.to_owned(),
-                    object: object.to_owned(),
+                    document: ctx
+                        .copy_retained_text(document, "fcstd drawing external document")?,
+                    object: ctx.copy_retained_text(object, "fcstd drawing external object")?,
                 },
                 (None, None) => ReferenceTarget::Null,
                 (None, Some(object)) => ReferenceTarget::Local(
-                    neutral_ids
-                        .get(object)
-                        .cloned()
-                        .unwrap_or_else(|| object.to_owned()),
+                    ctx.copy_retained_text(
+                        neutral_ids
+                            .get(object)
+                            .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str),
+                        "fcstd drawing local relationship",
+                    )?,
                 ),
                 _ => {
                     return Err(CodecError::malformed(
@@ -115,111 +200,131 @@ pub(crate) fn transfer_neutral(
                     ));
                 }
             };
-            Ok(ReferenceSelection::new(target, link.subelements.clone()))
+            Ok(ReferenceSelection::new(
+                target,
+                ctx.copy_retained_strings(
+                    link.subelements(),
+                    "fcstd drawing relationship subelements",
+                )?,
+            ))
         };
-        let parameter = |name: &str| scalar_property(&owned, name);
+        let parameter = |name: &str| scalar_property(ctx, &owned, name);
         let x = parameter("X")?;
         let y = parameter("Y")?;
         let position = match (x, y) {
             (None, None) => None,
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some([x, y]),
-            (Some(_), Some(_)) => {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite position",
-                    record.id
-                )))
-            }
+            (Some(x), Some(y)) => Some([x, y]),
             _ => {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} position requires both X and Y",
-                    record.id
-                )))
+                return Err(drawing_malformed(
+                    ctx,
+                    format_args!("drawing {} position requires both X and Y", record.id),
+                ))
             }
         };
-        let scale = parameter("Scale")?;
-        if scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-positive or non-finite scale",
-                record.id
-            )));
-        }
+        let scale = parameter("Scale")?
+            .map(|value| {
+                PositiveReal::from_finite(value).ok_or_else(|| {
+                    CodecError::malformed("drawing scale must be positive and finite")
+                })
+            })
+            .transpose()?;
         let rotation_degrees = parameter("Rotation")?;
-        if rotation_degrees.is_some_and(|rotation| !rotation.is_finite()) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-finite rotation",
-                record.id
-            )));
-        }
         let direction = if record.parameters.contains_key("Direction") {
-            let direction = vector_property(&owned, "Direction")?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "drawing {} has no direction vector",
-                    record.id
-                ))
-            })?;
-            let length_squared = direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>();
-            if direction.iter().any(|component| !component.is_finite())
-                || length_squared <= f64::EPSILON
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite or zero direction",
-                    record.id
-                )));
-            }
-            Some(direction)
+            let value = vector_property(ctx, &owned, "Direction")?
+                .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
+            Some(NonzeroVector::from_finite(value).ok_or_else(|| {
+                CodecError::malformed("drawing direction must be finite and nonzero")
+            })?)
         } else {
             None
         };
-        let relationships = record
-            .relationships
-            .iter()
-            .map(|(role, targets)| {
-                let targets = targets
-                    .iter()
-                    .map(&relationship)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
-                Ok((role.clone(), targets))
-            })
-            .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
-        let template = if is_page_type(&record.kind) {
+        let position = position.map(FiniteVector::from);
+        let mut relationships = BTreeMap::new();
+        for (role, targets) in &record.relationships {
+            let mut selections =
+                ctx.collection_vec(targets.len(), "fcstd drawing neutral relationships")?;
+            for link in targets {
+                selections.push(relationship(link)?);
+            }
+            ctx.insert_btree_map(
+                &mut relationships,
+                ctx.copy_retained_text(role, "fcstd drawing relationship role")?,
+                selections,
+                "fcstd drawing relationship roles",
+            )?;
+        }
+        let template_id = if matches!(record.kind, TechDrawKind::Page { .. }) {
             record
                 .relationships
                 .get("Template")
                 .and_then(|targets| targets.first())
+                .and_then(Option::as_ref)
                 .and_then(|link| {
-                    if link.document.is_some() {
+                    if link.document().is_some() {
                         return None;
                     }
                     let object = link.object()?;
-                    neutral_ids.get(object).cloned()
+                    neutral_ids.get(object)
                 })
         } else {
             None
         };
+        let template = template_id
+            .map(|id| id.try_clone_for_decode(ctx, "fcstd drawing template identity"))
+            .transpose()?;
+        ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
+        let mut parameters = BTreeMap::new();
+        for (name, value) in &record.parameters {
+            ctx.insert_btree_map(
+                &mut parameters,
+                ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
+                ctx.copy_retained_text(value, "fcstd drawing parameter value")?,
+                "fcstd drawing neutral parameters",
+            )?;
+        }
+        let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
+        for name in &record.side_entries {
+            assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
+        }
         model.drawings.push(Drawing {
-            id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
-                .expect("identity grammar"),
-            object: record.object.clone(),
-            kind: classify(&record.kind),
-            runtime_type: record.kind.clone(),
-            order: order as u32,
+            id: neutral_ids
+                .get(record.object.as_str())
+                .ok_or_else(|| {
+                    drawing_malformed(
+                        ctx,
+                        format_args!("drawing {} has no admitted neutral identity", record.id),
+                    )
+                })
+                .and_then(|id| id.try_clone_for_decode(ctx, "fcstd drawing neutral identity"))?,
+            object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
+            kind: classify(record.kind.as_str()),
+            runtime_type: ctx
+                .copy_retained_text(record.kind.as_str(), "fcstd drawing neutral runtime type")?,
+            order: u32::try_from(order).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD ordinal",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(order),
+                )
+            })?,
             visible: None,
-            relationships,
+            relationships: cadmpeg_core::text::named_entries_for_decode(
+                ctx,
+                &record.object,
+                relationships,
+            )?,
             template,
             position,
             scale,
             direction,
             rotation_degrees,
-            parameters: record.parameters.clone(),
-            assets: record
-                .side_entries
-                .iter()
-                .map(|name| crate::native::native_id("entry", name))
-                .collect(),
-            native_ref: record.id.clone(),
+            parameters: cadmpeg_core::text::named_entries_for_decode(
+                ctx,
+                &record.object,
+                parameters,
+            )?,
+            assets,
+            native_ref: ctx.copy_retained_text(&record.id, "fcstd drawing native reference")?,
         });
     }
     Ok(())
@@ -298,48 +403,58 @@ fn registered_drawing_kind(runtime_type: &str) -> Option<DrawingKind> {
     }
 }
 
-fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<f64>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+fn scalar_property(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<FiniteReal>, CodecError> {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} has no root value"
-        )));
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(
+            ctx,
+            format_args!("drawing property {name} has no root value"),
+        ));
     };
     scalar_value(name, &property.type_name, value)
         .map(Some)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "drawing property {name} has an invalid scalar value"
-            ))
+            drawing_malformed(
+                ctx,
+                format_args!("drawing property {name} has an invalid scalar value"),
+            )
         })
 }
 
 fn vector_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+) -> Result<Option<FiniteVector<3>>, CodecError> {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} has no root value"
-        )));
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(
+            ctx,
+            format_args!("drawing property {name} has no root value"),
+        ));
     };
     vector_value(value).map(Some).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "drawing property {name} has an invalid vector value"
-        ))
+        drawing_malformed(
+            ctx,
+            format_args!("drawing property {name} has an invalid vector value"),
+        )
     })
 }
 
 fn source_links(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(Vec::new());
     };
     let valid_type = match name {
@@ -352,18 +467,33 @@ fn source_links(
         _ => false,
     };
     if !valid_type {
-        return Err(CodecError::malformed(format_args!(
-            "drawing source {name} has runtime type {}, which is not a source carrier",
-            property.type_name
-        )));
+        return Err(drawing_malformed(
+            ctx,
+            format_args!(
+                "drawing source {name} has runtime type {}, which is not a source carrier",
+                property.type_name
+            ),
+        ));
     }
     let is_list = is_link_list_type(&property.type_name);
     if !is_list && property.links().len() > 1 {
-        return Err(CodecError::malformed(format_args!(
-            "drawing source {name} has multiple targets",
-        )));
+        return Err(drawing_malformed(
+            ctx,
+            format_args!("drawing source {name} has multiple targets"),
+        ));
     }
-    Ok(property.links().to_vec())
+    let mut links = ctx.collection_vec(
+        property.links().len(),
+        "fcstd drawing source property links",
+    )?;
+    for link in property.links() {
+        links.push(
+            link.as_ref()
+                .map(|link| link.clone_with_context(ctx))
+                .transpose()?,
+        );
+    }
+    Ok(links)
 }
 
 fn is_link_carrier_type(type_name: &str) -> bool {
@@ -409,60 +539,48 @@ fn is_link_list_type(type_name: &str) -> bool {
     )
 }
 
-fn typed_links(
-    properties: &[&PropertyRecord],
+fn typed_single_link<'a>(
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
     name: &str,
     type_name: &str,
-) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
-    Ok(typed_property(properties, name, type_name)?
-        .map(|property| property.links().to_vec())
-        .unwrap_or_default())
-}
-
-fn typed_single_link(
-    properties: &[&PropertyRecord],
-    name: &str,
-    type_name: &str,
-) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_name)? else {
+) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
+    let Some(property) = typed_property(ctx, properties, name, type_name)? else {
         return Ok(None);
     };
     match property.links() {
         [] => Ok(None),
-        [link] => Ok(Some(link.clone())),
-        _ => Err(CodecError::malformed(format_args!(
-            "{name} has multiple links"
-        ))),
+        [link] => Ok(link.as_ref()),
+        _ => Err(drawing_malformed(
+            ctx,
+            format_args!("{name} has multiple links"),
+        )),
     }
 }
 
 fn typed_property<'a>(
+    ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
     name: &str,
     type_name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "{name} has duplicate carriers"
-        )));
-    }
     if property.type_name != type_name {
-        return Err(CodecError::malformed(format_args!(
-            "{name} has runtime type {}, expected {type_name}",
-            property.type_name
-        )));
+        return Err(drawing_malformed(
+            ctx,
+            format_args!(
+                "{name} has runtime type {}, expected {type_name}",
+                property.type_name
+            ),
+        ));
     }
     Ok(Some(property))
 }
 
 fn drawing_parameters(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     const NAMES: &[&str] = &[
@@ -487,47 +605,65 @@ fn drawing_parameters(
     ];
     let mut parameters = BTreeMap::new();
     for name in NAMES {
-        let Some(property) = unique_property(properties, name)? else {
+        let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
             continue;
         };
-        validate_drawing_property(name, property)?;
-        let value = root_value(property, name)?.ok_or_else(|| {
-            CodecError::malformed(format_args!("drawing property {name} has no root value"))
+        validate_drawing_property(ctx, name, property)?;
+        let value = root_value(ctx, property, name)?.ok_or_else(|| {
+            drawing_malformed(
+                ctx,
+                format_args!("drawing property {name} has no root value"),
+            )
         })?;
-        parameters.insert((*name).to_owned(), value.raw_xml.clone());
+        ctx.insert_btree_map(
+            &mut parameters,
+            ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
+            ctx.copy_retained_text(&value.raw_xml, "fcstd drawing parameter XML")?,
+            "fcstd drawing parameters",
+        )?;
     }
     for name in VALIDATED_ONLY_NAMES {
-        if let Some(property) = unique_property(properties, name)? {
-            validate_drawing_property(name, property)?;
+        if let Some(property) = sole_named_property(ctx, "drawing", properties, name)? {
+            validate_drawing_property(ctx, name, property)?;
         }
     }
     Ok(parameters)
 }
 
-fn validate_drawing_property(name: &str, property: &PropertyRecord) -> Result<(), CodecError> {
+fn validate_drawing_property(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    property: &PropertyRecord,
+) -> Result<(), CodecError> {
     if !drawing_property_type_matches(name, &property.type_name) {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} has runtime type {}, which is not its registered carrier",
-            property.type_name
-        )));
+        return Err(drawing_malformed(
+            ctx,
+            format_args!(
+                "drawing property {name} has runtime type {}, which is not its registered carrier",
+                property.type_name
+            ),
+        ));
     }
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} has no root value"
-        )));
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(
+            ctx,
+            format_args!("drawing property {name} has no root value"),
+        ));
     };
     if matches!(name, "Direction" | "XDirection") {
         if vector_value(value).is_none() {
-            return Err(CodecError::malformed(format_args!(
-                "drawing property {name} has an invalid vector value"
-            )));
+            return Err(drawing_malformed(
+                ctx,
+                format_args!("drawing property {name} has an invalid vector value"),
+            ));
         }
     } else if matches!(name, "X" | "Y" | "Scale" | "Rotation")
         && scalar_value(name, &property.type_name, value).is_none()
     {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} has an invalid scalar value"
-        )));
+        return Err(drawing_malformed(
+            ctx,
+            format_args!("drawing property {name} has an invalid scalar value"),
+        ));
     }
     Ok(())
 }
@@ -555,20 +691,29 @@ fn drawing_property_type_matches(name: &str, type_name: &str) -> bool {
     }
 }
 
-fn ensure_unique_property_names(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
+fn ensure_unique_property_names(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<(), CodecError> {
     let mut names = BTreeSet::new();
     for property in properties {
-        if !names.insert(property.name.as_str()) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing property {} occurs more than once",
-                property.name
-            )));
+        if names.contains(property.name.as_str()) {
+            return Err(drawing_malformed(
+                ctx,
+                format_args!("drawing property {} occurs more than once", property.name),
+            ));
         }
+        ctx.insert_btree_set(
+            &mut names,
+            property.name.as_str(),
+            "fcstd drawing unique property names",
+        )?;
     }
     Ok(())
 }
 
 fn root_value<'a>(
+    ctx: &DecodeContext<'_>,
     property: &'a PropertyRecord,
     name: &str,
 ) -> Result<Option<&'a ValueRecord>, CodecError> {
@@ -582,14 +727,20 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "drawing property {} has invalid XML: {error}",
-            property.id
-        ))
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            drawing_malformed(
+                ctx,
+                format_args!("drawing property {} has invalid XML: {error}", property.id),
+            )
+        })?;
+    let xml = admitted_xml.document();
     let property_node = xml.root_element();
-    let mut selected_orders = Vec::new();
+    let mut selected_order = None;
     let mut order = 0;
     for node in property_node.descendants() {
         if !node.is_element() {
@@ -604,81 +755,66 @@ fn root_value<'a>(
         {
             let tag = node.tag_name().name();
             if tag != expected_tag && !allowed_extra_tags.contains(&tag) {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing property {name} has unexpected root element {tag}"
-                )));
+                return Err(drawing_malformed(
+                    ctx,
+                    format_args!("drawing property {name} has unexpected root element {tag}"),
+                ));
             }
-            if tag == expected_tag {
-                selected_orders.push(order);
+            if tag == expected_tag && selected_order.replace(order).is_some() {
+                return Err(drawing_malformed(
+                    ctx,
+                    format_args!("drawing property {name} has multiple root values"),
+                ));
             }
         }
         order += 1;
     }
-    match selected_orders.as_slice() {
-        [] => Ok(None),
-        [selected_order] => property
+    match selected_order {
+        None => Ok(None),
+        Some(selected_order) => property
             .values()
             .iter()
-            .find(|value| value.order == *selected_order)
+            .find(|value| value.order == selected_order)
             .map(Some)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "drawing property {} has an unretained root value",
-                    property.id
-                ))
+                drawing_malformed(
+                    ctx,
+                    format_args!(
+                        "drawing property {} has an unretained root value",
+                        property.id
+                    ),
+                )
             }),
-        _ => Err(CodecError::malformed(format_args!(
-            "drawing property {name} has multiple root values"
-        ))),
     }
 }
 
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} occurs more than once"
-        )));
-    }
-    Ok(Some(property))
-}
-
-fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<f64> {
+fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<FiniteReal> {
     let allowed_attributes: &[&str] =
         if name == "Scale" && type_name == "App::PropertyFloatConstraint" {
             &["value", "min", "max", "step"]
         } else {
             &["value"]
         };
-    if value
-        .attributes
-        .iter()
-        .any(|(name, value)| !allowed_attributes.contains(&name.as_str()) || !is_finite(value))
-    {
-        return None;
+    let mut scalar = None;
+    for (attribute, text) in &value.attributes {
+        if !allowed_attributes.contains(&attribute.as_str()) {
+            return None;
+        }
+        let admitted = FiniteReal::new(text.parse().ok()?)?;
+        if attribute == "value" {
+            scalar = Some(admitted);
+        }
     }
-    value.attributes.get("value")?.parse().ok()
+    scalar
 }
 
-fn is_finite(value: &str) -> bool {
-    value.parse::<f64>().is_ok_and(f64::is_finite)
-}
-
-fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {
-    Some([
+fn vector_value(value: &ValueRecord) -> Option<FiniteVector<3>> {
+    let vector = [
         value.attributes.get("valueX")?.parse().ok()?,
         value.attributes.get("valueY")?.parse().ok()?,
         value.attributes.get("valueZ")?.parse().ok()?,
-    ])
+    ];
+    FiniteVector::new(vector)
 }
 
 #[cfg(test)]

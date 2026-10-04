@@ -2,11 +2,24 @@
 //! Model-space reference entities from `MdlRefInfo`.
 
 use cadmpeg_core::bytes::find_in;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::UnitVector3;
 
-const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+/// Bounds the stored lengths and the normalized dot product of a conic local system's two
+/// stored directions.
+///
+/// This is not the admission of [`cadmpeg_ir::units::OrthonormalFrame3::new`], which gates the
+/// same shape at the same value. That admission takes the dot product of the stored pair, where
+/// this site takes it of the normalized pair, so the two bounds differ by the product of the
+/// stored lengths.
+const EPS_ELLIPSE_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 const EPS_PLANE_RESIDUAL: f64 = 1.0e-9;
@@ -18,62 +31,201 @@ const EPS_DIAMETER_PLANAR: f64 = 1.0e-10;
 
 /// Stored reference-line family.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ReferenceLineKind {
+pub(crate) enum ReferenceLineKind {
     /// Planar `entity(line)` record.
     Line,
     /// Spatial `line3d` record with a stored original length.
     Line3d {
         /// Canonical entity identifier repeated across the row boundary.
         entity_id: u32,
-        /// Positive stored `orig_len`, equal to the endpoint distance.
-        original_length: f64,
+        /// Stored `orig_len` in source units, equal to the endpoint distance.
+        original_length: PositiveReal,
     },
 }
 
 /// One finite model-space line entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceLine {
+pub(crate) struct ReferenceLine {
     /// Native entity family.
-    pub kind: ReferenceLineKind,
+    kind: ReferenceLineKind,
     /// First endpoint in model coordinates.
-    pub start: [f64; 3],
+    start: FinitePoint3,
     /// Second endpoint in model coordinates.
-    pub end: [f64; 3],
+    end: FinitePoint3,
     /// Byte offset of the positional row in its section.
-    pub offset: usize,
+    pub(crate) offset: usize,
+}
+
+impl ReferenceLine {
+    pub(crate) fn try_new(
+        kind: ReferenceLineKind,
+        start: FinitePoint3,
+        end: FinitePoint3,
+        offset: usize,
+    ) -> Option<Self> {
+        if let ReferenceLineKind::Line3d {
+            original_length, ..
+        } = &kind
+        {
+            let first: [f64; 3] = start.get().into();
+            let last: [f64; 3] = end.get().into();
+            let distance = (0..3).fold(0.0_f64, |norm, axis| norm.hypot(last[axis] - first[axis]));
+            let scale = distance.max(original_length.get()).max(1.0);
+            if !distance.is_finite()
+                || distance <= EPS_LINE_NONZERO
+                || (distance - original_length.get()).abs() > EPS_ENDPOINT_AGREEMENT * scale
+            {
+                return None;
+            }
+        }
+        Some(Self {
+            kind,
+            start,
+            end,
+            offset,
+        })
+    }
+    pub(crate) fn kind(&self) -> &ReferenceLineKind {
+        &self.kind
+    }
+    pub(crate) fn start(&self) -> FinitePoint3 {
+        self.start
+    }
+    pub(crate) fn end(&self) -> FinitePoint3 {
+        self.end
+    }
+}
+
+/// Source form used to admit a circle center.
+#[derive(Clone, Copy)]
+pub(crate) enum ReferenceCircleCenter {
+    Stored(FinitePoint3),
+    Diameter,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CircleCenter {
+    Stored(FinitePoint3),
+    EndpointMidpoint(FinitePoint3),
 }
 
 /// One circular reference entity reconstructed from a positional row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceCircle {
+pub(crate) struct ReferenceCircle {
     /// Canonical entity identifier repeated across the row boundary.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Circle center in model coordinates.
-    pub center: [f64; 3],
-    /// Whether the center is stored explicitly rather than derived as a midpoint.
-    pub center_stored: bool,
-    /// Positive circle radius.
-    pub radius: f64,
+    center: CircleCenter,
+    /// Circle radius.
+    radius: PositiveLength,
     /// Unit circle-plane normal.
-    pub axis: [f64; 3],
+    axis: UnitVector3,
     /// First stored endpoint.
-    pub start: [f64; 3],
+    start: FinitePoint3,
     /// Second stored endpoint.
-    pub end: [f64; 3],
+    end: FinitePoint3,
     /// Byte offset of the positional row in its section.
-    pub offset: usize,
+    pub(crate) offset: usize,
+}
+
+impl ReferenceCircle {
+    pub(crate) fn try_new(
+        entity_id: u32,
+        center: ReferenceCircleCenter,
+        radius: PositiveLength,
+        axis: UnitVector3,
+        endpoints: [FinitePoint3; 2],
+        offset: usize,
+    ) -> Option<Self> {
+        let [first, second] = endpoints.map(|point| <[f64; 3]>::from(point.get()));
+        let center = match center {
+            ReferenceCircleCenter::Stored(point) => CircleCenter::Stored(point),
+            ReferenceCircleCenter::Diameter => {
+                let delta = std::array::from_fn::<_, 3, _>(|lane| second[lane] - first[lane]);
+                let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
+                let scale = radius.get().max(diameter).max(1.0);
+                if axis != UnitVector3::Z_AXIS
+                    || !diameter.is_finite()
+                    || delta[2].abs() > EPS_DIAMETER_PLANAR * scale
+                    || (diameter - 2.0 * radius.get()).abs() > EPS_RADIUS_AGREEMENT * scale
+                {
+                    return None;
+                }
+                let midpoint = std::array::from_fn::<_, 3, _>(|lane| {
+                    let sum = first[lane] + second[lane];
+                    if sum.is_finite() {
+                        sum * 0.5
+                    } else {
+                        f64::midpoint(first[lane], second[lane])
+                    }
+                });
+                CircleCenter::EndpointMidpoint(FinitePoint3::new(midpoint.into())?)
+            }
+        };
+        let center_point = match center {
+            CircleCenter::Stored(point) | CircleCenter::EndpointMidpoint(point) => point,
+        };
+        let plane_tolerance = match center {
+            CircleCenter::Stored(_) => EPS_PLANE_RESIDUAL,
+            CircleCenter::EndpointMidpoint(_) => EPS_DIAMETER_PLANAR,
+        };
+        let origin: [f64; 3] = center_point.get().into();
+        let normal: [f64; 3] = (*axis.as_raw()).into();
+        for endpoint in [first, second] {
+            let delta = std::array::from_fn::<_, 3, _>(|lane| endpoint[lane] - origin[lane]);
+            let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let scale = distance.max(radius.get()).max(1.0);
+            let plane = dot(delta, normal);
+            if !distance.is_finite()
+                || !plane.is_finite()
+                || (distance - radius.get()).abs() > EPS_RADIUS_AGREEMENT * scale
+                || plane.abs() > plane_tolerance * scale
+            {
+                return None;
+            }
+        }
+        Some(Self {
+            entity_id,
+            center,
+            radius,
+            axis,
+            start: endpoints[0],
+            end: endpoints[1],
+            offset,
+        })
+    }
+    pub(crate) fn center(&self) -> FinitePoint3 {
+        match self.center {
+            CircleCenter::Stored(point) | CircleCenter::EndpointMidpoint(point) => point,
+        }
+    }
+    pub(crate) fn center_stored(&self) -> bool {
+        matches!(self.center, CircleCenter::Stored(_))
+    }
+    pub(crate) fn radius(&self) -> PositiveLength {
+        self.radius
+    }
+    pub(crate) fn axis(&self) -> UnitVector3 {
+        self.axis
+    }
+    pub(crate) fn start(&self) -> FinitePoint3 {
+        self.start
+    }
+    pub(crate) fn end(&self) -> FinitePoint3 {
+        self.end
+    }
 }
 
 /// Native conic discriminator, with the ellipse code classified explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConicType {
+pub(crate) enum ConicType {
     Ellipse,
     Other(OtherConicType),
 }
 
 /// A conic code other than the ellipse discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OtherConicType(u32);
+pub(crate) struct OtherConicType(u32);
 
 impl From<u32> for ConicType {
     fn from(value: u32) -> Self {
@@ -95,55 +247,101 @@ impl serde::Serialize for ConicType {
 
 /// One named model-reference conic record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceConic {
+pub(crate) struct ReferenceConic {
     /// Entity identifier in the conic list.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored conic type discriminator.
-    pub type_id: ConicType,
+    pub(crate) type_id: ConicType,
     /// Stored orientation selector.
-    pub flip: u32,
+    pub(crate) flip: u32,
     /// First stored endpoint in model coordinates.
-    pub start: [f64; 3],
+    pub(crate) start: FinitePoint3,
     /// Second stored endpoint in model coordinates.
-    pub end: [f64; 3],
+    pub(crate) end: FinitePoint3,
     /// First stored conic parameter, when its scalar form is defined.
-    pub parameter_start: Option<f64>,
+    pub(crate) parameter_start: Option<FiniteReal>,
     /// Second stored conic parameter, when its scalar form is defined.
-    pub parameter_end: Option<f64>,
+    pub(crate) parameter_end: Option<FiniteReal>,
     /// First stored conic coefficient.
-    pub coefficient_1: f64,
+    pub(crate) coefficient_1: FiniteReal,
     /// Second stored conic coefficient.
-    pub coefficient_2: f64,
+    pub(crate) coefficient_2: FiniteReal,
     /// Twelve decoded local-system slots, when the body is complete.
-    pub local_system: Option<[f64; 12]>,
+    pub(crate) local_system: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Exact bytes from the `id` value through the local-system body.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the named conic list record.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Complete model-space ellipse derived from a conic record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceEllipse {
+pub(crate) struct ReferenceEllipse {
     /// Canonical identifier of the source conic entity.
-    pub source_entity_id: u32,
+    pub(crate) source_entity_id: u32,
     /// Ellipse center.
-    pub center: [f64; 3],
+    center: FinitePoint3,
     /// Unit normal of the ellipse plane.
-    pub axis: [f64; 3],
+    axis: UnitVector3,
     /// Unit direction of the semi-major axis.
-    pub major_direction: [f64; 3],
-    /// Positive semi-major radius.
-    pub major_radius: f64,
-    /// Positive semi-minor radius.
-    pub minor_radius: f64,
+    major_direction: UnitVector3,
+    /// Semi-major radius.
+    major_radius: PositiveLength,
+    /// Semi-minor radius.
+    minor_radius: PositiveLength,
     /// Source conic byte offset.
-    pub offset: usize,
+    pub(crate) offset: usize,
+}
+
+impl ReferenceEllipse {
+    pub(crate) fn try_new(
+        source_entity_id: u32,
+        center: FinitePoint3,
+        axis: UnitVector3,
+        major_direction: UnitVector3,
+        radii: [PositiveLength; 2],
+        offset: usize,
+    ) -> Option<Self> {
+        let normal: [f64; 3] = (*axis.as_raw()).into();
+        let major: [f64; 3] = (*major_direction.as_raw()).into();
+        if dot(normal, major).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
+            || radii[0].get() < radii[1].get()
+        {
+            return None;
+        }
+        Some(Self {
+            source_entity_id,
+            center,
+            axis,
+            major_direction,
+            major_radius: radii[0],
+            minor_radius: radii[1],
+            offset,
+        })
+    }
+    pub(crate) fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+    pub(crate) fn axis(&self) -> UnitVector3 {
+        self.axis
+    }
+    pub(crate) fn major_direction(&self) -> UnitVector3 {
+        self.major_direction
+    }
+    pub(crate) fn major_radius(&self) -> PositiveLength {
+        self.major_radius
+    }
+    pub(crate) fn minor_radius(&self) -> PositiveLength {
+        self.minor_radius
+    }
 }
 
 /// Derive every ellipse whose conic frame, radii, and endpoints independently
 /// satisfy one model-space equation.
-pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+pub(crate) fn ellipse_carriers(
+    ctx: &DecodeContext<'_>,
+    conics: &[ReferenceConic],
+) -> Result<Vec<ReferenceEllipse>, CodecError> {
     let mut result = Vec::new();
     for conic in conics {
         if conic.type_id != ConicType::Ellipse {
@@ -152,70 +350,86 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         let Some(frame) = conic.local_system else {
             continue;
         };
-        let center: [f64; 3] = frame[9..12].try_into().expect("three frame origin slots");
-        let first_frame: [f64; 3] = frame[..3].try_into().expect("three frame axis slots");
-        let second_frame: [f64; 3] = frame[3..6].try_into().expect("three frame axis slots");
-        let Some((first_frame, first_length)) = normalize_with_length(first_frame) else {
+        let Some(center_checked) = frame.three_at(9).map(FinitePoint3::from) else {
             continue;
         };
-        let Some((second_frame, second_length)) = normalize_with_length(second_frame) else {
+        let frame = frame.get();
+        let center = [frame[9], frame[10], frame[11]];
+        let first_frame = [frame[0], frame[1], frame[2]];
+        let second_frame = [frame[3], frame[4], frame[5]];
+        let Some((first_frame_unit, first_length)) = normalize_with_length(first_frame) else {
             continue;
         };
+        let Some((second_frame_unit, second_length)) = normalize_with_length(second_frame) else {
+            continue;
+        };
+        let first_frame: [f64; 3] = (*first_frame_unit.as_raw()).into();
+        let second_frame: [f64; 3] = (*second_frame_unit.as_raw()).into();
+        let endpoints: [[f64; 3]; 2] = [conic.start.get().into(), conic.end.get().into()];
         let scale = center
             .iter()
-            .chain(conic.start.iter())
-            .chain(conic.end.iter())
+            .chain(endpoints[0].iter())
+            .chain(endpoints[1].iter())
             .map(|value| value.abs())
             .fold(1.0_f64, f64::max);
-        if (first_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-            || (second_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-            || dot(first_frame, second_frame).abs() > EPS_FRAME_ORTHONORMAL
+        if (first_length - 1.0).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
+            || (second_length - 1.0).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
+            || dot(first_frame, second_frame).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
         {
             continue;
         }
-        let Some((axis, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
+        let Some((axis_unit, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
             continue;
         };
-        let radii = [conic.coefficient_1.abs(), conic.coefficient_2.abs()];
-        if radii
-            .iter()
-            .any(|radius| !radius.is_finite() || *radius <= 0.0)
-        {
+        let axis: [f64; 3] = (*axis_unit.as_raw()).into();
+        let (Some(first_coefficient), Some(second_coefficient)) = (
+            PositiveLength::new(conic.coefficient_1.get().abs()),
+            PositiveLength::new(conic.coefficient_2.get().abs()),
+        ) else {
             continue;
-        }
-        let major_radius = radii[0].max(radii[1]);
-        let minor_radius = radii[0].min(radii[1]);
-        let endpoints = [conic.start, conic.end];
+        };
+        let (major_radius, minor_radius) = if first_coefficient.get() >= second_coefficient.get() {
+            (first_coefficient, second_coefficient)
+        } else {
+            (second_coefficient, first_coefficient)
+        };
+        let radii = [first_coefficient.get(), second_coefficient.get()];
         let endpoint_deltas =
             endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
         let antipodal_major_direction = (|| {
             let (first_direction, first_radius) = normalize_with_length(endpoint_deltas[0])?;
+            let first_direction_raw: [f64; 3] = (*first_direction.as_raw()).into();
             let (_, second_radius) = normalize_with_length(endpoint_deltas[1])?;
             ((0..3).all(|index| {
                 (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs()
                     <= EPS_ENDPOINT_AGREEMENT * scale
-            }) && dot(first_direction, axis).abs() <= EPS_ENDPOINT_AGREEMENT
+            }) && dot(first_direction_raw, axis).abs() <= EPS_ENDPOINT_AGREEMENT
                 && (first_radius - second_radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
                 .then_some(())?;
-            let radius_scale = major_radius.max(1.0);
-            if (first_radius - major_radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
+            let radius_scale = major_radius.get().max(1.0);
+            if (first_radius - major_radius.get()).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
                 Some(first_direction)
-            } else if (first_radius - minor_radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
-                normalize_with_length(cross(first_direction, axis)).map(|(direction, _)| direction)
+            } else if (first_radius - minor_radius.get()).abs()
+                <= EPS_RADIUS_AGREEMENT * radius_scale
+            {
+                normalize_with_length(cross(first_direction_raw, axis))
+                    .map(|(direction, _)| direction)
             } else {
                 None
             }
         })();
         if let Some(major_direction) = antipodal_major_direction {
-            result.push(ReferenceEllipse {
-                source_entity_id: conic.entity_id,
-                center,
-                axis,
+            ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
+            if let Some(value) = ReferenceEllipse::try_new(
+                conic.entity_id,
+                center_checked,
+                axis_unit,
                 major_direction,
-                major_radius,
-                minor_radius,
-                offset: conic.offset,
-            });
+                [major_radius, minor_radius],
+                conic.offset,
+            ) {
+                result.push(value);
+            }
             continue;
         }
         let mapping_is_valid = |first_radius: f64, second_radius: f64| {
@@ -242,34 +456,41 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
             continue;
         };
         let mut major_direction = if first_radius >= second_radius {
-            first_frame
+            first_frame_unit
         } else {
-            second_frame
+            second_frame_unit
         };
         let orientation = endpoints
             .iter()
             .map(|endpoint| {
                 dot(
                     std::array::from_fn(|index| endpoint[index] - center[index]),
-                    major_direction,
+                    (*major_direction.as_raw()).into(),
                 )
             })
             .find(|projection| projection.abs() > EPS_ORIENTATION_NONZERO * scale);
         if orientation.is_some_and(f64::is_sign_negative) {
-            major_direction = major_direction.map(|value| -value);
+            major_direction = major_direction.reversed();
         }
-        result.push(ReferenceEllipse {
-            source_entity_id: conic.entity_id,
-            center,
-            axis,
+        ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
+        if let Some(value) = ReferenceEllipse::try_new(
+            conic.entity_id,
+            center_checked,
+            axis_unit,
             major_direction,
-            major_radius,
-            minor_radius,
-            offset: conic.offset,
-        });
+            [major_radius, minor_radius],
+            conic.offset,
+        ) {
+            result.push(value);
+        }
     }
-    result.sort_by_key(|ellipse| ellipse.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo ellipse carriers result ordering",
+    )?;
+    Ok(result)
 }
 
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
@@ -295,14 +516,14 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
         .or_else(|| scalar::decode_model_reference_coordinate(data, offset, cache))
 }
 
-fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
+fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
     let mut candidate = None;
     for start in 0..row.len() {
         let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
-            let mut values = Vec::with_capacity(count);
-            while values.len() < count {
-                values.push(cursor.take_with(|data, pos| coordinate(data, pos, cache))?);
+            let mut values = [0.0; COUNT];
+            for value in &mut values {
+                *value = cursor.take_with(|data, pos| coordinate(data, pos, cache))?;
             }
             (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
                 .then_some(values)
@@ -350,7 +571,7 @@ fn conic_point_at(
     label_offset: usize,
     end: usize,
     cache: &ScalarCache,
-) -> Option<([f64; 3], usize)> {
+) -> Option<(FinitePoint3, usize)> {
     let array_open = label_offset + CONIC_FIELD_HEADERS[3].len();
     (array_open < end && data.get(array_open) == Some(&crate::psb::token::ARRAY_OPEN))
         .then_some(())?;
@@ -363,10 +584,7 @@ fn conic_point_at(
         (cursor.pos() <= end).then_some(())?;
         *value = decoded;
     }
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some((values, cursor.pos()))
+    Some((FinitePoint3::new(values.into())?, cursor.pos()))
 }
 
 /// One decoded run of conic local-frame slots: the axis marker `18 e5` emits
@@ -426,20 +644,26 @@ fn conic_frame_run(
     Some((ConicFrameRun::single(value), next))
 }
 
-fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+fn conic_local_system(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<cadmpeg_ir::units::FiniteVector<12>> {
     if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
-    let mut values = Vec::with_capacity(12);
+    let mut values = [0.0; 12];
+    let mut count = 0;
     let mut cursor = crate::psb::Cursor::new(body);
-    while cursor.pos() < body.len() && values.len() < 12 {
+    while cursor.pos() < body.len() && count < values.len() {
         let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
-        values.extend_from_slice(run.as_slice());
+        let end = count.checked_add(run.as_slice().len())?;
+        values.get_mut(count..end)?.copy_from_slice(run.as_slice());
+        count = end;
     }
-    (cursor.pos() == body.len()
-        && values.len() == 12
-        && values.iter().all(|value| value.is_finite()))
-    .then(|| values.try_into().expect("twelve bounded conic frame slots"))
+    if cursor.pos() != body.len() || count != values.len() {
+        return None;
+    }
+    cadmpeg_ir::units::FiniteVector::new(values)
 }
 
 fn named_conic_local_system(
@@ -447,7 +671,7 @@ fn named_conic_local_system(
     start: usize,
     end: usize,
     cache: &ScalarCache,
-) -> Option<(usize, Option<[f64; 12]>)> {
+) -> Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)> {
     const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let mut marker_count = 0;
@@ -487,10 +711,13 @@ fn named_conic_local_system(
 /// The coefficients and parameter fields remain stored conic semantics; this
 /// function does not classify the record as an ellipse, parabola, or
 /// hyperbola.
-pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn named_conics(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(offset) = find_in(payload, LIST, search, payload.len()) {
@@ -553,7 +780,11 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                 search = block_end.max(fields_start);
                 continue;
             };
-            if !value.is_finite() || next > block_end {
+            let Some(value) = FiniteReal::new(value) else {
+                search = block_end.max(fields_start);
+                continue;
+            };
+            if next > block_end {
                 search = block_end.max(fields_start);
                 continue;
             }
@@ -567,10 +798,18 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                     search = block_end.max(fields_start);
                     continue;
                 };
-                parameter_end = Some(value + std::f64::consts::PI);
+                let Some(opposite) = FiniteReal::new(value.get() + std::f64::consts::PI) else {
+                    search = block_end.max(fields_start);
+                    continue;
+                };
+                parameter_end = Some(opposite);
                 cursor = value_offset + 1;
             } else if let Some((value, next)) = coordinate(payload, value_offset, &cache) {
-                if !value.is_finite() || next > block_end {
+                let Some(value) = FiniteReal::new(value) else {
+                    search = block_end.max(fields_start);
+                    continue;
+                };
+                if next > block_end {
                     search = block_end.max(fields_start);
                     continue;
                 }
@@ -617,13 +856,18 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             search = block_end.max(fields_start);
             continue;
         };
-        if !coefficient_1.is_finite()
-            || !coefficient_2.is_finite()
-            || next_conic_field(payload, local_end, block_end).is_some()
-        {
+        let (Some(coefficient_1), Some(coefficient_2)) = (
+            FiniteReal::new(coefficient_1),
+            FiniteReal::new(coefficient_2),
+        ) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        if next_conic_field(payload, local_end, block_end).is_some() {
             search = block_end.max(fields_start);
             continue;
         }
+        ctx.reserve_vec(&mut result, 1, "creo named reference conics")?;
         result.push(ReferenceConic {
             entity_id,
             type_id: ConicType::from(type_id),
@@ -635,58 +879,72 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             coefficient_1,
             coefficient_2,
             local_system,
-            body: payload[id_label + CONIC_FIELD_HEADERS[0].len()..local_end].to_vec(),
+            body: ctx.copy_retained(
+                &payload[id_label + CONIC_FIELD_HEADERS[0].len()..local_end],
+                "creo named reference conic body",
+            )?,
             offset,
         });
         search = block_end.max(fields_start);
     }
-    result.sort_by_key(|conic| conic.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo named conics result ordering",
+    )?;
+    Ok(result)
 }
 
 fn conic_parameter(
     body: &[u8],
     offset: usize,
-    opposite_of: Option<f64>,
+    opposite_of: Option<FiniteReal>,
     cache: &ScalarCache,
-) -> Option<(Option<f64>, usize)> {
+) -> Option<(Option<FiniteReal>, usize)> {
     if body.get(offset) == Some(&0x11) {
-        return Some((
-            opposite_of.map(|value| value + std::f64::consts::PI),
-            offset + 1,
-        ));
+        let opposite = match opposite_of {
+            Some(value) => Some(FiniteReal::new(value.get() + std::f64::consts::PI)?),
+            None => None,
+        };
+        return Some((opposite, offset + 1));
     }
-    coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
+    let (value, next) = coordinate(body, offset, cache)?;
+    Some((Some(FiniteReal::new(value)?), next))
 }
 
 fn positional_conic_local_system(
     body: &[u8],
     local_start: usize,
     cache: &ScalarCache,
-) -> Option<(usize, [f64; 12])> {
+) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
-    let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
-    let candidates = (first_end..=last_end)
-        .filter_map(|end| {
-            let tail = body.get(end..)?;
-            (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
-            conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
-        })
-        .collect::<Vec<_>>();
-    let [(local_end, local_system)] = candidates.as_slice() else {
-        return None;
-    };
-    Some((*local_end, *local_system))
+    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());
+    let mut candidate = None;
+    for end in first_end..=last_end {
+        let tail = body.get(end..)?;
+        if !(tail.is_empty() || tail.first() == Some(&0xe2)) {
+            continue;
+        }
+        if let Some(frame) = conic_local_system(&body[local_start..end], cache) {
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((end, frame));
+        }
+    }
+    candidate
 }
 
 fn positional_conic_body(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     entity_id: u32,
     type_id: u32,
     offset: usize,
     cache: &ScalarCache,
-) -> Option<ReferenceConic> {
+) -> Option<Result<ReferenceConic, CodecError>> {
     const GENERAL_INFO: &[u8] = &[0x02, 0x48, 0x10, 0x00, 0xeb, 0x10, 0, 0, 0, 0];
     (body.get(..GENERAL_INFO.len()) == Some(GENERAL_INFO)).then_some(())?;
     let (flip, mut cursor) = crate::psb::compact_int(body, GENERAL_INFO.len());
@@ -707,35 +965,37 @@ fn positional_conic_body(
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
     let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
-    endpoints
-        .iter()
-        .flatten()
-        .chain(parameter_start.iter())
-        .chain(parameter_end.iter())
-        .chain([&coefficient_1, &coefficient_2])
-        .all(|value| value.is_finite())
-        .then_some(())?;
-    Some(ReferenceConic {
+    let start = FinitePoint3::new(endpoints[0].into())?;
+    let end = FinitePoint3::new(endpoints[1].into())?;
+    let coefficient_1 = FiniteReal::new(coefficient_1)?;
+    let coefficient_2 = FiniteReal::new(coefficient_2)?;
+    Some(Ok(ReferenceConic {
         entity_id,
         type_id: ConicType::from(type_id),
         flip,
-        start: endpoints[0],
-        end: endpoints[1],
+        start,
+        end,
         parameter_start,
         parameter_end,
         coefficient_1,
         coefficient_2,
         local_system: Some(local_system),
-        body: body[..local_end].to_vec(),
+        body: match ctx.copy_retained(&body[..local_end], "creo positional reference conic body") {
+            Ok(body) => body,
+            Err(error) => return Some(Err(error)),
+        },
         offset,
-    })
+    }))
 }
 
 /// Decode complete positional rows following an `ent_list(conic)` schema.
-pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn positional_conics(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = find_in(payload, LIST, search, payload.len()) {
@@ -757,6 +1017,7 @@ pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
                 continue;
             }
+            ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")?;
             headers.push((close, entity_id, type_id, after_type + 1));
         }
         for (index, &(close, entity_id, type_id, body_start)) in headers.iter().enumerate() {
@@ -764,31 +1025,42 @@ pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _, _)| *next_close);
             if let Some(conic) = positional_conic_body(
+                ctx,
                 &payload[body_start..body_end],
                 entity_id,
                 type_id,
                 close + 1,
                 &cache,
             ) {
+                let conic = conic?;
+                ctx.reserve_vec(&mut result, 1, "creo positional reference conics")?;
                 result.push(conic);
             }
         }
         search = block_end.max(rows_start);
     }
-    result.sort_by_key(|conic| conic.offset);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo positional conics result ordering",
+    )?;
     result.dedup_by_key(|conic| conic.offset);
-    result
+    Ok(result)
 }
 
 /// Decode every complete positional `entity(line)` row.
-pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn lines(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceLine>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(line)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
     const INSTANCE: &[u8] = b"\xe0\x00entity(line)\0";
     const ENTITY: &[u8] = b"\xe0\x00entity(";
     const ROW_START: &[u8] = b"\xf6\xe2";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = payload[search..]
@@ -821,58 +1093,82 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             .position(|window| window == ROW_START)
             .map(|relative| cursor + relative)
         {
-            if starts.is_empty() || payload.get(start.wrapping_sub(1)) == Some(&0xe3) {
+            if starts.is_empty()
+                || match start.checked_sub(1) {
+                    Some(before) => payload.get(before) == Some(&0xe3),
+                    None => false, // Position zero has no preceding row marker.
+                }
+            {
+                ctx.reserve_vec(&mut starts, 1, "creo reference line starts")?;
                 starts.push(start);
             }
             cursor = start + ROW_START.len();
         }
         for (index, start) in starts.iter().copied().enumerate() {
             let end = starts.get(index + 1).map_or(block_end, |next| next - 1);
-            let end = if payload.get(end.wrapping_sub(1)) == Some(&0xe3) {
-                end - 1
-            } else {
-                end
+            let end = match end.checked_sub(1) {
+                Some(before) if payload.get(before) == Some(&0xe3) => before,
+                Some(_) | None => end,
             };
             if start >= end {
                 continue;
             }
-            let Some(values) = scalar_suffix(&payload[start..end], 6, &cache) else {
+            let Some([first_x, first_y, first_z, last_x, last_y, last_z]) =
+                scalar_suffix::<6>(&payload[start..end], &cache)
+            else {
                 continue;
             };
-            result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line,
-                start: values[..3].try_into().expect("three bounded coordinates"),
-                end: values[3..].try_into().expect("three bounded coordinates"),
-                offset: start,
-            });
+            let (Some(first), Some(last)) = (
+                FinitePoint3::new([first_x, first_y, first_z].into()),
+                FinitePoint3::new([last_x, last_y, last_z].into()),
+            ) else {
+                continue;
+            };
+            ctx.reserve_vec(&mut result, 1, "creo reference lines")?;
+            if let Some(value) = ReferenceLine::try_new(ReferenceLineKind::Line, first, last, start)
+            {
+                result.push(value);
+            }
         }
         search = block_end.max(instance_search);
     }
-    result.sort_by_key(|line| line.offset);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo lines result ordering",
+    )?;
     result.dedup_by_key(|line| line.offset);
-    result
+    Ok(result)
 }
 
-fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], f64)> {
+fn line3d_fields(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(FinitePoint3, FinitePoint3, PositiveReal)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(7);
-        while values.len() < 7 {
+        let mut values = [0.0; 7];
+        for slot in &mut values {
             let (value, next) = coordinate(body, cursor, cache)?;
-            values.push(value);
+            *slot = value;
             cursor = next;
         }
-        let first: [f64; 3] = values[..3].try_into().ok()?;
-        let second: [f64; 3] = values[3..6].try_into().ok()?;
-        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
-        let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let stored_length = values[6].abs();
-        let scale = distance.max(stored_length).max(1.0);
-        (distance.is_finite()
-            && distance > EPS_LINE_NONZERO
-            && stored_length > 0.0
-            && (distance - stored_length).abs() <= EPS_ENDPOINT_AGREEMENT * scale)
-            .then_some((start, first, second, stored_length))
+        let first = [values[0], values[1], values[2]];
+        let second = [values[3], values[4], values[5]];
+        let stored_length = PositiveReal::new(values[6].abs())?;
+        let first_checked = FinitePoint3::new(first.into())?;
+        let second_checked = FinitePoint3::new(second.into())?;
+        ReferenceLine::try_new(
+            ReferenceLineKind::Line3d {
+                entity_id: 0,
+                original_length: stored_length,
+            },
+            first_checked,
+            second_checked,
+            0,
+        )?;
+        Some((start, first_checked, second_checked, stored_length))
     });
     let mut candidates = candidates;
     let (_, first, second, stored_length) = candidates.next()?;
@@ -881,28 +1177,38 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
-    let start = close.saturating_sub(8);
-    (start..close).any(|candidate| {
-        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-            return false;
-        };
-        if previous != id {
-            return false;
-        }
-        after == close
-            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                && crate::psb::reference_id(payload, after + 1)
-                    .is_ok_and(|(_, reference_end)| reference_end == close))
-    })
+    let Some(prefix) = payload.get(..close) else {
+        return false;
+    };
+    prefix
+        .iter()
+        .enumerate()
+        .rev()
+        .take(8)
+        .any(|(candidate, _)| {
+            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+                return false;
+            };
+            if previous != id {
+                return false;
+            }
+            after == close
+                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                    && crate::psb::reference_id(payload, after + 1)
+                        .is_ok_and(|(_, reference_end)| reference_end == close))
+        })
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
 /// their stored original length.
-pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn line3d_lines(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceLine>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(line3d)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = payload[search..]
@@ -931,6 +1237,7 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 continue;
             }
             let body_start = body_start + 1;
+            ctx.reserve_vec(&mut headers, 1, "creo line3d headers")?;
             headers.push((close, body_start, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
@@ -942,137 +1249,168 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
             else {
                 continue;
             };
-            result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line3d {
+            ctx.reserve_vec(&mut result, 1, "creo line3d reference lines")?;
+            if let Some(value) = ReferenceLine::try_new(
+                ReferenceLineKind::Line3d {
                     entity_id,
                     original_length,
                 },
                 start,
                 end,
-                offset: close + 1,
-            });
+                close + 1,
+            ) {
+                result.push(value);
+            }
         }
         search = block_end.max(rows_start);
     }
-    result.sort_by_key(|line| line.offset);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo line3d lines result ordering",
+    )?;
     result.dedup_by_key(|line| line.offset);
-    result
+    Ok(result)
 }
 
-fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<ReferenceCircle> {
-    let scalar_run = |start: usize, count: usize| {
+fn arc_z_fields(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &ScalarCache,
+    entity_id: u32,
+) -> Result<Option<ReferenceCircle>, CodecError> {
+    fn scalar_run<const COUNT: usize>(
+        body: &[u8],
+        start: usize,
+        cache: &ScalarCache,
+    ) -> Option<[f64; COUNT]> {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(count);
-        while values.len() < count {
+        let mut values = [0.0; COUNT];
+        for slot in &mut values {
             let (value, next) = arc_z_coordinate(body, cursor, cache)?;
-            values.push(value);
+            *slot = value;
             cursor = next;
         }
         Some(values)
-    };
-    let explicit_axis = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
-        let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
-        let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
-        let first_distance = first_delta
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let second_distance = second_delta
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let scale = radius.max(first_distance).max(second_distance).max(1.0);
-        let normal = [
-            first_delta[1] * second_delta[2] - first_delta[2] * second_delta[1],
-            first_delta[2] * second_delta[0] - first_delta[0] * second_delta[2],
-            first_delta[0] * second_delta[1] - first_delta[1] * second_delta[0],
-        ];
-        let normal_length = normal
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        (radius.is_finite()
-            && radius > 0.0
-            && center
+    }
+    let explicit_axis =
+        |center: FinitePoint3, radius: PositiveLength, first: [f64; 3], second: [f64; 3]| {
+            let radius = radius.get();
+            let center: [f64; 3] = center.get().into();
+            let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
+            let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
+            let first_distance = first_delta
                 .iter()
-                .chain(first.iter())
-                .chain(second.iter())
-                .all(|value| value.is_finite())
-            && first_distance.is_finite()
-            && second_distance.is_finite()
-            && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
-            && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
-            && normal_length.is_finite()
-            && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
-            .then(|| normal.map(|value| value / normal_length))
-    };
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let second_distance = second_delta
+                .iter()
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let scale = radius.max(first_distance).max(second_distance).max(1.0);
+            let normal = [
+                first_delta[1] * second_delta[2] - first_delta[2] * second_delta[1],
+                first_delta[2] * second_delta[0] - first_delta[0] * second_delta[2],
+                first_delta[0] * second_delta[1] - first_delta[1] * second_delta[0],
+            ];
+            let normal_length = normal
+                .iter()
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            (first_distance.is_finite()
+                && second_distance.is_finite()
+                && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
+                && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
+                && normal_length.is_finite()
+                && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
+                .then_some(())
+                .and_then(|()| {
+                    let first = FinitePoint3::new(first.into())?;
+                    let second = FinitePoint3::new(second.into())?;
+                    let (direction, _) =
+                        UnitVector3::normalized_with_length(Vector3::from(normal))?;
+                    Some((direction, first, second))
+                })
+        };
+    let work = cadmpeg_core::decode::u64_from_index(body.len())
+        .checked_mul(512)
+        .ok_or_else(|| ctx.refuse_codec_limit("creo arc-z numeric trials", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "creo arc-z numeric trials")?;
     let explicit = (0..body.len()).filter_map(|start| {
-        let values = scalar_run(start, 10)?;
-        let center: [f64; 3] = values[..3].try_into().ok()?;
-        let radius = values[3].abs();
-        let first: [f64; 3] = values[4..7].try_into().ok()?;
-        let second: [f64; 3] = values[7..10].try_into().ok()?;
-        let axis = explicit_axis(center, radius, first, second)?;
-        Some(ReferenceCircle {
+        let values = scalar_run::<10>(body, start, cache)?;
+        let center = [values[0], values[1], values[2]];
+        let radius = PositiveLength::new(values[3].abs())?;
+        let first = [values[4], values[5], values[6]];
+        let second = [values[7], values[8], values[9]];
+        let center = FinitePoint3::new(center.into())?;
+        let (axis, first, second) = explicit_axis(center, radius, first, second)?;
+        ReferenceCircle::try_new(
             entity_id,
-            center,
-            center_stored: true,
+            crate::reference::ReferenceCircleCenter::Stored(center),
             radius,
             axis,
-            start: first,
-            end: second,
-            offset: start,
-        })
+            [first, second],
+            start,
+        )
     });
     let diametric = (0..body.len()).filter_map(|start| {
-        let values = scalar_run(start, 7)?;
-        let radius = values[0].abs();
-        let first: [f64; 3] = values[1..4].try_into().ok()?;
-        let second: [f64; 3] = values[4..7].try_into().ok()?;
-        let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);
-        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
-        let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let scale = radius.max(diameter).max(1.0);
-        (diameter.is_finite()
-            && radius > 0.0
-            && values.iter().all(|value| value.is_finite())
-            && delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
-            && (diameter - 2.0 * radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
-            .then_some(ReferenceCircle {
-                entity_id,
-                center,
-                center_stored: false,
-                radius,
-                axis: [0.0, 0.0, 1.0],
-                start: first,
-                end: second,
-                offset: start,
-            })
+        let values = scalar_run::<7>(body, start, cache)?;
+        let radius = PositiveLength::new(values[0].abs())?;
+        let first = [values[1], values[2], values[3]];
+        let second = [values[4], values[5], values[6]];
+        let first = FinitePoint3::new(first.into())?;
+        let second = FinitePoint3::new(second.into())?;
+        ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Diameter,
+            radius,
+            UnitVector3::Z_AXIS,
+            [first, second],
+            start,
+        )
     });
     let mut candidates = explicit.chain(diametric);
-    let circle = candidates.next()?;
-    candidates.next().is_none().then_some(circle)
+    let Some(circle) = candidates.next() else {
+        return Ok(None);
+    };
+    Ok(candidates.next().is_none().then_some(circle))
 }
 
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
 /// endpoints satisfy the model-Z circle equation. Diameter-compressed rows
 /// derive the center from their endpoint midpoint.
-pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
+pub(crate) fn arc_z_circles(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceCircle>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(payload.len() - search),
+            "creo arc-z prototype search",
+        )?;
+        let Some(prototype) = payload[search..]
+            .windows(PROTOTYPE.len())
+            .position(|window| window == PROTOTYPE)
+            .map(|relative| search + relative)
+        else {
+            break;
+        };
         let rows_start = prototype + PROTOTYPE.len();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(payload.len() - rows_start),
+            "creo arc-z block search",
+        )?;
         let block_end = payload[rows_start..]
             .windows(LIST.len())
             .position(|window| window == LIST)
             .map_or(payload.len(), |relative| rows_start + relative);
         let mut headers = Vec::new();
         for close in rows_start..block_end {
+            ctx.charge_work(32, "creo arc-z row headers")?;
             if payload.get(close) != Some(&0xe3) {
                 continue;
             }
@@ -1086,24 +1424,36 @@ pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
+            ctx.reserve_vec(&mut headers, 1, "creo arc-z headers")?;
             headers.push((close, body_start + 1, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
-            let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache, entity_id)
+            let Some(mut circle) =
+                arc_z_fields(ctx, &payload[body_start..body_end], &cache, entity_id)?
             else {
                 continue;
             };
             circle.offset = close + 1;
+            ctx.reserve_vec(&mut result, 1, "creo arc-z circles")?;
             result.push(circle);
         }
-        search = block_end.max(rows_start);
+        search = block_end;
     }
-    result.sort_by_key(|circle| circle.offset);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo arc z circles result ordering",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(result.len()),
+        "creo arc-z row deduplication",
+    )?;
     result.dedup_by_key(|circle| circle.offset);
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

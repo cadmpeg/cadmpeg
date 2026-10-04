@@ -49,7 +49,7 @@ Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
 
 ```rust,no_run
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 

@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Conversion from a PSB container to [`CadIr`].
 //!
-//! Decode transfers standard datum planes as derived plane surfaces and
-//! preserves each geometry section as an [`UnknownRecord`]. Source metadata
-//! records the namespace census, active units, and counts of decoded structural
-//! rows. The typed dialect match owns layout identity.
-//!
-//! Surface and curve namespaces contain useful topology and prototype data, but
-//! the placed body model is incomplete. The report therefore records blocking
-//! geometry and topology losses instead of emitting a partial B-rep.
+//! Decode transfers reference geometry, display meshes, features, sketches,
+//! and supported native, extrusion, revolution, and circular B-rep routes.
+//! Source metadata records the namespace census, units, and layout identity.
+//! Preserved native records and geometry sections retain unresolved source
+//! geometry. The report states geometry and topology losses for withheld data.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -17,7 +14,6 @@ use cadmpeg_ir::codec::Decoded;
 use crate::container;
 
 mod analytic;
-mod axis;
 mod build;
 mod coverage;
 mod curve_expressions;
@@ -26,10 +22,12 @@ mod feature_history;
 mod holes;
 mod native;
 mod native_records;
+mod quadratic;
 mod records;
 mod sketch;
 mod sketch_ids;
 mod sketch_transfer;
+mod source_carriers;
 mod surfaces;
 mod sweep;
 pub(crate) mod uniqueness;
@@ -38,30 +36,16 @@ use crate::decode::build::ir::{build_container_ir, build_ir, BuiltIr};
 use crate::decode::build::report::build_report;
 
 #[cfg(test)]
-pub(crate) use sketch::{
-    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
-};
-
-#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
-mod plane_reconciliation_tests;
-
-#[cfg(test)]
-mod topological_vertex_tests;
-
-#[cfg(test)]
-mod native_edge_parameter_tests;
-
-#[cfg(test)]
-mod native_pcurve_tests;
-
-#[cfg(test)]
-mod prototype_local_frame_tests;
-
-#[cfg(test)]
-mod prototype_association_tests;
+pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test root is admitted");
+    run(&ctx)
+}
 
 /// Decode a `.prt` stream into an IR document and decode body; the sealed
 /// wrapper stamps the report identity from `ir.source`.
@@ -69,40 +53,43 @@ mod prototype_association_tests;
 /// The stream is read from its beginning. When `options.container_only` is set,
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(root.window());
-    let classification = crate::dialect::classify(&scan);
-    // Charge section cardinality before IR construction so max_entities can
-    // refuse the build rather than only the finalizer.
-    ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
-    let mut admitted_entities = 0_u64;
-
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    let scan = container::scan_bytes(ctx, root.window())?;
+    let classification = crate::dialect::classify(ctx, &scan)?;
+    // Admit section identities before model construction.
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
+        "admit Creo sections",
+    )?;
     let BuiltIr {
         mut ir,
         annotations,
         unknowns,
         coverage,
         brep_diagnostics,
+        transfer_losses,
     } = if ctx.container_only() {
-        build_container_ir(&scan, &classification)?
+        build_container_ir(ctx, &scan, &classification)?
     } else {
         build_ir(ctx, &scan, &classification)?
     };
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit Creo entities",
-    )?;
-    let body = build_report(
+    let mut body = build_report(
+        ctx,
         &scan,
         &classification,
         &ir,
         coverage,
         &brep_diagnostics,
         ctx.container_only(),
-    );
+    )?;
+    ctx.reserve_vec(
+        &mut body.losses,
+        transfer_losses.len(),
+        "creo transfer report losses",
+    )?;
+    body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

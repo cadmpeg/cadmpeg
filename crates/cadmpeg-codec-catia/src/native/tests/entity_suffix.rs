@@ -3,12 +3,58 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_parameter_value, standard_catpart_with_two_selector_value,
+};
 use crate::CatiaCodec;
+
+#[test]
+fn suffix_schema_selection_refuses_retained_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_suffix_selection_entry")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("service profile admits suffix schema selection");
+    assert_eq!(admitted, record.suffix_schema_selection);
+}
+
+#[test]
+fn nested_suffix_schema_resolution_refuses_retained_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_suffix_nested_entry")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("service profile admits nested suffix selection");
+    assert_eq!(admitted, record.suffix_schema_selection);
+}
 
 #[test]
 fn entity_suffix_values_accept_8193_trailers() {
@@ -91,87 +137,102 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic entity suffix");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         0
     );
     let native = crate::native::CatiaNative::load(
@@ -224,9 +285,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode wide-prefix scalar suffix");
     assert_eq!(
-        wide_scalar
-            .report()
-            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            wide_scalar.report(),
+            crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let wide_scalar = crate::native::CatiaNative::load(
@@ -310,15 +372,17 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic unset entity suffix");
     assert_eq!(
-        unset
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        unset
-            .report()
-            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
 
@@ -348,21 +412,24 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic control entity suffix");
     assert_eq!(
-        control
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        control
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        control
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         0
     );
     let control = crate::native::CatiaNative::load(
@@ -387,21 +454,24 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode E9 control entity suffix");
     assert_eq!(
-        control_e9
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        control_e9
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        control_e9
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let control_e9 = crate::native::CatiaNative::load(
@@ -454,9 +524,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic separator entity suffix");
     assert_eq!(
-        separator
-            .report()
-            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            separator.report(),
+            crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let separator = crate::native::CatiaNative::load(
@@ -487,8 +558,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic atom entity suffix");
     assert_eq!(
-        atom.report()
-            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            atom.report(),
+            crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let atom =
@@ -534,15 +607,17 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        schema_selected_atom.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            schema_selected_atom.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        schema_selected_atom
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            schema_selected_atom.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let schema_selected_atom = crate::native::CatiaNative::load(
@@ -615,8 +690,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected scalar suffix");
     assert_eq!(
-        selected_scalar.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            selected_scalar.report(),
+            (crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT)
+                .as_str()
         ),
         1
     );
@@ -690,15 +767,17 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected control suffix");
     assert_eq!(
-        selected_control.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        wire::coverage_count(
+            selected_control.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        selected_control
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
+        wire::coverage_count(
+            selected_control.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
         1
     );
     let selected_control = crate::native::CatiaNative::load(

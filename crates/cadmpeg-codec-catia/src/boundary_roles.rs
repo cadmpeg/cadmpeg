@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
-use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::topology::LoopBoundaryRole;
+use cadmpeg_ir::topology::FaceLoops;
 
-const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
@@ -136,62 +137,84 @@ fn polygon_boundaries_intersect(
 
 /// Classify complete planar boundary polygons by strict containment.
 ///
-/// A single boundary is the outer boundary by the face invariant. Multiple
-/// boundaries are classified only when one unique largest non-degenerate
-/// polygon strictly contains every other polygon. This deliberately declines
-/// disjoint, touching, nested-hole, malformed, and non-planar arrangements.
-pub(crate) fn classify_planar_boundary_roles(
+/// Each row pairs a loop id with the closed polygon of that boundary, so the
+/// classification and the loop list are one value and cannot disagree in
+/// length or order. A single boundary is the outer boundary by the face
+/// invariant. Multiple boundaries are classified only when one unique largest
+/// non-degenerate polygon strictly contains every other polygon. This
+/// deliberately declines disjoint, touching, nested-hole, malformed, and
+/// non-planar arrangements.
+pub(crate) fn classify_planar_boundaries(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
-    boundaries: &[Vec<Point3>],
-) -> Vec<LoopBoundaryRole> {
-    let unspecified = || {
-        alloc_filled(
-            boundaries.len(),
-            LoopBoundaryRole::Unspecified,
-            "catia planar boundary roles",
-        )
-        .unwrap_or_default()
+    rows: &[(LoopId, Vec<Point3>)],
+) -> Result<FaceLoops, CodecError> {
+    let unspecified = || -> Result<FaceLoops, CodecError> {
+        let mut ids = Vec::new();
+        for (id, _) in rows {
+            let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
+            ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
+        }
+        Ok(FaceLoops::unspecified(ids))
     };
-    if boundaries.len() == 1 {
-        return vec![LoopBoundaryRole::Outer];
+    if let [(single, _)] = rows {
+        let id = single.try_clone_for_decode(ctx, "catia_boundary_single_id_copy")?;
+        return Ok(FaceLoops::classified(id, Vec::new()));
     }
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface
-    else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
-    let Some(normal) = normal.unit() else {
-        return unspecified();
-    };
-    let Some(u_axis) = u_axis.unit() else {
-        return unspecified();
-    };
-    if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
-        return unspecified();
-    }
-    let Some(v_axis) = normal.cross(u_axis).unit() else {
-        return unspecified();
-    };
-    let polygons = boundaries
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(rows.len()),
+        "catia_boundary_work_bound",
+    )?;
+    let point_count = rows
         .iter()
-        .map(|boundary| {
-            (boundary.len() >= 3).then(|| {
-                boundary
-                    .iter()
-                    .map(|point| {
-                        let offset = point.vector_from(*origin);
-                        Point2::new(offset.dot(u_axis), offset.dot(v_axis))
-                    })
-                    .collect::<Vec<_>>()
-            })
+        .try_fold(0_u64, |count, (_, points)| {
+            count.checked_add(cadmpeg_core::decode::u64_from_index(points.len()))
         })
-        .collect::<Option<Vec<_>>>();
-    let Some(polygons) = polygons else {
-        return unspecified();
-    };
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_work_bound", u64::MAX, u64::MAX))?;
+    // Segment pairs, containment passes, projection and area scans fit this bound.
+    let work = point_count
+        .checked_mul(point_count)
+        .and_then(|square| square.checked_mul(4))
+        .and_then(|pairs| point_count.checked_mul(8)?.checked_add(pairs))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_boundary_classification_work", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "catia_boundary_classification_work")?;
+    let origin = plane_surface.origin().get();
+    let u_axis = *plane_surface.frame().reference().as_raw();
+    let v_axis = *plane_surface.frame().binormal().as_raw();
+    let normal = *plane_surface.frame().axis().as_raw();
+    let mut polygons = Vec::new();
+    for (_, boundary) in rows {
+        if boundary.len() < 3 {
+            return unspecified();
+        }
+        let mut polygon = Vec::new();
+        ctx.reserve_vec(
+            &mut polygon,
+            boundary.len(),
+            "catia_boundary_polygon_points",
+        )?;
+        for point in boundary {
+            let offset = point.vector_from(origin);
+            let u = offset.dot(u_axis);
+            let v = offset.dot(v_axis);
+            let distance = offset.dot(normal);
+            let scale = 1.0_f64.max(u.abs()).max(v.abs());
+            if !u.is_finite()
+                || !v.is_finite()
+                || !distance.is_finite()
+                || distance.abs() > EPS_PLANAR_COORDINATE * scale
+            {
+                return unspecified();
+            }
+            polygon.push(Point2::new(u, v));
+        }
+        ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
+    }
     let coordinate_scale = polygons
         .iter()
         .flat_map(|polygon| polygon.iter())
@@ -199,17 +222,16 @@ pub(crate) fn classify_planar_boundary_roles(
         .fold(1.0, f64::max);
     let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;
     let area_tolerance = coordinate_tolerance * coordinate_scale;
-    let areas = polygons
-        .iter()
-        .map(|polygon| {
-            polygon
-                .iter()
-                .zip(polygon.iter().cycle().skip(1))
-                .map(|(left, right)| left.u * right.v - right.u * left.v)
-                .sum::<f64>()
-                * 0.5
-        })
-        .collect::<Vec<_>>();
+    let mut areas = Vec::new();
+    for polygon in &polygons {
+        let area = polygon
+            .iter()
+            .zip(polygon.iter().cycle().skip(1))
+            .map(|(left, right)| left.u * right.v - right.u * left.v)
+            .sum::<f64>()
+            * 0.5;
+        ctx.push_vec(&mut areas, area, "catia_boundary_polygon_areas")?;
+    }
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
@@ -260,31 +282,50 @@ pub(crate) fn classify_planar_boundary_roles(
     }) {
         return unspecified();
     }
-    let Ok(mut roles) = alloc_filled(
-        boundaries.len(),
-        LoopBoundaryRole::Inner,
-        "catia planar boundary roles",
-    ) else {
+    let Some((outer_id, _)) = rows.get(outer) else {
         return unspecified();
     };
-    roles[outer] = LoopBoundaryRole::Outer;
-    roles
+    let mut inner = Vec::new();
+    for (index, (id, _)) in rows.iter().enumerate() {
+        if index != outer {
+            let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
+            ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
+        }
+    }
+    let outer_id = outer_id.try_clone_for_decode(ctx, "catia_boundary_outer_id_copy")?;
+    Ok(FaceLoops::classified(outer_id, inner))
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::LoopBoundaryRole;
+    use cadmpeg_ir::topology::FaceLoops;
 
-    use super::classify_planar_boundary_roles;
+    fn classify_planar_boundaries(
+        surface: &SurfaceGeometry,
+        rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
+    ) -> FaceLoops {
+        crate::test_support::with_service_context(|ctx| {
+            super::classify_planar_boundaries(ctx, surface, rows)
+        })
+        .expect("service context admits boundary classification")
+    }
 
     fn plane() -> SurfaceGeometry {
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ))
+    }
+
+    fn loop_id(index: usize) -> LoopId {
+        LoopId::mint(format!("catia:test:loop#{index}")).expect("identity grammar")
     }
 
     fn square(min_u: f64, min_v: f64, max_u: f64, max_v: f64) -> Vec<Point3> {
@@ -299,68 +340,116 @@ mod tests {
         .collect()
     }
 
+    fn rows(boundaries: Vec<Vec<Point3>>) -> Vec<(LoopId, Vec<Point3>)> {
+        boundaries
+            .into_iter()
+            .enumerate()
+            .map(|(index, boundary)| (loop_id(index), boundary))
+            .collect()
+    }
+
+    #[test]
+    fn planar_boundary_comparisons_refuse_work() {
+        let boundaries = rows(vec![
+            square(0.0, 0.0, 10.0, 10.0),
+            square(2.0, 2.0, 3.0, 3.0),
+        ]);
+        crate::test_support::with_work_limit(2, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::classify_planar_boundaries(ctx, &plane(), &boundaries)
+                    .expect_err("comparison work must be admitted")
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_boundary_classification_work");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn planar_boundary_points_refuse_before_nested_polygon_allocation() {
+        let boundaries = rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]);
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            super::classify_planar_boundaries(ctx, &plane(), &boundaries)
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+        assert_eq!(
+            classify_planar_boundaries(&plane(), &boundaries),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
+    }
+
+    #[test]
+    fn planar_boundaries_decline_an_off_plane_hole() {
+        let outer = square(0.0, 0.0, 10.0, 10.0);
+        let mut inner = square(2.0, 2.0, 3.0, 3.0);
+        for point in &mut inner {
+            point.z = 10.0;
+        }
+        assert_eq!(
+            classify_planar_boundaries(&plane(), &rows(vec![outer, inner])),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
+    }
+
     #[test]
     fn one_boundary_is_outer() {
         assert_eq!(
-            classify_planar_boundary_roles(&plane(), &[square(0.0, 0.0, 1.0, 1.0)]),
-            vec![LoopBoundaryRole::Outer]
+            classify_planar_boundaries(&plane(), &rows(vec![square(0.0, 0.0, 1.0, 1.0)])),
+            FaceLoops::classified(loop_id(0), Vec::new())
         );
     }
 
     #[test]
     fn containment_classifies_outer_and_hole_independent_of_order() {
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)]
+                &rows(vec![square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)])
             ),
-            vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer]
+            FaceLoops::classified(loop_id(1), vec![loop_id(0)])
         );
     }
 
     #[test]
     fn disjoint_boundaries_remain_unspecified() {
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]
+                &rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)])
             ),
-            vec![LoopBoundaryRole::Unspecified, LoopBoundaryRole::Unspecified]
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
     }
 
     #[test]
     fn overlapping_or_nested_holes_remain_unspecified() {
         let outer = square(0.0, 0.0, 10.0, 10.0);
+        let unspecified = FaceLoops::unspecified(vec![loop_id(0), loop_id(1), loop_id(2)]);
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[
+                &rows(vec![
                     outer.clone(),
                     square(1.0, 1.0, 5.0, 5.0),
                     square(4.0, 4.0, 8.0, 8.0)
-                ]
+                ])
             ),
-            vec![
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified
-            ]
+            unspecified
         );
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[
+                &rows(vec![
                     outer,
                     square(1.0, 1.0, 9.0, 9.0),
                     square(2.0, 2.0, 3.0, 3.0)
-                ]
+                ])
             ),
-            vec![
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified
-            ]
+            unspecified
         );
     }
 }

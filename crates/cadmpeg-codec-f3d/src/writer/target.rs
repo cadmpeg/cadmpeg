@@ -3,7 +3,7 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -35,9 +35,11 @@ pub(crate) fn plan(
 ) -> Result<ExportBody, CodecError> {
     if target.entry().is_none() {
         return match preserve(input)? {
-            Preservation::Written { bytes, write_path } => {
-                Ok(preserved_body(input.ir, write_path, bytes))
-            }
+            Preservation::Written {
+                bytes,
+                write_path,
+                notes,
+            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
             Preservation::SourceImageUnavailable => Err(target.unavailable(
                 "its retained source image is unavailable for preservation and the generator \
                  cannot synthesize it",
@@ -46,9 +48,11 @@ pub(crate) fn plan(
     }
     if target.preserves_source() {
         return match preserve(input)? {
-            Preservation::Written { bytes, write_path } => {
-                Ok(preserved_body(input.ir, write_path, bytes))
-            }
+            Preservation::Written {
+                bytes,
+                write_path,
+                notes,
+            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
             Preservation::SourceImageUnavailable => {
                 synthesized_body(input, SynthesisCause::SourceImageUnavailable)
             }
@@ -73,6 +77,7 @@ enum Preservation {
     Written {
         bytes: Vec<u8>,
         write_path: PreservedWritePath,
+        notes: Vec<String>,
     },
     /// The only reason preservation is ever declined.
     SourceImageUnavailable,
@@ -91,18 +96,30 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         ));
     };
     let mut bytes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes)?;
-    Ok(Preservation::Written { bytes, write_path })
+    let mut notes = Vec::new();
+    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes, &mut notes)?;
+    Ok(Preservation::Written {
+        bytes,
+        write_path,
+        notes,
+    })
 }
 
-fn preserved_body(ir: &CadIr, write_path: PreservedWritePath, bytes: Vec<u8>) -> ExportBody {
+fn preserved_body(
+    ir: &CadIr,
+    write_path: PreservedWritePath,
+    bytes: Vec<u8>,
+    notes: Vec<String>,
+) -> ExportBody {
     let write_path = match write_path {
         PreservedWritePath::Patched => WritePath::Patched {
             consumption: PatchConsumption::Replayed,
         },
         PreservedWritePath::VerbatimReplay => WritePath::VerbatimReplay,
     };
-    body(ir, write_path, Vec::new(), bytes)
+    let mut body = body(ir, write_path, Vec::new(), bytes);
+    body.notes.extend(notes);
+    body
 }
 
 enum SynthesisCause {
@@ -112,7 +129,7 @@ enum SynthesisCause {
 }
 
 impl SynthesisCause {
-    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::LossNote>) {
+    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
             Self::Displaced(message) => (
@@ -151,7 +168,7 @@ fn synthesized_body(
 fn body(
     ir: &CadIr,
     write_path: WritePath,
-    losses: Vec<cadmpeg_ir::LossNote>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
     let path_note = match &write_path {
@@ -161,8 +178,8 @@ fn body(
     };
     ExportBody {
         bytes,
-        census: cadmpeg_ir::EntityCensus {
-            basis: cadmpeg_ir::CensusBasis::IrArenas,
+        census: cadmpeg_ir::report::export::EntityCensus {
+            basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: ir.census(),
         },
         write_path,

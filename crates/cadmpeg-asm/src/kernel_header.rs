@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kernel header metadata shared by binary ASM, binary ACIS, and text streams.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// Integer and reference payload width of a kernel stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,11 +30,18 @@ impl std::fmt::Display for RefWidth {
     }
 }
 
+/// Binary kernel framing with its mandatory integer and reference width.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinaryHeader {
+    /// Integer and reference width used by the binary record stream.
+    pub width: RefWidth,
+    /// Encoding-independent kernel metadata.
+    pub metadata: KernelHeader,
+}
+
 /// The recognized metadata fields of an ASM or ACIS model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelHeader {
-    /// Integer and reference width used by the record stream.
-    pub width: RefWidth,
     /// ACIS save-format version, encoded as `100 * major + minor`.
     pub save_format_version: Option<u32>,
     /// Entity-count word.
@@ -48,7 +56,7 @@ pub struct KernelHeader {
     pub save_date: Option<String>,
     /// Kernel scale metadata slot. Coordinate decoding does not apply it.
     pub scale: Option<f64>,
-    /// Absolute distance tolerance `resabs`.
+    /// Absolute distance tolerance `resabs`, normalized to centimetres.
     pub linear: Option<f64>,
     /// Normal tolerance `resnor`.
     pub angular: Option<f64>,
@@ -59,8 +67,6 @@ pub const HISTORY_PARTITION_FLAG: u64 = 1;
 
 /// Flag bits 1 to 7, which hold the save format's revision number.
 pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
-
-const FORMAT_REVISION_SHIFT: u32 = 1;
 
 impl KernelHeader {
     /// Major component of the encoded ACIS save-format version.
@@ -78,54 +84,71 @@ impl KernelHeader {
         self.flags
             .is_some_and(|flags| flags & HISTORY_PARTITION_FLAG != 0)
     }
-
-    /// Save format revision from flag bits 1 to 7.
-    pub fn format_revision(&self) -> Option<u32> {
-        self.flags
-            .map(|flags| ((flags & FORMAT_REVISION_FLAGS) >> FORMAT_REVISION_SHIFT) as u32)
-    }
-
-    /// Flags outside the history and revision fields.
-    pub fn unassigned_flags(&self) -> Option<u64> {
-        self.flags
-            .map(|flags| flags & !(HISTORY_PARTITION_FLAG | FORMAT_REVISION_FLAGS))
-    }
 }
 
-pub(crate) fn read_string_region(bytes: &[u8], start: usize) -> (Vec<String>, Vec<f64>, usize) {
+pub(crate) struct HeaderRegion {
+    pub(crate) strings: [Option<String>; 3],
+    pub(crate) doubles: [Option<f64>; 3],
+}
+
+pub(crate) fn read_string_region(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<HeaderRegion, CodecError> {
     let mut cur = start;
-    let mut strings = Vec::new();
-    while strings.len() < 3 {
-        match read_u8_string(bytes, cur) {
+    let mut strings = [None, None, None];
+    for slot in &mut strings {
+        match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
-                strings.push(value);
+                *slot = Some(ctx.copy_retained_text(value, "retain kernel header product string")?);
                 cur = next;
             }
             None => break,
         }
     }
-    let mut doubles = Vec::new();
-    while doubles.len() < 3 {
+    let mut doubles = [None, None, None];
+    for slot in &mut doubles {
         match read_tagged_f64(bytes, cur) {
             Some((value, next)) => {
-                doubles.push(value);
+                *slot = Some(value);
                 cur = next;
             }
             None => break,
         }
+    }
+    Ok(HeaderRegion { strings, doubles })
+}
+
+/// Locate tagged header values without materializing a second copy.
+pub(crate) fn scan_string_region(bytes: &[u8], start: usize) -> (usize, usize, usize) {
+    let mut cur = start;
+    let mut strings = 0;
+    while strings < 3 {
+        let Some((_, next)) = read_u8_string_span(bytes, cur) else {
+            break;
+        };
+        strings += 1;
+        cur = next;
+    }
+    let mut doubles = 0;
+    while doubles < 3 {
+        let Some((_, next)) = read_tagged_f64(bytes, cur) else {
+            break;
+        };
+        doubles += 1;
+        cur = next;
     }
     (strings, doubles, cur)
 }
 
-fn read_u8_string(bytes: &[u8], at: usize) -> Option<(String, usize)> {
+fn read_u8_string_span(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
     if *bytes.get(at)? != 0x07 {
         return None;
     }
-    let len = *bytes.get(at + 1)? as usize;
+    let len = usize::from(*bytes.get(at + 1)?);
     let start = at + 2;
-    let value = std::str::from_utf8(bytes.get(start..start + len)?)
-        .ok()?
-        .to_string();
+    let value = std::str::from_utf8(bytes.get(start..start + len)?).ok()?;
     Some((value, start + len))
 }
 
@@ -139,6 +162,27 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_header_product_string_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let bytes = [0x07, 3, b'a', b'b', b'c'];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("source fits input limit");
+        let Err(error) = super::read_string_region(&ctx, &bytes, 0) else {
+            panic!("product string must exceed retained limit");
+        };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "retain kernel header product string");
+    }
+
     #[test]
     fn partial_binary_headers_retain_linear_tolerance_without_angular() {
         for (magic, header_len) in [
@@ -167,14 +211,18 @@ mod tests {
             } else {
                 crate::acis_header::parse
             };
-            let header = parse(&bytes).expect("recognized partial header");
-            assert_eq!(header.linear, Some(0.125));
-            assert_eq!(header.angular, None);
+            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits header")
+                .expect("recognized partial header");
+            assert_eq!(header.metadata.linear, Some(0.125));
+            assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
-            let header = parse(&bytes).expect("recognized complete header");
-            assert_eq!(header.linear, Some(0.125));
-            assert_eq!(header.angular, Some(0.25));
+            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits header")
+                .expect("recognized complete header");
+            assert_eq!(header.metadata.linear, Some(0.125));
+            assert_eq!(header.metadata.angular, Some(0.25));
         }
     }
 }

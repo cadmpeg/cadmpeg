@@ -3,11 +3,24 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::decode::u64_from_index;
+
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{
+    external_reference_segment, grouped_surface_alias_stream, outer_container_catpart,
+    standard_catpart, summary_preview_segment, surface_alias_stream,
+};
+use crate::test_support::test_object_graph::{
+    catalog_stream, object_graph_from_records, object_graph_record, object_graph_stream,
+    outer_container_object_graph_catpart, standard_catpart_with_catalog,
+    standard_catpart_with_object_graph, standard_catpart_with_value_block, value_block_stream,
+};
 use crate::CatiaCodec;
 
 #[test]
@@ -48,7 +61,7 @@ fn native_namespace_retains_summary_preview_bytes() {
         (preview.width, preview.height, preview.components),
         (640, 288, 1)
     );
-    assert_eq!(preview.data.len() as u64, preview.byte_len);
+    assert_eq!(u64_from_index(preview.data.len()), preview.byte_len);
     assert_eq!(&preview.data[..2], [0xff, 0xd8]);
     assert_eq!(&preview.data[preview.data.len() - 2..], [0xff, 0xd9]);
     assert_eq!(native.finjpl_segments.len(), 1);
@@ -170,12 +183,64 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| { crate::value_block::parse(ctx, &bytes) })
+            .expect("service budget")
+            .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.alias_rows.is_empty());
     assert_eq!(native.value_blocks.len(), 1);
     assert_eq!(native.catalogs.len(), 1);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
+}
+
+#[test]
+fn native_value_selector_views_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut operations = std::collections::BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("value selector fixture fits the input limit");
+        match crate::native::CatiaNative::decode_with_records(
+            &ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(native) => {
+                assert_eq!(native.value_blocks.len(), 1);
+                assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected native decode refusal: {error}"),
+        }
+    }
+    assert!(completed, "the service fixture fits 512 collection items");
+    assert!(operations.contains("catia_value_fields"));
+    assert!(operations.contains("catia_value_selector_indices"));
+    assert!(operations.contains("catia_value_selection_fields"));
+    assert!(operations.contains("catia_value_selections"));
 }
 
 #[test]
@@ -190,7 +255,14 @@ fn native_design_inventory_excludes_object_graphs_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::object_graph::parse_all(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::object_graph::parse_all(ctx, &bytes)
+        })
+        .expect("service budget")
+        .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.object_graphs.is_empty());
     assert!(native.design_objects.is_empty());
@@ -216,7 +288,14 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
         &entry,
     ]);
 
-    assert_eq!(crate::object_graph::surface_aliases(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::object_graph::surface_aliases(ctx, &bytes)
+        })
+        .expect("service budget")
+        .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.catalogs.len(), 1);
     assert!(native.alias_rows.is_empty());
@@ -266,88 +345,101 @@ fn decode_retains_outer_object_graph_order_and_references() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_GRAPH_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_RECORD_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_FIELD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_FIELD_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_SKETCH_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_COUNT.as_str()
+        ),
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation
         .findings
         .iter()
-        .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
+        .all(|finding| finding.check != cadmpeg_ir::report::check::Check::Identity));
 }
 
 #[test]
@@ -503,7 +595,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         ]
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("1 visualization value block(s)")
             && loss
@@ -511,7 +603,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
                 .contains("1 schema-selected presentation value(s)")
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("neutral features")
             && !loss.message.contains("value block")
@@ -615,16 +707,95 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 }
 
 #[test]
+fn alias_surface_resolution_refuses_collection_limit() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut rows = native.alias_rows.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("alias fixture fits the input limit");
+    assert!(matches!(
+        super::super::projection::resolve_alias_surface_tags(&ctx, &mut rows),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn native_alias_row_id_refuses_retained_limit() {
+    let bytes = surface_alias_stream();
+    let rows = crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::surface_aliases(ctx, &bytes)
+    })
+    .expect("service resource budget");
+    let row = rows.first().expect("alias row").clone();
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaAliasRow::from_source(ctx, row.clone())
+    })
+    .is_ok());
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, |ctx| {
+            super::super::CatiaAliasRow::from_source(ctx, row.clone())
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn native_catalog_projection_refuses_id_and_entry_limits() {
+    let catalog = crate::catalog::Catalog {
+        pos: 16,
+        total_len: 24,
+        entries: vec![crate::catalog::CatalogEntry {
+            ordinal: 0,
+            pos: 20,
+            value: "Part".to_string(),
+        }],
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::CatiaCatalog::from_source(ctx, catalog.clone())
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .entries
+            .len(),
+        1
+    );
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
+    fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("alias fixture fits the service input limit");
+        crate::object_graph::surface_alias_tag_map(&ctx, bytes)
+            .expect("alias fixture fits the service resource limits")
+    }
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
     bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
 
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = read_tags(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
 
     bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = read_tags(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&None));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));
@@ -720,6 +891,48 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
 }
 
 #[test]
+fn native_alias_graph_link_refuses_retained_limit() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+    let mut found = false;
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("fixture fits input limit");
+        match super::super::CatiaNative::decode_with_record_sources(
+            &ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_alias_object_graph_id" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(native) => {
+                assert!(native.alias_rows[0].object_graph.is_some());
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
+        }
+    }
+    assert!(found, "retained sweep must reach the alias graph link");
+}
+
+#[test]
 fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes() {
     let mut bytes = vec![0x02, 0x00];
     bytes.extend_from_slice(&0xafu32.to_le_bytes());
@@ -740,9 +953,42 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
         let mut rows: Vec<serde_json::Value> = namespace.arena_as("alias_rows").unwrap();
         assert_ne!(rows[0][field], replacement);
         rows[0][field] = replacement;
-        namespace.set_arena("alias_rows", &rows).unwrap();
+        namespace
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "alias_rows",
+                &rows,
+            )
+            .unwrap();
         let error = crate::native::CatiaNative::load(&namespace)
             .expect_err("alias-row view disagreeing with its source bytes");
         assert!(error.to_string().contains(field), "{error}");
     }
+}
+
+#[test]
+fn native_overlap_filter_refuses_before_inventory_mutation() {
+    let mut graphs = vec![crate::object_graph::ObjectGraph {
+        pos: 0,
+        total_len: 100,
+        catalog_pos: None,
+        records: Vec::new(),
+    }];
+    let mut blocks = vec![crate::value_block::ValueBlock {
+        pos: 10,
+        payload: Vec::new(),
+    }];
+    let mut catalogs = Vec::new();
+    crate::test_support::with_work_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs)
+                .expect_err("overlap comparison work must be admitted")
+        else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_native_inventory_overlap");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    assert_eq!(graphs.len(), 1);
+    assert_eq!(blocks.len(), 1);
 }

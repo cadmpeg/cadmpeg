@@ -77,6 +77,14 @@ macro_rules! writer_vocabulary {
         pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
             $(Self::$variant.descriptor()),+
         ];
+        /// The schema at a generic encoder target index.
+        pub(crate) const fn from_target_index(index: usize) -> Option<Self> {
+            if index < Self::ALL.len() {
+                Some(Self::ALL[index])
+            } else {
+                None
+            }
+        }
     };
 }
 

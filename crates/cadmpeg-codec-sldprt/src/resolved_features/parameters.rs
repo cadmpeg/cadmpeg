@@ -6,6 +6,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole,
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,25 +21,56 @@ fn scalar_owned_by_feature(
     scalar: &FeatureInputScalar,
     feature: &str,
     start: u64,
-    end: u64,
+    end: Option<u64>,
 ) -> bool {
     scalar.feature_ref.as_deref() == Some(feature)
-        || (scalar.feature_ref.is_none() && scalar.offset > start && scalar.offset < end)
+        || (scalar.feature_ref.is_none()
+            && scalar.offset > start
+            && end.is_none_or(|end| scalar.offset < end))
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
-) {
+) -> Result<(), CodecError> {
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name))
-            .collect::<HashMap<_, _>>();
+        let feature_count = histories.iter().try_fold(0usize, |count, history| {
+            count.checked_add(history.features.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })
+        })?;
+        let work = lane
+            .classes
+            .len()
+            .checked_add(lane.names.len())
+            .and_then(|count| count.checked_mul(lane.scalars.len()))
+            .and_then(|count| {
+                feature_count
+                    .checked_mul(lane.names.len().checked_add(lane.scalars.len())?)
+                    .and_then(|features| count.checked_add(features))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(
+            u64::try_from(work).map_err(|_| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })?,
+            "scan SLDPRT parameter candidates",
+        )?;
+        let mut names_by_id = HashMap::new();
+        ctx.reserve_map(
+            &mut names_by_id,
+            lane.names.len(),
+            "index SLDPRT parameter names",
+        )?;
+        for name in &lane.names {
+            names_by_id.insert(name.id.as_str(), name);
+        }
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
             FeatureInputRelationFamily::LineLineDistance
@@ -47,7 +80,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
         };
-        let mut scalar_units = lane
+        let units = lane
             .scalars
             .iter()
             .filter_map(|scalar| {
@@ -73,12 +106,20 @@ pub(crate) fn enrich_history_parameters<'a>(
                 lane.relation_bindings
                     .iter()
                     .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family))),
-            )
-            .collect::<HashMap<_, _>>();
+            );
+        let mut scalar_units = HashMap::new();
+        for (scalar, unit) in units {
+            ctx.insert_hash_map(&mut scalar_units, scalar, unit, "index SLDPRT scalar units")?;
+        }
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
             for scalar in relation.scalar_refs() {
-                scalar_units.insert(scalar.as_str(), unit);
+                ctx.insert_hash_map(
+                    &mut scalar_units,
+                    scalar.as_str(),
+                    unit,
+                    "index SLDPRT scalar units",
+                )?;
             }
         }
         let mut starts = Vec::<(u64, usize, usize)>::new();
@@ -87,12 +128,18 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = feature_object_name(feature, lane) else {
                     continue;
                 };
+                ctx.reserve_vec(&mut starts, 1, "collect SLDPRT parameter feature starts")?;
                 starts.push((name.offset, history_index, feature_index));
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT feature starts",
+        )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in lane
@@ -103,19 +150,33 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                owned.entry(&name.value).or_default().push(scalar);
+                ctx.push_btree_group(
+                    &mut owned,
+                    name.value.as_str(),
+                    scalar,
+                    "index SLDPRT owned scalar names",
+                    "collect SLDPRT owned scalars",
+                )?;
             }
             for (name, scalars) in owned {
-                let driving = scalars
+                let mut driving = Vec::new();
+                for scalar in scalars
                     .iter()
                     .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
+                {
+                    ctx.reserve_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
+                    driving.push(*scalar);
+                }
                 let candidates_for_name = if driving.is_empty() {
-                    scalars
+                    let mut native = Vec::new();
+                    for scalar in scalars
                         .into_iter()
                         .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
+                    {
+                        ctx.reserve_vec(&mut native, 1, "collect SLDPRT native scalars")?;
+                        native.push(scalar);
+                    }
+                    native
                 } else {
                     driving
                 };
@@ -132,10 +193,18 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    candidates
-                        .entry((history_index, feature_index, name.to_string()))
-                        .or_default()
-                        .push((scalar.value, unit));
+                    let name = ctx.format_retained(
+                        format_args!("{name}"),
+                        "retain SLDPRT parameter candidate name",
+                    )?;
+                    let key = (history_index, feature_index, name);
+                    ctx.push_btree_group(
+                        &mut candidates,
+                        key,
+                        (scalar.value.get(), unit),
+                        "index SLDPRT parameter candidates",
+                        "collect SLDPRT parameter candidates",
+                    )?;
                 }
             }
         }
@@ -154,45 +223,72 @@ pub(crate) fn enrich_history_parameters<'a>(
         let source_dimension = feature.content.iter().any(|content| {
             matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == &name)
         });
-        if unit == ScalarUnit::Native && source_dimension && feature.parameters.contains_key(&name)
+        if unit == ScalarUnit::Native
+            && source_dimension
+            && feature.parameters.contains_key(name.as_str())
         {
             continue;
         }
         if unit == ScalarUnit::Native
-            && feature.parameters.get(&name).is_some_and(|expression| {
-                !native_scalar_matches_discrete_parameter(feature, &name, expression, first)
-            })
+            && feature
+                .parameters
+                .get(name.as_str())
+                .is_some_and(|expression| {
+                    !native_scalar_matches_discrete_parameter(feature, &name, expression, first)
+                })
         {
             continue;
         }
         let expression = match unit {
-            ScalarUnit::Native => crate::history::format_native_scalar(
+            ScalarUnit::Native => crate::history::parameters::format_native_scalar(
                 feature,
                 &name,
                 first,
-                feature.parameters.get(&name).map(String::as_str),
+                feature.parameters.get(name.as_str()).map(String::as_str),
             ),
             ScalarUnit::Length
-                if feature.parameters.get(&name).is_some_and(|expression| {
-                    crate::history::strip_diameter_modifier(expression).is_some()
-                }) =>
+                if feature
+                    .parameters
+                    .get(name.as_str())
+                    .is_some_and(|expression| {
+                        crate::history::literals::strip_diameter_modifier(expression).is_some()
+                    }) =>
             {
-                crate::history::format_native_scalar(
+                crate::history::parameters::format_native_scalar(
                     feature,
                     &name,
                     first,
-                    feature.parameters.get(&name).map(String::as_str),
+                    feature.parameters.get(name.as_str()).map(String::as_str),
                 )
             }
-            ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
-            ScalarUnit::Angle => crate::history::format_angle_rad(first),
+            ScalarUnit::Length => cadmpeg_ir::scalar::Length::new(first * 1000.0)
+                .map(crate::history::literals::format_length_mm),
+            ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
+                .map(crate::history::literals::format_angle_rad),
+        };
+        let Some(expression) = expression else {
+            continue;
+        };
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+            continue;
         };
         if replace_existing {
-            feature.parameters.insert(name, expression);
+            ctx.insert_btree_map(
+                &mut feature.parameters,
+                name,
+                expression,
+                "insert SLDPRT enriched parameter",
+            )?;
         } else {
+            ctx.admit_btree_entry(
+                &feature.parameters,
+                &name,
+                "insert SLDPRT enriched parameter",
+            )?;
             feature.parameters.entry(name).or_insert(expression);
         }
     }
+    Ok(())
 }
 
 /// Infer a length unit from the owning operation and its native display role.
@@ -202,13 +298,9 @@ fn scalar_unit_from_feature_parameter(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Option<ScalarUnit> {
-    let normalized_kind = feature
-        .kind
-        .bytes()
-        .filter(u8::is_ascii_alphanumeric)
-        .map(|byte| byte.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    if matches!(name, "D5" | "D6" | "D7") && normalized_kind.as_slice() == b"cutextrudethin" {
+    if matches!(name, "D5" | "D6" | "D7")
+        && crate::history::classify::matches_alnum_ascii(&feature.kind, b"cutextrudethin")
+    {
         return Some(ScalarUnit::Length);
     }
     if name == "D1"
@@ -227,13 +319,16 @@ fn scalar_unit_from_feature_parameter(
             matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == name)
         });
     if source_sketch_dimension {
-        return if crate::history::parse_angle_rad(expression).is_some() {
+        return if crate::history::literals::parse_angle_rad(expression).is_some() {
             Some(ScalarUnit::Angle)
         } else {
-            crate::history::parse_dimension_display_length(expression).map(|_| ScalarUnit::Length)
+            crate::history::literals::parse_dimension_display_length(expression)
+                .map(|_| ScalarUnit::Length)
         };
     }
-    if crate::history::fillet_radius_parameter_has_native_display(feature, name, expression) {
+    if crate::history::project::modify::fillet_radius_parameter_has_native_display(
+        feature, name, expression,
+    ) {
         return Some(ScalarUnit::Length);
     }
     None
@@ -249,15 +344,15 @@ pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) 
     .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())
 }
 
-pub(super) fn native_scalar_matches_discrete_parameter(
+fn native_scalar_matches_discrete_parameter(
     feature: &crate::records::Feature,
     name: &str,
     expression: &str,
     value: f64,
 ) -> bool {
-    match crate::history::parse_native_parameter_literal(feature, name, expression) {
+    match crate::history::parameters::parse_native_parameter_literal(feature, name, expression) {
         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-            crate::history::exact_integer_f64(expected) == Some(value)
+            crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
         }
         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
             value == if expected { 1.0 } else { 0.0 }
@@ -267,9 +362,10 @@ pub(super) fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_changed_feature_scalars(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-    changed: &HashSet<(String, String)>,
+    changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
@@ -286,12 +382,15 @@ pub(crate) fn sync_changed_feature_scalars(
                 feature_object_name(feature, lane).map(|name| (name.offset, feature))
             })
             .collect::<Vec<_>>();
-        starts.sort_by_key(|(offset, _)| *offset);
+        ctx.stable_sort_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sldprt feature name starts sort",
+        )?;
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
-            let end = starts
-                .get(index + 1)
-                .map_or(u64::MAX, |(offset, _)| *offset);
+            let end = starts.get(index + 1).map(|(offset, _)| *offset);
             for (name, expression) in &feature.parameters {
                 if !changed.contains(&(feature.id.clone(), name.clone())) {
                     continue;
@@ -321,14 +420,16 @@ pub(crate) fn sync_changed_feature_scalars(
                 let [(scalar_index, _)] = candidates.as_slice() else {
                     continue;
                 };
-                let value =
-                    match crate::history::parse_native_parameter_literal(feature, name, expression)
-                    {
-                        Some(ParameterValue::Length(value)) => value.0 / 1000.0,
-                        Some(ParameterValue::Angle(value)) => value.0,
-                        Some(ParameterValue::Real(value)) => value,
-                        _ => continue,
-                    };
+                let value = match crate::history::parameters::parse_native_parameter_literal(
+                    feature,
+                    name.as_str(),
+                    expression,
+                ) {
+                    Some(ParameterValue::Length(value)) => value.get() / 1000.0,
+                    Some(ParameterValue::Angle(value)) => value.get(),
+                    Some(ParameterValue::Real(value)) => value.get(),
+                    _ => continue,
+                };
                 updates.push((*scalar_index, value));
             }
         }
@@ -348,8 +449,11 @@ pub(crate) fn sync_changed_feature_scalars(
                         scalar.id
                     ))
                 })?;
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
+            })?;
             bytes.copy_from_slice(&value.to_le_bytes());
-            scalar.value = value;
+            scalar.value = checked;
         }
     }
     Ok(())

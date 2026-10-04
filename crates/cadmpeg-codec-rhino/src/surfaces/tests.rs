@@ -1,19 +1,510 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
-use crate::chunks::{ArchiveVersion, BoundedReader};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use super::{
+    map_parameter, periodic_knots, read_plane_surface_with_parameterization, reconstruct_knots,
+    DecodedSurface, TypedSurface, CLIPPING_PLANE_SURFACE,
+};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::curves::GeometryError;
+use crate::settings::MillimeterScale;
+use crate::test_support::test_dump::{crc_chunk, long_chunk, push_f64, push_i32};
+use crate::wire::Uuid;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const EPS_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-fn push_i32(bytes: &mut Vec<u8>, value: i32) {
-    bytes.extend(value.to_le_bytes());
+fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test context input fits service profile");
+    f(&ctx)
 }
 
-fn push_f64(bytes: &mut Vec<u8>, value: f64) {
-    bytes.extend(value.to_le_bytes());
+fn with_collection_limit<R>(
+    max_collection_items: u64,
+    f: impl FnOnce(&DecodeContext<'_>) -> R,
+) -> R {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context input fits service profile");
+    f(&ctx)
+}
+
+fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let start = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid start profile");
+    let end = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots,
+        vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid end profile");
+    (start, end)
+}
+
+fn decode(
+    data: &[u8],
+    class: Uuid,
+    range: std::ops::Range<usize>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedSurface, GeometryError> {
+    with_test_context(|ctx| super::decode(ctx, data, class, range, scale, archive, depth))
+}
+
+fn read_knots(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+) -> Result<Vec<cadmpeg_ir::scalar::FiniteReal>, GeometryError> {
+    with_test_context(|ctx| super::read_knots(ctx, reader, count))
+}
+
+fn read_poles(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+    rational: bool,
+    dimension: i32,
+    scale: MillimeterScale,
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::FinitePoint3>,
+        Option<Vec<cadmpeg_ir::scalar::NonZeroReal>>,
+    ),
+    GeometryError,
+> {
+    with_test_context(|ctx| super::read_poles(ctx, reader, count, rational, dimension, scale))
+}
+
+fn read_nurbs_curve(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<NurbsCurve, GeometryError> {
+    with_test_context(|ctx| super::read_nurbs_curve(ctx, reader, scale))
+}
+
+fn read_nurbs_curve_2d(reader: &mut BoundedReader<'_>) -> Result<NurbsCurve, GeometryError> {
+    with_test_context(|ctx| super::read_nurbs_curve_2d(ctx, reader))
+}
+
+fn read_nurbs_surface(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, GeometryError> {
+    with_test_context(|ctx| super::read_nurbs_surface(ctx, reader, scale))
+}
+
+fn sum_nurbs(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    basepoint: Vector3,
+    offset: usize,
+) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, GeometryError> {
+    with_test_context(|ctx| super::sum_nurbs(ctx, first, second, basepoint, offset))
+}
+
+fn revolution_nurbs(
+    profile: &NurbsCurve,
+    origin: Point3,
+    axis: Vector3,
+    angle: [f64; 2],
+    parameter: [f64; 2],
+    transposed: bool,
+    offset: usize,
+) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, GeometryError> {
+    with_test_context(|ctx| {
+        super::revolution_nurbs(
+            ctx,
+            profile,
+            origin,
+            axis,
+            super::RevolutionIntervals { angle, parameter },
+            transposed,
+            offset,
+        )
+    })
+}
+
+fn read_revolution(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedSurface, GeometryError> {
+    with_test_context(|ctx| super::read_revolution(ctx, data, reader, scale, archive, depth))
+}
+
+fn read_sum(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedSurface, GeometryError> {
+    with_test_context(|ctx| super::read_sum(ctx, data, reader, scale, archive, depth))
+}
+
+fn assert_resource(
+    error: &GeometryError,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+) {
+    assert!(
+        matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == dimension && limit.operation == operation)
+    );
+}
+
+#[test]
+fn nurbs_curve_knots_refuse_collection_limit_before_reserve() {
+    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("curve input fits service profile");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
+    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
+        .expect_err("seven knots exceed six collection items");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino NURBS knots",
+    );
+    assert!(read_nurbs_curve(
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
+        MillimeterScale::IDENTITY
+    )
+    .is_ok());
+}
+
+#[test]
+fn nurbs_curve_knot_bytes_refuse_retained_limit_before_reserve() {
+    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 55;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("curve input fits service profile");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
+    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
+        .expect_err("seven f64 knots need 56 retained bytes");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino NURBS knots",
+    );
+    assert!(read_nurbs_curve(
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
+        MillimeterScale::IDENTITY
+    )
+    .is_ok());
+}
+
+#[test]
+fn nurbs_curve_poles_refuse_collection_limit_before_reserve() {
+    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 12;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("curve input fits service profile");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
+    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
+        .expect_err("six poles exceed the remaining five collection items");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino NURBS poles",
+    );
+    assert!(read_nurbs_curve(
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
+        MillimeterScale::IDENTITY
+    )
+    .is_ok());
+}
+
+#[test]
+fn nurbs_surface_grid_refuses_collection_limit_before_copy() {
+    let bytes = surface_payload(2, 2, 2, 3, false, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 27;
+    let mut reached = false;
+    for _ in 0..128 {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("surface input fits service profile");
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds");
+        let refusal = super::read_nurbs_surface(&ctx, &mut reader, MillimeterScale::IDENTITY)
+            .expect_err("the next collection exceeds the selected cap");
+        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = refusal else {
+            panic!("collection refusal");
+        };
+        assert_eq!(
+            first.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
+        );
+        assert_eq!(first.limit, policy.limits.max_collection_items);
+        assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        if first.operation == "Rhino NURBS surface pole grid" {
+            reached = true;
+            break;
+        }
+        let next = first.used.checked_add(first.additional).unwrap();
+        assert!(next > policy.limits.max_collection_items);
+        policy.limits.max_collection_items = next;
+    }
+    assert!(reached, "pole grid admission must be reached");
+    assert!(read_nurbs_surface(
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds"),
+        MillimeterScale::IDENTITY
+    )
+    .is_ok());
+}
+
+#[test]
+fn sum_surface_product_refuses_collection_limit_before_allocation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits the service profile");
+    let refusal = super::admit_sum_product(&ctx, 2, 3)
+        .expect_err("six output poles exceed five collection items");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
+        .expect("test input fits the service profile");
+    assert_eq!(
+        super::admit_sum_product(&ctx, 2, 3).expect("service admits six poles"),
+        6
+    );
+}
+
+#[test]
+fn sum_surface_temporary_lanes_refuse_materialized_limit_before_reserve() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let needed = 4
+        * (std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>() + std::mem::size_of::<f64>())
+        + 4 * std::mem::size_of::<Point3>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(needed - 1).expect("test size fits u64");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let refusal = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("temporary lanes exceed the materialized limit");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino sum surface temporary lanes",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn sum_surface_first_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two first-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface first weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn sum_surface_second_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0]),
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 17;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two second-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface second weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn sum_surface_grid_refuses_retained_limit_before_copy() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let grid_bytes = 4 * std::mem::size_of::<Point3>() + 2 * std::mem::size_of::<Vec<Point3>>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(grid_bytes - 1).expect("test size fits u64");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let refusal = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("pole grid exceeds retained limit");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino sum surface pole grid",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let needed = 4 * std::mem::size_of::<(f64, f64)>()
+        + 2 * (std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+            + std::mem::size_of::<f64>())
+        + 6 * (std::mem::size_of::<Point3>() + std::mem::size_of::<f64>());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(needed - 1).expect("test size fits u64");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let refusal = super::revolution_nurbs(
+        &ctx,
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        super::RevolutionIntervals {
+            angle: [0.0, std::f64::consts::FRAC_PI_2],
+            parameter: [0.0, 1.0],
+        },
+        false,
+        0,
+    )
+    .expect_err("temporary lanes exceed materialized limit");
+    assert_resource(
+        &refusal,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino revolution temporary lanes",
+    );
+    assert!(revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::FRAC_PI_2],
+        [0.0, 1.0],
+        false,
+        0
+    )
+    .is_ok());
+}
+
+#[test]
+fn revolution_profile_weights_refuse_collection_limit() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 26;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::revolution_nurbs(
+        &ctx,
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        super::RevolutionIntervals {
+            angle: [0.0, std::f64::consts::FRAC_PI_2],
+            parameter: [0.0, 1.0],
+        },
+        false,
+        0,
+    )
+    .expect_err("two profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino revolution profile weights",
+    );
+    assert!(revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::FRAC_PI_2],
+        [0.0, 1.0],
+        false,
+        0,
+    )
+    .is_ok());
 }
 
 fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
@@ -31,7 +522,7 @@ fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
+        push_f64(&mut bytes, f64::from(index));
         push_f64(&mut bytes, 0.0);
         push_f64(&mut bytes, 0.0);
         if rational {
@@ -54,14 +545,17 @@ fn curve_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
-    push_i32(&mut bytes, knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(knots.len()).expect("fixture value fits i32"),
+    );
     for knot in knots {
         push_f64(&mut bytes, knot);
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
-        push_f64(&mut bytes, 2.0 * index as f64);
+        push_f64(&mut bytes, f64::from(index));
+        push_f64(&mut bytes, 2.0 * f64::from(index));
         if rational {
             push_f64(&mut bytes, if index == 0 { 2.0 } else { 1.0 });
         }
@@ -128,12 +622,18 @@ fn surface_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let u_knots = [10.0, 11.0, 12.0];
-    push_i32(&mut bytes, u_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(u_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in u_knots {
         push_f64(&mut bytes, knot);
     }
     let v_knots = [20.0, 21.0];
-    push_i32(&mut bytes, v_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(v_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in v_knots {
         push_f64(&mut bytes, knot);
     }
@@ -185,13 +685,15 @@ fn plane_payload(version: u8, bad_frame: bool, bad_range: bool) -> Vec<u8> {
 }
 
 fn test_curve(points: Vec<Point3>, weights: Option<Vec<f64>>, domain: [f64; 2]) -> NurbsCurve {
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         points,
         weights,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid test curve")
 }
 
@@ -213,28 +715,19 @@ fn revolution_prefix(version: u8) -> Vec<u8> {
     bytes
 }
 
-fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut bytes = typecode.to_le_bytes().to_vec();
-    bytes.extend((body.len() as i64).to_le_bytes());
-    bytes.extend(body);
-    bytes
-}
-
-fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut payload = body.to_vec();
-    payload.extend(crc32fast::hash(body).to_le_bytes());
-    long_chunk(typecode, &payload)
-}
-
 fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
     let mut payload = 1_i32.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
-    crc_chunk(0x4000_8000, &payload)
+    crc_chunk(ArchiveVersion::V5, 0x4000_8000, &payload)
 }
 
 fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
-    let carrier = crc_chunk(0x4000_8000, &plane_payload(0x11, false, false));
+    let carrier = crc_chunk(
+        ArchiveVersion::V5,
+        0x4000_8000,
+        &plane_payload(0x11, false, false),
+    );
     let mut clipping = [0x11; 16].to_vec();
     clipping.extend([0x22; 16]);
     clipping.extend(&plane_payload(0x11, false, false)[1..129]);
@@ -268,7 +761,7 @@ fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
     outer.extend(carrier);
     outer.extend(clipping);
     outer.extend([0xcc, 0xdd]);
-    crc_chunk(0x4000_8000, &outer)
+    crc_chunk(ArchiveVersion::V5, 0x4000_8000, &outer)
 }
 
 #[test]
@@ -278,20 +771,24 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
         &bytes,
         CLIPPING_PLANE_SURFACE,
         0..bytes.len(),
-        25.4,
+        crate::test_support::millimeter_scale(25.4),
         ArchiveVersion::V8,
         0,
     )
     .expect("clipping plane");
     let DecodedSurface::Typed {
-        geometry: SurfaceGeometry::Plane { origin, .. },
+        geometry: TypedSurface::Plane {
+            plane: plane_surface,
+            ..
+        },
         derived,
         ..
     } = decoded
     else {
         panic!("typed plane carrier");
     };
-    assert_eq!(origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
+    let origin = plane_surface.origin();
+    assert_eq!(*origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
     assert!(derived);
 
     let invalid = clipping_plane_payload(false);
@@ -299,7 +796,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
         &invalid,
         CLIPPING_PLANE_SURFACE,
         0..invalid.len(),
-        1.0,
+        MillimeterScale::IDENTITY,
         ArchiveVersion::V8,
         0,
     )
@@ -327,15 +824,19 @@ fn line_wrapper(scale_source: f64) -> Vec<u8> {
     ];
     let mut uuid_body = wire_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&wire_uuid).to_le_bytes());
-    let mut class_body = long_chunk(0x0002_fffb, &uuid_body);
-    class_body.extend(crc_chunk(0x0002_fffc, &line));
+    let mut class_body = long_chunk(ArchiveVersion::V5, 0x0002_fffb, &uuid_body);
+    class_body.extend(crc_chunk(ArchiveVersion::V5, 0x0002_fffc, &line));
     class_body.extend(0x8002_7fff_u32.to_le_bytes());
     class_body.extend(0_i64.to_le_bytes());
-    long_chunk(0x0002_7ffa, &class_body)
+    long_chunk(ArchiveVersion::V5, 0x0002_7ffa, &class_body)
 }
 
 fn nil_object_wrapper() -> Vec<u8> {
-    long_chunk(0x0002_7ffa, &long_chunk(0x0002_fffb, &[0; 16]))
+    long_chunk(
+        ArchiveVersion::V5,
+        0x0002_7ffa,
+        &long_chunk(ArchiveVersion::V5, 0x0002_fffb, &[0; 16]),
+    )
 }
 
 pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {
@@ -358,22 +859,66 @@ fn valid_sum_payload() -> Vec<u8> {
 #[test]
 fn reconstructs_spec_examples_and_one_sided_vectors() {
     assert_eq!(
-        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+            3,
+            6
+        )
+        .expect("required invariant"),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0],
+            3,
+            6
+        )
+        .expect("required invariant"),
         vec![-2.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0]
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).expect("required invariant")
-            [0],
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0],
+            3,
+            6
+        )
+        .expect("required invariant")[0],
         0.0
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).expect("required invariant")
-            [8],
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0],
+            3,
+            6
+        )
+        .expect("required invariant")[8],
         5.0
+    );
+}
+
+/// `reconstruct_knots` refuses a derived knot vector that no byte of the file
+/// locates, so the refusal names no offset instead of naming byte 0.
+#[test]
+fn a_knot_reconstruction_refusal_names_no_byte() {
+    let error = reconstruct_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0],
+        3,
+        6,
+    )
+    .expect_err("knot count mismatch");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Unpositioned { ref message })
+            if message == "NURBS knot reconstruction input is invalid"
+    ));
+    assert_eq!(
+        error.to_string(),
+        "framing error: NURBS knot reconstruction input is invalid"
     );
 }
 
@@ -382,24 +927,134 @@ fn curve_versions_cross_archive_bands_and_consume_tag_gate() {
     for (archive, version) in [(ArchiveVersion::V5, 0x10), (ArchiveVersion::V8, 0x11)] {
         let bytes = curve_payload(version, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let curve = read_nurbs_curve(&mut reader, 1.0).expect("required invariant");
+        let curve =
+            read_nurbs_curve(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
         assert_eq!(curve.control_points().len(), 6);
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(archive, ArchiveVersion::V5 | ArchiveVersion::V8));
     }
 }
 
+/// The pole reader refuses a non-finite pole at the pole's first byte, so the
+/// refusal names the coordinate triple it read and not the byte after it.
+#[test]
+fn a_nonfinite_pole_is_refused_at_the_pole_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let first_pole = bytes.len();
+    for value in [1.0_f64, 2.0, 3.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let second_pole = bytes.len();
+    for value in [4.0_f64, f64::NAN, 6.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader =
+        BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
+    let error = read_poles(&mut reader, 2, false, 3, MillimeterScale::IDENTITY)
+        .expect_err("nonfinite pole");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Structural { offset, ref message })
+            if offset == second_pole && message == "NURBS pole is not finite"
+    ));
+}
+
+/// `read_knots` refuses a non-finite knot and a decreasing knot under one text,
+/// and both name the first byte of the knot that failed rather than the byte
+/// after it.
+#[test]
+fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
+    for values in [[0.0_f64, 1.0, f64::NAN], [0.0_f64, 1.0, 0.5]] {
+        let mut bytes = vec![0xa5; 5];
+        let first_knot = bytes.len();
+        for value in values {
+            push_f64(&mut bytes, value);
+        }
+        let third_knot = first_knot + 16;
+        let mut reader =
+            BoundedReader::new(&bytes, first_knot, bytes.len()).expect("required invariant");
+        let error = read_knots(&mut reader, 3).expect_err("invalid knot");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Structural { offset, ref message })
+                if offset == third_knot && message == "NURBS knots are invalid"
+        ));
+    }
+}
+
+#[test]
+fn checked_source_knots_reconstruct_without_scalar_readmission() {
+    let stored = [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let bytes = stored
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("knot reader");
+    let checked = read_knots(&mut reader, stored.len()).expect("finite ordered source knots");
+    assert_eq!(
+        checked
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        stored
+    );
+    let reconstructed = super::reconstruct_checked_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &checked,
+        3,
+        6,
+    )
+    .expect("reconstructed checked knot vector");
+    let expected = reconstruct_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &stored,
+        3,
+        6,
+    )
+    .expect("raw reference reconstruction");
+    assert_eq!(reconstructed.as_slice(), expected.as_slice());
+}
+
+/// `read_poles` refuses a pole whose scaled coordinate overflows at the pole's
+/// first byte rather than at the byte after it.
+#[test]
+fn an_unscalable_pole_is_refused_at_the_pole_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let first_pole = bytes.len();
+    for value in [1.0e300_f64, 2.0, 3.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader =
+        BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
+    let error = read_poles(
+        &mut reader,
+        1,
+        false,
+        3,
+        crate::settings::StandardUnit::LightYears.into(),
+    )
+    .expect_err("unscalable pole");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Structural { offset, ref message })
+            if offset == first_pole && message == "scaled NURBS pole is invalid"
+    ));
+}
+
 #[test]
 fn curve_payload_validates_rational_weights_counts_and_domain() {
     let mut bytes = curve_payload(0x10, true, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let curve = read_nurbs_curve(&mut reader, 2.0).expect("required invariant");
+    let curve = read_nurbs_curve(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("required invariant");
     assert_eq!(curve.control_points()[0].x, 0.0);
-    assert_eq!(curve.weights().expect("rational curve")[0], 2.0);
+    assert_eq!(curve.weights().expect("rational curve")[0].get(), 2.0);
     let weight_offset = 1 + 28 + 48 + 4 + 7 * 8 + 4 + 24;
     bytes[weight_offset..weight_offset + 8].copy_from_slice(&0.0_f64.to_le_bytes());
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(read_nurbs_curve(&mut reader, 1.0).is_err());
+    assert!(read_nurbs_curve(&mut reader, MillimeterScale::IDENTITY).is_err());
 }
 
 #[test]
@@ -410,9 +1065,9 @@ fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
     assert_eq!(reader.remaining(), 0);
     assert_eq!(curve.control_points()[1].x, 1.0);
     assert_eq!(curve.control_points()[1].y, 2.0);
-    assert_eq!(curve.weights().expect("rational curve")[0], 2.0);
+    assert_eq!(curve.weights().expect("rational curve")[0].get(), 2.0);
     assert_eq!(
-        curve.knots(),
+        curve.knots().as_slice(),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
 }
@@ -421,11 +1076,12 @@ fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
 fn top_level_nurbs_lifts_a_valid_two_dimensional_curve() {
     let bytes = curve_2d_payload(false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let curve = read_nurbs_curve(&mut reader, 2.0).expect("valid two-dimensional curve");
+    let curve = read_nurbs_curve(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid two-dimensional curve");
     assert_eq!(reader.remaining(), 0);
     assert_eq!(curve.control_points()[1], Point3::new(2.0, 4.0, 0.0));
     assert_eq!(
-        curve.knots(),
+        curve.knots().as_slice(),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
 }
@@ -446,13 +1102,40 @@ fn c2_nurbs_preserves_periodic_parameterization() {
 
 #[test]
 fn periodic_rule_matches_native_tolerance_and_rejects_clamping() {
-    assert!(!periodic_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6));
-    assert!(periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6));
-    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6));
-    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0], 2, 4));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0],
+        2,
+        4
+    )
+    .expect("periodic admission"));
     let mut near = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    near[6] += 1.0e-8;
-    assert!(periodic_knots(&near, 3, 6));
+    near[6] += EPS_PERIODIC_PERTURBATION;
+    assert!(
+        periodic_knots(&cadmpeg_test_support::service_decode_context(), &near, 3, 6)
+            .expect("periodic admission")
+    );
 }
 
 #[test]
@@ -461,7 +1144,8 @@ fn surface_periodicity_is_derived_independently_in_u_and_v() {
     let nonperiodic = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
     let bytes = surface_payload(3, 3, 6, 6, false, &periodic, &nonperiodic);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
     assert!(surface.u_periodic());
     assert!(!surface.v_periodic());
 }
@@ -470,46 +1154,65 @@ fn surface_periodicity_is_derived_independently_in_u_and_v() {
 fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
     let bytes = surface_payload(2, 2, 2, 3, true, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
-    assert_eq!(surface.control_points()[1].y, 1.0 / 2.0);
-    assert_eq!(surface.control_points()[3].x, 1.0 / 2.0);
-    assert_eq!(surface.weights().expect("rational surface")[5], 4.0);
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
+    assert_eq!(surface.poles().into_iter().nth(1).unwrap().y, 1.0 / 2.0);
+    assert_eq!(surface.poles().into_iter().nth(3).unwrap().x, 1.0 / 2.0);
+    assert_eq!(
+        surface.pole_weights().expect("rational surface")[5].get(),
+        4.0
+    );
 }
 
 #[test]
 fn surface_bytes_reconstruct_independent_knots_and_reject_count_mismatch() {
     let bytes = surface_payload(2, 2, 3, 2, false, &[0.0, 1.0, 2.0], &[0.0, 1.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
-    assert_eq!(surface.u_knots(), vec![0.0, 0.0, 1.0, 2.0, 2.0]);
-    assert_eq!(surface.v_knots(), vec![0.0, 0.0, 1.0, 1.0]);
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
+    assert_eq!(surface.u_knots().as_slice(), vec![0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(surface.v_knots().as_slice(), vec![0.0, 0.0, 1.0, 1.0]);
     let mut bad = bytes;
     let count_offset = bad.len() - 6 * 24 - 4;
     bad[count_offset..count_offset + 4].copy_from_slice(&99_i32.to_le_bytes());
     let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("required invariant");
-    assert!(read_nurbs_surface(&mut reader, 1.0).is_err());
+    assert!(read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).is_err());
 }
 
 #[test]
 fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
     let bytes = surface_2d_payload(false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid two-dimensional surface");
+    let surface = read_nurbs_surface(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid two-dimensional surface");
     assert_eq!(reader.remaining(), 0);
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
-    assert_eq!(surface.control_points()[1], Point3::new(200.0, 402.0, 0.0));
-    assert_eq!(surface.u_knots(), vec![10.0, 10.0, 11.0, 12.0, 12.0]);
-    assert_eq!(surface.v_knots(), vec![20.0, 20.0, 21.0, 21.0]);
+    assert_eq!(
+        surface.poles().into_iter().nth(1).unwrap(),
+        Point3::new(200.0, 402.0, 0.0)
+    );
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        vec![10.0, 10.0, 11.0, 12.0, 12.0]
+    );
+    assert_eq!(surface.v_knots().as_slice(), vec![20.0, 20.0, 21.0, 21.0]);
 }
 
 #[test]
 fn surface_reads_a_rational_two_dimensional_lattice() {
     let bytes = surface_2d_payload(true);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid rational surface");
+    let surface = read_nurbs_surface(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid rational surface");
     assert_eq!(reader.remaining(), 0);
-    assert_eq!(surface.control_points()[1], Point3::new(200.0, 402.0, 0.0));
-    assert_eq!(surface.weights(), Some(&[1.0, 2.0, 2.0, 3.0, 3.0, 4.0][..]));
+    assert_eq!(
+        surface.poles().into_iter().nth(1).unwrap(),
+        Point3::new(200.0, 402.0, 0.0)
+    );
+    assert_eq!(
+        surface.pole_grid().weights().map(|rows| rows.concat()),
+        Some([1.0, 2.0, 2.0, 3.0, 3.0, 4.0].to_vec())
+    );
 }
 
 #[test]
@@ -517,18 +1220,19 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
     for version in [0x10, 0x11] {
         let bytes = plane_payload(version, false, false);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let (plane, _) =
-            read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
+        let plane =
+            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+                .expect("required invariant");
         assert_eq!(reader.remaining(), 0);
-        assert!(matches!(
-            plane,
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
-        ));
+        assert!(matches!(plane, TypedSurface::Plane { .. }));
     }
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(read_plane_surface_with_parameterization(&mut reader, 1.0).is_err());
+        assert!(
+            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+                .is_err()
+        );
     }
 }
 
@@ -536,12 +1240,23 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
 fn plane_parameterization_maps_domain_to_physical_extents() {
     let bytes = plane_payload(0x11, false, false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let (_, parameterization) =
-        read_plane_surface_with_parameterization(&mut reader, 1.0).expect("plane surface");
+    let TypedSurface::Plane {
+        parameterization, ..
+    } = read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+        .expect("plane surface")
+    else {
+        panic!("plane parameterization");
+    };
     assert_eq!(
         parameterization.map_point(Point2::new(0.25, 2.5)),
         Point2::new(4.25, 6.5)
     );
+}
+
+#[test]
+fn plane_parameterization_maps_exterior_values_across_a_tiny_domain() {
+    let smallest = f64::from_bits(1);
+    assert_eq!(map_parameter(1.0, [0.0, smallest], [0.0, smallest]), 1.0);
 }
 
 #[test]
@@ -551,7 +1266,8 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         None,
         [2.0, 5.0],
     );
-    let second = NurbsCurve::new(
+    let second = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![7.0, 7.0, 7.0, 9.0, 9.0, 9.0],
         vec![
@@ -562,14 +1278,21 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid test curve");
     let surface =
         sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).expect("required invariant");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
     assert_eq!(surface.u_knots(), first.knots());
     assert_eq!(surface.v_knots(), second.knots());
-    assert_eq!(surface.control_points()[0], Point3::new(11.5, 3.5, 5.5));
-    assert_eq!(surface.control_points()[3], Point3::new(14.5, 6.5, 8.5));
+    assert_eq!(
+        surface.poles().into_iter().next().unwrap(),
+        Point3::new(11.5, 3.5, 5.5)
+    );
+    assert_eq!(
+        surface.poles().into_iter().nth(3).unwrap(),
+        Point3::new(14.5, 6.5, 8.5)
+    );
     assert!(surface.weights().is_none());
 }
 
@@ -596,14 +1319,25 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
         );
         let surface =
             sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0).expect("required invariant");
-        assert_eq!(surface.weights().expect("rational surface"), expected);
-        assert_eq!(surface.control_points()[3], Point3::new(11.0, 12.0, 7.0));
+        assert_eq!(
+            surface
+                .pole_grid()
+                .weights()
+                .map(|rows| rows.concat())
+                .expect("rational surface"),
+            expected
+        );
+        assert_eq!(
+            surface.poles().into_iter().nth(3).unwrap(),
+            Point3::new(11.0, 12.0, 7.0)
+        );
     }
 }
 
 #[test]
 fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
-    let start = NurbsCurve::new(
+    let start = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
         vec![
@@ -614,28 +1348,108 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid test curve");
     let mut end = start.clone();
-    end.edit_control_points(|points| {
-        for point in points {
+    end.try_map_control_points(
+        |_, point| {
+            let mut point = point.get();
             point.z = 7.0;
-        }
-    })
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        },
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("pole edit admission")
     .expect("valid test curve edit");
-    let plain =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).expect("required invariant");
+    let plain = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        false,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((plain.u_degree(), plain.v_degree()), (2, 1));
     assert_eq!(plain.u_knots(), start.knots());
-    assert_eq!(plain.v_knots(), vec![10.0, 10.0, 20.0, 20.0]);
-    assert_eq!(plain.weights(), Some(&[1.0, 1.0, 0.5, 0.5, 1.0, 1.0][..]));
-    assert_eq!(plain.control_points()[3], end.control_points()[1]);
-    let transposed =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).expect("required invariant");
+    assert_eq!(plain.v_knots().as_slice(), vec![10.0, 10.0, 20.0, 20.0]);
+    assert_eq!(
+        plain.pole_grid().weights().map(|rows| rows.concat()),
+        Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
+    );
+    assert_eq!(
+        plain.poles().into_iter().nth(3).unwrap(),
+        end.control_points()[1]
+    );
+    let transposed = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        true,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
-    assert_eq!(transposed.u_knots(), vec![10.0, 10.0, 20.0, 20.0]);
-    assert_eq!(transposed.control_points()[1], start.control_points()[1]);
-    assert_eq!(transposed.control_points()[3], end.control_points()[0]);
+    assert_eq!(
+        transposed.u_knots().as_slice(),
+        vec![10.0, 10.0, 20.0, 20.0]
+    );
+    assert_eq!(
+        transposed.poles().into_iter().nth(1).unwrap(),
+        start.control_points()[1]
+    );
+    assert_eq!(
+        transposed.poles().into_iter().nth(3).unwrap(),
+        end.control_points()[0]
+    );
+}
+
+#[test]
+fn extrusion_surface_rows_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(5, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("two rows and four poles exceed five collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface rows"
+    ));
+}
+
+#[test]
+fn extrusion_surface_knots_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(9, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("surface knots exceed remaining collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface knots"
+    ));
 }
 
 #[test]
@@ -656,16 +1470,57 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
     )
     .expect("required invariant");
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
-    assert_eq!(surface.u_knots(), vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]);
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]
+    );
     assert_eq!(surface.v_knots(), profile.knots());
-    assert_eq!(surface.weights().expect("rational surface")[0], 2.0);
+    assert_eq!(
+        surface.pole_weights().expect("rational surface")[0].get(),
+        2.0
+    );
     assert!(
-        (surface.weights().expect("rational surface")[2] - 2.0 / 2.0_f64.sqrt()).abs()
+        (surface.pole_weights().expect("rational surface")[2].get() - 2.0 / 2.0_f64.sqrt()).abs()
             < EPS_EXACT_GEOMETRY
     );
-    assert_eq!(surface.control_points()[0], profile.control_points()[0]);
-    assert!((surface.control_points()[4].x - 1.0).abs() < EPS_EXACT_GEOMETRY);
-    assert!((surface.control_points()[4].y - 2.0).abs() < EPS_EXACT_GEOMETRY);
+    assert_eq!(
+        surface.poles().into_iter().next().unwrap(),
+        profile.control_points()[0]
+    );
+    assert!((surface.poles().into_iter().nth(4).unwrap().x - 1.0).abs() < EPS_EXACT_GEOMETRY);
+    assert!((surface.poles().into_iter().nth(4).unwrap().y - 2.0).abs() < EPS_EXACT_GEOMETRY);
+}
+
+#[test]
+fn revolution_retains_knots_across_a_wide_finite_parameter_interval() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let surface = revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::PI],
+        [-f64::MAX, f64::MAX],
+        false,
+        0,
+    )
+    .expect("finite revolution parameter interval");
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        vec![
+            -f64::MAX,
+            -f64::MAX,
+            -f64::MAX,
+            0.0,
+            0.0,
+            f64::MAX,
+            f64::MAX,
+            f64::MAX,
+        ]
+    );
 }
 
 #[test]
@@ -688,8 +1543,8 @@ fn revolution_moves_singular_control_rows_exactly_onto_axis() {
         0,
     )
     .expect("required invariant");
-    for point in surface.control_points().iter().step_by(2) {
-        assert_eq!(*point, Point3::new(1.0, 0.0, 2.0));
+    for point in surface.poles().into_iter().step_by(2) {
+        assert_eq!(point, Point3::new(1.0, 0.0, 2.0));
     }
 }
 
@@ -723,8 +1578,14 @@ fn revolution_transpose_swaps_shape_and_reindexes_u_major_poles() {
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!(transposed.u_knots(), profile.knots());
-    assert_eq!(transposed.control_points()[1], plain.control_points()[2]);
-    assert_eq!(transposed.control_points()[3], plain.control_points()[1]);
+    assert_eq!(
+        transposed.poles().into_iter().nth(1).unwrap(),
+        plain.poles().into_iter().nth(2).unwrap()
+    );
+    assert_eq!(
+        transposed.poles().into_iter().nth(3).unwrap(),
+        plain.poles().into_iter().nth(1).unwrap()
+    );
 }
 
 #[test]
@@ -732,7 +1593,14 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
     let bad_version = [0x30];
     let mut reader =
         BoundedReader::new(&bad_version, 0, bad_version.len()).expect("required invariant");
-    assert!(super::read_revolution(&bad_version, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    assert!(read_revolution(
+        &bad_version,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_err());
 
     let valid = revolution_prefix(0x20);
     let axis_end_offset = 1 + 3 * 8;
@@ -756,10 +1624,24 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
     cases.push(bad_transpose);
     for bytes in cases {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(super::read_revolution(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+        assert!(read_revolution(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0
+        )
+        .is_err());
     }
     let mut reader = BoundedReader::new(&valid, 0, valid.len()).expect("required invariant");
-    assert!(super::read_revolution(&valid, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    assert!(read_revolution(
+        &valid,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_err());
 }
 
 #[test]
@@ -768,7 +1650,14 @@ fn sum_surface_accepts_later_minor_version_and_skips_suffix() {
     bytes[0] = 0x11;
     bytes.push(0xaa);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_ok());
+    assert!(read_sum(
+        &bytes,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_ok());
     assert_eq!(reader.remaining(), 0);
 }
 
@@ -777,8 +1666,14 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
     for version in [0x10, 0x20] {
         let bytes = valid_revolution_payload(version);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let decoded = super::read_revolution(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
-            .expect("required invariant");
+        let decoded = read_revolution(
+            &bytes,
+            &mut reader,
+            crate::test_support::millimeter_scale(25.4),
+            ArchiveVersion::V5,
+            0,
+        )
+        .expect("required invariant");
         let super::DecodedSurface::Procedural {
             geometry,
             definition,
@@ -799,10 +1694,13 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
             panic!("expected revolution fields");
         };
         assert_eq!(children.len(), 1);
-        assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
-        assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
-        assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
-        assert_eq!(axis_direction, Vector3::new(0.0, 0.0, 1.0));
+        assert!((axis_origin.get().x - 25.4).abs() < 1.0e-12);
+        assert!((axis_origin.get().y - 50.8).abs() < 1.0e-12);
+        assert!((axis_origin.get().z - 76.2).abs() < 1.0e-12);
+        assert_eq!(
+            axis_direction.map(|direction| *direction.as_raw()),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
         assert_eq!(angular_interval, [0.25, 1.25]);
         assert!(!transposed);
         assert_eq!(
@@ -813,7 +1711,9 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
                 [4.0, 9.0]
             }
         );
-        let CurveGeometry::Nurbs(child) = children[0].reported_geometry() else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(child)) =
+            children[0].reported_geometry()
+        else {
             panic!("expected NURBS child");
         };
         assert_eq!(child.control_points()[0].x, 2.0 * 25.4);
@@ -822,11 +1722,60 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
 }
 
 #[test]
+fn revolution_subnormal_axis_defers_unit_refusal_to_payload_admission() {
+    let mut bytes = valid_revolution_payload(0x20);
+    let smallest = f64::from_bits(1);
+    for (index, value) in [0.0, 0.0, 0.0, 2.0 * smallest, smallest, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 1 + index * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("revolution frame");
+    let decoded = read_revolution(
+        &bytes,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0,
+    )
+    .expect("finite nonzero source axis");
+    let DecodedSurface::Procedural { definition, .. } = decoded else {
+        panic!("expected procedural revolution");
+    };
+    let super::DecodedProceduralSurface::Revolution { axis_direction, .. } = &definition else {
+        panic!("expected revolution fields");
+    };
+    assert!(axis_direction.is_none());
+    let error = definition
+        .into_definition(
+            |_, _, _| {
+                Ok::<_, String>(
+                    cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#subnormal-axis")
+                        .expect("identity grammar"),
+                )
+            },
+            |error| error.to_string(),
+        )
+        .expect_err("unit axis required by procedural payload");
+    assert!(error.contains(
+        "revolution axis_origin and axis_direction must be finite, with unit axis_direction"
+    ));
+}
+
+#[test]
 fn sum_surface_decodes_ordered_children_and_scales_once() {
     let bytes = valid_sum_payload();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let decoded = super::read_sum(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
-        .expect("required invariant");
+    let decoded = read_sum(
+        &bytes,
+        &mut reader,
+        crate::test_support::millimeter_scale(25.4),
+        ArchiveVersion::V5,
+        0,
+    )
+    .expect("required invariant");
     let super::DecodedSurface::Procedural {
         geometry,
         definition,
@@ -846,13 +1795,15 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);
-    assert!((geometry.control_points()[0].x - 177.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.control_points()[0].y - 50.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.control_points()[0].z - 76.2).abs() < EPS_EXACT_GEOMETRY);
-    let CurveGeometry::Nurbs(first) = children[0].reported_geometry() else {
+    assert!((geometry.poles().into_iter().next().unwrap().x - 177.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().into_iter().next().unwrap().y - 50.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().into_iter().next().unwrap().z - 76.2).abs() < EPS_EXACT_GEOMETRY);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)) = children[0].reported_geometry()
+    else {
         panic!("expected first NURBS child");
     };
-    let CurveGeometry::Nurbs(second) = children[1].reported_geometry() else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)) = children[1].reported_geometry()
+    else {
         panic!("expected second NURBS child");
     };
     assert_eq!(first.control_points()[0].x, 2.0 * 25.4);
@@ -872,7 +1823,14 @@ fn sum_surface_rejects_nil_child_object() {
         bytes.extend(first);
         bytes.extend(second);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+        assert!(read_sum(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0
+        )
+        .is_err());
     }
 }
 
@@ -896,3 +1854,94 @@ fn procedural_surface_dispatch_accepts_native_legacy_and_sum_uuids() {
     }
     assert_ne!(native.to_string(), legacy.to_string());
 }
+
+#[test]
+fn plane_parameter_maps_preserve_extreme_finite_domains() {
+    for a in [1e-200, 1e200] {
+        assert_eq!(super::map_parameter(a, [0., a], [0., a]), a);
+        assert_eq!(super::map_parameter(0.5 * a, [0., a], [0., a]), 0.5 * a);
+    }
+    assert_eq!(super::map_parameter(0., [-1e308, 1e308], [-1., 1.]), 0.);
+}
+#[test]
+fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
+    assert!(!super::periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
+        3,
+        5
+    )
+    .expect("periodic admission"));
+}
+
+#[test]
+fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
+    let bytes = [1e300_f64, 0., 0., 1e-10]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+    let (poles, weights) = read_poles(
+        &mut reader,
+        1,
+        true,
+        3,
+        crate::test_support::millimeter_scale(1e-7),
+    )
+    .unwrap();
+    assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
+    assert_eq!(
+        weights.map(|values| values
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>()),
+        Some(vec![1e-10])
+    );
+}
+
+#[test]
+fn numerical_followup_plane_map_retains_finite_extrapolated_controls() {
+    let result = super::map_parameter(2., [0., 1.], [1e308, 1.1e308]);
+    assert!(result.is_finite());
+    assert!((result / 1.2e308 - 1.).abs() < 16. * f64::EPSILON);
+    assert_eq!(super::map_parameter(0.5, [0., 1.], [-1e308, 1e308]), 0.);
+}
+
+#[test]
+fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let knots = (0..7)
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(f64::from(value)).expect("finite knot"))
+        .collect::<Vec<_>>();
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::RetainedBytes,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let Err(crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit))) =
+            super::reconstruct_checked_knots(&ctx, &knots, 3, 6)
+        else {
+            panic!("knot reconstruction must retain the caller refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+    }
+}
+
+mod reconstruction;
+
+const EPS_PERIODIC_PERTURBATION: f64 = 1.0e-8;

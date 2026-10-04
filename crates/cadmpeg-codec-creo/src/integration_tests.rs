@@ -2,27 +2,37 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::test_support::build_prt;
+use crate::test_support::jpeg_payload;
+use crate::test_support::push_generated_plane_row;
+use crate::test_support::push_generated_topology_row;
+use crate::test_support::push_named_analytic_prototype;
+use crate::test_support::visibgeom_payload;
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::features::FeatureDefinition;
-use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::sketches::SketchConstraintDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
-use crate::test_support::*;
 use crate::CreoCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    CreoCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized Creo part should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized Creo part should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("creo").is_some());
 }
@@ -67,7 +77,10 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    assert_eq!(CreoCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CreoCodec, &bytes),
+        Confidence::High
+    );
     let summary = CreoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("Creo inspection");
@@ -95,7 +108,11 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
     assert!(result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Cylinder { radius, .. } if radius == 1.0)
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        if {
+            let radius = cylinder_surface.radius().get();
+            radius == 1.0
+        })
     }));
     assert_valid(&result);
 }
@@ -146,15 +163,15 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("datum feature");
     assert!(matches!(
-        datum_feature.definition,
-        FeatureDefinition::DatumPlane { .. }
+        datum_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
     ));
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane { .. }) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        )
+    }));
     assert_valid(&result);
 }
 
@@ -182,8 +199,8 @@ fn featdefs_pipeline_projects_mixed_sketch_entities_and_native_constraints() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Native { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native { .. }
             )
         }));
     assert_valid(&result);
@@ -232,20 +249,24 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    let result = CreoCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("container-only Creo decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container-only Creo decode"),
+    );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 2);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
+
+mod carrier_rejection;

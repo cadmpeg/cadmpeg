@@ -1,11 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
-use crate::test_support::test_dump::*;
-use crate::test_support::{class_wrapper, crc_chunk};
+use super::{decode, ANONYMOUS};
+use crate::chunks::ArchiveVersion;
+use crate::test_support::test_archive::class_wrapper;
+use crate::test_support::test_dump::crc_chunk;
+use crate::test_support::test_dump::{
+    object_record_with_payload, point_payload, polyedge_scan_objects, polyedge_segment_parameter,
+    scan_with_objects, set_identity, POINT_CLASS, POLYEDGE_SEGMENT_TARGET,
+};
+use crate::wire::Uuid;
 
 const OPENNURBS_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
+
+#[test]
+fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
+    let payload = polyedge_payload();
+    let semantic = crate::decode::with_expand_bytes(&payload, |expand| {
+        let decoded =
+            decode(expand, 0..payload.len(), ArchiveVersion::V8).expect("valid polyedge fixture");
+        super::semantic_json(expand.ctx(), &decoded)
+            .expect("semantic JSON admitted")
+            .expect("semantic JSON serialized")
+    });
+    assert_eq!(
+        semantic,
+        r#"{"kind":"polyedge_reference","parameters":[0.0,10.0],"segments":[{"component":[2,17],"domain":[10.0,20.0],"edge_domain":[0.0,4.0],"object_id":"00000000-0000-0000-0000-000000000009","proxy_domain":[2.0,6.0],"reversed":true,"trim_domain":[1.0,3.0]}]}"#
+    );
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root bytes admitted");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let mut storage = ctx
+        .reserve_scoped(0, "polyedge temporary storage")
+        .expect("storage");
+    let decoded = storage
+        .with_storage(|| decode(expand, 0..payload.len(), ArchiveVersion::V8))
+        .expect("valid polyedge fixture");
+    let refusal = super::semantic_json(&ctx, &decoded)
+        .expect_err("semantic JSON exceeds zero retained bytes");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino polyedge semantic JSON"
+    ));
+}
 
 fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -> Vec<u8> {
     let mut segment = 1_i32.to_le_bytes().to_vec();
@@ -26,7 +69,7 @@ fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -
     for value in [10.0_f64, 20.0, 2.0, 6.0] {
         segment.extend(value.to_le_bytes());
     }
-    let segment = crc_chunk(ANONYMOUS, &segment);
+    let segment = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &segment);
     let segment_class = [
         0x87, 0x7a, 0xf4, 0x42, 0x1b, 0x5b, 0x31, 0x4e, 0xab, 0x87, 0x46, 0x39, 0xd7, 0x83, 0x25,
         0xd6,
@@ -55,23 +98,58 @@ fn decodes_persistent_polyedge_segment_construction() {
         decode(expand, 0..payload.len(), ArchiveVersion::V8)
     })
     .expect("required invariant");
-    assert_eq!(decoded.parameters, [0.0, 10.0]);
+    assert_eq!(
+        decoded
+            .parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 10.0]
+    );
     assert_eq!(
         decoded.segments[0].reference.object_id,
         Uuid::from_wire(POLYEDGE_SEGMENT_TARGET)
     );
     assert_eq!(decoded.segments[0].reference.component, [2, 17]);
     assert_eq!(
-        Some(decoded.segments[0].reference.domains.edge),
+        Some(decoded.segments[0].reference.domains.edge.get()),
         Some([0.0, 4.0])
     );
     assert_eq!(
-        Some(decoded.segments[0].reference.domains.trim),
+        Some(decoded.segments[0].reference.domains.trim.get()),
         Some([1.0, 3.0])
     );
     assert!(decoded.segments[0].reversed);
     assert_eq!(decoded.segments[0].domain, [10.0, 20.0]);
     assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
+}
+
+fn polyedge_collection_refusal(limit: u64, operation: &str) {
+    let payload = polyedge_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root bytes admitted");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let error = decode(expand, 0..payload.len(), ArchiveVersion::V8)
+        .expect_err("polyedge allocation exceeds collection limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(ref refusal)
+            if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn polyedge_parameters_refuse_collection_limit() {
+    polyedge_collection_refusal(1, "Rhino polyedge parameters");
+}
+
+#[test]
+fn polyedge_segments_refuse_collection_limit() {
+    polyedge_collection_refusal(2, "Rhino polyedge segments");
 }
 
 #[test]
@@ -83,11 +161,11 @@ fn accepts_empty_edge_and_trim_domains_for_a_source_curve_segment() {
     })
     .expect("required invariant");
     assert_eq!(
-        Some(decoded.segments[0].reference.domains.edge),
+        Some(decoded.segments[0].reference.domains.edge.get()),
         Some([OPENNURBS_UNSET_VALUE; 2])
     );
     assert_eq!(
-        Some(decoded.segments[0].reference.domains.trim),
+        Some(decoded.segments[0].reference.domains.trim.get()),
         Some([OPENNURBS_UNSET_VALUE; 2])
     );
 }
@@ -120,7 +198,11 @@ fn polyedge_segment_uuid_resolves_to_the_single_record_that_owns_it() {
         .losses
         .iter()
         .any(|loss| loss.message.starts_with("reference.")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -139,7 +221,11 @@ fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
         charged[0].code,
         crate::loss::RhinoLossCode::ReferenceMemberUnresolved.kind()
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -164,5 +250,9 @@ fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
         .losses
         .iter()
         .any(|loss| { loss.code == crate::loss::RhinoLossCode::ReferenceMemberAmbiguous.kind() }));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }

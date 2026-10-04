@@ -1,20 +1,183 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::build_prt;
+use crate::test_support::visibgeom_payload;
+use crate::test_support::world;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
+
+fn fc05_circles_service(
+    parameters: &[crate::curve::CurveParameterRecord],
+) -> Vec<crate::curve::Fc05Circle> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::curve::fc05_circles(&ctx, parameters).expect("service FC05 circles")
+}
+
+fn fc05_circle_parameter() -> crate::curve::CurveParameterRecord {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
+    for [x, z, t, y] in [
+        [4.0, 3.0, 2.0, 2.0],
+        [3.0, 4.0, 2.0 + std::f64::consts::FRAC_PI_2, 2.0],
+        [2.0, 3.0, 2.0 + std::f64::consts::PI, 2.0],
+        [3.0, 2.0, 2.0 + 3.0 * std::f64::consts::FRAC_PI_2, 2.0],
+    ] {
+        world(&mut payload, x);
+        world(&mut payload, z);
+        world(&mut payload, t);
+        world(&mut payload, y);
+    }
+    payload.push(0xff);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut scan = container::scan_bytes_ok(data);
+    scan.curves.parameters.remove(0)
+}
+
+fn assert_fc05_circle_collection_refusal(limit: u64, operation: &'static str) {
+    let parameter = fc05_circle_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::fc05_circles(&ctx, &[parameter])
+        .expect_err("one four-point circle exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x08");
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut scan = container::scan_bytes_ok(data);
+    scan.curves.parameters.remove(0)
+}
+
+fn fc_coordinates_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<crate::curve::FcCurveCoordinates>, CodecError> {
+    let parameter = fc_curve_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::curve::fc_coordinates(&ctx, &[parameter])
+}
+
+fn assert_fc_coordinate_collection_refusal(limit: u64, operation: &'static str) {
+    let error = fc_coordinates_with_limits(limit, u64::MAX)
+        .expect_err("one FC coordinate row exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn assert_fc_coordinate_retained_refusal(_limit: u64, operation: &'static str) {
+    let parameter = fc_curve_parameter();
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == operation));
+}
+
+#[test]
+fn fc_coordinates_refuse_unique_parameter_count_node() {
+    assert_fc_coordinate_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc_coordinates_refuse_unique_parameter_projection() {
+    assert_fc_coordinate_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn fc_coordinates_refuse_token_vector() {
+    assert_fc_coordinate_collection_refusal(2, "creo fc coordinate tokens");
+}
+
+#[test]
+fn fc_coordinates_refuse_opaque_span_vector() {
+    assert_fc_coordinate_collection_refusal(6, "creo fc opaque spans");
+}
+
+#[test]
+fn fc_coordinates_refuse_value_vector() {
+    assert_fc_coordinate_collection_refusal(8, "creo fc coordinate values");
+}
+
+#[test]
+fn fc_coordinates_refuse_output_vector() {
+    assert_fc_coordinate_collection_refusal(12, "creo fc coordinate rows");
+}
+
+#[test]
+fn fc_coordinates_refuse_token_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(0, "creo fc coordinate token bytes");
+}
+
+#[test]
+fn fc_coordinates_refuse_span_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(32, "creo fc opaque span bytes");
+}
+
+#[test]
+fn fc_coordinates_refuse_body_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(35, "creo fc coordinate body");
+}
+
+#[test]
+fn fc05_circles_refuse_unique_parameter_count_node() {
+    assert_fc05_circle_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc05_circles_refuse_unique_parameter_projection() {
+    assert_fc05_circle_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn fc05_circles_refuse_point_rows() {
+    assert_fc05_circle_collection_refusal(2, "creo fc05 point rows");
+}
+
+#[test]
+fn fc05_circles_refuse_output_vector() {
+    assert_fc05_circle_collection_refusal(6, "creo fc05 circles");
+}
 
 #[test]
 fn scan_discovers_labeled_curve_prototypes() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.prototypes.len(), 1);
     assert_eq!(scan.curves.prototypes[0].id, 7);
@@ -35,7 +198,7 @@ fn scan_discovers_curve_halfedge_topology() {
     payload
         .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 1);
     assert_eq!(
@@ -44,9 +207,11 @@ fn scan_discovers_curve_halfedge_topology() {
     );
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
     assert_eq!(row.fields()["curve_id"], 7);
     assert_eq!(row.fields()["type_byte"], 8);
@@ -72,18 +237,22 @@ fn scan_discovers_curve_halfedge_topology() {
         .expect("retained unresolved curve carrier");
     assert!(matches!(
         curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Unknown { record: Some(_) }
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+            record: Some(_)
+        })
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT.as_str()
+        ),
         1
     );
 }
@@ -95,7 +264,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
     payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0c\x0d\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(
@@ -119,7 +288,8 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
         );
     }
     assert_ne!(rows[0].id(), rows[1].id());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -131,7 +301,7 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
     payload.extend_from_slice(b"crv_array\0topol_ref_data\0");
     payload.extend_from_slice(b"\x08\x08\x05\x01\xf6\x0c\x0d\x08\x08\0\0\xe3");
     payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(scan.curves.topology_rows[0].id, 7);
@@ -154,7 +324,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.parameters.len(), 1);
     let parameters = &scan.curves.parameters[0];
@@ -162,7 +332,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.type_byte, 8);
     assert_eq!(parameters.scalar_values(), vec![0.0, 1.0, 3.0]);
     assert_eq!(parameters.scalar_tokens[2].offset, 5);
-    assert_eq!(parameters.scalar_tokens[2].length, 8);
+    assert_eq!(parameters.scalar_tokens[2].raw.len(), 8);
     assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
     assert_eq!(parameters.skipped_references(), vec![256]);
     assert_eq!(parameters.references[0].entity_id, 256);
@@ -172,9 +342,11 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.opaque_spans[0].offset, 13);
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
     assert_eq!(parameters.body.last(), Some(&0xff));
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
     assert_eq!(record.fields()["curve_id"], 7);
     assert_eq!(record.fields()["type_byte"], 8);
@@ -191,6 +363,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
     assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
     assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields().contains_key("suffix_candidate_count"));
     assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]
@@ -207,7 +380,7 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
     payload.extend_from_slice(&[0x18, 0x00, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_values(), vec![3.0]);
@@ -232,7 +405,7 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
             payload.extend_from_slice(b"\x00\x0b\x07\x07\0\0\xe3\xe1\xe3");
         }
         let data = build_prt("c", &[("VisibGeom", payload)]);
-        let scan = container::scan_bytes(data.clone());
+        let scan = container::scan_bytes_ok(data.clone());
         let faces = if prototype {
             scan.curves.bound_prototype_pcurves[0].faces
         } else {
@@ -263,7 +436,7 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     payload.push(0xe4);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.pcurves.len(), 1);
     let pcurve = &scan.curves.pcurves[0];
@@ -284,9 +457,14 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!(
-        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
-    );
+    assert!({
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        crate::curve::pcurve_endpoints(&ctx, &scan.curves.parameters, &mismatched_topology)
+            .expect("service pcurve endpoints")
+            .is_empty()
+    });
 }
 
 #[test]
@@ -300,7 +478,7 @@ fn scan_decodes_positive_dict_pcurve_slots() {
     payload.extend_from_slice(&[0x2f, 0x43, 0]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
 
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
     let expected = f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6]);
 
     assert_eq!(scan.curves.parameters.len(), 1);
@@ -330,7 +508,7 @@ fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 5);
@@ -359,7 +537,7 @@ fn scan_decodes_held_scalar_slots_in_pcurve_endpoint_frames() {
     payload.extend_from_slice(&held_value);
     payload.extend_from_slice(&[0x1e, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0xe4]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     let held = crate::psb::short_form_float(&held_value, 0)
         .expect("complete held scalar")
@@ -385,7 +563,7 @@ fn scan_withholds_nine_slot_pcurve_endpoint_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4, 0x12]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.pcurves.is_empty());
 }
@@ -397,7 +575,7 @@ fn scan_withholds_pcurve_endpoints_with_unclaimed_body_bytes() {
     payload.extend([0x0f; 8]);
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 8);
@@ -415,7 +593,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.fc_coordinates.len(), 1);
     let coordinates = &scan.curves.fc_coordinates[0];
@@ -443,16 +621,6 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
 
 #[test]
 fn scan_validates_fc05_circle_from_record_points() {
-    fn world(payload: &mut Vec<u8>, value: f64) {
-        let raw = value.to_be_bytes();
-        payload.push(match raw[0] {
-            0x40 => 0x46,
-            0xc0 => 0x2d,
-            _ => panic!("generated FC05 value must use a world-token exponent"),
-        });
-        payload.extend_from_slice(&raw[1..]);
-    }
-
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
     for [x, z, t, y] in [
@@ -469,7 +637,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.fc05_circles.len(), 1);
     let circle = &scan.curves.fc05_circles[0];
@@ -491,7 +659,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
-    let carriers = crate::curve::fc05_circles(&[unknown_parameter]);
+    let carriers = fc05_circles_service(&[unknown_parameter]);
     let [carrier] = carriers.as_slice() else {
         panic!("circle geometry is independent of an unresolved parameter token");
     };
@@ -501,10 +669,10 @@ fn scan_validates_fc05_circle_from_record_points() {
         carrier.angle_parameter,
         crate::curve::Fc05AngleParameterRelation::Inconsistent
     );
-    assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
+    assert_eq!(carrier.sample_direction_row_frame.get(), [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
-    assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
+    assert!(fc05_circles_service(&[trailing]).is_empty());
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -525,7 +693,7 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.prototype_pcurves.len(), 1);
     let prototype = &scan.curves.prototype_pcurves[0];
@@ -549,7 +717,7 @@ fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
         payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&tail);
         payload.extend_from_slice(b"topol_ref_data\0");
-        let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+        let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
         assert!(scan.curves.prototype_pcurves.is_empty());
     }
@@ -565,7 +733,7 @@ fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_pcurves.is_empty());
 }
@@ -578,7 +746,7 @@ fn scan_withholds_duplicate_labeled_prototype_pcurve_arrays() {
     payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
     payload.extend([0x0f; 8]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_pcurves.is_empty());
 }
@@ -597,7 +765,7 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     payload.push(0xe4);
     payload.extend_from_slice(b"topol_ref_data\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.prototype_topology.len(), 1);
     assert_eq!(scan.curves.prototype_topology[0].curve_id, 44);
@@ -638,7 +806,7 @@ fn scan_withholds_duplicate_labeled_prototype_topology_fields() {
           crv_hdr_geom_ptr[1]\0\x0b next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c",
     );
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_topology.is_empty());
 }
@@ -657,15 +825,102 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
         next_edges: [44, 44],
         offset: 20,
     };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     assert!(crate::curve::bind_prototype_pcurves(
+        &ctx,
         &[pcurve.clone(), pcurve.clone()],
         std::slice::from_ref(&topology),
     )
+    .expect("duplicate pcurve identity")
     .is_empty());
     assert!(crate::curve::bind_prototype_pcurves(
+        &ctx,
         std::slice::from_ref(&pcurve),
         &[topology.clone(), topology],
     )
+    .expect("duplicate topology identity")
     .is_empty());
+}
+
+#[test]
+fn prototype_topology_rows_refuse_collection_limit() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
+    payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x0a crv_hdr_geom_ptr[1]\0\x0b");
+    payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c");
+    payload.extend_from_slice(b"topol_ref_data\0");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::prototype_topology(&ctx, &payload)
+        .expect_err("one labeled topology exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prototype topology rows"));
+}
+
+fn assert_prototype_binding_collection_refusal(limit: u64, operation: &'static str) {
+    let pcurve = crate::curve::PrototypePcurveEndpoints {
+        curve_id: 44,
+        face_0_endpoints: [[0.0, 1.0], [1.0, 0.0]],
+        face_1_endpoints: [[3.0, 0.0], [3.0, 1.0]],
+        offset: 10,
+    };
+    let topology = crate::curve::CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
+        next_edges: [44, 44],
+        offset: 20,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::bind_prototype_pcurves(&ctx, &[pcurve], &[topology])
+        .expect_err("one bound prototype exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn prototype_binding_refuses_pcurve_count_node() {
+    assert_prototype_binding_collection_refusal(0, "creo prototype pcurve count nodes");
+}
+
+#[test]
+fn prototype_binding_refuses_topology_count_node() {
+    assert_prototype_binding_collection_refusal(1, "creo prototype topology count nodes");
+}
+
+#[test]
+fn prototype_binding_refuses_bound_output() {
+    assert_prototype_binding_collection_refusal(2, "creo bound prototype pcurves");
+}
+
+#[test]
+fn numerical_ranges_fc05_circle_residual_scales_with_radius() {
+    const RADIUS: f64 = 1.0 / 1_048_576.0;
+    for (perturbation, accepted) in [(0.0, true), (5e-10, false)] {
+        let mut payload = visibgeom_payload(0, 1);
+        payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
+        for [x, z, t] in [
+            [RADIUS, 0., 0.],
+            [0., RADIUS + perturbation, std::f64::consts::FRAC_PI_2],
+            [-RADIUS, 0., std::f64::consts::PI],
+            [0., -RADIUS, 3. * std::f64::consts::FRAC_PI_2],
+        ] {
+            for value in [3.0 + x, 3.0 + z, 2.0 + t, 2.] {
+                world(&mut payload, value);
+            }
+        }
+        payload.push(0xff);
+        payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+        let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
+        assert_eq!(!scan.curves.fc05_circles.is_empty(), accepted);
+    }
 }

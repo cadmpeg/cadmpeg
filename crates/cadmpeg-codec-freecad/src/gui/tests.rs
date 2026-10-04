@@ -3,10 +3,225 @@
 
 #![allow(clippy::doc_markdown)]
 
-use crate::test_support::*;
+mod resource_admission;
+
+use cadmpeg_test_support::wire;
+
+use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle) {
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex = VertexId::mint("fcstd:test:vertex#0").expect("vertex id");
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point: PointId::mint("fcstd:test:point#0").expect("point id"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("fcstd:test:edge#0").expect("edge id"),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    super::transfer_primitive_appearance(
+        &ctx,
+        &ir,
+        &mut plan,
+        &mut losses,
+        super::PrimitiveAppearanceSource {
+            provider_name: "Model",
+            object_id: "fcstd:object#Model",
+            packed_color: 0xff00_00ff,
+            style,
+            payload_prefixes: &[String::new()],
+            provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                17,
+            ),
+        },
+    )
+    .expect("primitive appearance transfer");
+    assert_eq!(plan.appearances.len(), 1);
+    assert!(plan.appearances[0].properties.is_empty());
+    assert!(!plan.bindings.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "appearance.primitive-size-not-transferred"
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
+    assert_eq!(
+        losses[0].provenance.as_ref().map(|source| source.offset),
+        Some(17)
+    );
+}
+
+#[test]
+fn a_negative_line_width_records_an_appearance_loss() {
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite width"),
+        ),
+    ));
+}
+
+#[test]
+fn a_negative_point_size_records_an_appearance_loss() {
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Point(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite size"),
+        ),
+    ));
+}
+
+#[test]
+fn a_nonfinite_line_width_records_an_appearance_loss() {
+    assert!(matches!(
+        super::PrimitiveSize::from_source(Some("not a number")),
+        super::PrimitiveSize::Absent
+    ));
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::from_source(Some("NaN")),
+    ));
+}
+
+#[test]
+fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex_id = VertexId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
+        cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("v1")),
+    );
+    ir.model.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: cadmpeg_ir::ids::PointId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("p1")),
+        ),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),
+        ),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex_id.clone(),
+        end: vertex_id,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    let prefixes = [String::from("shape:")];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    for style in [
+        super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
+        super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
+    ] {
+        super::transfer_primitive_appearance(
+            &ctx,
+            &ir,
+            &mut plan,
+            &mut losses,
+            super::PrimitiveAppearanceSource {
+                provider_name: "Model",
+                object_id: "shape",
+                packed_color: 0x1122_3344,
+                style,
+                payload_prefixes: &prefixes,
+                provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                    "fcstd",
+                    cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                    17,
+                ),
+            },
+        )
+        .expect("primitive appearance transfer");
+    }
+    assert_eq!(plan.appearances.len(), 2);
+    assert!(plan
+        .appearances
+        .iter()
+        .all(|appearance| appearance.properties.is_empty()));
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| { loss.code.local_code() == "appearance.primitive-size-not-transferred" }));
+}
+
+#[test]
+fn complete_codec_admits_provider_names_with_source_identity_encoding() {
+    let document = br##"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name=""/><Object type="Part::Feature" name="A B"/><Object type="Part::Feature" name="#"/></Objects>
+<ObjectData Count="3"><Object name=""><Properties Count="0"/></Object><Object name="A B"><Properties Count="0"/></Object><Object name="#"><Properties Count="0"/></Object></ObjectData>
+</Document>"##;
+    let gui = br##"<Document SchemaVersion="1"><ViewProviderData Count="3">
+<ViewProvider name=""><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+<ViewProvider name="A B"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+<ViewProvider name="#"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"##;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("legal provider names must decode");
+
+    let mut appearance_ids = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .map(|appearance| appearance.id.as_str())
+        .collect::<Vec<_>>();
+    appearance_ids.sort_unstable();
+    assert_eq!(
+        appearance_ids,
+        [
+            "fcstd:appearance:object#%23",
+            "fcstd:appearance:object#%EMPTY",
+            "fcstd:appearance:object#A%20B",
+        ]
+    );
+    let providers = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
+        .expect("providers");
+    let unnamed = providers
+        .iter()
+        .find(|provider| provider.name.is_empty())
+        .expect("unnamed provider");
+    assert_eq!(unnamed.id, "fcstd:native:gui-view-provider#%EMPTY");
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
 
 #[test]
 pub(crate) fn retains_ordered_document_level_gui_state() {
@@ -52,35 +267,40 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         .expect("entries");
     let section = entries
         .iter()
-        .find(|entry| entry.name == "section.bin")
+        .find(|entry| entry.name() == "section.bin")
         .expect("section asset");
-    assert_eq!(section.referenced_by, [documents[0].states[1].id.clone()]);
+    assert_eq!(section.referenced_by(), [documents[0].states[1].id.clone()]);
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
-    let camera = presentation.camera().expect("camera state");
-    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
-    assert_eq!(camera.orientation, Some([0.0, 0.0, 1.0, 0.25]));
+    let camera = presentation
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
+        .expect("camera state");
+    assert_eq!(
+        camera.position.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 2.0, 3.0])
+    );
+    assert_eq!(
+        camera
+            .orientation
+            .map(|value| wire::value::<[f64; 4]>(&value)),
+        Some([0.0, 0.0, 1.0, 0.25])
+    );
     assert_eq!(
         camera.properties["settings"],
         "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
-    assert_eq!(presentation.states[1].assets.len(), 1);
-    assert!(presentation.states[1].assets[0].ends_with("section.bin"));
+    assert_eq!(presentation.states()[1].assets.len(), 1);
+    assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-
-    let mut corrupted = result.ir().clone();
-    corrupted.model.presentation_documents[0]
-        .camera_mut()
-        .expect("camera state")
-        .orientation = Some([0.0; 4]);
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "invalid document presentation state"));
 }
 
 #[test]
@@ -138,7 +358,7 @@ fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
         .iter()
         .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss.message.contains("declares schema 2"));
     assert!(loss.message.contains("schema-1 vocabulary"));
 }
@@ -198,7 +418,7 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
         .iter()
         .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss
         .message
         .contains("declared schema 2 is the probable cause"));
@@ -281,7 +501,12 @@ fn ignores_non_authoritative_camera_descendant_values() {
         )
         .expect("non-authoritative camera descendants");
     let camera = result.ir().model.presentation_documents[0]
-        .camera()
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
         .expect("camera state");
     assert_eq!(camera.position, None);
     assert_eq!(camera.orientation, None);
@@ -358,8 +583,16 @@ fn keeps_registered_non_presentation_properties_native() {
     assert_eq!(view.visible, Some(false));
     assert_eq!(view.display_mode.as_deref(), Some("3"));
     assert_eq!(view.selection_style.as_deref(), Some("1"));
-    assert_eq!(view.line_width, Some(3.5));
-    assert_eq!(view.point_size, Some(4.5));
+    assert_eq!(
+        view.line_width
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(3.5)
+    );
+    assert_eq!(
+        view.point_size
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(4.5)
+    );
     for name in [
         "ShowInTree",
         "OnTopWhenSelected",
@@ -393,7 +626,41 @@ fn keeps_registered_non_presentation_properties_native() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn refuses_a_transparency_percentage_outside_its_domain() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    for percent in ["150", "-50"] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3424269311"/></Property>
+<Property name="Transparency" type="App::PropertyPercent"><Integer value="{percent}"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("a transparency percentage outside [0, 100] is refused");
+        assert!(
+            matches!(
+                &error,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("GUI color components must be in [0, 1]")
+            ),
+            "transparency {percent} must be refused by the color domain"
+        );
+    }
 }
 
 #[test]
@@ -448,7 +715,9 @@ Co 1001000 +2 0 *
 +1 0 *";
     let color_list = |colors: &[u32]| {
         let mut bytes = Vec::with_capacity(4 + colors.len() * 4);
-        bytes.extend_from_slice(&(colors.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(colors.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for color in colors {
             bytes.extend_from_slice(&color.to_le_bytes());
         }
@@ -502,7 +771,10 @@ Co 1001000 +2 0 *
         } else {
             0
         };
-        let mut shape_materials = (shape_material_count as u32).to_le_bytes().to_vec();
+        let mut shape_materials = (u32::try_from(shape_material_count)
+            .expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
         for diffuse in [0xff00_00ff, 0x00ff_00ff]
             .into_iter()
             .take(shape_material_count)
@@ -536,10 +808,12 @@ Co 1001000 +2 0 *
             loss.code.local_code(),
             "appearance.topology-color-count-mismatch"
         );
-        assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {
-            source.stream() == Some("GuiDocument.xml") && source.offset > 0
+            wire::field_or_default::<Option<String>>(&source, "stream").as_deref()
+                == Some("GuiDocument.xml")
+                && source.offset > 0
         }));
         assert_eq!(
             result
@@ -561,7 +835,7 @@ Co 1001000 +2 0 *
         assert!(properties.iter().any(|property| {
             property.name == mismatched_property && property.side_entries == [mismatched_property]
         }));
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
     }
 }
 
@@ -620,7 +894,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
             .len(),
         1
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -884,7 +1158,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
         .find(|span| span.classification.owner() == Some(property.id.as_str()))
         .expect("visual layer span");
     assert_eq!(span.classification.as_str(), "typed");
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     for value in [
         br#"<VisualLayerList count="1"><VisualLayer visible="maybe" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
@@ -965,7 +1239,7 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let bad_float_list = [0_u32.to_le_bytes().as_slice(), &[0xff]].concat();
     let error = FcstdCodec
@@ -1394,7 +1668,7 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let logical = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
@@ -1493,24 +1767,21 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .expect("entries");
     let entry = entries
         .iter()
-        .find(|entry| entry.name == "state.bin")
+        .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
-    assert_eq!(
-        entry.referenced_by.as_slice(),
-        std::slice::from_ref(&property.id)
-    );
-    assert_eq!(entry.data, payload);
+    assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
+    assert_eq!(entry.data(), payload);
 
     let logical = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     let span = logical
         .iter()
-        .find(|span| span.entry == entry.name)
+        .find(|span| span.entry == entry.name())
         .expect("state span");
     assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_eq!(span.classification.owner(), Some(entry.id()));
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -1544,6 +1815,118 @@ fn does_not_treat_gui_external_links_as_archive_members() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries")
         .iter()
-        .all(|entry| entry.name != "External.FCStd"));
-    assert!(crate::validate_native(result.ir()).is_empty());
+        .all(|entry| entry.name() != "External.FCStd"));
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+}
+
+/// A GUI property whose key is blank names nothing, so its value cannot be
+/// keyed. The property is charged by name against its own record and the rest
+/// of the GUI presentation graph survives: a blank key is one unreadable
+/// property, not a reason to answer no presentation at all.
+#[test]
+fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1">
+ <ViewProviderData Count="1">
+  <ViewProvider name="Model">
+   <Properties Count="2">
+    <Property name="Visibility" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="   " type="App::PropertyBool"><Bool value="false"/></Property>
+   </Properties>
+  </ViewProvider>
+ </ViewProviderData>
+ <Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0 }"/>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("a blank property key does not refuse the GUI document");
+
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "source.gui-property-key-blank")
+        .expect("the blank key is charged");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+    assert!(
+        loss.message.contains("states a property with a blank key"),
+        "{}",
+        loss.message
+    );
+    assert!(
+        !result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "source.gui-schema-unverified"),
+        "a blank key is not a schema declaration problem"
+    );
+
+    // The rest of the GUI presentation graph is still there.
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    let view = result
+        .ir()
+        .model
+        .view_presentations
+        .first()
+        .expect("the provider's view presentation survives");
+    assert_eq!(view.visible, Some(true));
+    assert!(view.properties.contains_key("Visibility"));
+}
+
+/// Decodes one shape whose view provider states `shininess` as its
+/// `ShapeMaterial` shininess and asserts that GUI property validation refuses
+/// the document with `expected`. The appearance transfer reads the material
+/// only after that validation, so it never meets such a value.
+fn assert_material_shininess_is_refused(shininess: &str, expected: &str) {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = format!(
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="A"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property>
+<Property name="ShapeMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="1" diffuseColor="2" specularColor="3" emissiveColor="4" shininess="{shininess}" transparency="0.25"/></Property>
+</Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#
+    );
+    let decoded = FcstdCodec.decode(
+        &mut Cursor::new(archive_entries(&[
+            ("Document.xml", document),
+            ("GuiDocument.xml", gui.as_bytes()),
+        ])),
+        &DecodeOptions::default(),
+    );
+    let Err(error) = decoded else {
+        panic!("a {shininess} material shininess is refused");
+    };
+    assert_eq!(error.to_string(), expected);
+}
+
+/// A `nan` material shininess refuses the GUI document.
+#[test]
+fn a_non_finite_material_value_refuses_the_gui_document() {
+    assert_material_shininess_is_refused(
+        "nan",
+        "malformed container: GUI property ShapeMaterial material has a non-finite shininess",
+    );
+}
+
+/// An unparsable material shininess refuses the GUI document.
+#[test]
+fn an_unparsable_material_value_refuses_the_gui_document() {
+    assert_material_shininess_is_refused(
+        "glossy",
+        "malformed container: GUI property ShapeMaterial material has an invalid shininess",
+    );
 }

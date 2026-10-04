@@ -13,6 +13,13 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
+# This crate builds outside the workspace, so it states its own lint levels.
+[lints.rust]
+# `unreachable_pub` is allow-by-default. A `pub` item that no `pub mod`/`pub use`
+# chain carries to the crate root is not public API; it spells more reach than
+# any reader needs.
+unreachable_pub = "deny"
+
 [dependencies]
 libfuzzer-sys = "0.4"
 cadmpeg-asm = { path = "../cadmpeg-asm" }

@@ -1,135 +1,170 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support-UV admission and invalidation tests.
 
-use crate::decode::offset::point_distance;
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use crate::decode::support_uv::SerializedSupportUv;
+use crate::test_support::test_streams::prt_with_ext11_intersection;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
+use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::{model_surface_point_by_id, pcurve_uv};
-use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::ProceduralCurveId;
 use cadmpeg_ir::math::Point3;
 
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]
 fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
-    let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let partition =
-        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
-    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-    let validated_id = result.ir().model.procedural_curves[0].id.clone();
-    let unvalidated_id =
-        ProceduralCurveId::mint("test:model:entity#synthetic:unvalidated-support-uv")
-            .expect("identity grammar");
-    let mut unvalidated = result.ir().model.procedural_curves[0].clone();
-    unvalidated.id = unvalidated_id.clone();
-    {
-        let mut ir = result.ir_mut();
-        let original_owner = ir.model.procedural_curve_owner(&validated_id).unwrap();
-        let mut carrier = ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == *original_owner)
-            .unwrap()
-            .clone();
-        carrier.id =
-            cadmpeg_ir::ids::CurveId::mint("test:model:curve#unvalidated-support-uv").unwrap();
-        let cadmpeg_ir::geometry::CurveGeometry::Procedural { construction, .. } =
-            &mut carrier.geometry
-        else {
-            panic!("procedural carrier");
-        };
-        *construction = unvalidated_id.clone();
-        ir.model.curves.push(carrier);
-        ir.model.procedural_curves.push(unvalidated);
-        for procedural_id in [&validated_id, &unvalidated_id] {
-            let procedural = ir
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let stream = two_support_ext11_charted_intersection_curve_stream(false);
+        let partition =
+            two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+        let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let mut result = EditableDecodeResult::from(result);
+        let validated_id = result.ir().model.procedural_curves[0].id.clone();
+        let unvalidated_id =
+            ProceduralCurveId::mint("test:model:entity#synthetic:unvalidated-support-uv")
+                .expect("identity grammar");
+        let mut unvalidated = result.ir().model.procedural_curves[0].clone();
+        unvalidated.id = unvalidated_id.clone();
+        {
+            let mut ir = result.ir_mut();
+            let original_owner = ir.model.procedural_curve_owner(&validated_id).unwrap();
+            let mut carrier = ir
                 .model
-                .procedural_curves
-                .iter_mut()
-                .find(|procedural| procedural.id == *procedural_id)
-                .unwrap();
-            procedural.edit_definition(|definition| {
-                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                    panic!("typed intersection");
-                };
-                let Some(support) = context.sides[0].pcurve.as_mut() else {
-                    panic!("NURBS support lane");
-                };
-                let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                    panic!("NURBS support lane");
-                };
-                nurbs
-                    .edit_control_points(|points| {
-                        for point in points {
-                            point.u += 100.0;
-                        }
+                .curves
+                .iter()
+                .find(|curve| curve.id == *original_owner)
+                .unwrap()
+                .clone();
+            carrier.id =
+                cadmpeg_ir::ids::CurveId::mint("test:model:curve#unvalidated-support-uv").unwrap();
+            let cadmpeg_ir::geometry::CurveGeometry::Procedural { construction, .. } =
+                &mut carrier.geometry
+            else {
+                panic!("procedural carrier");
+            };
+            *construction = unvalidated_id.clone();
+            ir.model.curves.push(carrier);
+            ir.model.procedural_curves.push(unvalidated);
+            for procedural_id in [&validated_id, &unvalidated_id] {
+                let procedural = ir
+                    .model
+                    .procedural_curves
+                    .iter_mut()
+                    .find(|procedural| procedural.id == *procedural_id)
+                    .unwrap();
+                procedural.edit_definition(|definition| {
+                    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                        panic!("typed intersection");
+                    };
+                    edit::replace(context, |previous| {
+                        let mut sides = previous.sides().clone();
+                        let range = previous.parameter_range().endpoints();
+                        let discontinuities =
+                            cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
+                        {
+                            let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                                &mut sides;
+
+                            let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                                panic!("NURBS support lane");
+                            };
+                            let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                                panic!("NURBS support lane");
+                            };
+                            nurbs
+                                .try_map_control_points(
+                                    |_, point| {
+                                        let point = point.get();
+                                        cadmpeg_ir::units::FinitePoint2::new(
+                                            cadmpeg_ir::math::Point2::new(point.u + 100.0, point.v),
+                                        )
+                                        .ok_or(())
+                                    },
+                                    &cadmpeg_test_support::service_decode_context(),
+                                )
+                                .expect("pole edit admission")
+                                .unwrap();
+                        };
+                        cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                            sides,
+                            range,
+                            discontinuities,
+                        )
                     })
                     .unwrap();
-            });
+                });
+            }
         }
-    }
-    let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)];
-    let parameters = vec![0.0, 0.01];
-    let pending = vec![
-        (
-            validated_id.clone(),
-            crate::intersection::chart_samples::ChartSamples::from_test_values(
-                points.clone(),
-                parameters.clone(),
-            )
-            .unwrap(),
-            0.01,
-            SerializedSupportUv::default(),
-        ),
-        (
-            unvalidated_id.clone(),
-            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters)
+        let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)];
+        let parameters = vec![0.0, 0.01];
+        let pending = vec![
+            (
+                validated_id.clone(),
+                crate::intersection::chart_samples::ChartSamples::from_test_values(
+                    points.clone(),
+                    parameters.clone(),
+                )
                 .unwrap(),
-            0.01,
-            SerializedSupportUv::default(),
-        ),
-    ];
-    let validated_lanes = BTreeSet::from([(validated_id.clone(), 0)]);
-    let support_budget = WorkBudget::new(10);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+                0.01,
+                SerializedSupportUv::default(),
+            ),
+            (
+                unvalidated_id.clone(),
+                crate::intersection::chart_samples::ChartSamples::from_test_values(
+                    points, parameters,
+                )
+                .unwrap(),
+                0.01,
+                SerializedSupportUv::default(),
+            ),
+        ];
+        let validated_lanes = BTreeSet::from([(validated_id.clone(), 0)]);
+        let support_budget = WorkBudget::new(10);
+        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(
+                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+            ),
+        );
 
-    crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        ctx,
         &mut result.ir_mut(),
         &pending,
         &validated_lanes,
         &support_budget,
         &geometry_budget,
         false,
-    );
+    ))
+    .expect("evaluator allocation succeeds");
 
-    let pcurve_present = |procedural_id: &ProceduralCurveId| {
-        let procedural = result
-            .ir()
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| procedural.id == *procedural_id)
-            .unwrap();
-        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-        else {
-            panic!("typed intersection");
+        let pcurve_present = |procedural_id: &ProceduralCurveId| {
+            let procedural = result
+                .ir()
+                .model
+                .procedural_curves
+                .iter()
+                .find(|procedural| procedural.id == *procedural_id)
+                .unwrap();
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+            else {
+                panic!("typed intersection");
+            };
+            context.sides()[0].pcurve.is_some()
         };
-        context.sides[0].pcurve.is_some()
-    };
-    assert!(pcurve_present(&validated_id));
-    assert!(!pcurve_present(&unvalidated_id));
+        assert!(pcurve_present(&validated_id));
+        assert!(!pcurve_present(&unvalidated_id));
+    });
 }
 
 #[test]
@@ -144,16 +179,16 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         panic!("typed intersection");
     };
     let side = context
-        .sides
+        .sides()
         .iter()
         .enumerate()
         .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
         .map(|(side, side_data)| (side, side_data.surface.clone().unwrap()))
         .expect("charted support lane");
     let points = vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
-    let parameters = context.parameter_range.to_vec();
-    let pcurve = context.sides[side.0].pcurve.clone().unwrap();
-    let parameter_range = context.parameter_range;
+    let parameters = context.parameter_range().endpoints().to_vec();
+    let pcurve = context.sides()[side.0].pcurve.clone().unwrap();
+    let parameter_range = context.parameter_range().endpoints();
     let pending = vec![(
         procedural.id.clone(),
         crate::intersection::chart_samples::ChartSamples::from_test_values(
@@ -172,11 +207,15 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .expect("intersection owner")
         .clone();
 
-    let witnesses = crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
-        result.ir(),
-        &pending,
-        &validated_lanes,
-    );
+    let witnesses = crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
+            ctx,
+            result.ir(),
+            &pending,
+            &validated_lanes,
+        )
+    })
+    .expect("validated witnesses fit the service profile");
 
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
@@ -202,88 +241,113 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
 fn full_support_uv_validation_publishes_endpoint_witnesses() {
     const EPS_SUPPORT_WITNESS: f64 = 1e-9;
 
-    let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let partition =
-        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
-    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-    let (procedural_id, curve_id, surface, pcurve, parameter_range) = {
-        let procedural = &result.ir().model.procedural_curves[0];
-        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-        else {
-            panic!("typed intersection");
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let stream = two_support_ext11_charted_intersection_curve_stream(false);
+        let partition =
+            two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+        let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let mut result = EditableDecodeResult::from(result);
+        let (procedural_id, curve_id, surface, pcurve, parameter_range) = {
+            let procedural = &result.ir().model.procedural_curves[0];
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+            else {
+                panic!("typed intersection");
+            };
+            let (_, side) = context
+                .sides()
+                .iter()
+                .enumerate()
+                .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
+                .expect("charted support lane");
+            (
+                procedural.id.clone(),
+                result
+                    .ir()
+                    .model
+                    .procedural_curve_owner(&procedural.id)
+                    .expect("intersection owner")
+                    .clone(),
+                side.surface.clone().unwrap(),
+                side.pcurve.clone().unwrap(),
+                context.parameter_range().endpoints(),
+            )
         };
-        let (_, side) = context
-            .sides
-            .iter()
-            .enumerate()
-            .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
-            .expect("charted support lane");
-        (
-            procedural.id.clone(),
-            result
-                .ir()
-                .model
-                .procedural_curve_owner(&procedural.id)
-                .expect("intersection owner")
-                .clone(),
-            side.surface.clone().unwrap(),
-            side.pcurve.clone().unwrap(),
-            context.parameter_range,
-        )
-    };
-    let points = {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
-        parameter_range
-            .map(|parameter| {
-                let uv = pcurve_uv(&pcurve.geometry, parameter).expect("pcurve endpoint");
-                model_surface_point_by_id(&index, &surface, uv.u, uv.v).expect("surface endpoint")
-            })
-            .to_vec()
-    };
-    let pending = vec![(
-        procedural_id,
-        crate::intersection::chart_samples::ChartSamples::from_test_values(
-            points.clone(),
-            parameter_range.to_vec(),
-        )
-        .unwrap(),
-        EPS_SUPPORT_WITNESS,
-        SerializedSupportUv::default(),
-    )];
-    let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+        let points = {
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
+                result.ir(),
+                cadmpeg_ir::index::StandardIndex,
+            );
+            parameter_range
+                .map(|parameter| {
+                    let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &pcurve.geometry,
+                        parameter,
+                    )
+                    .expect("pcurve endpoint")
+                    .get();
+                    model_surface_point_by_id(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &index,
+                        &surface,
+                        uv.u,
+                        uv.v,
+                    )
+                    .expect("surface endpoint")
+                    .get()
+                })
+                .to_vec()
+        };
+        let pending = vec![(
+            procedural_id,
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
+                points.clone(),
+                parameter_range.to_vec(),
+            )
+            .unwrap(),
+            EPS_SUPPORT_WITNESS,
+            SerializedSupportUv::default(),
+        )];
+        let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
+        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(
+                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+            ),
+        );
 
-    let witnesses =
-        crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        let witnesses =
+        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+            ctx,
             &mut result.ir_mut(),
             &pending,
             &BTreeSet::new(),
             &support_budget,
             &geometry_budget,
             false,
-        )
+        ))
+        .expect("evaluator allocation succeeds")
         .endpoint_witnesses;
 
-    let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
-        &witnesses,
-        &(curve_id, surface),
-        &pcurve.geometry,
-        parameter_range,
-    )
-    .expect("complete validation endpoint witness");
-    assert!(point_distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
-    assert!(point_distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
+        let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
+            &witnesses,
+            &(curve_id, surface),
+            &pcurve.geometry,
+            parameter_range,
+        )
+        .expect("complete validation endpoint witness");
+        assert!(Point3::distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
+        assert!(Point3::distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
+    });
 }
 
 #[test]
 fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface,
-        ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        nurbs::NurbsSurface, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
+        ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Vector3};
@@ -291,160 +355,215 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     const FIT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_WORK: usize = 2_048;
 
-    let support = SurfaceId::mint("test:model:entity#synthetic:seeded-offset-support")
-        .expect("identity grammar");
-    let offset =
-        SurfaceId::mint("test:model:entity#synthetic:seeded-offset").expect("identity grammar");
-    let offset_construction =
-        ProceduralSurfaceId::mint("test:model:entity#synthetic:seeded-offset-construction")
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let support = SurfaceId::mint("test:model:entity#synthetic:seeded-offset-support")
             .expect("identity grammar");
-    let plane = SurfaceId::mint("test:model:entity#synthetic:seeded-intersection-plane")
-        .expect("identity grammar");
-    let curve = CurveId::mint("test:model:entity#synthetic:seeded-intersection-curve")
-        .expect("identity grammar");
-    let procedural_id = ProceduralCurveId::mint("test:model:entity#synthetic:seeded-intersection")
-        .expect("identity grammar");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.extend([
-        Surface {
-            id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(
-                NurbsSurface::new(
-                    3,
-                    1,
-                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    4,
-                    2,
-                    vec![
-                        Point3::new(-3.0, 0.0, 0.0),
-                        Point3::new(-3.0, 0.0, 1.0),
-                        Point3::new(3.0, 2.0, 0.0),
-                        Point3::new(3.0, 2.0, 1.0),
-                        Point3::new(-3.0, 4.0, 0.0),
-                        Point3::new(-3.0, 4.0, 1.0),
-                        Point3::new(3.0, 6.0, 0.0),
-                        Point3::new(3.0, 6.0, 1.0),
-                    ],
+        let offset =
+            SurfaceId::mint("test:model:entity#synthetic:seeded-offset").expect("identity grammar");
+        let offset_construction =
+            ProceduralSurfaceId::mint("test:model:entity#synthetic:seeded-offset-construction")
+                .expect("identity grammar");
+        let plane = SurfaceId::mint("test:model:entity#synthetic:seeded-intersection-plane")
+            .expect("identity grammar");
+        let curve = CurveId::mint("test:model:entity#synthetic:seeded-intersection-curve")
+            .expect("identity grammar");
+        let procedural_id =
+            ProceduralCurveId::mint("test:model:entity#synthetic:seeded-intersection")
+                .expect("identity grammar");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.surfaces.extend([
+            Surface {
+                id: support.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            3,
+                            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                            vec![
+                                vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
+                                vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
+                                vec![Point3::new(-3.0, 4.0, 0.0), Point3::new(-3.0, 4.0, 1.0)],
+                                vec![Point3::new(3.0, 6.0, 0.0), Point3::new(3.0, 6.0, 1.0)],
+                            ],
+                            None,
+                        ),
+                        false,
+                    )
+                    .expect("fixture constructor admission")
+                    .expect("valid seeded offset support"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: offset.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: offset_construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            },
+            Surface {
+                id: plane.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.45),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+        ]);
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            offset_construction,
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    0.75,
+                    None,
                     None,
                     false,
-                    false,
-                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
                 )
-                .expect("valid seeded offset support"),
-            ),
-            source_object: None,
-        },
-        Surface {
-            id: offset.clone(),
-            geometry: SurfaceGeometry::Procedural {
-                construction: offset_construction.clone(),
-                cache: None,
-            },
-            source_object: None,
-        },
-        Surface {
-            id: plane.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.45),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            source_object: None,
-        },
-    ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        offset_construction,
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: 0.75,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
-        source_object: None,
-    });
-    let _attached = ir.model.add_procedural_curve(
-        curve,
-        ProceduralCurve::new(
-            procedural_id.clone(),
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(offset.clone()),
-                            pcurve: None,
-                        },
-                        IntcurveSupportSide {
-                            surface: Some(plane),
-                            pcurve: None,
-                        },
-                    ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
-            },
-        ),
-    );
-
-    let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let points = offset_parameters
-        .into_iter()
-        .map(|parameter| {
-            cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, parameter.u, parameter.v)
-                .expect("offset chart point")
-        })
-        .collect::<Vec<_>>();
-    let pending = vec![(
-        procedural_id,
-        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0])
-            .unwrap(),
-        FIT_TOLERANCE,
-        SerializedSupportUv::from_values([
-            Some(
-                offset_parameters
-                    .map(|parameter| [parameter.u, parameter.v])
-                    .to_vec(),
+                .unwrap(),
             ),
             None,
-        ]),
-    )];
-    let mut seeded = ir.clone();
-    let mut unseeded = ir;
-    crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
-        &mut seeded,
-        &pending,
-        GEOMETRY_WORK,
-    );
-    crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
-        &mut unseeded,
-        &[(
-            pending[0].0.clone(),
-            pending[0].1.clone(),
-            pending[0].2,
-            SerializedSupportUv::default(),
-        )],
-        GEOMETRY_WORK,
-    );
+        ));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &curve,
+            ProceduralCurve::new(
+                procedural_id.clone(),
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext::try_new(
+                        [
+                            IntcurveSupportSide {
+                                surface: Some(offset.clone()),
+                                pcurve: None,
+                            },
+                            IntcurveSupportSide {
+                                surface: Some(plane),
+                                pcurve: None,
+                            },
+                        ],
+                        [0.0, 1.0],
+                        [Vec::new(), Vec::new(), Vec::new()],
+                    )
+                    .unwrap(),
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            ),
+        );
 
-    let pcurve_present = |ir: &cadmpeg_ir::document::CadIr| {
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
-        else {
-            panic!("intersection");
+        let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+        let points = offset_parameters
+            .into_iter()
+            .map(|parameter| {
+                cadmpeg_ir::eval::model_surface_point_by_id(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &index,
+                    &offset,
+                    parameter.u,
+                    parameter.v,
+                )
+                .expect("offset chart point")
+                .get()
+            })
+            .collect::<Vec<_>>();
+        let pending = vec![(
+            procedural_id,
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
+                points,
+                vec![0.0, 1.0],
+            )
+            .unwrap(),
+            FIT_TOLERANCE,
+            SerializedSupportUv::from_values([
+                Some(
+                    offset_parameters
+                        .map(|parameter| [parameter.u, parameter.v])
+                        .to_vec(),
+                ),
+                None,
+            ]),
+        )];
+        let limited_ctx = cadmpeg_test_support::service_decode_context();
+        let mut limited = ir.clone();
+        let error =
+            crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
+                &limited_ctx,
+                &mut limited,
+                &pending,
+                GEOMETRY_WORK,
+            )
+            .expect_err("the original slice cannot admit the typed carrier walk");
+        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+            panic!("resource refusal")
         };
-        context.sides[0].pcurve.is_some()
-    };
-    assert!(pcurve_present(&seeded));
-    assert!(!pcurve_present(&unseeded));
+        assert!(matches!(limited_ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        let mut seeded = ir.clone();
+        let mut unseeded = ir;
+        crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
+            geometry_ctx,
+            &mut seeded,
+            &pending,
+            32768,
+        )
+        .expect("serialized seeds complete the lane within the geometry work slice");
+        let error =
+            crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
+                geometry_ctx,
+                &mut unseeded,
+                &[(
+                    pending[0].0.clone(),
+                    pending[0].1.clone(),
+                    pending[0].2,
+                    SerializedSupportUv::default(),
+                )],
+                GEOMETRY_WORK,
+            )
+            .expect_err("an unseeded inverse exceeds the geometry work slice");
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+            panic!("geometry work refusal");
+        };
+        assert_eq!(
+            refusal.dimension,
+            cadmpeg_core::decode::ResourceDimension::Codec(refusal.operation)
+        );
+        assert!(refusal.limit <= cadmpeg_core::decode::u64_from_index(GEOMETRY_WORK));
+        assert!(refusal.used + refusal.additional > refusal.limit);
+        assert_eq!(geometry_ctx.resource_refusal(), Some(refusal));
+
+        let pcurve_present = |ir: &cadmpeg_ir::document::CadIr| {
+            let ProceduralCurveDefinition::Intersection { context, .. } =
+                ir.model.procedural_curves[0].definition()
+            else {
+                panic!("intersection");
+            };
+            context.sides()[0].pcurve.is_some()
+        };
+        assert!(pcurve_present(&seeded));
+        assert!(!pcurve_present(&unseeded));
+    });
 }

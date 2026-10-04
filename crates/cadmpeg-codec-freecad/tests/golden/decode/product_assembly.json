@@ -6,192 +6,170 @@
       "appearances": [],
       "assembly_joints": [
         {
-          "detached": [
-            false,
-            false
-          ],
-          "frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                10.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          ],
           "id": "fcstd:model:joint#GroundBracket:constraint",
-          "kind": {
-            "kind": "grounded"
-          },
           "native_ref": "fcstd:native:joint#GroundBracket",
-          "operands": [
-            {
-              "object": "fcstd:native:object#BracketOccurrence",
-              "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+          "operands": {
+            "arity": "grounded",
+            "connector": {
+              "detached": false,
+              "frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ]
+              ],
+              "operand": {
+                "container": {
+                  "container": "occurrence",
+                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                },
+                "object": "fcstd:native:object#BracketOccurrence"
+              }
             }
-          ],
+          },
           "suppressed": false
         },
         {
-          "angle": 0.20943951023931956,
-          "angular_limits": {
-            "maximum": 0.9599310885968813,
-            "minimum": -0.6108652381980153
-          },
-          "detached": [
-            true,
-            false
-          ],
-          "frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                20.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                6.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                3.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ],
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                20.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                6.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                3.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          ],
           "id": "fcstd:model:joint#RevoluteJoint:constraint",
-          "kind": {
-            "kind": "revolute"
-          },
           "native_ref": "fcstd:native:joint#RevoluteJoint",
-          "offset_frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.5
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
+          "operands": {
+            "arity": "pair",
+            "connectors": [
+              {
+                "detached": true,
+                "frame": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    6.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                  },
+                  "object": "fcstd:native:object#BracketOccurrence",
+                  "subelements": [
+                    "Face1",
+                    "Edge1"
+                  ]
+                }
+              },
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    6.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "fcstd:model:occurrence#PinOccurrence:instance"
+                  },
+                  "object": "fcstd:native:object#PinOccurrence",
+                  "subelements": [
+                    "Face2",
+                    "Edge3"
+                  ]
+                }
+              }
             ],
-            [
+            "kind": {
+              "angle": 0.20943951023931956,
+              "angular_limits": {
+                "bounds": "range",
+                "maximum": 0.9599310885968813,
+                "minimum": -0.6108652381980153
+              },
+              "kind": "revolute"
+            },
+            "offset_frames": [
               [
-                1.0,
-                0.0,
-                0.0,
-                0.0
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.5
+                ]
               ],
               [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                -0.5
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  -0.5
+                ]
               ]
             ]
-          ],
-          "operands": [
-            {
-              "object": "fcstd:native:object#BracketOccurrence",
-              "occurrence": "fcstd:model:occurrence#BracketOccurrence:container",
-              "subelements": [
-                "Face1",
-                "Edge1"
-              ]
-            },
-            {
-              "object": "fcstd:native:object#PinOccurrence",
-              "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
-              "subelements": [
-                "Face2",
-                "Edge3"
-              ]
-            }
-          ],
+          },
           "suppressed": false
         }
       ],
@@ -216,7 +194,6 @@
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -227,14 +204,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -245,14 +220,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -263,14 +236,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -281,14 +252,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -299,14 +268,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -317,14 +284,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -335,14 +300,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -353,14 +316,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -371,14 +332,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -389,14 +348,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -407,14 +364,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -425,14 +380,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -443,14 +396,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -461,14 +412,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -479,14 +428,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -497,14 +444,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -515,14 +460,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -533,14 +476,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -551,14 +492,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -569,14 +508,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -587,14 +524,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -605,14 +540,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -623,14 +556,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -641,14 +572,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1",
           "pcurves": [
             {
@@ -659,14 +588,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -677,14 +604,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -695,14 +620,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -713,14 +636,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -731,14 +652,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1",
           "pcurves": [
             {
@@ -749,7 +668,6 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "sense": "forward"
         }
@@ -1072,167 +990,197 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:9",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:2",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "tolerance": 1e-7
         }
@@ -1240,9 +1188,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
@@ -1250,9 +1201,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
@@ -1260,9 +1214,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
@@ -1270,9 +1227,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
@@ -1280,9 +1240,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
@@ -1290,9 +1253,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
-          "loops": [
-            "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
@@ -1300,9 +1266,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
-          "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:3",
@@ -1310,9 +1279,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
-          "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:1",
@@ -1320,9 +1292,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
-          "loops": [
-            "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:2",
@@ -1367,95 +1342,113 @@
       ],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
-            "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
+              "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
           "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
           "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
         }
@@ -1473,32 +1466,6 @@
             "definition": "fcstd:model:product_definition#Assembly:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1522,12 +1489,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1544,32 +1505,6 @@
             "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1593,23 +1528,48 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#BracketOccurrence:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
           "ordinal": 0,
@@ -1621,32 +1581,6 @@
             "definition": "fcstd:model:product_definition#BracketPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1670,12 +1604,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1692,32 +1620,6 @@
             "definition": "fcstd:model:product_definition#BracketPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1741,12 +1643,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1762,32 +1658,6 @@
             "definition": "fcstd:model:product_definition#ExternalOccurrence:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1811,23 +1681,48 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#ExternalOccurrence:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
           "ordinal": 7,
@@ -1837,37 +1732,11 @@
           "prototype": {
             "document": {
               "path": "external_component.FCStd",
-              "resolution": "unresolved"
+              "resolution": "path"
             },
             "object": "ExternalPrototype",
             "scope": "external"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1891,12 +1760,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1913,32 +1776,6 @@
             "definition": "fcstd:model:product_definition#GroundBracket:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -1962,12 +1799,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1983,32 +1814,6 @@
             "definition": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2032,34 +1837,29 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#NestedBracketOccurrence:instance",
-          "link_transform": true,
-          "name": "fcstd:native:object#NestedBracketOccurrence",
-          "native_ref": "fcstd:native:object#NestedBracketOccurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
+          "link": {
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "scope": "local"
-          },
-          "prototype_transform": [
+          "linked_prototype": [
             [
               1.0,
               0.0,
@@ -2077,14 +1877,18 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
+          "name": "fcstd:native:object#NestedBracketOccurrence",
+          "native_ref": "fcstd:native:object#NestedBracketOccurrence",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
+            "scope": "local"
+          },
           "scale": [
             1.0,
             1.0,
@@ -2108,12 +1912,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2130,32 +1928,6 @@
             "definition": "fcstd:model:product_definition#OccurrenceGroup:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2179,24 +1951,52 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
-          "element_component": "fcstd:model:product_definition#PinArray_i0:definition",
           "id": "fcstd:model:occurrence#PinArray:0",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i0:definition",
+                "kind": "element_component"
+              },
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
           "ordinal": 1,
@@ -2207,32 +2007,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2256,24 +2030,52 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
-          "element_component": "fcstd:model:product_definition#PinArray_i1:definition",
           "id": "fcstd:model:occurrence#PinArray:1",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i1:definition",
+                "kind": "element_component"
+              },
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
           "ordinal": 2,
@@ -2284,32 +2086,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.25,
@@ -2333,24 +2109,52 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
-          "element_component": "fcstd:model:product_definition#PinArray_i2:definition",
           "id": "fcstd:model:occurrence#PinArray:2",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i2:definition",
+                "kind": "element_component"
+              },
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
           "ordinal": 3,
@@ -2361,32 +2165,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.5,
@@ -2410,12 +2188,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2431,32 +2203,6 @@
             "definition": "fcstd:model:product_definition#PinArray:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2480,12 +2226,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2501,32 +2241,6 @@
             "definition": "fcstd:model:product_definition#PinArray_i0:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2550,22 +2264,44 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#PinArray_i0:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
           "ordinal": 4,
@@ -2576,32 +2312,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2625,12 +2335,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2646,32 +2350,6 @@
             "definition": "fcstd:model:product_definition#PinArray_i1:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2695,22 +2373,44 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#PinArray_i1:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
           "ordinal": 5,
@@ -2721,32 +2421,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2770,12 +2444,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2791,32 +2459,6 @@
             "definition": "fcstd:model:product_definition#PinArray_i2:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2840,22 +2482,44 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#PinArray_i2:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
           "ordinal": 6,
@@ -2866,32 +2530,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2915,23 +2553,48 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
         {
-          "claim_child": false,
-          "copy_on_change": {
-            "policy": "disabled"
-          },
-          "copy_on_change_touched": false,
           "id": "fcstd:model:occurrence#PinOccurrence:instance",
-          "link_transform": true,
+          "link": {
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
+          },
+          "linked_prototype": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
           "name": "fcstd:native:object#PinOccurrence",
           "native_ref": "fcstd:native:object#PinOccurrence",
           "ordinal": 1,
@@ -2943,32 +2606,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -2992,12 +2629,6 @@
               0.0,
               2.220446049250313e-16,
               3.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -3014,32 +2645,6 @@
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -3063,12 +2668,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -3084,32 +2683,6 @@
             "definition": "fcstd:model:product_definition#PrototypeGroup:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -3133,12 +2706,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -3155,32 +2722,6 @@
             "definition": "fcstd:model:product_definition#RevoluteJoint:definition",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -3204,12 +2745,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         }
@@ -3229,10 +2764,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3247,10 +2787,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3265,10 +2810,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3283,10 +2833,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3301,10 +2856,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3319,10 +2879,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3337,10 +2902,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3355,10 +2925,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3373,10 +2948,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3391,10 +2971,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3409,10 +2994,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3427,10 +3017,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3445,10 +3040,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3463,10 +3063,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3481,10 +3086,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3499,10 +3109,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3517,10 +3132,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3535,10 +3155,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3553,10 +3178,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3571,10 +3201,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3589,10 +3224,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3607,10 +3247,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3625,10 +3270,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3643,10 +3293,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3661,10 +3316,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3684,10 +3344,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3702,10 +3367,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3720,10 +3390,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3738,10 +3413,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3761,10 +3441,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],
@@ -4063,24 +3748,51 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#BracketPrototype:Shape:BracketPrototype.Shape.brp:34"
         },
         {
-          "faces": [
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11"
-          ],
           "id": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
+          "members": [
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#PinPrototype:Shape:PinPrototype.Shape.brp:13"
         }
       ],
@@ -4401,8 +4113,1940 @@
           "string_tables": 1
         }
       },
-      "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "f7b26110b570e4a55ab3716dc28bbc700b933017f687190cf3908aca9ee0e846"
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "applications": "5d08166b7d951f605f23469416dced370a67f8bcbc3ed5a7df1dc4202e5b3ae7",
+          "byte_coverage": "4dcb2878738b6cf90ea1d82d393a9fdf905f4f0ee35ad44ee9faf414fbf8c2cd",
+          "carrier_census": "147c6dc0f6c52fb287bc431cb8451c904e4a9e6834b24a996e86a6b776197264",
+          "design_census": "a7f1a87f62897a0cd530a881acb52e097f226fa6ae6716eeb15dd839768489cf",
+          "document": "d27a09450e1f85f171efe00a3e8b3cc2e08a19a28dc61be032372c38722ab377",
+          "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "5d8a6ee00c7773cec3a4053c1c2c656ef0b349e3733c5a8d8f41acf9333a686e",
+          "extensions": "c4c1a58cdde3bc5f87398e024e7a77ee8d075dc6dd6bcf62bb92201c0e5b3ade",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "2aa0fdf9aecc3a97cdf85876eb8aef5280c476a684b679e4790bc53489b81a63",
+          "logical_ledger": "e03436648d6aaba26da78369af3eb429888be486cf9fe471cc0a470c80b47b91",
+          "objects": "7f5516ab6aeacf480daa637f2a55385da027fe4286895c9f780e01ad728d46cf",
+          "physical_ledger": "ec48754bb38cce1eae0fadb0feb642edf9e3fb3c64d0ddea81268bd121cced2f",
+          "properties": "4520c3c7fa85a5a4ec1f4a3c443a9b3e870efad00e37b36831420c0c2eed3787",
+          "shape_payloads": "8424ca604da8f344245b9dbc196fe7fe3db65cff0a2b91447545a4ff7ea086c7",
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+        }
+      },
+      "__arena_values": {
+        "fcstd": {
+          "attachments": [
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Assembly",
+              "map_mode": null,
+              "object": "fcstd:native:object#Assembly",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#BracketOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#BracketOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#BracketPrototype",
+              "map_mode": null,
+              "object": "fcstd:native:object#BracketPrototype",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#ExternalOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#ExternalOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#GroundBracket",
+              "map_mode": null,
+              "object": "fcstd:native:object#GroundBracket",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#NestedBracketOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#NestedBracketOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#OccurrenceGroup",
+              "map_mode": null,
+              "object": "fcstd:native:object#OccurrenceGroup",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Origin",
+              "map_mode": null,
+              "object": "fcstd:native:object#Origin",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Origin001",
+              "map_mode": null,
+              "object": "fcstd:native:object#Origin001",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i0",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i0",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i1",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i1",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i2",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i2",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinPrototype",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinPrototype",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XY_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XY_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#X_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#X_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#YZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#YZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Y_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Y_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Z_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Z_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            }
+          ],
+          "product_nodes": [
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#Assembly",
+              "kind": "part",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [
+                "fcstd:native:object#BracketOccurrence",
+                "fcstd:native:object#PinOccurrence",
+                "fcstd:native:object#OccurrenceGroup",
+                "fcstd:native:object#RevoluteJoint",
+                "fcstd:native:object#GroundBracket"
+              ],
+              "object": "fcstd:native:object#Assembly",
+              "placement_property": "fcstd:native:property#Assembly:Placement",
+              "prototype": null,
+              "scale": null
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#BracketOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#BracketOccurrence",
+              "placement_property": "fcstd:native:property#BracketOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#BracketPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": "external_component.FCStd",
+              "external_document_attribute": "file",
+              "id": "fcstd:native:product#ExternalOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#ExternalOccurrence",
+              "placement_property": "fcstd:native:property#ExternalOccurrence:LinkPlacement",
+              "prototype": "ExternalPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#NestedBracketOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#NestedBracketOccurrence",
+              "placement_property": "fcstd:native:property#NestedBracketOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#BracketOccurrence",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [
+                "fcstd:native:object#NestedBracketOccurrence",
+                "fcstd:native:object#PinArray",
+                "fcstd:native:object#ExternalOccurrence"
+              ],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#OccurrenceGroup",
+              "kind": "link_group",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#OccurrenceGroup",
+              "placement_property": "fcstd:native:property#OccurrenceGroup:Placement",
+              "prototype": null,
+              "scale": null
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 3,
+              "element_objects": [
+                "fcstd:native:object#PinArray_i0",
+                "fcstd:native:object#PinArray_i1",
+                "fcstd:native:object#PinArray_i2"
+              ],
+              "element_scales": [
+                [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.25,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.5,
+                  1.0
+                ]
+              ],
+              "element_transforms": [
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    10.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ]
+              ],
+              "element_visibility": [
+                true,
+                true,
+                true
+              ],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray",
+              "placement_property": "fcstd:native:property#PinArray:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i0",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i0",
+              "placement_property": "fcstd:native:property#PinArray_i0:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i1",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i1",
+              "placement_property": "fcstd:native:property#PinArray_i1:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i2",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i2",
+              "placement_property": "fcstd:native:property#PinArray_i2:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinOccurrence",
+              "placement_property": "fcstd:native:property#PinOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PrototypeGroup",
+              "kind": "group",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": null,
+              "members": [
+                "fcstd:native:object#BracketPrototype",
+                "fcstd:native:object#PinPrototype"
+              ],
+              "object": "fcstd:native:object#PrototypeGroup",
+              "placement_property": null,
+              "prototype": null,
+              "scale": null
+            }
+          ]
+        }
+      },
+      "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {
@@ -4415,20 +6059,21 @@
         "physical_ledger_spans": "92",
         "program_version": "1.1R20260414 (Git shallow)"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_version": "1",
-            "program_version": "1.1R20260414 (Git shallow)",
-            "schema_version": "4"
-          },
-          "dialect": "fcstd:schema-4",
-          "format": "fcstd"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "program_version": "1.1R20260414 (Git shallow)",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4"
+          }
         }
-      },
-      "format": "fcstd"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -4439,22 +6084,21 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_version": "1",
-          "program_version": "1.1R20260414 (Git shallow)",
-          "schema_version": "4"
-        },
-        "dialect": "fcstd:schema-4",
-        "format": "fcstd"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4"
+        }
       }
     },
-    "format": "fcstd",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "SchemaVersion=4",
@@ -4464,7 +6108,11 @@
       "object count=24",
       "physical ledger spans=92 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

@@ -2,15 +2,25 @@
 //!
 //! Family-agnostic geometry math consumed across decode families and the
 //! decode/transfer paths: knot expansion and pole counting, degree-5 jet to
-//! B-spline conversion, tensor-product NURBS isocurve extraction, circular
+//! B-spline conversion, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
+
+type QuinticJetOutput<const N: usize> =
+    Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
+
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition,
+    nurbs::{NurbsCurve, NurbsError},
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -22,245 +32,445 @@ const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
 const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
-fn finite_point2(point: Point2) -> bool {
-    [point.u, point.v].into_iter().all(f64::is_finite)
+fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => true,
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+            points.iter().all(|pole| pole.weight.get() > 0.0)
+        }
+    }
 }
 
-fn finite_point3(point: Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+/// Sink for carrier records whose lanes the IR carrier refuses.
+///
+/// The IR carrier states which lanes disagree; the codec states which source
+/// record stated them. The sink is created once by the top-level decode and
+/// threaded through every route, so no `return None`, `?` or `.ok()?` between
+/// a refusal and the report can drop it, and N refusals in one document stay N
+/// notes. Every reader that records a refusal names its record, so each note
+/// carries a source location instead of a bare lane count.
+#[derive(Debug, Default)]
+pub(crate) struct LaneRefusals {
+    notes: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-fn finite_vector3(vector: Vector3) -> bool {
-    [vector.x, vector.y, vector.z]
-        .into_iter()
-        .all(f64::is_finite)
+impl LaneRefusals {
+    /// An empty sink.
+    pub(crate) fn new() -> Self {
+        Self { notes: Vec::new() }
+    }
+
+    /// Take every refusal recorded so far, in the order the readers stated
+    /// them, and leave the sink empty.
+    pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        std::mem::take(&mut self.notes)
+    }
+
+    /// How many refusals the sink holds.
+    ///
+    /// The router reads this before and after a route, so it can state how
+    /// many records a route refused before it transferred no model.
+    pub(crate) fn note_count(&self) -> usize {
+        self.notes.len()
+    }
+
+    /// Retain the identity that prevented a carrier population from merging.
+    pub(crate) fn push_annotation_collision(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(
+            ctx,
+            &mut self.notes,
+            crate::loss::CatiaLossCode::SourceAnnotationCollision,
+            format_args!("{error}"),
+            "catia_annotation_collision_loss",
+        )
+    }
+
+    /// Record one refusal against the record that stated it.
+    fn push(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        error: &cadmpeg_ir::geometry::nurbs::NurbsError,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(ctx, &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+            format_args!(
+                "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
+            ), "catia_nurbs_refusal_loss")
+    }
+
+    /// Record one refusal a lane solver stated, against the record that stated
+    /// the lanes.
+    ///
+    /// This is the sink for a solver that answers "no representation" without
+    /// an IR carrier error, such as a jet whose stored samples do not lower to
+    /// a B-spline.
+    pub(crate) fn push_solver(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        detail: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(
+            ctx,
+            &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+            format_args!(
+                "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
+            ),
+            "catia_solver_refusal_loss",
+        )
+    }
+
+    /// Record a refused source-stated parameter range against the record that
+    /// stated it.
+    fn push_range(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        range: [f64; 2],
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(
+            ctx,
+            &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
+            format_args!(
+                "A CATIA record states a parameter range the reader refuses: \
+                 {record} states [{}, {}]",
+                range[0], range[1]
+            ),
+            "catia_range_refusal_loss",
+        )
+    }
 }
 
-fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
-    nurbs.knots().iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(nurbs.knots())
-        && nurbs.control_points().iter().copied().all(finite_point3)
-        && nurbs.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .copied()
-                .all(|weight| weight.is_finite() && weight != 0.0)
-        })
+/// Whether a source-stated parameter range is readable, and a named refusal in
+/// the sink when it is not.
+///
+/// The range is a value the record states, so a non-finite bound or a bound pair
+/// that does not increase is a refused record. `strict` states whether the two
+/// bounds must differ.
+fn readable_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    range: [f64; 2],
+    strict: bool,
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let ordered = if strict {
+        range[0] < range[1]
+    } else {
+        range[0] <= range[1]
+    };
+    if range.into_iter().all(f64::is_finite) && ordered {
+        return Ok(true);
+    }
+    refusal.push_range(ctx, record, range)?;
+    Ok(false)
 }
 
-fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
-    nurbs.knots().iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(nurbs.knots())
-        && nurbs.control_points().iter().copied().all(finite_point2)
-        && nurbs.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .copied()
-                .all(|weight| weight.is_finite() && weight > 0.0)
-        })
+/// Record a carrier refusal against the record that stated it, and answer
+/// `None`.
+///
+/// A record of the right kind whose lanes the IR carrier refuses is not a
+/// record of another kind: the reader answers `None` for the record it is
+/// reading, and the refusal travels, named, in the sink the caller owns.
+pub(crate) fn note_refusal<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
+    refusal: &mut LaneRefusals,
+    record: impl std::fmt::Display,
+) -> Result<Option<T>, cadmpeg_core::CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error) => {
+            refusal.push(ctx, record, &error)?;
+            Ok(None)
+        }
+    }
 }
 
-/// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
+/// Reverse a supported pcurve over an increasing source-stated range.
+///
+/// Invalid source ranges and reconstructed NURBS lanes record a refusal.
+/// Other failures return `None` for unsupported geometry or a non-finite
+/// analytic reconstruction.
 pub(crate) fn reverse_pcurve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,
     range: [f64; 2],
-) -> Option<PcurveGeometry> {
-    if !range.into_iter().all(f64::is_finite)
-        || range[0] >= range[1]
-        || !(range[1] - range[0]).is_finite()
-    {
-        return None;
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, true, refusal, record)? {
+        return Ok(None);
     }
     match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            if !finite_point2(*origin) || !finite_point2(*direction) {
-                return None;
-            }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
-            finite_point2(origin).then_some(PcurveGeometry::Line {
-                origin,
-                direction: Point2::new(-direction.u, -direction.v),
-            })
+        PcurveGeometry::Line(line_pcurve) => {
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
+            let origin = FinitePoint2::new(Point2::new(
+                range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
+                range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
+            ));
+            Ok(origin.map(|origin| {
+                PcurveGeometry::Line(cadmpeg_ir::geometry::pcurve::LinePcurve::new(
+                    origin,
+                    line_pcurve.direction().reversed(),
+                ))
+            }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            if !valid_pcurve_nurbs(nurbs) {
-                return None;
+            if !pcurve_weights_are_positive(nurbs) {
+                return Ok(None);
             }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let mut reversed_knots = nurbs
-                .knots()
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            for knot in &mut reversed_knots {
-                if *knot == -0.0 {
-                    *knot = 0.0;
+            let reversed_knots = reverse_knots(ctx, nurbs.knots(), range)?;
+            let mut poles = match nurbs.pole_rows() {
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
+                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                    }
                 }
-            }
-            if reversed_knots.iter().copied().any(|knot| !knot.is_finite()) {
-                return None;
-            }
-            Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
-                    nurbs.degree(),
-                    reversed_knots,
-                    nurbs.control_points().iter().rev().copied().collect(),
-                    nurbs
-                        .weights()
-                        .map(|weights| weights.iter().rev().copied().collect()),
-                    nurbs.periodic(),
-                )
-                .ok()?,
-            })
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
+                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                    }
+                }
+            };
+            poles.reverse();
+            note_refusal(
+                ctx,
+                match KnotVector::new(ctx, reversed_knots)? {
+                    Ok(knots) => {
+                        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
+                    }
+                    Err(error) => Err(error),
+                },
+                refusal,
+                record,
+            )
+            .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 /// Reverse a supported model-space curve over an increasing native range.
+///
+/// Invalid source ranges and reconstructed NURBS lanes record a refusal,
+/// as in [`reverse_pcurve_geometry`]. Unsupported geometry and non-finite
+/// analytic reconstructions return `None`.
 pub(crate) fn reverse_curve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     range: [f64; 2],
-) -> Option<(CurveGeometry, [f64; 2])> {
-    if !range.into_iter().all(f64::is_finite)
-        || range[0] > range[1]
-        || !(range[1] - range[0]).is_finite()
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, false, refusal, record)? {
+        return Ok(None);
+    }
+    if matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
+    ) && !(range[1] - range[0]).is_finite()
     {
-        return None;
+        refusal.push_range(ctx, record, range)?;
+        return Ok(None);
     }
     match geometry {
-        CurveGeometry::Line { origin, direction } => {
-            if !finite_point3(*origin)
-                || ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-            {
-                return None;
-            }
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let origin = line_curve.origin().get();
+            let direction = line_curve.direction();
             let length = range[1] - range[0];
-            let origin = (*origin).translated(*direction, range[1]);
-            let direction = direction.scale(-1.0);
-            if !finite_point3(origin)
-                || ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-            {
-                return None;
-            }
-            Some((CurveGeometry::Line { origin, direction }, [0.0, length]))
+            let origin = FinitePoint3::new(origin.translated(*direction.as_raw(), range[1]));
+            Ok(origin.map(|origin| {
+                (
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::new(
+                            origin,
+                            direction.reversed(),
+                        ),
+                    )),
+                    [0.0, length],
+                )
+            }))
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            if !finite_point3(*center)
-                || ![
-                    axis.x,
-                    axis.y,
-                    axis.z,
-                    ref_direction.x,
-                    ref_direction.y,
-                    ref_direction.z,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
-                || !radius.is_finite()
-            {
-                return None;
-            }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let axis = *circle_curve.frame().axis().as_raw();
+            let reference = *circle_curve.frame().reference().as_raw();
             let sweep = range[1] - range[0];
-            let tangent = (*axis).cross(*ref_direction);
+            let tangent = axis.cross(reference);
             let end = range[1];
-            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
-            if ![ref_direction.x, ref_direction.y, ref_direction.z]
-                .into_iter()
-                .all(f64::is_finite)
-            {
-                return None;
-            }
-            Some((
-                CurveGeometry::Circle {
-                    center: *center,
-                    axis: (*axis).scale(-1.0),
-                    ref_direction,
-                    radius: *radius,
-                },
-                [0.0, sweep],
-            ))
+            let reference = reference.scale(end.cos()) + tangent.scale(end.sin());
+            let frame = UnitVector3::new(reference).and_then(|reference| {
+                OrthonormalFrame3::from_units(circle_curve.frame().axis().reversed(), reference)
+            });
+            Ok(frame.map(|frame| {
+                (
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                            circle_curve.center(),
+                            frame,
+                            circle_curve.radius(),
+                        ),
+                    )),
+                    [0.0, sweep],
+                )
+            }))
         }
-        CurveGeometry::Nurbs(nurbs) => {
-            if !valid_nurbs_curve(nurbs) {
-                return None;
-            }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let knots = nurbs
-                .knots()
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            if knots.iter().copied().any(|knot| !knot.is_finite()) {
-                return None;
-            }
-            Some((
-                CurveGeometry::Nurbs(
-                    NurbsCurve::new(
-                        nurbs.degree(),
-                        knots,
-                        nurbs.control_points().iter().rev().copied().collect(),
-                        nurbs
-                            .weights()
-                            .map(|weights| weights.iter().rev().copied().collect()),
-                        nurbs.periodic(),
-                    )
-                    .ok()?,
-                ),
-                range,
-            ))
-        }
-        _ => None,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => note_refusal(
+            ctx,
+            reverse_nurbs_curve(ctx, nurbs, range)?,
+            refusal,
+            record,
+        )
+        .map(|curve| {
+            curve.map(|curve| {
+                (
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    range,
+                )
+            })
+        }),
+        _ => Ok(None),
     }
 }
 
-/// Normalize the parameter interval for a model-space carrier.
-pub(crate) fn canonical_model_curve_range(
-    geometry: &CurveGeometry,
+/// Reflect knots without summing the interval endpoints. Subtracting from
+/// the nearer endpoint preserves small spans at large parameter offsets.
+fn reverse_knots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    knots: &[f64],
+    [lower, upper]: [f64; 2],
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+    let mut reversed = ctx.copy_slice(knots, "catia_reverse_knots")?;
+    reversed.reverse();
+    for knot in &mut reversed {
+        let reflected = if (*knot - lower).abs() <= (upper - *knot).abs() {
+            upper - (*knot - lower)
+        } else {
+            lower + (upper - *knot)
+        };
+        *knot = if reflected == 0.0 { 0.0 } else { reflected };
+    }
+    Ok(reversed)
+}
+
+/// Reverse a NURBS carrier in the stated parameter chart.
+pub(crate) fn reverse_nurbs_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &NurbsCurve,
     range: [f64; 2],
-) -> Option<[f64; 2]> {
+) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+        let message = ctx.copy_retained_text(
+            "reversal range must be finite and ordered",
+            "catia_reverse_curve_range_error",
+        )?;
+        return Ok(Err(NurbsError::Structure(message)));
+    }
+    let mut poles = match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
+                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+            }
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
+                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+            }
+        }
+    };
+    poles.reverse();
+    let knots = match KnotVector::new(ctx, reverse_knots(ctx, curve.knots(), range)?)? {
+        Ok(knots) => knots,
+        Err(error) => return Ok(Err(error)),
+    };
+    NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())
+}
+
+/// State one trim endpoint inside the carrier domain, or refuse it.
+///
+/// The record states the interval and the IR carrier states the domain, so the
+/// two agree only inside the parameter rounding the knot lane carries.
+/// `tolerance` names that band. An endpoint beyond the band states a different
+/// interval rather than a rounded one, so it is refused; only the excess the
+/// band admits is mapped onto the domain end. A domain the carrier states in
+/// the wrong order admits no endpoint at all.
+fn domain_endpoint(parameter: f64, [lower, upper]: [f64; 2], tolerance: f64) -> Option<f64> {
+    if !(lower - tolerance..=upper + tolerance).contains(&parameter) {
         return None;
     }
-    match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
-            canonical_periodic_range(range)
+    if parameter < lower {
+        return Some(lower);
+    }
+    if parameter > upper {
+        return Some(upper);
+    }
+    Some(parameter)
+}
+
+/// Normalize the parameter interval for a model-space carrier.
+///
+/// The interval is a value the record states, so a non-finite bound, a bound
+/// pair that does not increase, and a circular sweep this reader cannot
+/// normalize are each a refused record named in the sink, not a record of
+/// another kind. The remaining `None` exits re-read a domain the IR carrier
+/// already refined.
+pub(crate) fn canonical_model_curve_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
+    range: [f64; 2],
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, false, refusal, record)? {
+        return Ok(None);
+    }
+    if matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+    ) {
+        let normalized = canonical_periodic_range(range);
+        if normalized.is_none() {
+            refusal.push_range(ctx, record, range)?;
         }
-        CurveGeometry::Nurbs(nurbs) => {
-            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
-            if nurbs.periodic() {
-                (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
-            } else if range[0] >= lower && range[1] <= upper {
-                Some(range)
+        return Ok(normalized);
+    }
+    Ok((|| match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
+            let domain_span = upper - lower;
+            let tolerance = EPS_NURBS_GEOMETRY.max(if domain_span.is_finite() {
+                domain_span.abs() * EPS_NURBS_GEOMETRY
             } else {
-                ((range[0] - lower).abs().max((range[1] - upper).abs()) <= tolerance)
-                    .then_some([lower, upper])
+                (upper * EPS_NURBS_GEOMETRY - lower * EPS_NURBS_GEOMETRY).abs()
+            });
+            if nurbs.periodic() {
+                let range_span = range[1] - range[0];
+                if range_span.is_finite() && domain_span.is_finite() {
+                    (range_span <= domain_span + tolerance).then_some(range)
+                } else {
+                    let range_half = range[1] * 0.5 - range[0] * 0.5;
+                    let domain_half = upper * 0.5 - lower * 0.5;
+                    (range_half <= domain_half + tolerance * 0.5).then_some(range)
+                }
+            } else {
+                // Correct only endpoints outside the domain; retain interior trims.
+                let [start, end] = range;
+                Some([
+                    domain_endpoint(start, [lower, upper], tolerance)?,
+                    domain_endpoint(end, [lower, upper], tolerance)?,
+                ])
             }
         }
         _ => Some(range),
-    }
+    })())
 }
 
 /// Reverse a cone-helix construction over its complete angular domain.
@@ -271,76 +481,84 @@ pub(crate) fn canonical_model_curve_range(
 /// curve families require family-specific support-side mappings and are not
 /// admitted here.
 pub(crate) fn reverse_helix_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &ProceduralCurveDefinition,
     range: [f64; 2],
-) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = definition
-    else {
-        return None;
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<Option<(ProceduralCurveDefinition, [f64; 2])>, cadmpeg_core::CodecError> {
+    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
+        return Ok(None);
     };
-    if range != *angle_range
-        || !range.into_iter().all(f64::is_finite)
-        || range[0] >= range[1]
-        || ![center.x, center.y, center.z]
+    if !readable_range(ctx, range, true, refusal, record)? {
+        return Ok(None);
+    }
+    if !(range[1] - range[0]).is_finite() {
+        refusal.push_range(ctx, record, range)?;
+        return Ok(None);
+    }
+    Ok((|| {
+        let angle_range = helix_payload.angle_range();
+        let center = helix_payload.center().as_raw();
+        let major = helix_payload.major();
+        let minor = helix_payload.minor();
+        let pitch = helix_payload.pitch();
+        let apex_factor = helix_payload.apex_factor();
+        let axis = helix_payload.axis();
+
+        if range != angle_range.get() {
+            return None;
+        }
+        let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
+        let radial_scale_at_end = 1.0 + apex_factor.get() * revolutions;
+        if !revolutions.is_finite()
+            || !radial_scale_at_end.is_finite()
+            || radial_scale_at_end == 0.0
+        {
+            return None;
+        }
+        let angle_sum = range[0] + range[1];
+        if !angle_sum.is_finite() {
+            return None;
+        }
+        let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
+        let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
+        let major = major_at_end.scale(radial_scale_at_end);
+        let minor = minor_at_end.scale(radial_scale_at_end);
+        let center = center.translated(pitch.get(), revolutions);
+        let pitch = pitch.scale(-1.0);
+        let apex_factor = -apex_factor.get() / radial_scale_at_end;
+        let axis = axis.scale(-1.0);
+        if ![center.x, center.y, center.z, apex_factor]
             .into_iter()
             .chain(
                 [major, minor, pitch, axis]
                     .into_iter()
                     .flat_map(|vector| [vector.x, vector.y, vector.z]),
             )
-            .chain([*apex_factor])
             .all(f64::is_finite)
-    {
-        return None;
-    }
-    let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-    let radial_scale_at_end = 1.0 + *apex_factor * revolutions;
-    if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
-        return None;
-    }
-    let angle_sum = range[0] + range[1];
-    if !angle_sum.is_finite() {
-        return None;
-    }
-    let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
-    let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
-    let major = major_at_end.scale(radial_scale_at_end);
-    let minor = minor_at_end.scale(radial_scale_at_end);
-    let center = center.translated(*pitch, revolutions);
-    let pitch = pitch.scale(-1.0);
-    let apex_factor = -*apex_factor / radial_scale_at_end;
-    let axis = axis.scale(-1.0);
-    if ![center.x, center.y, center.z, apex_factor]
-        .into_iter()
-        .chain(
-            [major, minor, pitch, axis]
-                .into_iter()
-                .flat_map(|vector| [vector.x, vector.y, vector.z]),
-        )
-        .all(f64::is_finite)
-    {
-        return None;
-    }
-    Some((
-        ProceduralCurveDefinition::Helix {
-            angle_range: *angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        },
-        range,
-    ))
+        {
+            return None;
+        }
+        Some((
+            ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                    angle_range.get(),
+                    cadmpeg_ir::geometry::HelixFrame {
+                        center,
+                        major,
+                        minor,
+                        pitch,
+                        axis,
+                    },
+                    apex_factor,
+                    None,
+                )
+                .ok()?,
+            ),
+            range,
+        ))
+    })())
 }
 
 /// Normalize an increasing circular interval to the canonical one-turn domain.
@@ -360,37 +578,46 @@ pub(crate) fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CircularHelixCache {
     /// Piecewise-linear curve cache on the construction's angle interval.
-    pub curve: NurbsCurve,
+    pub(crate) curve: NurbsCurve,
     /// Maximum radial sagitta deviation in model length units.
-    pub fit_tolerance: f64,
+    pub(crate) fit_tolerance: FitTolerance,
 }
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.
+///
+/// `Ok(None)` states that the construction has no exact circular helix cache;
+/// the curve still transfers. Source interval and IR lane refusals reach the
+/// sink. Resource refusals propagate to the decode caller.
 pub(crate) fn circular_helix_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     construction: &ProceduralCurveDefinition,
-    requested_tolerance: f64,
-) -> Option<CircularHelixCache> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = construction
-    else {
-        return None;
+    requested_tolerance: PositiveReal,
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<Option<CircularHelixCache>, cadmpeg_core::CodecError> {
+    let requested_tolerance = requested_tolerance.get();
+    let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
+        return Ok(None);
     };
+    let angle_range = helix_payload.angle_range();
+    if !readable_range(ctx, angle_range.get(), true, refusal, record)? {
+        return Ok(None);
+    }
+    let [angle_start, angle_end] = angle_range.get();
+    if !(angle_end - angle_start).is_finite() {
+        refusal.push_range(ctx, record, angle_range.get())?;
+        return Ok(None);
+    }
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
+
     let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
     let pitch_norm = pitch.x.hypot(pitch.y).hypot(pitch.z);
-    let frame_finite = finite_point3(*center)
-        && finite_vector3(*major)
-        && finite_vector3(*minor)
-        && finite_vector3(*pitch)
-        && finite_vector3(*axis);
     let normalized_dot = |left: &Vector3, right: &Vector3| {
         (left.x / left.x.hypot(left.y).hypot(left.z))
             * (right.x / right.x.hypot(right.y).hypot(right.z))
@@ -399,10 +626,7 @@ pub(crate) fn circular_helix_cache(
             + (left.z / left.x.hypot(left.y).hypot(left.z))
                 * (right.z / right.x.hypot(right.y).hypot(right.z))
     };
-    if !requested_tolerance.is_finite()
-        || requested_tolerance <= 0.0
-        || !frame_finite
-        || !radius.is_finite()
+    if !radius.is_finite()
         || radius <= 0.0
         || !minor_radius.is_finite()
         || minor_radius <= 0.0
@@ -410,11 +634,9 @@ pub(crate) fn circular_helix_cache(
         || (axis_norm - 1.0).abs() > EPS_HELIX_FRAME
         || !pitch_norm.is_finite()
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
-        || !angle_range.iter().copied().all(f64::is_finite)
-        || angle_range[0] >= angle_range[1]
-        || *apex_factor != 0.0
+        || apex_factor.get() != 0.0
     {
-        return None;
+        return Ok(None);
     }
     let normalized_dot_major_minor = normalized_dot(major, minor);
     let normalized_dot_major_axis = normalized_dot(major, axis);
@@ -433,87 +655,128 @@ pub(crate) fn circular_helix_cache(
         || !normalized_dot_pitch_axis.is_finite()
         || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_PITCH_ALIGNMENT
     {
-        return None;
+        return Ok(None);
     }
     let sweep = angle_range[1] - angle_range[0];
     if !sweep.is_finite() || sweep <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let relative_tolerance = requested_tolerance / radius;
+    // The step whose chord sagitta is the requested tolerance is
+    // `2 * acos(1 - relative_tolerance)`. The requested tolerance is positive
+    // and the refusals above state `radius > 0`, so the relative tolerance is
+    // positive and `1 - relative_tolerance` never passes `acos`'s upper bound.
+    // It passes the lower bound when the tolerance reaches the diameter, and
+    // that is a stated step rather than a value out of domain: a tolerance at
+    // or past the diameter bounds every chord of the circle, so the step it
+    // states is the whole turn. Each of the three states has its own arm here.
     let max_step = if relative_tolerance < EPS_RELATIVE_TOLERANCE {
         2.0 * (2.0 * relative_tolerance).sqrt()
+    } else if relative_tolerance <= 2.0 {
+        2.0 * (1.0 - relative_tolerance).acos()
     } else {
-        2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
+        2.0 * std::f64::consts::PI
     };
     if !max_step.is_finite() || max_step <= 0.0 {
-        return None;
+        return Ok(None);
     }
-    let segment_count = (sweep / max_step).ceil().max(1.0);
-    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
+    // Both refusals above bound the quotient: `sweep` and `max_step` are each
+    // finite and positive, so the quotient is positive and ceils to at least
+    // one segment. No floor stands here.
+    let segment_count = (sweep / max_step).ceil();
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
+        return Ok(None);
     }
-    let segment_count = segment_count as usize;
-    let step = sweep / segment_count as f64;
-    let samples = (0..=segment_count)
-        .map(|index| {
-            let parameter = if index == segment_count {
-                angle_range[1]
-            } else {
-                angle_range[0] + index as f64 * step
-            };
-            if !parameter.is_finite() {
-                return None;
-            }
-            Some((parameter, circular_helix_point(construction, parameter)?))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let Some(segment_count) = truncate_f64_to_usize(segment_count) else {
+        return Ok(None);
+    };
+    let step = sweep
+        / match f64_from_index(segment_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+    let sample_count = segment_count
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
+    let sample_bytes = sample_count
+        .checked_mul(std::mem::size_of::<(f64, Point3)>())
+        .map(u64_from_index)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
+    let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
+    let mut samples = Vec::new();
+    ctx.reserve_vec(&mut samples, sample_count, "catia_helix_samples")?;
+    for index in 0..=segment_count {
+        let parameter = if index == segment_count {
+            angle_range[1]
+        } else {
+            angle_range[0]
+                + match f64_from_index(index) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                } * step
+        };
+        if !parameter.is_finite() {
+            return Ok(None);
+        }
+        let Some(point) = circular_helix_point(construction, parameter) else {
+            return Ok(None);
+        };
+        samples.push((parameter, point));
+    }
     if !samples
         .windows(2)
         .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
     {
-        return None;
+        return Ok(None);
     }
-    let fit_tolerance = 2.0 * radius * (step * 0.25).sin().powi(2);
-    let mut knots = Vec::with_capacity(samples.len() + 2);
+    let sine = (step * 0.25).sin();
+    let fit_tolerance = (radius * sine) * (2.0 * sine);
+    let knot_count = sample_count
+        .checked_add(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
+    let knot_bytes = knot_count
+        .checked_mul(std::mem::size_of::<f64>())
+        .map(u64_from_index)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
+    let mut knots = Vec::new();
+    ctx.reserve_vec(&mut knots, knot_count, "catia_helix_knots")?;
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let curve = NurbsCurve::new(
-        1,
-        knots,
-        samples.into_iter().map(|(_, point)| point).collect(),
-        None,
-        false,
-    )
-    .ok()?;
-    if !fit_tolerance.is_finite()
-        || !valid_nurbs_curve(&curve)
-        || !knots_nondecreasing(curve.knots())
-    {
-        return None;
-    }
-    Some(CircularHelixCache {
-        curve,
-        fit_tolerance,
-    })
+    let control_bytes = sample_count
+        .checked_mul(std::mem::size_of::<Point3>())
+        .map(u64_from_index)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(control_bytes, "catia_helix_controls")?;
+    let mut controls = Vec::new();
+    ctx.reserve_vec(&mut controls, sample_count, "catia_helix_controls")?;
+    controls.extend(samples.into_iter().map(|(_, point)| point));
+    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx, 1, knots, controls, None, false,
+    )? {
+        Ok(curve) => curve,
+        Err(error) => return note_refusal(ctx, Err(error), refusal, record),
+    };
+    Ok(FitTolerance::try_new(fit_tolerance)
+        .ok()
+        .map(|fit_tolerance| CircularHelixCache {
+            curve,
+            fit_tolerance,
+        }))
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        ..
-    } = construction
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
-    if !angle.is_finite()
-        || !angle_range.iter().copied().all(f64::is_finite)
-        || angle_range[0] >= angle_range[1]
-    {
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center().as_raw();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+
+    if !angle.is_finite() || angle_range[0] >= angle_range[1] {
         return None;
     }
     let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
@@ -525,39 +788,19 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
         center.y + major.y * angle.cos() + minor.y * angle.sin() + pitch.y * revolution_fraction,
         center.z + major.z * angle.cos() + minor.z * angle.sin() + pitch.z * revolution_fraction,
     );
-    finite_point3(point).then_some(point)
+    point.is_finite().then_some(point)
 }
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
-/// piecewise Bézier B-spline control net.
-pub(crate) fn quintic_jet_bspline(
-    degree: u32,
-    knots: &[f64],
-    points: &[[f64; 2]],
-    first: &[[f64; 2]],
-    second: &[[f64; 2]],
-) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
-    quintic_jet_bspline_nd(degree, knots, points, first, second)
-}
-
-/// Convert a 3D degree-5 position/derivative jet to an exact B-spline.
-pub(crate) fn quintic_jet_bspline3(
-    degree: u32,
-    knots: &[f64],
-    points: &[[f64; 3]],
-    first: &[[f64; 3]],
-    second: &[[f64; 3]],
-) -> Option<(Vec<f64>, Vec<[f64; 3]>)> {
-    quintic_jet_bspline_nd(degree, knots, points, first, second)
-}
-
-fn quintic_jet_bspline_nd<const N: usize>(
+/// piecewise Bézier B-spline control net, in any point dimension.
+pub(crate) fn quintic_jet_bspline<const N: usize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
     first: &[[f64; N]],
     second: &[[f64; N]],
-) -> Option<(Vec<f64>, Vec<[f64; N]>)> {
+) -> QuinticJetOutput<N> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -568,14 +811,26 @@ fn quintic_jet_bspline_nd<const N: usize>(
         || !first.iter().flatten().copied().all(f64::is_finite)
         || !second.iter().flatten().copied().all(f64::is_finite)
     {
-        return None;
+        return Ok(None);
     }
-    let mut controls = Vec::with_capacity(6 * (knots.len() - 1));
-    let mut full_knots = vec![knots[0]; 6];
+    let control_count = knots
+        .len()
+        .checked_sub(1)
+        .and_then(|count| count.checked_mul(6))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
+    let full_knot_count = knots
+        .len()
+        .checked_mul(6)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
+    let (mut controls, _controls_reservation) =
+        ctx.temporary_vec(control_count, "catia quintic jet controls")?;
+    let mut full_knots = Vec::new();
+    ctx.reserve_vec(&mut full_knots, full_knot_count, "catia quintic jet knots")?;
+    full_knots.extend([knots[0]; 6]);
     for index in 0..knots.len() - 1 {
         let h = knots[index + 1] - knots[index];
         if !h.is_finite() || h <= 0.0 {
-            return None;
+            return Ok(None);
         }
         let p0 = points[index];
         let p1 = points[index + 1];
@@ -583,234 +838,370 @@ fn quintic_jet_bspline_nd<const N: usize>(
         let d1 = first[index + 1];
         let dd0 = second[index];
         let dd1 = second[index + 1];
+        // Scale derivatives before squaring the span. In particular, h*h
+        // can overflow while h*h*dd is finite, including when dd is zero.
+        let tangent = |derivative: f64| {
+            let product = h * derivative;
+            if product.is_finite() {
+                product / 5.0
+            } else {
+                (h / 5.0) * derivative
+            }
+        };
+        let curvature = |derivative: f64| {
+            let product = h * derivative;
+            if product.is_finite() {
+                (h / 20.0) * product
+            } else {
+                ((h / 20.0) * derivative) * h
+            }
+        };
         controls.extend([
             p0,
-            std::array::from_fn(|axis| p0[axis] + h * d0[axis] / 5.0),
+            std::array::from_fn(|axis| p0[axis] + tangent(d0[axis])),
             std::array::from_fn(|axis| {
-                p0[axis] + 2.0 * h * d0[axis] / 5.0 + h * h * dd0[axis] / 20.0
+                tangent(d0[axis]).mul_add(2.0, p0[axis]) + curvature(dd0[axis])
             }),
             std::array::from_fn(|axis| {
-                p1[axis] - 2.0 * h * d1[axis] / 5.0 + h * h * dd1[axis] / 20.0
+                tangent(d1[axis]).mul_add(-2.0, p1[axis]) + curvature(dd1[axis])
             }),
-            std::array::from_fn(|axis| p1[axis] - h * d1[axis] / 5.0),
+            std::array::from_fn(|axis| p1[axis] - tangent(d1[axis])),
             p1,
         ]);
         full_knots.extend([knots[index + 1]; 6]);
     }
-    if !full_knots.iter().copied().all(f64::is_finite)
-        || !controls.iter().flatten().copied().all(f64::is_finite)
-    {
-        return None;
+    if !full_knots.iter().copied().all(f64::is_finite) {
+        return Ok(None);
     }
-    Some((full_knots, controls))
-}
-
-/// Contract one parameter of a tensor-product NURBS surface into its exact
-/// rational isocurve.
-pub(crate) fn nurbs_surface_isocurve(
-    surface: &NurbsSurface,
-    parameter: f64,
-    fix_u: bool,
-) -> Option<NurbsCurve> {
-    if !parameter.is_finite()
-        || !surface.u_knots().iter().copied().all(f64::is_finite)
-        || !surface.v_knots().iter().copied().all(f64::is_finite)
-        || !surface.control_points().iter().copied().all(finite_point3)
-        || surface.weights().is_some_and(|weights| {
-            weights
-                .iter()
-                .copied()
-                .any(|weight| !weight.is_finite() || weight == 0.0)
-        })
-    {
-        return None;
+    let mut finite_controls = Vec::new();
+    ctx.reserve_vec(
+        &mut finite_controls,
+        controls.len(),
+        "catia quintic jet finite controls",
+    )?;
+    for control in controls {
+        let Some(control) = FiniteVector::new(control) else {
+            return Ok(None);
+        };
+        finite_controls.push(control);
     }
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    if !knots_nondecreasing(surface.u_knots()) || !knots_nondecreasing(surface.v_knots()) {
-        return None;
-    }
-    let (fixed_basis, varying_count, degree, knots) = if fix_u {
-        (
-            nurbs_basis_values(surface.u_knots(), u_degree, parameter, u_count)?,
-            v_count,
-            surface.v_degree(),
-            surface.v_knots().to_vec(),
-        )
-    } else {
-        (
-            nurbs_basis_values(surface.v_knots(), v_degree, parameter, v_count)?,
-            u_count,
-            surface.u_degree(),
-            surface.u_knots().to_vec(),
-        )
-    };
-    let mut control_points = Vec::with_capacity(varying_count);
-    let mut weights = Vec::with_capacity(varying_count);
-    for varying in 0..varying_count {
-        let mut numerator = [0.0; 3];
-        let mut denominator = 0.0;
-        for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
-            let index = if fix_u {
-                fixed.checked_mul(v_count)?.checked_add(varying)?
-            } else {
-                varying.checked_mul(v_count)?.checked_add(fixed)?
-            };
-            let point = surface.control_points().get(index)?;
-            let weight = match surface.weights() {
-                Some(values) => *values.get(index)?,
-                None => 1.0,
-            };
-            let factor = basis * weight;
-            numerator[0] += factor * point.x;
-            numerator[1] += factor * point.y;
-            numerator[2] += factor * point.z;
-            denominator += factor;
-        }
-        if !denominator.is_finite()
-            || denominator == 0.0
-            || !numerator.into_iter().all(f64::is_finite)
-        {
-            return None;
-        }
-        let point = Point3::new(
-            numerator[0] / denominator,
-            numerator[1] / denominator,
-            numerator[2] / denominator,
-        );
-        if !finite_point3(point) {
-            return None;
-        }
-        control_points.push(point);
-        weights.push(denominator);
-    }
-    if !knots.iter().copied().all(f64::is_finite)
-        || !control_points.iter().copied().all(finite_point3)
-        || !weights.iter().copied().all(f64::is_finite)
-    {
-        return None;
-    }
-    NurbsCurve::new(
-        degree,
-        knots,
-        control_points,
-        surface.weights().is_some().then_some(weights),
-        if fix_u {
-            surface.v_periodic()
-        } else {
-            surface.u_periodic()
-        },
-    )
-    .ok()
-}
-
-fn nurbs_basis_values(
-    knots: &[f64],
-    degree: usize,
-    parameter: f64,
-    count: usize,
-) -> Option<Vec<f64>> {
-    if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
-        return None;
-    }
-    if !parameter.is_finite()
-        || !knots.iter().copied().all(f64::is_finite)
-        || !knots_nondecreasing(knots)
-    {
-        return None;
-    }
-    let mut basis = alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
-    for (index, value) in basis.iter_mut().enumerate() {
-        if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
-            || (parameter == *knots.last()? && index + 1 == count)
-        {
-            *value = 1.0;
-        }
-    }
-    for level in 1..=degree {
-        for index in 0..count + degree - level {
-            let left_denominator = knots[index + level] - knots[index];
-            let right_denominator = knots[index + level + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else {
-                (parameter - knots[index]) / left_denominator * basis[index]
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else {
-                (knots[index + level + 1] - parameter) / right_denominator * basis[index + 1]
-            };
-            basis[index] = left + right;
-        }
-    }
-    basis.truncate(count);
-    basis.iter().all(|value| value.is_finite()).then_some(basis)
-}
-
-pub(crate) fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
-    let capacity = multiplicities
-        .iter()
-        .try_fold(0usize, |sum, value| sum.checked_add(*value as usize))?;
-    let mut knots = Vec::with_capacity(capacity);
-    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
-        knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
-    }
-    Some(knots)
+    Ok(Some((full_knots, finite_controls)))
 }
 
 pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
     multiplicities
         .iter()
         .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)
+        .checked_sub(degree.checked_add(1)?)
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::eval::{curve_point, pcurve_uv};
+    mod numerical_limits;
+
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+        nurbs::{NurbsCurve, NurbsSurface},
+        pcurve::PcurveGeometry,
+        CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::PositiveReal;
 
-    use super::*;
+    use super::{
+        canonical_model_curve_range, circular_helix_cache, quintic_jet_bspline,
+        reverse_curve_geometry, reverse_helix_definition, reverse_pcurve_geometry, LaneRefusals,
+    };
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+
+    const DOMAIN_ROUNDING: f64 = 1.0e-12;
+
+    #[test]
+    fn quintic_jet_control_workspace_refuses_materialized_limit() {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            quintic_jet_bspline(
+                ctx,
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0], [1.0, 0.0]],
+                &[[0.0, 0.0], [0.0, 0.0]],
+            )
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service profile admits jet workspace")
+            .is_some());
+        assert!(
+            matches!(crate::test_support::with_materialized_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia quintic jet controls")
+        );
+    }
+
+    #[test]
+    fn annotation_collision_note_refuses_retained_and_collection_limits() {
+        let collision = cadmpeg_ir::annotations::AnnotationIdentityCollision {
+            id: "catia:test:curve#duplicate".to_string(),
+        };
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_collision_loss")
+        );
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_collision_loss")
+        );
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_annotation_collision(ctx, &collision)?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        })
+        .expect("service profile admits collision note");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].message, collision.to_string());
+    }
+
+    #[test]
+    fn solver_refusal_note_refuses_retained_and_collection_limits() {
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_solver_refusal_loss")
+        );
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_solver_refusal_loss")
+        );
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_solver(ctx, "a5 record", "jet does not close")?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        })
+        .expect("service profile admits solver note");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("a5 record jet does not close"));
+    }
+
+    #[test]
+    fn range_refusal_note_refuses_retained_and_collection_limits() {
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_range_refusal_loss")
+        );
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_range_refusal_loss")
+        );
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_range(ctx, "source range", [2.0, 1.0])?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        })
+        .expect("service profile admits range note");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("source range states [2, 1]"));
+    }
+
+    #[test]
+    fn nurbs_refusal_note_refuses_retained_and_collection_limits() {
+        let short_weight_lane = || {
+            PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+        };
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::note_refusal(
+                ctx,
+                short_weight_lane(),
+                &mut LaneRefusals::new(),
+                "test record",
+            )
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_nurbs_refusal_loss")
+        );
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::note_refusal(
+                ctx,
+                short_weight_lane(),
+                &mut LaneRefusals::new(),
+                "test record",
+            )
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_nurbs_refusal_loss")
+        );
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            let value = super::note_refusal(ctx, short_weight_lane(), &mut refusal, "test record")?;
+            Ok::<_, cadmpeg_core::CodecError>((value, refusal.take_notes()))
+        })
+        .expect("service profile admits NURBS refusal note");
+        assert!(notes.0.is_none());
+        assert_eq!(notes.1.len(), 1);
+        assert!(notes.1[0].message.contains("test record"));
+    }
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
-        let geometry = CurveGeometry::Nurbs(
-            NurbsCurve::new(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap(),
-        );
+        ));
 
+        let mut refusal = LaneRefusals::new();
         assert_eq!(
-            canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+                ctx,
+                &geometry,
+                [-DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
+                &mut refusal,
+                "test curve"
+            ))
+            .expect("service profile admits range operation"),
             Some([0.0, 1.0])
         );
-        assert_eq!(canonical_model_curve_range(&geometry, [-1.0e-4, 1.0]), None);
+        for (range, expected) in [
+            ([-DOMAIN_ROUNDING, 0.5], [0.0, 0.5]),
+            ([0.5, 1.0 + DOMAIN_ROUNDING], [0.5, 1.0]),
+            ([0.25, 0.75], [0.25, 0.75]),
+            (
+                [-DOMAIN_ROUNDING, 1.0 - DOMAIN_ROUNDING],
+                [0.0, 1.0 - DOMAIN_ROUNDING],
+            ),
+            (
+                [DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
+                [DOMAIN_ROUNDING, 1.0],
+            ),
+        ] {
+            assert_eq!(
+                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+                    ctx,
+                    &geometry,
+                    range,
+                    &mut refusal,
+                    "test curve"
+                ))
+                .expect("service profile admits range operation"),
+                Some(expected)
+            );
+        }
+        for range in [[-1.0e-4, 0.5], [0.5, 1.0 + 1.0e-4]] {
+            assert_eq!(
+                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+                    ctx,
+                    &geometry,
+                    range,
+                    &mut refusal,
+                    "test curve"
+                ))
+                .expect("service profile admits range operation"),
+                None
+            );
+        }
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+                ctx,
+                &geometry,
+                [-1.0e-4, 1.0],
+                &mut refusal,
+                "test curve"
+            ))
+            .expect("service profile admits range operation"),
+            None
+        );
+        // Domain corrections do not add a refused source range.
+        assert!(refusal.take_notes().is_empty());
+
+        // A source-stated interval that does not increase is a refused record.
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+                ctx,
+                &geometry,
+                [1.0, 0.0],
+                &mut refusal,
+                "test curve"
+            ))
+            .expect("service profile admits range operation"),
+            None
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert!(
+            notes[0].message.contains("test curve states [1, 0]"),
+            "{:?}",
+            notes[0]
+        );
     }
 
     #[test]
     fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
-        let geometry = PcurveGeometry::Line {
-            origin: Point2::new(2.0, -1.0),
-            direction: Point2::new(3.0, 4.0),
-        };
+        let geometry = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(2.0, -1.0),
+                Point2::new(3.0, 4.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(&geometry, range).expect("reversible line");
+        let reversed = crate::test_support::with_service_context(|ctx| {
+            reverse_pcurve_geometry(
+                ctx,
+                &geometry,
+                range,
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
+        })
+        .expect("service profile admits range operation")
+        .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
-            let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
-            let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter,
+            )
+            .expect("reversed evaluation");
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &geometry,
+                source_parameter,
+            )
+            .expect("source evaluation");
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -818,25 +1209,52 @@ mod tests {
 
     #[test]
     fn reversed_model_carriers_preserve_endpoint_geometry() {
-        let line = CurveGeometry::Line {
-            origin: Point3::new(2.0, -1.0, 4.0),
-            direction: Vector3::new(3.0, 4.0, -2.0),
-        };
-        let circle = CurveGeometry::Circle {
-            center: Point3::new(2.0, -1.0, 4.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 3.0,
-        };
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(2.0, -1.0, 4.0),
+                Vector3::new(3.0, 4.0, -2.0)
+                    .unit()
+                    .expect("nonzero fixture direction"),
+            )
+            .expect("valid LineCurve fixture"),
+        ));
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(2.0, -1.0, 4.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                3.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) =
-                reverse_curve_geometry(&geometry, range).expect("reversible model curve");
+            let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+                reverse_curve_geometry(
+                    ctx,
+                    &geometry,
+                    range,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    "test record",
+                )
+            })
+            .expect("service profile admits range operation")
+            .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
-                let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
-                let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
-                assert!(actual.distance(expected) < 1.0e-12);
+                let actual = cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed,
+                    parameter,
+                )
+                .expect("reversed endpoint");
+                let expected = cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &geometry,
+                    source_parameter,
+                )
+                .expect("source endpoint");
+                assert!(actual.distance(expected.get()) < 1.0e-12);
             }
         }
     }
@@ -845,24 +1263,44 @@ mod tests {
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
-        let geometry = CurveGeometry::Nurbs(
-            NurbsCurve::new(
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap(),
-        );
+        ));
         let range = [0.2, 0.8];
-        let (reversed, reversed_range) =
-            reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
+        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+            reverse_curve_geometry(
+                ctx,
+                &geometry,
+                range,
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
+        })
+        .expect("service profile admits range operation")
+        .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
-            let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
-            let expected = curve_point(&geometry, range[0] + range[1] - parameter)
-                .expect("source NURBS point");
-            assert!(actual.distance(expected) < 1.0e-12);
+            let actual = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter,
+            )
+            .expect("reversed NURBS point");
+            let expected = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &geometry,
+                range[0] + range[1] - parameter,
+            )
+            .expect("source NURBS point");
+            assert!(actual.distance(expected.get()) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }
@@ -870,36 +1308,45 @@ mod tests {
     #[test]
     fn reversed_helix_preserves_conical_path() {
         let range = [0.25, 2.0];
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: range,
-            center: Point3::new(1.0, -2.0, 3.0),
-            major: Vector3::new(2.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 2.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 3.0),
-            apex_factor: 0.4,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
-        let (reversed, reversed_range) =
-            reverse_helix_definition(&definition, range).expect("reversible helix");
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(1.0, -2.0, 3.0),
+                    major: Vector3::new(2.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 2.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 3.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.4,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
+        let mut refusal = LaneRefusals::new();
+        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+            reverse_helix_definition(ctx, &definition, range, &mut refusal, "test helix")
+        })
+        .expect("service profile admits range operation")
+        .expect("reversible helix");
+        assert!(refusal.take_notes().is_empty());
         let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
-            let ProceduralCurveDefinition::Helix {
-                angle_range,
-                center,
-                major,
-                minor,
-                pitch,
-                apex_factor,
-                ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")
             };
+            let angle_range = helix_payload.angle_range();
+            let center = helix_payload.center().as_raw();
+            let major = helix_payload.major();
+            let minor = helix_payload.minor();
+            let pitch = helix_payload.pitch();
+            let apex_factor = helix_payload.apex_factor();
+
             let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-            let scale = 1.0 + apex_factor * fraction;
+            let scale = 1.0 + apex_factor.get() * fraction;
             center
-                .translated(*major, scale * angle.cos())
-                .translated(*minor, scale * angle.sin())
-                .translated(*pitch, fraction)
+                .translated(major.get(), scale * angle.cos())
+                .translated(minor.get(), scale * angle.sin())
+                .translated(pitch.get(), fraction)
         };
         for angle in [range[0], 0.75, range[1]] {
             let actual = evaluate(&reversed, angle);
@@ -914,161 +1361,387 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
-        let surface = NurbsSurface::new(
-            1,
-            1,
-            vec![0.0, 0.0, tiny, tiny],
-            vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(2.0, 1.0, 0.0),
-            ],
-            Some(vec![tiny; 4]),
-            false,
-            false,
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, tiny, tiny],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                ],
+                Some(vec![tiny; 4])
+                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap();
-        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true)
-            .expect("tiny rational surface isocurve");
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            tiny * 0.5,
+        )
+        .expect("resource allocation did not fail")
+        .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
         );
-        assert_eq!(curve.weights(), Some([tiny, tiny].as_slice()));
+        assert_eq!(curve.pole_rows().weights(), Some(vec![tiny, tiny]));
     }
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_nonfinite_output() {
-        let surface = |control_points, weights| {
-            NurbsSurface::new(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                2,
-                2,
-                control_points,
-                weights,
-                false,
-                false,
+        let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                    control_points.chunks(2).map(<[_]>::to_vec).collect(),
+                    weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap()
         };
-        assert!(nurbs_surface_isocurve(
+        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface(
-                vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
-                Some(vec![1.0e200; 4]),
+                vec![
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point3::new(-f64::MAX, 0.0, 0.0),
+                    Point3::new(-f64::MAX, 0.0, 0.0),
+                ],
+                Some(vec![1.0, 1.0, -0.5, -0.5]),
             ),
-            0.5,
-            true,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            0.5
         )
+        .expect("resource allocation did not fail")
         .is_none());
     }
 
     #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         let range = [0.125, 1.570_797_917_999_999_6];
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: range,
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
 
-        let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
+        let cache = circular_helix_cache(
+            &ctx,
+            &definition,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
+        .expect("service resource budget")
+        .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
-        assert!(cache.fit_tolerance.is_finite());
-        assert!(cache
-            .curve
-            .control_points()
-            .iter()
-            .copied()
-            .all(super::finite_point3));
+        assert!(cache.fit_tolerance.get() > 0.0);
+    }
+
+    #[test]
+    fn circular_helix_cache_refuses_samples_before_allocation() {
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid helix fixture"),
+        );
+        let tolerance = PositiveReal::new(2.0).expect("positive fixture tolerance");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(circular_helix_cache(
+            &ctx,
+            &definition,
+            tolerance,
+            &mut LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_some());
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(matches!(
+            circular_helix_cache(
+                &ctx,
+                &definition,
+                tolerance,
+                &mut LaneRefusals::new(),
+                "test record"
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    /// A tolerance at or past the diameter bounds every chord, so the step it
+    /// states is the whole turn.
+    ///
+    /// The three arms are value-identical to the clamp they replaced on every
+    /// input this route admits, so no test separates the shapes. What proves
+    /// the clamp is gone is the census: no clamp remains in this file.
+    /// This test states the value the whole-turn arm answers.
+    #[test]
+    fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        // The sweep is longer than a half turn and shorter than a whole one,
+        // so a step of the whole turn states one segment and any shorter step
+        // states more than one.
+        let range = [0.0, 4.0];
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
+        // The major axis is a unit vector, so the radius is one and the
+        // requested tolerance is the relative tolerance.
+        let cache = |tolerance| {
+            circular_helix_cache(
+                &ctx,
+                &definition,
+                PositiveReal::new(tolerance).expect("positive fixture tolerance"),
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
+            .expect("service resource budget")
+            .expect("a stated step")
+        };
+        let fine = cache(1.0e-4);
+        let diameter = cache(2.0);
+        let past = cache(2.5);
+        assert_eq!(past.curve.knots(), diameter.curve.knots());
+        assert_eq!(
+            past.curve.control_points(),
+            diameter.curve.control_points(),
+            "the diameter and every tolerance past it state one step"
+        );
+        assert!(fine.curve.control_points().len() > past.curve.control_points().len());
     }
 
     #[test]
     fn circular_helix_frame_validation_is_scale_independent() {
-        let radius = 1e-200;
-        let definition = |minor| ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(radius, 0.0, 0.0),
-            minor,
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
+        const SMALL_ADMITTED_HELIX_RADIUS: f64 = 1.0e-10;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        let radius = SMALL_ADMITTED_HELIX_RADIUS;
+        let definition = |minor| {
+            ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                    [0.0, 1.0],
+                    cadmpeg_ir::geometry::HelixFrame {
+                        center: Point3::new(0.0, 0.0, 0.0),
+                        major: Vector3::new(radius, 0.0, 0.0),
+                        minor,
+                        pitch: Vector3::new(0.0, 0.0, 1.0),
+                        axis: Vector3::new(0.0, 0.0, 1.0),
+                    },
+                    0.0,
+                    None,
+                )
+                .expect("valid HelixCurveConstruction fixture"),
+            )
         };
 
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, radius, 0.0)), 1.0e-4).is_some()
-        );
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, 2.0 * radius, 0.0)), 1.0e-4)
-                .is_none()
-        );
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
-        );
+        assert!(circular_helix_cache(
+            &ctx,
+            &definition(Vector3::new(0.0, radius, 0.0)),
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_some());
+        assert!(circular_helix_cache(
+            &ctx,
+            &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_none());
+        assert!(circular_helix_cache(
+            &ctx,
+            &definition(Vector3::new(radius, 0.0, 0.0)),
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_none());
     }
 
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
         let mut non_axial_pitch = definition.clone();
-        if let ProceduralCurveDefinition::Helix { pitch, .. } = &mut non_axial_pitch {
-            *pitch = Vector3::new(1.0, 0.0, 0.0);
+        if let ProceduralCurveDefinition::Helix(helix_payload) = &mut non_axial_pitch {
+            let angle_range = *helix_payload.angle_range();
+            let center = *helix_payload.center().as_raw();
+            let major = *helix_payload.major();
+            let minor = *helix_payload.minor();
+            let apex_factor = helix_payload.apex_factor();
+            let axis = *helix_payload.axis();
+            *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                angle_range.get(),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center,
+                    major: major.get(),
+                    minor: minor.get(),
+                    pitch: Vector3::new(1.0, 0.0, 0.0),
+                    axis: axis.get(),
+                },
+                apex_factor.get(),
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture");
         }
-        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
+        assert!(circular_helix_cache(
+            &ctx,
+            &non_axial_pitch,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_none());
 
-        let overflowing_fit = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(f64::MAX, 0.0, 0.0),
-            minor: Vector3::new(0.0, f64::MAX, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 0.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
-        assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
+        let overflowing_points = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(f64::MAX, 0.0, 0.0),
+                    major: Vector3::new(f64::MAX, 0.0, 0.0),
+                    minor: Vector3::new(0.0, f64::MAX, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
+        assert!(circular_helix_cache(
+            &ctx,
+            &overflowing_points,
+            PositiveReal::new(f64::MAX).expect("positive fixture tolerance"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_none());
     }
 
     #[test]
     fn quintic_jet_rejects_nonfinite_control_net() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         assert!(quintic_jet_bspline(
+            &ctx,
             5,
             &[0.0, 10.0],
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
+        .expect("service resource budget")
         .is_none());
         assert!(quintic_jet_bspline(
+            &ctx,
             5,
             &[0.0, 1.0],
             &[[f64::NAN, 0.0], [1.0, 0.0]],
             &[[1.0, 0.0], [1.0, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
+        .expect("service resource budget")
         .is_none());
     }
 
@@ -1076,34 +1749,188 @@ mod tests {
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn reversing_geometry_rejects_nonfinite_reconstruction() {
-        let pcurve_line = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(1.0, 0.0),
-        };
-        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX]).is_none());
+        let pcurve_line = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
+                ctx,
+                &pcurve_line,
+                [f64::MAX / 2.0, f64::MAX],
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record"
+            ))
+            .expect("service profile admits range operation")
+            .is_none()
+        );
 
-        let model_line = CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(2.0, 0.0, 0.0),
-        };
-        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
+        let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ));
+        assert!(
+            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(
+                ctx,
+                &model_line,
+                [0.0, f64::MAX],
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record"
+            ))
+            .expect("service profile admits range operation")
+            .is_none()
+        );
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
-        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX]).is_none());
+        assert!(
+            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
+                ctx,
+                &pcurve_nurbs,
+                [0.0, f64::MAX],
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record"
+            ))
+            .expect("service profile admits range operation")
+            .is_none()
+        );
+    }
 
-        let nonfinite_line = PcurveGeometry::Line {
-            origin: Point2::new(f64::NAN, 0.0),
-            direction: Point2::new(1.0, 0.0),
+    #[test]
+    fn two_refused_records_state_two_notes_each_naming_its_record() {
+        let mut refusal = LaneRefusals::new();
+        let short_weight_lane = || {
+            PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            )
+            .expect("fixture pcurve construction admission")
         };
-        assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
+        let first = crate::test_support::with_service_context(|ctx| {
+            super::note_refusal(
+                ctx,
+                short_weight_lane(),
+                &mut refusal,
+                "consolidated_a5_03_32 at byte 64",
+            )
+        })
+        .expect("service profile admits NURBS refusal note");
+        let second = crate::test_support::with_service_context(|ctx| {
+            super::note_refusal(
+                ctx,
+                short_weight_lane(),
+                &mut refusal,
+                "consolidated_a5_03_32 at byte 128",
+            )
+        })
+        .expect("service profile admits NURBS refusal note");
+        assert!(first.is_none(), "the refused record states no pcurve");
+        assert!(second.is_none(), "the refused record states no pcurve");
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 2, "one note per refused record: {notes:?}");
+        for (note, record) in notes.iter().zip([
+            "consolidated_a5_03_32 at byte 64",
+            "consolidated_a5_03_32 at byte 128",
+        ]) {
+            assert!(
+                note.message.contains("pole(s) against"),
+                "the note states both lane counts: {}",
+                note.message
+            );
+            assert!(
+                note.message.contains(record),
+                "the note names the record that stated the lanes: {}",
+                note.message
+            );
+        }
+        assert!(
+            refusal.take_notes().is_empty(),
+            "the sink is empty once its notes are taken"
+        );
+    }
+
+    #[test]
+    fn a_reversed_parameter_range_states_a_named_refusal() {
+        let geometry = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(2.0, -1.0),
+                Point2::new(3.0, 4.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
+        let mut refusal = LaneRefusals::new();
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
+                ctx,
+                &geometry,
+                [9.0, 5.0],
+                &mut refusal,
+                "e5 pcurve at byte 64"
+            ))
+            .expect("service profile admits range operation"),
+            None,
+            "a range that does not increase is refused"
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1, "one note per refused record: {notes:?}");
+        assert!(
+            notes[0].message.contains("e5 pcurve at byte 64"),
+            "the note names the record that stated the range: {}",
+            notes[0].message
+        );
+        assert!(
+            notes[0].message.contains("[9, 5]"),
+            "the note states the refused range: {}",
+            notes[0].message
+        );
+
+        let mut refusal = LaneRefusals::new();
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(
+                ctx,
+                &CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0)
+                            .unit()
+                            .expect("nonzero fixture direction"),
+                    )
+                    .expect("valid LineCurve fixture"),
+                )),
+                [f64::NAN, 1.0],
+                &mut refusal,
+                "e5 curve at byte 128",
+            ))
+            .expect("service profile admits range operation"),
+            None,
+            "a non-finite range bound is refused"
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1, "one note per refused record: {notes:?}");
+        assert!(
+            notes[0].message.contains("e5 curve at byte 128"),
+            "the note names the record that stated the range: {}",
+            notes[0].message
+        );
     }
 }

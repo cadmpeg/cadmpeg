@@ -1,3 +1,5 @@
+use cadmpeg_core::decode::u64_from_index;
+
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,
@@ -18,20 +20,64 @@ use super::test_zero_entity::{
     validate_zero_entity_ownership_roots, validate_zero_entity_records,
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
-use super::*;
+use crate::entity_table;
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::edge_node::{load_edge_nodes, CatiaConsolidatedEdgeNodeWire};
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::projection::{external_reference_views, preview_views};
+use crate::native::projection::{
+    validate_alias_surface_tags, validate_owner_chart_support_aliases,
+};
+use crate::native::schema_configuration_chain::{
+    derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
+};
+use crate::native::{
+    definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
+    design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
+    entity_suffix_value, entity_value_schema_selections, object_production, payload_references,
+    range_interval, reference_signature, semantic_entity_indices, store_projection,
+    terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
+    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
+    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
+    CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
+    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
+    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
+    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
+    CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
+    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
+    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
+    CatiaZeroEntityVertexIncidence,
+};
+use crate::object_graph;
+use std::collections::{HashMap, HashSet};
 
 impl CatiaNative {
     /// Decode CATIA-native records directly from a synthesized record source.
     #[must_use]
     pub(crate) fn decode(bytes: &[u8]) -> Self {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test source fits the service profile");
         let consolidated_records = crate::wire::records::consolidated_records(bytes);
-        Self::decode_with_records(bytes, &consolidated_records)
+        Self::decode_with_records(
+            &ctx,
+            bytes,
+            &consolidated_records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("test native records fit the service profile")
     }
 
     /// Load the typed CATIA namespace from generic native arenas.
-    pub fn load(
+    pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut catalog_headers: Vec<CatiaCatalogWire> = namespace.arena_as("catalogs")?;
@@ -55,11 +101,12 @@ impl CatiaNative {
             )));
         }
         for catalog in &mut catalog_headers {
-            catalog.entries = entries
+            let joined = entries
                 .iter()
                 .filter(|entry| entry.parent == catalog.id)
                 .cloned()
-                .collect();
+                .collect::<Vec<_>>();
+            catalog.entries = joined;
             catalog.entries.sort_by_key(|entry| entry.ordinal);
             if catalog
                 .entries
@@ -75,12 +122,8 @@ impl CatiaNative {
         }
         let catalogs = catalog_headers
             .into_iter()
-            .map(|header| {
-                CatiaCatalog::try_from(header).map_err(|message| {
-                    cadmpeg_ir::NativeConvertError::InvalidOwner(message.to_owned())
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(CatiaCatalog::from)
+            .collect::<Vec<_>>();
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
         let entity_wires: Vec<crate::native::entity_record::CatiaEntityRecordWire> =
@@ -136,27 +179,40 @@ impl CatiaNative {
                 entity.id
             )));
         }
-        let entity_classes_by_graph_identity = entity_class_index(&records);
+        let entity_classes_by_graph_identity =
+            crate::test_support::with_service_context(|ctx| entity_class_index(ctx, &records))
+                .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let (
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
             terminal_nulls_by_graph,
             parameter_bindings,
-        ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
+        ) = crate::test_support::with_service_context(|ctx| {
+            semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)
+        })
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let expected_reference_signature_cohorts =
-            derive_reference_signature_cohorts(&entity_records);
+            crate::test_support::with_service_context(|ctx| {
+                derive_reference_signature_cohorts(ctx, &entity_records)
+            })
+            .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
-        let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
-            &entity_records,
-            &entities_by_graph_identity,
-            &entity_classes_by_graph_identity,
-            &terminal_nulls_by_graph,
-        );
+        let expected_schema_configuration_row_chains =
+            crate::test_support::with_service_context(|ctx| {
+                derive_schema_configuration_row_chains(
+                    ctx,
+                    &entity_records,
+                    &entities_by_graph_identity,
+                    &entity_classes_by_graph_identity,
+                    &terminal_nulls_by_graph,
+                )
+            })
+            .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "schema-configuration-row chains do not match their successor links".to_string(),
@@ -183,7 +239,7 @@ impl CatiaNative {
                     || graph_entities
                         .iter()
                         .enumerate()
-                        .any(|(ordinal, entity)| entity.ordinal != ordinal as u64)
+                        .any(|(ordinal, entity)| entity.ordinal != u64_from_index(ordinal))
                     || graph_entities
                         .windows(2)
                         .any(|pair| pair[0].entity_id >= pair[1].entity_id)
@@ -192,9 +248,14 @@ impl CatiaNative {
                         .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.iter().any(|entity| {
                         entity.reference_signature
-                            != entity_table::parse_reference_signature(entity.value_payload()).map(
-                                |production| {
+                            != crate::test_support::with_service_context(|ctx| {
+                                entity_table::parse_reference_signature(ctx, entity.value_payload())
+                            })
+                            .expect("service reference signature budget")
+                            .and_then(|production| {
+                                crate::test_support::with_service_context(|ctx| {
                                     reference_signature(
+                                        ctx,
                                         production,
                                         &graph.id,
                                         &CatiaEntityReferenceIndex {
@@ -203,45 +264,65 @@ impl CatiaNative {
                                             terminal_nulls: &terminal_nulls_by_graph,
                                         },
                                     )
-                                },
-                            )
+                                })
+                                .ok()
+                            })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.definition_schema_selections
-                            != definition_schema_selections(
-                                &entity_table::parse_definition_schema_selectors(
-                                    entity.definition_prefix(),
-                                ),
-                                catalog,
-                            )
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let selectors = entity_table::parse_definition_schema_selectors(
+                                ctx,
+                                entity.definition_prefix(),
+                            )?;
+                            definition_schema_selections(ctx, &selectors, catalog)
+                        });
+                        expected.as_ref().map_or(true, |selections| {
+                            entity.definition_schema_selections != *selections
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.value_schema_selections
-                            != entity_value_schema_selections(
-                                &entity.value_fields(),
-                                catalog,
-                                &entity.value_packets(),
-                            )
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let fields = entity.value_fields_charged(ctx)?;
+                            let packets = entity.value_packets(ctx, &fields)?;
+                            entity_value_schema_selections(ctx, &fields, catalog, &packets)
+                        });
+                        expected.as_ref().map_or(true, |selections| {
+                            entity.value_schema_selections != *selections
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.value_production
-                            != value_production(entity, &graph.records, &entity.value_fields())
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let fields = entity.value_fields_charged(ctx)?;
+                            value_production(ctx, entity, &graph.records, &fields)
+                        });
+                        expected
+                            .as_ref()
+                            .map_or(true, |production| entity.value_production != *production)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()
                             != entity_suffix_value(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_framing()
-                            != entity_suffix_framing(entity.record_suffix()).as_ref()
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            entity_suffix_framing(ctx, entity.record_suffix())
+                        });
+                        expected
+                            .as_ref()
+                            .map_or(true, |framing| entity.suffix_framing() != framing.as_ref())
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_schema_selection
-                            != entity_suffix_schema_selection(entity.suffix_value(), catalog)
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)
+                        });
+                        expected.as_ref().map_or(true, |selection| {
+                            entity.suffix_schema_selection != *selection
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.range_interval
-                            != range_interval(
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            range_interval(
+                                ctx,
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
@@ -249,6 +330,10 @@ impl CatiaNative {
                                 &graph.id,
                                 entity.entity_id,
                             )
+                        });
+                        expected
+                            .as_ref()
+                            .map_or(true, |interval| entity.range_interval != *interval)
                     })
                     || graph_entities.iter().any(|entity| {
                         let object = graph
@@ -257,18 +342,23 @@ impl CatiaNative {
                             .find(|record| record.id == entity.object_record);
                         entity.object_production
                             != object.and_then(|object| {
-                                object_production(
-                                    entity,
-                                    object,
-                                    &CatiaEntityReferenceIndex {
-                                        entities: &entities_by_graph_identity,
-                                        classes: &entity_classes_by_graph_identity,
-                                        terminal_nulls: &terminal_nulls_by_graph,
-                                    },
-                                    &relation_expressions,
-                                    &relation_expression_entities,
-                                    &parameter_bindings,
-                                )
+                                crate::test_support::with_service_context(|ctx| {
+                                    object_production(
+                                        ctx,
+                                        entity,
+                                        object,
+                                        &CatiaEntityReferenceIndex {
+                                            entities: &entities_by_graph_identity,
+                                            classes: &entity_classes_by_graph_identity,
+                                            terminal_nulls: &terminal_nulls_by_graph,
+                                        },
+                                        &relation_expressions,
+                                        &relation_expression_entities,
+                                        &parameter_bindings,
+                                    )
+                                })
+                                .ok()
+                                .flatten()
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
@@ -287,16 +377,6 @@ impl CatiaNative {
                     graph.id
                 )));
             }
-            let record_ids = graph
-                .records
-                .iter()
-                .map(|record| record.id.clone())
-                .collect::<Vec<_>>();
-            let record_design_objects = graph
-                .records
-                .iter()
-                .map(|record| record.design_object.clone())
-                .collect::<Vec<_>>();
             let record_indices = graph
                 .records
                 .iter()
@@ -321,14 +401,36 @@ impl CatiaNative {
                 let expected_owner = expected_head_roles.owner.map(CatiaObjectOwner::from);
                 let expected_design_object = record
                     .owner_entity_id()
-                    .map(|owner| design_object_id(graph.byte_offset, owner));
+                    .map(|owner| {
+                        crate::test_support::with_service_context(|ctx| {
+                            design_object_id(ctx, graph.byte_offset, owner)
+                        })
+                    })
+                    .transpose()
+                    .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
                 let paired_entity = graph_entities.get(ordinal).copied();
-                let expected_storage = resolved_storage_link(
-                    record.storage_ref(),
-                    &record_ids,
-                    &record_design_objects,
-                    &record_indices,
-                );
+                let expected_storage = record
+                    .storage_ref()
+                    .and_then(|identity| record_indices.get(&identity))
+                    .and_then(|index| graph.records.get(*index));
+                let expected_reference_count = payload_references(&record.payload).count();
+                let references_match = expected_reference_count == record.references.len()
+                    && record
+                        .references
+                        .iter()
+                        .zip(payload_references(&record.payload))
+                        .all(|(actual, (entity_id, payload_offset, source))| {
+                            let target = record_indices
+                                .get(&entity_id)
+                                .and_then(|index| graph.records.get(*index));
+                            actual.entity_id() == entity_id
+                                && actual.payload_offset() == u64_from_index(payload_offset)
+                                && actual.source() == &source
+                                && actual.is_null() == (Some(entity_id) == terminal_null_entity_id)
+                                && actual.target() == target.map(|target| target.id.as_str())
+                                && actual.design_object()
+                                    == target.and_then(|target| target.design_object.as_deref())
+                        });
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.owner != expected_owner
                     || (record.class_ref(), record.storage_ref())
@@ -341,7 +443,10 @@ impl CatiaNative {
                     || record.entity_id() != paired_entity.map(|entity| entity.entity_id)
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
                     || (record.storage_record(), record.storage_design_object())
-                        != (expected_storage.0.as_deref(), expected_storage.1.as_deref())
+                        != (
+                            expected_storage.map(|target| target.id.as_str()),
+                            expected_storage.and_then(|target| target.design_object.as_deref()),
+                        )
                     || record.inline_body.as_ref().is_some_and(|body| {
                         (graph_entities.is_empty() && !object_graph::is_inline_body(body))
                             || body.first() != Some(&record.lead)
@@ -353,14 +458,7 @@ impl CatiaNative {
                             || !record.payload.fields.is_empty()
                     })
                     || record.inline_body.is_none() && record.head.is_empty()
-                    || record.references
-                        != resolved_payload_references(
-                            &record.payload,
-                            &record_ids,
-                            &record_design_objects,
-                            &record_indices,
-                            terminal_null_entity_id,
-                        )
+                    || !references_match
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "object graph `{}` has an invalid record sequence",
@@ -400,7 +498,10 @@ impl CatiaNative {
                 .schema_selections
                 .sort_by_key(|selection| selection.offset);
         }
-        let design_objects = design_objects(&graphs, &entity_records);
+        let design_objects = crate::test_support::with_service_context(|ctx| {
+            design_objects(ctx, &graphs, &entity_records)
+        })
+        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
         let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
         let stored_by_id = stored
             .iter()
@@ -421,7 +522,14 @@ impl CatiaNative {
         let mut external_references: Vec<CatiaExternalReference> =
             namespace.arena_as("external_references")?;
         external_references.sort_by_key(|reference| reference.byte_offset);
-        let expected_external_references = external_reference_views(&finjpl_segments);
+        let expected_external_references = crate::test_support::with_service_context(|ctx| {
+            external_reference_views(ctx, &finjpl_segments)
+        })
+        .map_err(|_| {
+            cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "stored CATIA external references exceed service limits".to_string(),
+            )
+        })?;
         if external_references != expected_external_references {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA external references disagree with their project-flags segments"
@@ -435,7 +543,13 @@ impl CatiaNative {
         validate_legacy_entity_runs(&legacy_entity_runs)?;
         let mut preview_images: Vec<CatiaPreviewImage> = namespace.arena_as("preview_images")?;
         preview_images.sort_by_key(|preview| preview.byte_offset);
-        let expected_preview_images = preview_views(&finjpl_segments);
+        let expected_preview_images =
+            crate::test_support::with_service_context(|ctx| preview_views(ctx, &finjpl_segments))
+                .map_err(|_| {
+                cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "stored CATIA previews exceed service limits".to_string(),
+                )
+            })?;
         if preview_images != expected_preview_images {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA previews disagree with their summary segments".to_string(),
@@ -559,7 +673,6 @@ impl CatiaNative {
         )?;
         validate_zero_entity_endpoint_locus_candidates(
             &zero_entity_endpoint_locus_candidates,
-            &zero_entity_endpoint_pair_candidates,
             &zero_entity_support_runs,
         )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
@@ -641,10 +754,12 @@ impl CatiaNative {
     }
 
     /// Store the typed CATIA namespace into generic native arenas.
-    pub fn store(
+    pub(crate) fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        store_projection(&CatiaArenaProjection::from(self), namespace)
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let projection = CatiaArenaProjection::from_owned(&ctx, self.clone())?;
+        store_projection(&ctx, &projection, namespace)
     }
 }

@@ -2,21 +2,45 @@
 //! Fillet, chamfer, and body/face-edit projection.
 
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, ChamferSpec, EdgeSelection, FaceMotion,
-    FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length, RadiusSpec, ScaleCenter,
-    ScaleFactors, VariableRadius,
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::{
+    features::{
+        edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius},
+        AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
+        FeatureDefinition, FeatureOperation, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
+    },
+    scalar::{Fraction, NonNegativeLength},
 };
-use cadmpeg_ir::math::Vector3;
 
 use crate::history::classify::{indexed_name, is_fillet};
 use crate::history::literals::{
     dimension_display, parse_angle_rad, parse_bool, parse_boolean_op, parse_bounded_angle_rad,
     parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm,
-    parse_valid_direction, parse_vector3,
+    parse_valid_direction, parse_vector3, parse_vector3_mm,
 };
 
-pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
+fn property_text(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    name: &str,
+) -> Result<Option<String>, CodecError> {
+    feature
+        .properties
+        .get(name)
+        .map(|value| {
+            ctx.format_retained(
+                format_args!("{value}"),
+                "retain SLDPRT edit selection reference",
+            )
+        })
+        .transpose()
+}
+
+pub(super) fn project_fillet(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")
@@ -31,78 +55,114 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             }
         }) {
-        RadiusSpec::Constant {
-            radius: Length(radius),
-        }
+        RadiusSpec::Constant { radius }
     } else {
-        let points = feature
-            .parameters
-            .iter()
-            .filter_map(|(name, radius)| {
-                let index = name.strip_prefix("Radius")?.parse::<usize>().ok()?;
-                Some((index, radius))
-            })
-            .map(|(index, radius)| {
-                let parameter = feature
-                    .parameters
-                    .get(&format!("Position{index}"))?
-                    .trim()
-                    .parse::<f64>()
-                    .ok()?;
+        let mut point_storage = ctx.reserve_scoped(0, "collect SLDPRT variable fillet radii")?;
+        let mut points = Vec::new();
+        let mut valid = true;
+        for (name, radius) in &feature.parameters {
+            ctx.charge_work(1, "scan SLDPRT variable fillet radii")?;
+            let Some(index) = name
+                .as_str()
+                .strip_prefix("Radius")
+                .and_then(|index| index.parse::<usize>().ok())
+            else {
+                continue;
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(feature.parameters.len()),
+                "scan SLDPRT variable fillet positions",
+            )?;
+            let parameter = feature.parameters.iter().find_map(|(name, value)| {
+                let suffix = name.as_str().strip_prefix("Position")?;
+                (suffix.bytes().all(|byte| byte.is_ascii_digit())
+                    && (suffix.len() == 1 || !suffix.starts_with('0'))
+                    && suffix.parse::<usize>().ok() == Some(index))
+                .then_some(value)
+            });
+            let point = (|| {
+                let parameter = parameter?.trim().parse::<f64>().ok()?;
                 let radius = parse_positive_length_mm(radius)?;
-                (parameter.is_finite() && (0.0..=1.0).contains(&parameter)).then_some((
-                    index,
-                    VariableRadius {
-                        parameter,
-                        radius: Length(radius),
-                    },
-                ))
-            })
-            .collect::<Option<Vec<_>>>();
-        points
-            .and_then(|mut points| {
-                points.sort_by_key(|(index, _)| *index);
-                (points.len() >= 2
-                    && points
-                        .iter()
-                        .enumerate()
-                        .all(|(expected, (actual, _))| expected == *actual))
-                .then_some(points)
-            })
-            .map_or_else(
-                || {
-                    if feature
-                        .parameters
-                        .keys()
-                        .any(|name| indexed_name(name, "Radius"))
-                    {
-                        RadiusSpec::UnresolvedVariable
-                    } else if feature
-                        .parameters
-                        .keys()
-                        .any(|name| matches!(name.as_str(), "Radius" | "D1"))
-                    {
-                        RadiusSpec::UnresolvedConstant
-                    } else {
-                        RadiusSpec::Unresolved
+                Some(VariableRadius {
+                    parameter: Fraction::new(parameter)?,
+                    radius: NonNegativeLength::from(radius),
+                })
+            })();
+            let Some(point) = point else {
+                valid = false;
+                break;
+            };
+            ctx.reserve_scoped_vec(
+                &mut point_storage,
+                &mut points,
+                1,
+                "collect SLDPRT variable fillet radii",
+            )?;
+            points.push((index, point));
+        }
+        ctx.sort_unstable_by(
+            &mut points,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT variable fillet radii",
+        )?;
+        let points = if valid
+            && points.len() >= 2
+            && points
+                .iter()
+                .enumerate()
+                .all(|(expected, (actual, _))| expected == *actual)
+        {
+            let mut radii = Vec::new();
+            ctx.reserve_vec(
+                &mut radii,
+                points.len(),
+                "collect SLDPRT variable fillet controls",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(points.len()),
+                "collect SLDPRT variable fillet controls",
+            )?;
+            radii.extend(points.into_iter().map(|(_, point)| point));
+            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
+        } else {
+            None
+        };
+        points.map_or_else(
+            || {
+                if feature
+                    .parameters
+                    .keys()
+                    .any(|name| indexed_name(name.as_str(), "Radius"))
+                {
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
-                },
-                |points| RadiusSpec::Variable {
-                    points: points.into_iter().map(|(_, point)| point).collect(),
-                },
-            )
+                } else if feature
+                    .parameters
+                    .keys()
+                    .any(|name| matches!(name.as_str(), "Radius" | "D1"))
+                {
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
+                    }
+                } else {
+                    RadiusSpec::Unresolved { form: None }
+                }
+            },
+            |points| RadiusSpec::Variable { points },
+        )
     };
-    FeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
-            edges: feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-            radius,
-            tangency_weight: None,
-        }],
-    }
+    Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::FilletGroup {
+                edges: property_text(ctx, feature, "Edges")?
+                    .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+                radius,
+                tangency_weight: None,
+            },
+        ),
+    }))
 }
 
 pub(crate) fn fillet_radius_parameter_has_native_display(
@@ -122,7 +182,7 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
         && dimension_display(expression).is_some()
 }
 
-pub(crate) fn variable_fillet(feature: &Feature) -> bool {
+fn variable_fillet(feature: &Feature) -> bool {
     feature.kind.eq_ignore_ascii_case("VarFillet")
         || feature
             .input_class
@@ -130,7 +190,10 @@ pub(crate) fn variable_fillet(feature: &Feature) -> bool {
             .is_some_and(|class| class.eq_ignore_ascii_case("VarFillet_c"))
 }
 
-pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_shell(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     let thickness = feature
         .parameters
         .get("Thickness")
@@ -145,23 +208,23 @@ pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Outward")
         .and_then(|value| parse_bool(value));
-    FeatureDefinition::Shell {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
-        removed_faces: feature
-            .properties
-            .get("RemovedFaces")
-            .cloned()
+        removed_faces: property_text(ctx, feature, "RemovedFaces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.map(Length),
+        thickness,
         outward,
         mode: None,
         join: None,
         resolve_intersections: None,
         allow_self_intersections: None,
-    }
+    }))
 }
 
-pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_thicken(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::ThickenSide;
 
     let thickness = feature
@@ -189,27 +252,24 @@ pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
         (Some(Some(false)), _) | (_, Some(Some(false))) => Some(ThickenSide::Forward),
         (None, None) => Some(ThickenSide::Forward),
     };
-    FeatureDefinition::Thicken {
-        faces: feature
-            .properties
-            .get("Faces")
-            .cloned()
+    Ok(FeatureDefinition::Operation(FeatureOperation::Thicken {
+        faces: property_text(ctx, feature, "Faces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.map(Length),
+        thickness,
         side,
-    }
+    }))
 }
 
-pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_draft(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     let pull_direction = feature
         .properties
         .get("Direction")
         .and_then(|value| parse_vector3(value))
-        .filter(|direction| direction.norm().is_finite() && direction.norm() > 0.0);
-    let neutral_plane = feature
-        .properties
-        .get("NeutralPlane")
-        .cloned()
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+    let neutral_plane = property_text(ctx, feature, "NeutralPlane")?
         .map_or(FaceSelection::Unresolved, FaceSelection::Native);
     let pull = pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
         direction,
@@ -219,11 +279,8 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
         plane: neutral_plane,
         pull,
     };
-    FeatureDefinition::Draft {
-        faces: feature
-            .properties
-            .get("Faces")
-            .cloned()
+    Ok(FeatureDefinition::Operation(FeatureOperation::Draft {
+        faces: property_text(ctx, feature, "Faces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         anchor,
         angle: feature
@@ -231,187 +288,241 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
             .get("Angle")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_angle_rad(value))
-            .map(Angle),
+            .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok()),
         outward: feature
             .properties
             .get("Outward")
             .and_then(|value| parse_bool(value)),
-    }
+    }))
 }
 
-pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
-    let op = feature
+pub(super) fn project_combine(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(op) = feature
         .properties
         .get("Operation")
-        .and_then(|value| parse_boolean_op(value))?
-        .try_into()
-        .ok()?;
-    Some(FeatureDefinition::Combine {
-        target: feature
-            .properties
-            .get("Target")
-            .cloned()
+        .and_then(|value| parse_boolean_op(value))
+        .and_then(|op| op.try_into().ok())
+    else {
+        return Ok(None);
+    };
+    let operands = cadmpeg_ir::features::CombineOperands::new(
+        property_text(ctx, feature, "Target")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
-        tools: feature
-            .properties
-            .get("Tools")
-            .cloned()
+        property_text(ctx, feature, "Tools")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
-        op,
-        keep_tools: false,
-    })
+        ctx,
+    )?
+    .ok();
+    Ok(operands.map(|operands| {
+        FeatureDefinition::Operation(FeatureOperation::Combine {
+            operands,
+            op,
+            keep_tools: false,
+        })
+    }))
 }
 
-pub(crate) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
+pub(in crate::history) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
     let value = feature
         .properties
         .get("Mode")
         .map_or(feature.kind.as_str(), String::as_str);
-    match value.to_ascii_lowercase().as_str() {
-        "delete" | "deletebody" | "body-delete" => Some(BodyRetentionMode::DeleteSelected),
-        "keep" | "keepbody" => Some(BodyRetentionMode::KeepSelected),
-        _ if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") => {
-            Some(BodyRetentionMode::DeleteSelected)
-        }
-        _ if feature.xml_tag.eq_ignore_ascii_case("KeepBody") => {
-            Some(BodyRetentionMode::KeepSelected)
-        }
-        _ if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") => {
-            Some(BodyRetentionMode::Unresolved)
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::CutWithSurface {
-        targets: feature
-            .properties
-            .get("Targets")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
-        tools: feature
-            .properties
-            .get("Tools")
-            .cloned()
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        reverse: feature
-            .properties
-            .get("Reverse")
-            .and_then(|value| parse_bool(value)),
-    }
-}
-
-pub(crate) fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::DeleteBody {
-        bodies: feature
-            .properties
-            .get("Bodies")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
-        mode: body_retention_mode(feature)?,
-    })
-}
-
-pub(crate) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::DeleteFace {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        heal: parse_bool(feature.properties.get("Heal")?)?,
-    })
-}
-
-pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::ReplaceFace {
-        targets: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        replacements: FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
-    })
-}
-
-pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
-    let distance = || {
-        feature
-            .parameters
-            .get("Distance")
-            .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_length_mm(value))
-            .map(Length)
-    };
-    let motion = match feature
-        .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
+    if ["delete", "deletebody", "body-delete"]
+        .iter()
+        .any(|name| value.eq_ignore_ascii_case(name))
     {
-        "offset" => FaceMotion::Offset {
-            distance: distance()?,
+        Some(BodyRetentionMode::DeleteSelected)
+    } else if ["keep", "keepbody"]
+        .iter()
+        .any(|name| value.eq_ignore_ascii_case(name))
+    {
+        Some(BodyRetentionMode::KeepSelected)
+    } else if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") {
+        Some(BodyRetentionMode::DeleteSelected)
+    } else if feature.xml_tag.eq_ignore_ascii_case("KeepBody") {
+        Some(BodyRetentionMode::KeepSelected)
+    } else if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") {
+        Some(BodyRetentionMode::Unresolved)
+    } else {
+        None
+    }
+}
+
+pub(super) fn project_cut_with_surface(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
+    Ok(FeatureDefinition::Operation(
+        FeatureOperation::CutWithSurface {
+            targets: property_text(ctx, feature, "Targets")?
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+            tools: property_text(ctx, feature, "Tools")?
+                .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+            reverse: feature
+                .properties
+                .get("Reverse")
+                .and_then(|value| parse_bool(value)),
         },
-        "translate" => FaceMotion::Translate {
-            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
-            distance: distance()?,
+    ))
+}
+
+pub(super) fn project_delete_body(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(mode) = body_retention_mode(feature) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::DeleteBody {
+            bodies: property_text(ctx, feature, "Bodies")?
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+            mode,
         },
-        "rotate" => FaceMotion::Rotate {
-            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-            angle: Angle(
-                feature
+    )))
+}
+
+pub(super) fn project_delete_face(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(heal) = feature
+        .properties
+        .get("Heal")
+        .and_then(|value| parse_bool(value))
+    else {
+        return Ok(None);
+    };
+    let Some(faces) = property_text(ctx, feature, "Faces")? else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native(faces),
+            heal,
+        },
+    )))
+}
+
+pub(super) fn project_replace_face(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    if !feature.properties.contains_key("Faces")
+        || !feature.properties.contains_key("ReplacementFaces")
+    {
+        return Ok(None);
+    }
+    let (Some(faces), Some(replacement)) = (
+        property_text(ctx, feature, "Faces")?,
+        property_text(ctx, feature, "ReplacementFaces")?,
+    ) else {
+        return Ok(None);
+    };
+    Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
+        FaceSelection::Native(faces),
+        FaceSelection::Native(replacement),
+        ctx,
+    )?
+    .ok()
+    .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })))
+}
+
+pub(super) fn project_move_face(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(motion) = (|| {
+        let distance = || {
+            feature
+                .parameters
+                .get("Distance")
+                .or_else(|| feature.parameters.get("D1"))
+                .and_then(|value| parse_length_mm(value))
+        };
+        let mode = feature.properties.get("Mode")?;
+        let motion = if mode.eq_ignore_ascii_case("offset") {
+            FaceMotion::Offset {
+                distance: distance()?,
+            }
+        } else if mode.eq_ignore_ascii_case("translate") {
+            FaceMotion::Translate {
+                direction: parse_valid_direction(feature.properties.get("Direction")?)?,
+                distance: distance()?,
+            }
+        } else if mode.eq_ignore_ascii_case("rotate") {
+            FaceMotion::Rotate {
+                axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
+                axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
+                angle: feature
                     .parameters
                     .get("Angle")
                     .and_then(|value| parse_angle_rad(value))?,
-            ),
+            }
+        } else {
+            return None;
+        };
+        Some(motion)
+    })() else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::MoveFace {
+            faces: property_text(ctx, feature, "Faces")?
+                .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+            motion,
         },
-        _ => return None,
-    };
-    Some(FeatureDefinition::MoveFace {
-        faces: feature
-            .properties
-            .get("Faces")
-            .cloned()
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        motion,
-    })
+    )))
 }
 
-pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
-    let bodies = feature
-        .properties
-        .get("Bodies")
-        .cloned()
-        .map_or(BodySelection::Unresolved, BodySelection::Native);
-    let translation = parse_point3_mm(feature.properties.get("Translation")?)?;
-    let translation = Vector3::new(translation.x, translation.y, translation.z);
-    let rotation = match feature.parameters.get("Rotation") {
-        Some(angle) => Some(AxisAngle {
-            origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
-            direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
-            angle: Angle(parse_angle_rad(angle)?),
-        }),
-        None => None,
+pub(super) fn project_move_body(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some((translation, rotation, copies)) = (|| {
+        let translation = parse_vector3_mm(feature.properties.get("Translation")?)?;
+        let rotation = match feature.parameters.get("Rotation") {
+            Some(angle) => Some(AxisAngle {
+                origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
+                direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
+                angle: parse_angle_rad(angle)?,
+            }),
+            None => None,
+        };
+        let copies = feature
+            .properties
+            .get("Copies")
+            .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
+        Some((translation, rotation, copies))
+    })() else {
+        return Ok(None);
     };
-    let copies = feature
-        .properties
-        .get("Copies")
-        .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
-    Some(FeatureDefinition::MoveBody {
-        bodies,
-        translation,
-        rotation,
-        copies,
-    })
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::MoveBody {
+            bodies: property_text(ctx, feature, "Bodies")?
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+            translation,
+            rotation,
+            copies,
+        },
+    )))
 }
 
-pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Dome {
-        faces: feature
-            .properties
-            .get("Faces")
-            .cloned()
+pub(super) fn project_dome(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Dome {
+        faces: property_text(ctx, feature, "Faces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         height: feature
             .parameters
             .get("Height")
             .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value))
-            .map(Length),
+            .and_then(|value| parse_positive_length_mm(value)),
         elliptical: feature
             .properties
             .get("Elliptical")
@@ -420,10 +531,10 @@ pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Reverse")
             .and_then(|value| parse_bool(value)),
-    }
+    }))
 }
 
-pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
     let axis = feature
         .properties
         .get("Axis")
@@ -432,27 +543,39 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
     let angle = feature
         .parameters
         .get("Angle")
-        .and_then(|value| parse_angle_rad(value))
-        .filter(|value| value.is_finite())
-        .map(Angle);
+        .and_then(|value| parse_angle_rad(value));
     let factor = feature
         .parameters
         .get("Factor")
         .and_then(|value| value.trim().parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0);
+        .and_then(cadmpeg_ir::scalar::PositiveReal::new);
     let distance = feature
         .parameters
         .get("Distance")
-        .and_then(|value| parse_length_mm(value))
-        .filter(|value| value.is_finite())
-        .map(Length);
+        .and_then(|value| parse_length_mm(value));
     let form = feature.properties.get("Mode").and_then(|value| {
-        match value.to_ascii_lowercase().as_str() {
-            "bending" | "bend" => Some(FlexForm::Bending),
-            "twisting" | "twist" => Some(FlexForm::Twisting),
-            "tapering" | "taper" => Some(FlexForm::Tapering),
-            "stretching" | "stretch" => Some(FlexForm::Stretching),
-            _ => None,
+        if ["bending", "bend"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(FlexForm::Bending)
+        } else if ["twisting", "twist"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(FlexForm::Twisting)
+        } else if ["tapering", "taper"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(FlexForm::Tapering)
+        } else if ["stretching", "stretch"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(FlexForm::Stretching)
+        } else {
+            None
         }
     });
     let mode = match (form, angle, factor, distance) {
@@ -460,12 +583,15 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
         (Some(FlexForm::Twisting), Some(angle), _, _) => FlexMode::Twisting { angle },
         (Some(FlexForm::Tapering), _, Some(factor), _) => FlexMode::Tapering { factor },
         (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
-        (form, _, _, _) => FlexMode::Unresolved(form),
+        (form, _, _, _) => FlexMode::Unresolved { form },
     };
-    FeatureDefinition::Flex { axis, mode }
+    FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode })
 }
 
-pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_scale(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     let center = match feature.properties.get("CenterType").map(String::as_str) {
         None | Some("Point") => feature
             .properties
@@ -474,11 +600,8 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .map(ScaleCenter::Point),
         Some("Centroid") => Some(ScaleCenter::Centroid),
         Some("Origin" | "ModelOrigin") => Some(ScaleCenter::ModelOrigin),
-        Some("Reference" | "CoordinateSystem") => feature
-            .properties
-            .get("CenterRef")
+        Some("Reference" | "CoordinateSystem") => property_text(ctx, feature, "CenterRef")?
             .filter(|value| !value.is_empty())
-            .cloned()
             .map(ScaleCenter::Native),
         Some(_) => None,
     };
@@ -487,7 +610,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get(name)
             .and_then(|value| value.trim().parse::<f64>().ok())
-            .filter(|value| value.is_finite() && *value != 0.0)
+            .and_then(cadmpeg_ir::scalar::NonZeroReal::new)
     };
     let factors = match (
         factor("Factor"),
@@ -495,22 +618,22 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
         factor("ScaleY"),
         factor("ScaleZ"),
     ) {
-        (Some(uniform), None, None, None) => ScaleFactors::Uniform(uniform),
-        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis(Vector3::new(x, y, z)),
-        _ => ScaleFactors::Unresolved,
+        (Some(uniform), None, None, None) => ScaleFactors::Uniform { factor: uniform },
+        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis { factors: [x, y, z] },
+        _ => ScaleFactors::Unresolved {},
     };
-    FeatureDefinition::Scale {
-        bodies: feature
-            .properties
-            .get("Bodies")
-            .cloned()
+    Ok(FeatureDefinition::Operation(FeatureOperation::Scale {
+        bodies: property_text(ctx, feature, "Bodies")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         center,
         factors,
-    }
+    }))
 }
 
-pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_chamfer(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
     let length = |name, positional| {
         feature
             .parameters
@@ -522,29 +645,33 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
                     .get(positional)
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .map(Length)
     };
     let positional_angle = feature
         .parameters
         .get("D2")
         .filter(|value| parse_bounded_angle_rad(value).is_some());
-    let ordered_dimensions = feature
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            FeatureContent::Dimension(name) => feature.parameters.get(name),
-            FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-        })
-        .collect::<Vec<_>>();
-    let ordered_spec = || match ordered_dimensions.as_slice() {
-        [distance] => Some(ChamferSpec::Distance {
-            distance: Length(parse_positive_dimension_length_mm(distance)?),
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(feature.content.len()),
+        "scan SLDPRT chamfer dimension order",
+    )?;
+    let mut ordered_dimensions = feature.content.iter().filter_map(|content| match content {
+        FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
+        FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+    });
+    let ordered_dimensions = (
+        ordered_dimensions.next(),
+        ordered_dimensions.next(),
+        ordered_dimensions.next(),
+    );
+    let ordered_spec = || match ordered_dimensions {
+        (Some(distance), None, None) => Some(ChamferSpec::Distance {
+            distance: parse_positive_dimension_length_mm(distance)?,
         }),
-        [first, second] => {
-            let first_length = parse_positive_dimension_length_mm(first).map(Length);
-            let second_length = parse_positive_dimension_length_mm(second).map(Length);
-            let first_angle = parse_bounded_angle_rad(first).map(Angle);
-            let second_angle = parse_bounded_angle_rad(second).map(Angle);
+        (Some(first), Some(second), None) => {
+            let first_length = parse_positive_dimension_length_mm(first);
+            let second_length = parse_positive_dimension_length_mm(second);
+            let first_angle = parse_bounded_angle_rad(first);
+            let second_angle = parse_bounded_angle_rad(second);
             match (first_length, second_length, first_angle, second_angle) {
                 (Some(distance), None, None, Some(angle))
                 | (None, Some(distance), Some(angle), None) => {
@@ -563,7 +690,7 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
                     distance: length("Distance", "D1")?,
-                    angle: Angle(parse_bounded_angle_rad(value)?),
+                    angle: parse_bounded_angle_rad(value)?,
                 }
             } else if let (Some(first), Some(second)) =
                 (length("Distance1", "D1"), length("Distance2", "D2"))
@@ -579,28 +706,33 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
     .or_else(ordered_spec)
     .unwrap_or_else(|| {
         if feature.parameters.contains_key("Angle") {
-            ChamferSpec::UnresolvedDistanceAngle
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle),
+            }
         } else if feature.parameters.contains_key("Distance1")
             || feature.parameters.contains_key("Distance2")
         {
-            ChamferSpec::UnresolvedTwoDistances
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::TwoDistances),
+            }
         } else if feature.parameters.contains_key("Distance")
             || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
         {
-            ChamferSpec::UnresolvedDistance
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance),
+            }
         } else {
-            ChamferSpec::Unresolved
+            ChamferSpec::Unresolved { form: None }
         }
     });
-    FeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
-            edges: feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-            spec,
-        }],
+    Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::ChamferGroup {
+                edges: property_text(ctx, feature, "Edges")?
+                    .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+                spec,
+            },
+        ),
         flip_direction: false,
-    }
+    }))
 }

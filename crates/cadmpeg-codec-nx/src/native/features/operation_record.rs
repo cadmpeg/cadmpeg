@@ -2,14 +2,14 @@
 //! Labeled operation records with one checked record and payload span.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationRecordSpan {
+pub(in crate::native) struct OperationRecordSpan {
     source_offset: u64,
     payload_source_offset: u64,
     payload_byte_len: u64,
 }
 
 impl OperationRecordSpan {
-    pub(crate) fn new(
+    pub(in crate::native) fn new(
         source_offset: u64,
         payload_source_offset: u64,
         payload_byte_len: u64,
@@ -23,43 +23,88 @@ impl OperationRecordSpan {
         })
     }
 
-    pub(crate) fn source_offset(self) -> u64 {
+    pub(in crate::native) fn source_offset(self) -> u64 {
         self.source_offset
     }
-    pub(crate) fn byte_len(self) -> u64 {
+    pub(super) fn byte_len(self) -> u64 {
         self.payload_source_offset - self.source_offset + self.payload_byte_len
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "OperationRecordWire", into = "OperationRecordWire")]
-pub(crate) struct FeatureOperationRecord {
-    pub(crate) id: String,
-    pub(crate) operation_label: String,
-    pub(crate) ordinal: u32,
-    pub(crate) sha256: String,
-    pub(crate) payload_sha256: String,
-    pub(crate) stable_identity: Option<String>,
-    pub(crate) span: OperationRecordSpan,
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "OperationRecordWire")]
+pub(in crate::native) struct FeatureOperationRecord {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(in crate::native) ordinal: u32,
+    pub(in crate::native) sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    pub(in crate::native) payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    pub(in crate::native) stable_identity: Option<String>,
+    pub(in crate::native) span: OperationRecordSpan,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize)]
+struct OperationRecordRef<'a> {
+    id: &'a str,
+    operation_label: &'a str,
+    ordinal: u32,
+    byte_len: u64,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
+    payload_byte_len: u64,
+    payload_sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<&'a str>,
+    payload_source_offset: u64,
+    source_offset: u64,
+}
+
+impl serde::Serialize for FeatureOperationRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        OperationRecordRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            ordinal: self.ordinal,
+            byte_len: self.span.byte_len(),
+            sha256: &self.sha256,
+            payload_byte_len: self.span.payload_byte_len,
+            payload_sha256: &self.payload_sha256,
+            stable_identity: self.stable_identity.as_deref(),
+            payload_source_offset: self.span.payload_source_offset,
+            source_offset: self.span.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct OperationRecordWire {
     id: String,
     operation_label: String,
     ordinal: u32,
     byte_len: u64,
-    sha256: String,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stable_identity"
+    )]
     stable_identity: Option<String>,
     payload_source_offset: u64,
     source_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static OPERATION_RECORD_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<FeatureOperationRecord> for OperationRecordWire {
     fn from(value: FeatureOperationRecord) -> Self {
+        OPERATION_RECORD_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: value.id,
             operation_label: value.operation_label,
@@ -98,16 +143,23 @@ impl TryFrom<OperationRecordWire> for FeatureOperationRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{FeatureOperationRecord, OperationRecordSpan};
+    use super::{
+        FeatureOperationRecord, OperationRecordSpan, OperationRecordWire,
+        OPERATION_RECORD_INTO_WIRE_COUNT,
+    };
 
     #[test]
     fn operation_record_wire_preserves_optional_identity_and_exact_span() {
         for identity in ["", r#","stable_identity":"stable""#] {
             let wire = format!(
-                r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"record-hash","payload_byte_len":40,"payload_sha256":"payload-hash"{identity},"payload_source_offset":120,"source_offset":90}}"#
+                r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95","payload_byte_len":40,"payload_sha256":"47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75"{identity},"payload_source_offset":120,"source_offset":90}}"#
             );
             let record: FeatureOperationRecord = serde_json::from_str(&wire).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&OperationRecordWire::from(record.clone())).unwrap()
+            );
             for (field, value) in [
                 ("byte_len", 80),
                 ("payload_source_offset", 89),
@@ -125,6 +177,22 @@ mod tests {
     }
 
     #[test]
+    fn operation_record_native_limit_refuses_before_owned_wire_conversion() {
+        let wire = serde_json::json!({
+            "id": "nx:feature-history:operation-record#0", "operation_label": "label", "ordinal": 0,
+            "byte_len": 70,
+            "sha256": "e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95",
+            "payload_byte_len": 40,
+            "payload_sha256": "47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75",
+            "payload_source_offset": 120, "source_offset": 90
+        });
+        let record: FeatureOperationRecord = serde_json::from_value(wire.clone()).unwrap();
+        OPERATION_RECORD_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
+        OPERATION_RECORD_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
     fn operation_record_span_accepts_the_last_representable_end() {
         let span = OperationRecordSpan::new(u64::MAX - 70, u64::MAX - 40, 40).unwrap();
         assert_eq!(span.byte_len(), 70);
@@ -133,3 +201,6 @@ mod tests {
         assert!(OperationRecordSpan::new(6, 5, 0).is_none());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stable_identity, String, "stable_identity");

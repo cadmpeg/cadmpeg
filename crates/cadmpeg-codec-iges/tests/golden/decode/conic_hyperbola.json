@@ -1085,20 +1085,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -1109,28 +1110,29 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "parameter.data-quarantined",
           "kind": "noncanonical_source_syntax",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
         "provenance": {
@@ -1149,34 +1151,42 @@
       "parameter_tokens=0",
       "external_references=0"
     ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "quarantined parameter data retained; tokens were not recovered",
-          "source": "D1:parameter",
-          "target": "iges:quarantine:parameter#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "quarantined parameter data retained; tokens were not recovered",
+            "target": "iges:quarantine:parameter#1"
+          },
+          "source": "D1:parameter"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 648,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDQgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMDQgICAgICAgMCAgICAgICAwICAgICAgIDIgICAgICAgMiAgICAgICAgICAgICAgICAgICBDT05JQyAgICAgICAwRCAgICAgIDIKMTA0LDAuMjUsMCwtMC4xMTExMTExMTExMTExMTExLDAsMCwtMSwwLDIsMCwzLjA4NjE2MTI2OTYzMDQ4NywzLiAgICAgICAxUCAgICAgIDEKNTI1NjAzNTgwOTMxNDA0OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDIKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDIgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDQgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMDQgICAgICAgMCAgICAgICAwICAgICAgIDIgICAgICAgMiAgICAgICAgICAgICAgICAgICBDT05JQyAgICAgICAwRCAgICAgIDIKMTA0LDAuMjUsMCwtMC4xMTExMTExMTExMTExMTExLDAsMCwtMSwwLDIsMCwzLjA4NjE2MTI2OTYzMDQ4NywzLiAgICAgICAxUCAgICAgIDEKNTI1NjAzNTgwOTMxNDA0OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDIKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDIgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "0a71c8da95f7da210aa68f675c78bfc8ca53b44f6b320bcff81547a9f6d39ee9",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

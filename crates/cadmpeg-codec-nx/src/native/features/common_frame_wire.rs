@@ -3,94 +3,180 @@
 
 use super::{FeatureOperationCommonFrame, FeatureOperationTerminalFrame};
 use crate::om::common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 /// Exactly framed common record in one bounded feature operation.
 #[derive(Serialize, Deserialize)]
 pub(super) struct CommonFrameWire {
     /// Globally unique common-frame identity.
-    pub id: String,
+    id: String,
     /// Owning bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Zero-based frame order within the operation payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Three compact prefix indices.
-    pub indices: [u32; 3],
+    indices: [u32; 3],
     /// Exact compact-index tokens in order.
-    pub raw_indices: [Vec<u8>; 3],
+    raw_indices: [Vec<u8>; 3],
     /// Fixed marker selecting the index layout.
-    pub marker: [u8; 3],
+    marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     ///
     /// The first three bytes remain an untyped operation-state prefix. The
     /// admitted field mappings begin at byte three; callers must not treat the
     /// prefix, or any other state byte, as feature suppression without the
     /// separate serialized owner and typed-value joins.
-    pub state: [u8; 8],
+    state: [u8; 8],
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub legacy_inactive_modules: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_legacy_inactive_modules"
+    )]
+    legacy_inactive_modules: Option<bool>,
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modifies_parasolid_data: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_modifies_parasolid_data"
+    )]
+    modifies_parasolid_data: Option<bool>,
     /// Exact two-byte `m_splitTrackingData` representation.
     #[serde(default)]
-    pub split_tracking_data: [u8; 2],
+    split_tracking_data: [u8; 2],
     /// Serialized operation group count.
     #[serde(default)]
-    pub group_count: u8,
+    group_count: u8,
     /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
+    local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: Vec<u8>,
     /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
+    object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
+    raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_data_block"
+    )]
+    data_block: Option<String>,
     /// Exact serialized frame byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Absolute offset of the first compact index token.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute offsets of the compact prefix-index tokens.
-    pub index_source_offsets: [u64; 3],
+    index_source_offsets: [u64; 3],
     /// Absolute offset of the first state byte.
-    pub state_source_offset: u64,
+    state_source_offset: u64,
     /// Absolute offset of the first local-ordinal token.
-    pub local_ordinal_source_offset: u64,
+    local_ordinal_source_offset: u64,
     /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    object_index_source_offset: u64,
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
 #[derive(Serialize, Deserialize)]
 pub(super) struct TerminalFrameWire {
     /// Globally unique frame identity.
-    pub id: String,
+    id: String,
     /// Owning bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Exact common frame when it occurs immediately before this suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub immediate_common_frame: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_immediate_common_frame"
+    )]
+    immediate_common_frame: Option<String>,
     /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
+    local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: Vec<u8>,
     /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
+    object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
+    raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_data_block"
+    )]
+    data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    object_index_source_offset: u64,
 }
 
+impl Serialize for FeatureOperationCommonFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let frame = &self.frame;
+        let prefix = frame.prefix();
+        let suffix = frame.suffix();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_record", &self.operation_record)?;
+        wire.serialize_entry("ordinal", &self.ordinal)?;
+        wire.serialize_entry("indices", &prefix.indices())?;
+        wire.serialize_entry("raw_indices", &prefix.raw_indices_ref())?;
+        wire.serialize_entry("marker", &prefix.marker())?;
+        wire.serialize_entry("state", &frame.state())?;
+        if let Some(value) = frame.legacy_inactive_modules() {
+            wire.serialize_entry("legacy_inactive_modules", &value)?;
+        }
+        if let Some(value) = frame.modifies_parasolid_data() {
+            wire.serialize_entry("modifies_parasolid_data", &value)?;
+        }
+        wire.serialize_entry("split_tracking_data", &frame.split_tracking_data())?;
+        wire.serialize_entry("group_count", &frame.group_count())?;
+        wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
+        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry("object_index", &suffix.object_index())?;
+        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        if let Some(value) = suffix.target().and_then(Option::as_deref) {
+            wire.serialize_entry("data_block", value)?;
+        }
+        wire.serialize_entry(
+            "byte_len",
+            &(cadmpeg_core::decode::u64_from_index(frame.byte_len())),
+        )?;
+        wire.serialize_entry("source_offset", &frame.offset())?;
+        wire.serialize_entry("index_source_offsets", &frame.index_offsets())?;
+        wire.serialize_entry("state_source_offset", &frame.state_offset())?;
+        wire.serialize_entry("local_ordinal_source_offset", &frame.local_ordinal_offset())?;
+        wire.serialize_entry("object_index_source_offset", &frame.object_index_offset())?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureOperationTerminalFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let frame = &self.frame;
+        let suffix = frame.suffix();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_record", &self.operation_record)?;
+        if let Some(value) = &self.immediate_common_frame {
+            wire.serialize_entry("immediate_common_frame", value)?;
+        }
+        wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
+        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry("object_index", &suffix.object_index())?;
+        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        if let Some(value) = suffix.target().and_then(Option::as_deref) {
+            wire.serialize_entry("data_block", value)?;
+        }
+        wire.serialize_entry("source_offset", &frame.offset())?;
+        wire.serialize_entry("object_index_source_offset", &frame.object_index_offset())?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureOperationCommonFrame> for CommonFrameWire {
     fn from(value: FeatureOperationCommonFrame) -> Self {
         let frame = value.frame;
@@ -111,7 +197,7 @@ impl From<FeatureOperationCommonFrame> for CommonFrameWire {
             object_index: frame.suffix().object_index(),
             raw_object_index: frame.suffix().raw_object_index().to_vec(),
             data_block: frame.suffix().target().cloned().flatten(),
-            byte_len: frame.byte_len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(frame.byte_len()),
             source_offset: frame.offset(),
             index_source_offsets: frame.index_offsets(),
             state_source_offset: frame.state_offset(),
@@ -138,7 +224,7 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
             wire.source_offset,
         )
         .ok_or("source_offset: common-frame end overflows")?;
-        if wire.byte_len != frame.byte_len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(frame.byte_len()) {
             return Err("byte_len disagrees with common frame");
         }
         if wire.index_source_offsets != frame.index_offsets() {
@@ -174,6 +260,7 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
     }
 }
 
+#[cfg(test)]
 impl From<FeatureOperationTerminalFrame> for TerminalFrameWire {
     fn from(value: FeatureOperationTerminalFrame) -> Self {
         Self {
@@ -219,9 +306,42 @@ impl TryFrom<TerminalFrameWire> for FeatureOperationTerminalFrame {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::FeatureOperationCommonFrame;
+    use super::super::FeatureOperationTerminalFrame;
+    use super::{CommonFrameWire, TerminalFrameWire};
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     const COMMON: &str = r#"{"id":"common","operation_record":"record","ordinal":0,"indices":[0,4097,0],"raw_indices":[[0],[144,1],[128,0]],"marker":[1,3,2],"state":[1,2,3,0,1,86,169,7],"legacy_inactive_modules":false,"modifies_parasolid_data":true,"split_tracking_data":[86,169],"group_count":7,"local_ordinal":1,"raw_local_ordinal":[1],"object_index":null,"raw_object_index":[255],"byte_len":20,"source_offset":100,"index_source_offsets":[100,101,103],"state_source_offset":108,"local_ordinal_source_offset":116,"object_index_source_offset":118}"#;
+
+    #[test]
+    fn common_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = COMMON.replace("\"id\":\"common\"", "\"id\":\"nx:feature:common#0\"");
+        let record: FeatureOperationCommonFrame = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&CommonFrameWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+        );
+    }
+
+    #[test]
+    fn terminal_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:terminal#0","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":null,"raw_object_index":[255],"source_offset":100,"object_index_source_offset":104}"#;
+        let record: FeatureOperationTerminalFrame = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&TerminalFrameWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn common_frame_preserves_exact_wire_and_checks_every_derived_column() {
@@ -301,4 +421,37 @@ mod tests {
             );
         }
     }
+
+    /// A top-level optional key on a frame wire names itself in its refusal.
+    #[test]
+    fn a_top_level_frame_key_names_itself_in_its_refusal() {
+        for key in [
+            "legacy_inactive_modules",
+            "modifies_parasolid_data",
+            "data_block",
+        ] {
+            states_the_key(key, &refusal::<super::CommonFrameWire>(key));
+        }
+        for key in ["immediate_common_frame", "data_block"] {
+            states_the_key(key, &refusal::<super::TerminalFrameWire>(key));
+        }
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_legacy_inactive_modules,
+    bool,
+    "legacy_inactive_modules"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_modifies_parasolid_data,
+    bool,
+    "modifies_parasolid_data"
+);
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+cadmpeg_core::named_optional_field!(
+    deserialize_immediate_common_frame,
+    String,
+    "immediate_common_frame"
+);

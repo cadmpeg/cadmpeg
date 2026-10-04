@@ -1,10 +1,13 @@
 //! Tests: NURBS endpoint witnesses in carrier-intersection selection.
 
 use crate::curve::CurveTopologyRow;
-use crate::decode::surfaces::transfer_carrier_intersection_curves;
-use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
+use crate::decode::surfaces::transfer_curves::transfer_carrier_intersection_curves;
+use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
@@ -40,13 +43,14 @@ fn incidence(
 ) -> HalfEdgeVertexIncidence {
     HalfEdgeVertexIncidence {
         half_edge: HalfEdgeId { curve_id, side },
-        start_vertex_id,
-        end_vertex_id: Some(end_vertex_id),
+        start_vertex_id: std::num::NonZeroU32::new(start_vertex_id)
+            .expect("one-based vertex fixture"),
+        end_vertex_id: std::num::NonZeroU32::new(end_vertex_id),
     }
 }
 
 fn carrier_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows = [1_u32, 2, 3, 4]
         .into_iter()
         .map(|id| {
@@ -78,40 +82,50 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         half_edge(31, crate::topology::Side::One, 0),
     ];
     scan.topology.vertices = vec![
-        TopologicalVertex {
-            id: 1,
-            half_edges: vec![
-                HalfEdgeId {
-                    curve_id: 10,
-                    side: crate::topology::Side::Zero,
-                },
-                HalfEdgeId {
-                    curve_id: 20,
-                    side: crate::topology::Side::Zero,
-                },
-                HalfEdgeId {
-                    curve_id: 30,
-                    side: crate::topology::Side::Zero,
-                },
-                HalfEdgeId {
-                    curve_id: 31,
-                    side: crate::topology::Side::Zero,
-                },
-            ],
-        },
-        TopologicalVertex {
-            id: 2,
-            half_edges: vec![
-                HalfEdgeId {
-                    curve_id: 10,
-                    side: crate::topology::Side::One,
-                },
-                HalfEdgeId {
-                    curve_id: 20,
-                    side: crate::topology::Side::One,
-                },
-            ],
-        },
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new_for_test(
+                ctx,
+                1,
+                vec![
+                    HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::Zero,
+                    },
+                    HalfEdgeId {
+                        curve_id: 20,
+                        side: crate::topology::Side::Zero,
+                    },
+                    HalfEdgeId {
+                        curve_id: 30,
+                        side: crate::topology::Side::Zero,
+                    },
+                    HalfEdgeId {
+                        curve_id: 31,
+                        side: crate::topology::Side::Zero,
+                    },
+                ],
+            )
+        })
+        .expect("vertex admission")
+        .expect("valid vertex fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new_for_test(
+                ctx,
+                2,
+                vec![
+                    HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::One,
+                    },
+                    HalfEdgeId {
+                        curve_id: 20,
+                        side: crate::topology::Side::One,
+                    },
+                ],
+            )
+        })
+        .expect("vertex admission")
+        .expect("valid vertex fixture"),
     ];
     scan.topology.half_edge_vertex_incidence = vec![
         incidence(10, crate::topology::Side::Zero, 1, 2),
@@ -127,56 +141,70 @@ fn source_ir() -> CadIr {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(4.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(4.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         },
     ]);
     let y = 5.0_f64.sqrt();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Nurbs(
-            NurbsCurve::new(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid intersection witness curve"),
-        ),
+        )),
         source_object: None,
     });
     ir
@@ -190,37 +218,49 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
     ]);
 
     let mut with_witness = source_ir();
-    let transferred = transfer_carrier_intersection_curves(
-        &scan,
-        &mut with_witness,
-        &mut AnnotationBuilder::new(),
-        &witness,
-    );
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_carrier_intersection_curves(
+            ctx,
+            &scan,
+            &mut with_witness,
+            &mut AnnotationBuilder::new(),
+            &witness,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("valid source object identity");
     assert_eq!(
         transferred,
         BTreeSet::from([
             CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar")
         ])
     );
-    assert!(matches!(
-        with_witness
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Line { origin, direction })
-            if (origin.x - 2.0).abs() <= EPS_POSITION
-                && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
-                && direction.z == 1.0
-    ));
+    assert!(matches!(with_witness
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id
+            == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
+            if {
+                let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
+                (origin.x - 2.0).abs() <= EPS_POSITION
+                    && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
+                    && direction.z == 1.0
+            }));
 
     let mut without_witness = source_ir();
-    assert!(transfer_carrier_intersection_curves(
-        &scan,
-        &mut without_witness,
-        &mut AnnotationBuilder::new(),
-        &BTreeSet::new(),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| transfer_carrier_intersection_curves(
+            ctx,
+            &scan,
+            &mut without_witness,
+            &mut AnnotationBuilder::new(),
+            &BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
+        .is_empty()
+    );
 }

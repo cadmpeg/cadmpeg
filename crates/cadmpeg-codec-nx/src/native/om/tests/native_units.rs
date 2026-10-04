@@ -1,19 +1,21 @@
-use super::super::{evaluate_expression_graphs, Expression, ExpressionUnit};
+use super::super::{evaluate_expression_graphs, ExpressionUnit, ParameterFormula};
 
 #[test]
 fn graph_scopes_equal_names_by_native_unit_label() {
     let expression =
-        |id: &str, name: &str, unit: ExpressionUnit, formula: &str, value| Expression {
-            id: id.into(),
-            owner: None,
-            declaration: None,
-            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-            unit,
-            expression: formula.into(),
-            value,
-            source_entry: "part".into(),
-            source_table: "table".into(),
-            source_offset: 0,
+        |id: &str, name: &str, unit: ExpressionUnit, formula: &str, value: Option<f64>| {
+            ParameterFormula {
+                id: id.into(),
+                owner: None,
+                declaration: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+                unit,
+                expression: formula.into(),
+                value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+                source_entry: "part".into(),
+                source_table: cadmpeg_core::text::NonBlankString::new("table").unwrap(),
+                source_offset: 0,
+            }
         };
     let mut expressions = vec![
         expression(
@@ -60,9 +62,27 @@ fn graph_scopes_equal_names_by_native_unit_label() {
         ),
     ];
 
-    evaluate_expression_graphs(&mut expressions);
+    crate::test_support::with_decode_context(|ctx| {
+        evaluate_expression_graphs(ctx, &mut expressions)
+    })
+    .unwrap();
 
-    assert_eq!(expressions[1].value, Some(12.0));
-    assert_eq!(expressions[3].value, Some(36.0));
-    assert_eq!(expressions[5].value, Some(10.0));
+    assert_eq!(
+        expressions[1]
+            .value
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(12.0)
+    );
+    assert_eq!(
+        expressions[3]
+            .value
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(36.0)
+    );
+    assert_eq!(
+        expressions[5]
+            .value
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(10.0)
+    );
 }

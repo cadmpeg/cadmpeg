@@ -22,9 +22,12 @@ pub mod edit;
 pub mod ids;
 pub mod kernel_header;
 /// Byte-offset constants generated from `docs/layouts/asm.toml`.
-pub(crate) mod layout;
+mod layout;
 pub mod nurbs;
 pub mod sab;
 pub mod sat;
 
 pub mod stream_error;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;

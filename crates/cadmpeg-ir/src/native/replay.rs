@@ -1,44 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Replay stored JSON text into a serializer or a single field.
+//! Replay stored JSON text into a serializer.
 //!
-//! [`emit`] drives a serializer from the parse; [`field`] materializes one
-//! member while skipping the rest.
+//! [`emit`] drives a serializer from the parse, reading one container at a
+//! time. Each container is a parse of its own, so the parser's own recursion
+//! limit never accumulates; the descent is counted here instead, against the
+//! one bound every native record field answers to.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::fmt;
 
 use serde::{de, ser};
-use serde_json::Value;
+use serde_json::value::RawValue;
 
-/// Emit the JSON value held in `json` into `serializer`.
+use super::nests_too_deep_message;
+
+/// Emit the JSON value held in `json` into `serializer`, entering at most
+/// `depth` further containers.
 ///
-/// # Panics
-///
-/// Panics if `json` is not a complete JSON value.
-pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
+/// The counter bounds this function's own recursion, whatever serializer it
+/// drives. A serializer that counts as well is handed the same remainder, so
+/// the two refuse at the same container.
+pub(super) fn emit<S: ser::Serializer>(
+    json: &str,
+    serializer: S,
+    depth: usize,
+) -> Result<S::Ok, S::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit(serializer))
+    let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit { serializer, depth })
         .map_err(de_to_ser)?;
-    deserializer
-        .end()
-        .expect("stored record text is one complete JSON value");
+    deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
 }
 
-/// Parse the `name` member of the JSON object held in `json`.
-///
-/// # Panics
-///
-/// Panics if `json` is not a complete JSON object.
-pub(super) fn field(json: &str, name: &str) -> Option<Value> {
-    let mut deserializer = serde_json::Deserializer::from_str(json);
-    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name))
-        .expect("stored record text is one complete JSON object");
-    deserializer
-        .end()
-        .expect("stored record text is one complete JSON object");
-    found
+/// The refusal a container past the bound reports.
+fn nests_too_deep<E: de::Error>() -> E {
+    de::Error::custom(nests_too_deep_message())
 }
 
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
@@ -50,7 +46,12 @@ fn de_to_ser<D: de::Error, S: ser::Error>(error: D) -> S {
 }
 
 /// Writes whatever it is handed straight into a serializer.
-struct Emit<S>(S);
+struct Emit<S> {
+    /// Where the value is written.
+    serializer: S,
+    /// Containers this value may still enter.
+    depth: usize,
+}
 
 impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
     type Value = S::Ok;
@@ -60,100 +61,94 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
     }
 
     fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-        self.0.serialize_unit().map_err(ser_to_de)
+        self.serializer.serialize_unit().map_err(ser_to_de)
     }
 
     fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
-        self.0.serialize_bool(value).map_err(ser_to_de)
+        self.serializer.serialize_bool(value).map_err(ser_to_de)
     }
 
     fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
-        self.0.serialize_i64(value).map_err(ser_to_de)
+        self.serializer.serialize_i64(value).map_err(ser_to_de)
     }
 
     fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
-        self.0.serialize_u64(value).map_err(ser_to_de)
+        self.serializer.serialize_u64(value).map_err(ser_to_de)
     }
 
     fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
-        self.0.serialize_i128(value).map_err(ser_to_de)
+        self.serializer.serialize_i128(value).map_err(ser_to_de)
     }
 
     fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E> {
-        self.0.serialize_u128(value).map_err(ser_to_de)
+        self.serializer.serialize_u128(value).map_err(ser_to_de)
     }
 
     fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
-        self.0.serialize_f64(value).map_err(ser_to_de)
+        self.serializer.serialize_f64(value).map_err(ser_to_de)
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        self.0.serialize_str(value).map_err(ser_to_de)
+        self.serializer.serialize_str(value).map_err(ser_to_de)
     }
 
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let Some(depth) = self.depth.checked_sub(1) else {
+            return Err(nests_too_deep());
+        };
         let mut sequence = self
-            .0
+            .serializer
             .serialize_seq(access.size_hint())
             .map_err(ser_to_de)?;
-        while access.next_element_seed(Element(&mut sequence))?.is_some() {}
+        while let Some(value) = access.next_element::<&RawValue>()? {
+            let child = Replay {
+                json: value.get(),
+                depth,
+            };
+            ser::SerializeSeq::serialize_element(&mut sequence, &child).map_err(ser_to_de)?;
+        }
         ser::SerializeSeq::end(sequence).map_err(ser_to_de)
     }
 
     fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let Some(depth) = self.depth.checked_sub(1) else {
+            return Err(nests_too_deep());
+        };
         let mut map = self
-            .0
+            .serializer
             .serialize_map(access.size_hint())
             .map_err(ser_to_de)?;
         while let Some(key) = access.next_key_seed(Key)? {
             ser::SerializeMap::serialize_key(&mut map, key.as_ref()).map_err(ser_to_de)?;
-            access.next_value_seed(Entry(&mut map))?;
+            let value = access.next_value::<&RawValue>()?;
+            let child = Replay {
+                json: value.get(),
+                depth,
+            };
+            ser::SerializeMap::serialize_value(&mut map, &child).map_err(ser_to_de)?;
         }
         ser::SerializeMap::end(map).map_err(ser_to_de)
     }
 }
 
-/// A `Serialize` that draws its value from a deserializer instead of memory.
+/// A repeatable borrowed JSON value handed to an arbitrary serializer.
 ///
-/// Serde hands a nested element to `serialize_element`/`serialize_value` as
-/// something serializable, which is where the replay recurses: the element's
-/// deserializer is parked here and unparked when the serializer asks for it.
-struct Replay<D>(RefCell<Option<D>>);
+/// A serializer may read a value more than once, or skip it. Consume the raw
+/// child before handing it over, then start a fresh parse for each read.
+/// Each parser reads only one container; `RawValue` scans its children without
+/// the parser recursion limit. No parsed child tree is retained here, and the
+/// child carries what is left of the value's container budget, so a repeat
+/// read restarts from the same depth the first read used.
+struct Replay<'a> {
+    /// This child's source text.
+    json: &'a str,
+    /// Containers this child may still enter.
+    depth: usize,
+}
 
-impl<'de, D: de::Deserializer<'de>> ser::Serialize for Replay<D> {
+impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0
-            .borrow_mut()
-            .take()
-            .expect("a replayed value is serialized once")
-            .deserialize_any(Emit(serializer))
-            .map_err(de_to_ser)
-    }
-}
-
-/// Replays one sequence element into `S`.
-struct Element<'a, S>(&'a mut S);
-
-impl<'de, S: ser::SerializeSeq> de::DeserializeSeed<'de> for Element<'_, S> {
-    type Value = ();
-
-    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        self.0
-            .serialize_element(&Replay(RefCell::new(Some(deserializer))))
-            .map_err(ser_to_de)
-    }
-}
-
-/// Replays one map value into `S`.
-struct Entry<'a, S>(&'a mut S);
-
-impl<'de, S: ser::SerializeMap> de::DeserializeSeed<'de> for Entry<'_, S> {
-    type Value = ();
-
-    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        self.0
-            .serialize_value(&Replay(RefCell::new(Some(deserializer))))
-            .map_err(ser_to_de)
+        emit(self.json, serializer, self.depth)
     }
 }
 
@@ -192,38 +187,18 @@ impl<'de> de::Visitor<'de> for Key {
     }
 }
 
-/// Materializes one named member of a JSON object and discards the others.
-struct PickField<'a>(&'a str);
-
-impl<'de> de::Visitor<'de> for PickField<'_> {
-    type Value = Option<Value>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a JSON object")
-    }
-
-    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-        let mut found = None;
-        // Every remaining key is read even once the member is found, because
-        // the deserializer checks that the object was consumed to its closing
-        // brace. Skipping a value costs a scan and no allocation.
-        while let Some(key) = access.next_key_seed(Key)? {
-            if found.is_none() && key.as_ref() == self.0 {
-                found = Some(access.next_value()?);
-            } else {
-                access.next_value::<de::IgnoredAny>()?;
-            }
-        }
-        Ok(found)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{emit, field};
+    use super::emit;
+    use crate::native::MAX_NATIVE_NESTING_DEPTH;
     use serde_json::Value;
+
+    /// Replay one whole native record field.
+    fn emit_field<S: serde::ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        emit(json, serializer, MAX_NATIVE_NESTING_DEPTH)
+    }
 
     const TEXT: &str = concat!(
         r#"{"id":"pin#0","a":[null,true,false,-1,0,1.5,2.0,1e-7,10000000000.0],"#,
@@ -233,24 +208,51 @@ mod tests {
 
     #[test]
     fn emits_the_value_a_parse_would_produce() {
-        let replayed = emit(TEXT, serde_json::value::Serializer).unwrap();
+        let replayed = emit_field(TEXT, serde_json::value::Serializer).unwrap();
         assert_eq!(replayed, serde_json::from_str::<Value>(TEXT).unwrap());
     }
 
     #[test]
     fn compact_emission_reproduces_the_source_text() {
         let mut out = Vec::new();
-        emit(TEXT, &mut serde_json::Serializer::new(&mut out)).unwrap();
+        emit_field(TEXT, &mut serde_json::Serializer::new(&mut out)).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), TEXT);
     }
 
-    /// Picking one member matches parsing the whole object and removing it,
-    /// including for absent members and for keys carrying escapes.
     #[test]
-    fn picks_the_member_a_full_parse_would_yield() {
-        let whole = serde_json::from_str::<serde_json::Map<String, Value>>(TEXT).unwrap();
-        for name in ["id", "a", "b", "é key", "z", "missing", ""] {
-            assert_eq!(field(TEXT, name), whole.get(name).cloned(), "{name}");
-        }
+    fn a_borrowed_member_can_be_serialized_more_than_once() {
+        let member = super::Replay {
+            json: TEXT,
+            depth: MAX_NATIVE_NESTING_DEPTH,
+        };
+        let expected = serde_json::from_str::<Value>(TEXT).unwrap();
+        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+        assert_eq!(serde_json::to_string(&member).unwrap(), TEXT);
+        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+    }
+
+    /// One budget spans the whole replay: the parser's own limit restarts per
+    /// container, so without this counter the descent follows the input text.
+    #[test]
+    fn one_budget_spans_the_whole_replay() {
+        let chain =
+            |containers: usize| format!("{}7{}", "[".repeat(containers), "]".repeat(containers));
+
+        let admitted = chain(MAX_NATIVE_NESTING_DEPTH);
+        let mut out = Vec::new();
+        emit_field(&admitted, &mut serde_json::Serializer::new(&mut out)).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), admitted);
+
+        let error = emit_field(
+            &chain(MAX_NATIVE_NESTING_DEPTH + 1),
+            serde_json::value::Serializer,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains(&format!(
+                "native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
+            )),
+            "{error}"
+        );
     }
 }

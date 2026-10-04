@@ -3,29 +3,24 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::fs;
-
-use assert_cmd::Command;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-fn cadmpeg() -> Command {
-    Command::cargo_bin("cadmpeg").unwrap()
-}
+mod query_support;
+mod support;
 
-fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf {
-    let path = dir.join(name);
-    fs::write(&path, content).unwrap();
-    path
-}
+use crate::query_support::write;
+use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
+  "ir_version": "6",
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const SIDECAR: &str = r#"{
+  "ir_version": "6",
   "ir_sha256": "abc123"
 }"#;
 
@@ -62,6 +57,23 @@ const GRAPH_DOC: &str = r#"{
 }"#;
 
 #[test]
+fn graph_input_over_256_mib_is_refused_before_json_parse() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("oversized.json");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(256 * 1024 * 1024 + 1)
+        .unwrap();
+    cadmpeg()
+        .args(["query", "graph", path.to_str().unwrap(), "model.faces"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "exceeds the query input limit of 256 MiB",
+        ));
+}
+
+#[test]
 fn graph_help_mentions_hops_follow_and_reverse() {
     cadmpeg()
         .args(["query", "graph", "--help"])
@@ -71,7 +83,8 @@ fn graph_help_mentions_hops_follow_and_reverse() {
             predicate::str::contains("--hops")
                 .and(predicate::str::contains("--follow"))
                 .and(predicate::str::contains("--reverse"))
-                .and(predicate::str::contains("--max-paths")),
+                .and(predicate::str::contains("--max-paths"))
+                .and(predicate::str::contains("start,path,record.id")),
         );
 }
 

@@ -1,102 +1,175 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for identity order.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use crate::index::identities::BorrowedIdentities;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+use std::collections::{btree_map::Entry, BTreeMap};
 
-fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
+use crate::document::CadIr;
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
+
+fn push_identity<'a>(
+    ctx: &DecodeContext<'_>,
+    seen: &mut BorrowedIdentities<'_, 'a>,
+    findings: &mut Vec<Finding>,
+    id: &'a str,
+) -> Result<(), CodecError> {
+    let grammar_work = id
+        .len()
+        .checked_mul(4)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("validate identity grammar", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(u64_from_index(grammar_work), "validate identity grammar")?;
     if !crate::ids::is_valid_identity(id) {
-        findings.push(Finding {
-            check: Check::Identity,
-            severity: Severity::Error,
-            message: "entity id does not match `<format>:<scope>:<kind>#<key>`".into(),
-            entity: Some(id.to_owned()),
-        });
+        super::record_finding(
+            ctx,
+            findings,
+            Check::Identity,
+            Severity::Error,
+            Some(id),
+            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
+        )?;
     }
-    if !seen.insert(id.to_owned()) {
-        findings.push(Finding {
-            check: Check::Identity,
-            severity: Severity::Error,
-            message: "entity id is not globally unique".into(),
-            entity: Some(id.to_owned()),
-        });
+    let inserted = seen.insert_unique(id, ())?;
+    if !inserted {
+        super::record_finding(
+            ctx,
+            findings,
+            Check::Identity,
+            Severity::Error,
+            Some(id),
+            format_args!("entity id is not globally unique"),
+        )?;
     }
+    Ok(())
 }
 
-pub(super) fn check_order<'a>(
+fn check_order<'a>(
+    ctx: &DecodeContext<'_>,
     arena: &str,
     ids: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let mut previous: Option<&str> = None;
     for id in ids {
+        ctx.charge_work(
+            u64_from_index(id.len()).checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX)
+            })?,
+            "compare validation arena order",
+        )?;
         if previous.is_some_and(|value| value >= id) {
-            findings.push(Finding {
-                check: Check::ArenaOrder,
-                severity: Severity::Error,
-                message: format!("arena `{arena}` is not strictly sorted by id"),
-                entity: Some(id.to_owned()),
-            });
-            return;
+            super::record_finding(
+                ctx,
+                findings,
+                Check::ArenaOrder,
+                Severity::Error,
+                Some(id),
+                format_args!("arena `{arena}` is not strictly sorted by id"),
+            )?;
+            return Ok(());
         }
         previous = Some(id);
     }
+    Ok(())
 }
 
 macro_rules! define_model_identity_checks {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn check_model_identity_and_order(
-            ir: &CadIr,
-            seen: &mut HashSet<String>,
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+        fn check_model_identity_and_order<'a>(
+            ctx: &DecodeContext<'_>,
+            ir: &'a CadIr,
+            seen: &mut BorrowedIdentities<'_, 'a>,
             findings: &mut Vec<Finding>,
-        ) {
+        ) -> Result<(), CodecError> {
             $(
                 check_order(
+                    ctx,
                     stringify!($field),
                     ir.model.$field.iter().map(crate::schema::EntitySchema::identity),
                     findings,
-                );
+                )?;
                 for entity in &ir.model.$field {
-                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity));
+                    push_identity(ctx, seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
+            Ok(())
         }
     };
 }
 crate::document::arena_registry!(define_model_identity_checks);
 
-/// Run the identity and arena-order checks, returning the set of every entity
-/// id in the document (model arenas, unknowns, and native records). Downstream
-/// checks resolve annotation and link targets against this set instead of
-/// re-enumerating the id universe.
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let mut seen = HashSet::new();
-    check_model_identity_and_order(ir, &mut seen, findings);
-    let native_ids = collect_native_ids(ir);
-    for (_, id) in &native_ids {
-        push_identity(&mut seen, findings, id);
+/// Check model and native identities and preserve arena-ordered findings.
+pub(super) fn check_identity_and_order(
+    ctx: &DecodeContext<'_>,
+    view: crate::native::view::NativeView<'_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mut seen = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
+    let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (
+        BTreeMap::new(),
+        ctx.reserve_scoped(0, "validation native order storage")?,
+    );
+    view.visit(
+        |work| ctx.charge_work(u64_from_index(work), "validation native arena scan"),
+        |format, arena, records| {
+            for record in records.records() {
+                push_identity(ctx, &mut seen, findings, record.id())?;
+            }
+            if records.len() == 0 {
+                return Ok(());
+            }
+            by_arena.1.with_storage(|| {
+                let label = ctx.format_retained(
+                    format_args!("native.{format}.{arena}"),
+                    "validation native arena name",
+                )?;
+                let work = label
+                    .len()
+                    .checked_add(1)
+                    .and_then(|bytes| {
+                        by_arena
+                            .0
+                            .len()
+                            .checked_add(1)
+                            .and_then(|count| bytes.checked_mul(count))
+                    })
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "group validation native arenas",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                ctx.charge_work(u64_from_index(work), "group validation native arenas")?;
+                if !by_arena.0.contains_key(&label) {
+                    ctx.charge_work(1, "validation native arena slots")?;
+                }
+                ctx.admit_btree_entry(&by_arena.0, &label, "validation native arena slots")?;
+                let ids = match by_arena.0.entry(label) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => entry.insert(Vec::new()),
+                };
+                for record in records.records() {
+                    ctx.charge_work(1, "validation native order scan")?;
+                    ctx.push_vec(ids, record.id(), "validation native order slots")?;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+            Ok(())
+        },
+    )?;
+    for (arena, ids) in &by_arena.0 {
+        check_order(ctx, arena, ids.iter().copied(), findings)?;
     }
-    let mut by_arena: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (arena, id) in &native_ids {
-        by_arena.entry(arena).or_default().push(id);
-    }
-    for (arena, ids) in by_arena {
-        check_order(arena, ids, findings);
-    }
-}
-
-pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
-    ir.native
-        .0
-        .iter()
-        .flat_map(|(format, namespace)| {
-            namespace.arenas().iter().flat_map(move |(arena, records)| {
-                records
-                    .iter()
-                    .map(move |record| (format!("native.{format}.{arena}"), record.id()))
-            })
-        })
-        .collect()
+    Ok(())
 }
 
 #[cfg(test)]

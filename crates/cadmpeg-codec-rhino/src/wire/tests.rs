@@ -1,7 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::Uuid;
+use super::{read_finite, Uuid};
+use crate::chunks::{BoundedReader, FramingError};
+
+#[test]
+fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
+    #[derive(serde::Serialize)]
+    struct Nested {
+        z: u32,
+        a: u32,
+    }
+    #[derive(serde::Serialize)]
+    struct Root {
+        z: Nested,
+        a: u32,
+    }
+    let value = Root {
+        z: Nested { z: 2, a: 1 },
+        a: 3,
+    };
+    let service = cadmpeg_test_support::service_decode_context();
+    let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
+        .expect("service policy admits JSON");
+    assert_eq!(text, r#"{"a":3,"z":{"a":1,"z":2}}"#);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits");
+    let refusal = super::admitted_canonical_json(&ctx, &value, "Rhino canonical JSON")
+        .expect_err("four JSON map entries exceed three collection items");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "Rhino canonical JSON")
+    );
+}
+
+/// A non-finite value is refused at its own first byte, not after the read.
+#[test]
+fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let value_offset = bytes.len();
+    bytes.extend(f64::NAN.to_le_bytes());
+    bytes.extend(1.5_f64.to_le_bytes());
+    let mut reader = BoundedReader::new(&bytes, 3, bytes.len()).expect("bounded reader");
+    let error = read_finite(&mut reader, "witness").expect_err("nonfinite value");
+    assert_eq!(
+        error,
+        FramingError::structural(value_offset, "witness is not finite")
+    );
+
+    let mut reader = BoundedReader::new(&bytes, 11, bytes.len()).expect("bounded reader");
+    assert_eq!(
+        read_finite(&mut reader, "witness"),
+        Ok(crate::test_support::finite(1.5))
+    );
+}
 
 /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
 #[test]
@@ -34,4 +90,21 @@ fn parses_mixed_endian_uuid_and_nil_uuid() {
         Uuid::nil().to_string(),
         "00000000-0000-0000-0000-000000000000"
     );
+}
+
+/// A non-finite coordinate and an overflowing product are both refused, so the
+/// single product test covers every non-finite input.
+#[test]
+fn scaled_coordinate_refuses_nonfinite_inputs_and_overflowing_products() {
+    let scale = crate::test_support::millimeter_scale(25.4);
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(super::scaled_coordinate(value, scale), None, "{value}");
+    }
+    assert_eq!(
+        super::scaled_coordinate(2.0, scale),
+        Some(crate::test_support::finite(50.8))
+    );
+
+    let huge = crate::test_support::millimeter_scale(f64::MAX);
+    assert_eq!(super::scaled_coordinate(f64::MAX, huge), None);
 }

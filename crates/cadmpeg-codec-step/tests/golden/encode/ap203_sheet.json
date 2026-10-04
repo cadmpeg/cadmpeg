@@ -39,16 +39,17 @@
           "VERTEX_POINT": 3
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap242-e3"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
@@ -57,15 +58,21 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
         }
       ],
       "notes": [],
-      "target": "step:ap242-e3",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "explicit_default": {
@@ -108,16 +115,17 @@
           "VERTEX_POINT": 3
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap214"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
@@ -126,15 +134,21 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
         }
       ],
       "notes": [],
-      "target": "step:ap214",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "inherit": {
@@ -177,24 +191,29 @@
           "VERTEX_POINT": 3
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap203-e1"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
         }
       ],
       "notes": [],
-      "target": "step:ap203-e1",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   }
 }

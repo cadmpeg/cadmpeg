@@ -28,7 +28,7 @@ pub(crate) struct ProteinEnvelope<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) declared_len: NonZeroU32,
     pub(crate) archive: ArchiveSnapshot<'a>,
-    pub(crate) payload: View<'a>,
+    payload: View<'a>,
 }
 
 pub(crate) struct ProteinInstanceRecords {
@@ -60,10 +60,18 @@ pub(crate) fn parse<'a>(
             archive,
             payload,
         }),
-        Err(error) => ProteinState::Malformed {
-            stream: stream.id(),
-            detail: crate::issue_detail(error)?,
-        },
+        Err(error) => {
+            if !matches!(error, CodecError::ResourceLimit(_)) {
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor malformed Protein detail",
+                )?;
+            }
+            ProteinState::Malformed {
+                stream: stream.id(),
+                detail: crate::issue_detail(error)?,
+            }
+        }
     })
 }
 
@@ -90,8 +98,15 @@ fn parse_stream<'a>(
         }
         return Ok(ParsedProtein::Empty);
     };
-    let payload_len = source.window().len().saturating_sub(protein_header::LEN);
-    if declared_len.get() as usize != payload_len {
+    let payload_len = source
+        .window()
+        .len()
+        .checked_sub(protein_header::LEN)
+        .ok_or_else(|| CodecError::Malformed("Inventor Protein header is truncated".into()))?;
+    if usize::try_from(declared_len.get())
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
+        != payload_len
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
@@ -99,12 +114,12 @@ fn parse_stream<'a>(
     let payload = source
         .child(source.start() + protein_header::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
-    let archive = ArchiveSnapshot::new(payload)?;
+    let archive = ArchiveSnapshot::new(ctx, payload)?;
     for entry in archive.entries() {
-        validate_entry_name(&entry.name)?;
+        validate_entry_name(ctx, &entry.name)?;
     }
     ctx.charge_collection_items(
-        archive.entries().len() as u64,
+        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
         "admit Inventor Protein package entries",
     )?;
     Ok(ParsedProtein::Package {
@@ -115,7 +130,7 @@ fn parse_stream<'a>(
 }
 
 pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_stream(ctx, source);
+    let _probe = parse_stream(ctx, source);
 }
 
 pub(crate) fn decode_instances(
@@ -125,28 +140,60 @@ pub(crate) fn decode_instances(
     decode_instances_from(ctx, &package.archive, package.payload)
 }
 
+pub(crate) fn decode_instances_with_issue(
+    ctx: &DecodeContext<'_>,
+    package: &ProteinEnvelope<'_>,
+) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
+    match decode_instances(ctx, package) {
+        Ok(instances) => Ok((instances, None)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            ctx.charge_formatted_retained(
+                format_args!("{error}"),
+                "retain Inventor Protein semantic issue",
+            )?;
+            Ok((Vec::new(), Some(crate::issue_detail(error)?)))
+        }
+    }
+}
+
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
     payload: View<'_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
-    if !cadmpeg_protein::has_schemas(payload.window()) {
+    let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
         return Ok(Vec::new());
-    }
+    };
+    let count = archive
+        .entries()
+        .iter()
+        .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
+        .count();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor Protein instance streams",
+    )?;
     let entries = archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .collect::<Vec<_>>();
     ctx.charge_collection_items(
-        entries.len() as u64,
-        "admit Inventor Protein instance streams",
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor Protein instance records",
     )?;
     entries
         .into_iter()
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
-            let outcome = cadmpeg_protein::decode_detailed(payload.window(), instance.window())?;
+            let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
+            let outcome =
+                cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "Inventor Protein instance entry name",
+            )?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
                 records: outcome.records,
@@ -156,7 +203,7 @@ fn decode_instances_from(
         .collect()
 }
 
-fn validate_entry_name(name: &str) -> Result<(), CodecError> {
+fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecError> {
     if name.is_empty()
         || name.starts_with('/')
         || name.contains('\\')
@@ -165,6 +212,10 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
             .split('/')
             .any(|component| matches!(component, "" | "." | ".."))
     {
+        ctx.charge_formatted_retained(
+            format_args!("Inventor Protein package has unsafe entry name {name:?}"),
+            "retain Inventor unsafe Protein entry diagnostic",
+        )?;
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein package has unsafe entry name {name:?}"
         )));
@@ -176,13 +227,71 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
 mod tests {
     use std::io::Write as _;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_container::compound::CompoundSnapshot;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_protein::{
         CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
     };
     use zip::write::SimpleFileOptions;
 
-    use super::*;
+    use super::{
+        decode_instances_from, decode_instances_with_issue, parse_stream, validate_entry_name,
+        ParsedProtein, ProteinEnvelope,
+    };
+    use cadmpeg_core::decode::DecodeContext;
+
+    #[test]
+    fn unsafe_protein_entry_diagnostic_refuses_retained_limit_before_format() {
+        let name = "../escape";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+        assert!(matches!(
+            validate_entry_name(&limited, name),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+        ));
+        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let error = validate_entry_name(&service, name).expect_err("unsafe path rejected");
+        assert!(error.to_string().contains("../escape"));
+    }
+
+    #[test]
+    fn malformed_protein_detail_refuses_retained_limit_before_copy() {
+        let mut bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0; 4]);
+        let entry_start = 512 + 3 * 128;
+        let name = "Protein";
+        bytes[entry_start..entry_start + 64].fill(0);
+        for (index, unit) in name.encode_utf16().enumerate() {
+            let offset = entry_start + index * 2;
+            bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        let name_len =
+            u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16");
+        bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("compound input fits service policy");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            super::parse(&limited, &snapshot),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor malformed Protein detail"
+        ));
+        assert!(matches!(
+            super::parse(&setup, &snapshot).expect("malformed Protein remains an inventory state"),
+            super::ProteinState::Malformed { .. }
+        ));
+    }
 
     #[test]
     fn protein_distinguishes_empty_and_exact_package() {
@@ -197,11 +306,13 @@ mod tests {
             assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
         });
         let zip = zip_fixture("Schemas/ExampleSchema.xml");
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         assert_eq!(
             u32::from_le_bytes(bytes[..4].try_into().expect("planted payload length")),
-            zip.len() as u32
+            u32::try_from(zip.len()).expect("fixture value fits u32")
         );
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -212,7 +323,10 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len.get(), zip.len() as u32);
+            assert_eq!(
+                declared_len.get(),
+                u32::try_from(zip.len()).expect("fixture value fits u32")
+            );
             assert_eq!(archive.entries().len(), 1);
         });
     }
@@ -226,7 +340,9 @@ mod tests {
         });
 
         let zip = zip_fixture("../escape");
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             assert!(parse_stream(ctx, root).is_err());
@@ -246,7 +362,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -257,7 +375,10 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len.get() as usize, payload.window().len());
+            assert_eq!(
+                cadmpeg_core::decode::index_from_u32(declared_len.get()),
+                payload.window().len()
+            );
             let instances =
                 decode_instances_from(ctx, &archive, payload).expect("instances decode");
             assert_eq!(instances.len(), 1);
@@ -266,6 +387,223 @@ mod tests {
             assert_eq!(instances[0].records[0].guid, "asset-guid");
             assert!(instances[0].rejected.is_empty());
         });
+    }
+
+    #[test]
+    fn protein_instance_result_vec_refuses_collection_limit_before_collect() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut record = Vec::new();
+        for value in ["SimpleSchema", "asset-guid", "Simple", ""] {
+            push_lp(&mut record, value);
+        }
+        push_lp(&mut record, &"x".repeat(160));
+        let instance = paged_instance(&record);
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("AssetData/InstanceProperties.bin", &instance),
+        ]);
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&zip);
+        with_stream(&bytes, |ctx, root| {
+            let ParsedProtein::Package {
+                archive, payload, ..
+            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            else {
+                panic!("package state")
+            };
+            assert_eq!(
+                decode_instances_from(ctx, &archive, payload)
+                    .expect("service profile decodes instance")
+                    .len(),
+                1
+            );
+            let mut result_vec_refused = false;
+            for cap in 0..128 {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("synthetic Protein input fits policy");
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                    decode_instances_from(&limited, &archive, payload)
+                {
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "admit Inventor Protein instance records"
+                    {
+                        result_vec_refused = true;
+                        break;
+                    }
+                }
+            }
+            assert!(
+                result_vec_refused,
+                "result collection must refuse at its own admission"
+            );
+        });
+    }
+
+    #[test]
+    fn protein_semantic_issue_refuses_retained_limit_before_copy() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("AssetData/InstanceProperties.bin", b"bad"),
+        ]);
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("package context");
+        let ParsedProtein::Package {
+            declared_len,
+            archive,
+            payload,
+        } = parse_stream(&setup, root).expect("ZIP package parses")
+        else {
+            panic!("package state");
+        };
+        let cfb = crate::test_support::test_fixtures::fixture(true);
+        let (cfb_ctx, cfb_root) =
+            DecodeContext::from_root_bytes(&cfb, &arena, &DecodePolicy::service())
+                .expect("compound context");
+        let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
+        let stream = snapshot
+            .stream("RSeStorage/RSeSegInfo")
+            .expect("fixture stream")
+            .id();
+        let package = ProteinEnvelope {
+            stream,
+            declared_len,
+            archive,
+            payload,
+        };
+        let (_, issue) = decode_instances_with_issue(&setup, &package)
+            .expect("service policy retains semantic issue");
+        assert!(issue.is_some());
+
+        let mut cap = 0;
+        let mut needed = None;
+        for _ in 0..128 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+            match decode_instances_with_issue(&limited, &package) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = limit
+                        .used
+                        .checked_add(limit.additional)
+                        .expect("fixture charge fits u64");
+                    if limit.operation == "retain Inventor Protein semantic issue" {
+                        needed = Some(next);
+                        break;
+                    }
+                    assert!(next > cap, "fixture advances to its next retained charge");
+                    cap = next;
+                }
+                Ok(_) => panic!("expected Protein retained refusal"),
+                Err(error) => panic!("expected Protein retained refusal: {error:?}"),
+            }
+        }
+        let needed = needed.expect("semantic issue reached within fixture charges");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = needed - 1;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            decode_instances_with_issue(&limited, &package),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor Protein semantic issue"
+                    && limit.limit == needed - 1
+        ));
+    }
+
+    #[test]
+    fn inventor_reuses_one_charged_schema_catalog_across_instance_streams() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut record = Vec::new();
+        for value in ["SimpleSchema", "asset-guid", "Simple", ""] {
+            push_lp(&mut record, value);
+        }
+        push_lp(&mut record, &"x".repeat(160));
+        let instance = paged_instance(&record);
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("First/InstanceProperties.bin", &instance),
+            ("Second/InstanceProperties.bin", &instance),
+        ]);
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(schema.len()) + 10;
+        let (limited, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("package fits input limit");
+        assert!(matches!(
+            parse_stream(&limited, root),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "ZIP end record search"
+        ));
+        // Each inventory admits the end search, one end candidate, three
+        // headers, and dependency indexing at sixteen work units per ZIP byte.
+        // Stored payloads need CRC work; instances scan pages and copy records.
+        let inventory_work = 17 * cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
+        let instance_work = cadmpeg_core::decode::u64_from_index(
+            instance.len() + instance.len() - STREAM_HEADER_LEN
+                + RECORD_MARKER.len()
+                + record.len(),
+        );
+        // The schema's XML tree admission charges what one parse of its text needs.
+        let schema_text = std::str::from_utf8(schema).expect("ASCII schema");
+        let schema_tree_work = (0..u64::MAX)
+            .find(|&limit| {
+                let arena = DecodeArena::new();
+                let mut tree_policy = DecodePolicy::service();
+                tree_policy.limits.max_work_units = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &tree_policy).expect("empty root");
+                let parsed = ctx
+                    .parse_xml(schema_text, "Protein schema XML tree")
+                    .is_ok();
+                parsed
+            })
+            .expect("schema parses");
+        // Each instance copies its decoded strings into retained storage.
+        let decoded_string_bytes = "SimpleSchema".len() + "asset-guid".len() + "Simple".len() + 160;
+        // One schema CRC, one UTF-8 validation, one XML tree, and one two-step property closure.
+        policy.limits.max_work_units = 2 * inventory_work
+            + 2 * cadmpeg_core::decode::u64_from_index(schema.len())
+            + schema_tree_work
+            + 2 * (instance_work + cadmpeg_core::decode::u64_from_index(decoded_string_bytes))
+            + 2;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("package fits the service input limit");
+        let ParsedProtein::Package {
+            archive, payload, ..
+        } = parse_stream(&ctx, root).expect("package parses")
+        else {
+            panic!("package state")
+        };
+        let instances = decode_instances_from(&ctx, &archive, payload)
+            .expect("one schema parse admits both streams");
+        assert_eq!(instances.len(), 2);
+        assert!(instances.iter().all(|instance| instance.records.len() == 1));
+        assert!(matches!(
+            ctx.charge_work(1, "prove schema parse was charged"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        ));
     }
 
     #[test]
@@ -283,7 +621,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -329,13 +669,17 @@ mod tests {
     }
 
     fn push_lp(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     }
 
     fn paged_instance(record: &[u8]) -> Vec<u8> {
         const BODY_SIZE: usize = PAGE_SIZE - 8;
-        let mut bytes = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(PAGE_SIZE).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.resize(STREAM_HEADER_LEN, 0);
         let mut chunks = record.chunks(BODY_SIZE).peekable();
         let first = chunks.next().expect("record is nonempty");
@@ -349,7 +693,9 @@ mod tests {
                 bytes.extend_from_slice(CONTINUATION_MARKER);
             } else {
                 bytes.extend_from_slice(TERMINAL_MARKER);
-                bytes.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u16::try_from(chunk.len()).expect("fixture value fits u16")).to_le_bytes(),
+                );
                 bytes.extend_from_slice(&[0, 0]);
             }
             bytes.extend_from_slice(chunk);

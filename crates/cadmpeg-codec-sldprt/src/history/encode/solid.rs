@@ -1,43 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude and hole write encoders.
 
-use super::super::{format_angle_rad, format_length_mm};
+use super::super::literals::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
-    face_selection_value, profile_source, require_direction, resolved_boolean_op,
-    vertex_selection_value,
+    face_selection_value, profile_source, resolved_boolean_op, vertex_selection_value,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
-    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
-    Length, LinearTermination, ProfileRef,
+    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter},
+    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
+    InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Extrude` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct ExtrudeDefinition<'a> {
+    pub(super) profile: &'a ProfileRef,
+    pub(super) direction: &'a ExtrudeDirection,
+    pub(super) start: &'a ExtrudeStart,
+    pub(super) extent: &'a ExtrudeExtent,
+    pub(super) op: &'a BooleanOp,
+    pub(super) solid: Option<bool>,
+    pub(super) face_maker: Option<&'a FaceMaker>,
+    pub(super) inner_wire_taper: Option<&'a InnerWireTaper>,
+    pub(super) length_along_profile_normal: Option<bool>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
+/// The decoded fields of one `Hole` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct HoleDefinition<'a> {
+    pub(super) profile: Option<&'a cadmpeg_ir::features::PlanarProfileRef>,
+    pub(super) profile_filter: Option<&'a HoleProfileFilter>,
+    pub(super) face: Option<&'a FaceSelection>,
+    pub(super) placements: Option<&'a [HolePlacement]>,
+    pub(super) construction: &'a HoleConstruction,
+    pub(super) exit_kind: Option<&'a HoleKind>,
+    pub(super) diameter: Option<&'a cadmpeg_ir::scalar::PositiveLength>,
+    pub(super) extent: Option<&'a LinearTermination>,
+    pub(super) bottom: Option<&'a HoleBottom>,
+    pub(super) taper_angle: Option<&'a cadmpeg_ir::scalar::InteriorAngle>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extrude(
         &self,
-        profile: &ProfileRef,
-        direction: &ExtrudeDirection,
-        start: &ExtrudeStart,
-        extent: &ExtrudeExtent,
-        op: &BooleanOp,
-        solid: &Option<bool>,
-        face_maker: &Option<FaceMaker>,
-        inner_wire_taper: &Option<InnerWireTaper>,
-        length_along_profile_normal: &Option<bool>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: ExtrudeDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let ExtrudeDefinition {
+            profile,
+            direction,
+            start,
+            extent,
+            op,
+            solid,
+            face_maker,
+            inner_wire_taper,
+            length_along_profile_normal,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -69,16 +95,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let extent_is_unresolved = matches!(
                 extent,
                 ExtrudeExtent::OneSided { side }
-                if matches!(side.termination, LinearTermination::Unresolved)
+                if matches!(side.termination, LinearTermination::Unresolved {})
             );
             let direction_source = match direction {
                 ExtrudeDirection::Explicit { source, .. } => source.as_ref(),
                 _ => None,
             };
-            if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
+            if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane {})
                 || second_side_draft.is_some()
                 || direction_source.is_some()
-                || *solid == Some(false)
+                || solid == Some(false)
                 || face_maker.is_some()
                 || inner_wire_taper.is_some()
                 || any_side_offset
@@ -102,7 +128,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if let ProfileRef::Unresolved(owner) = profile {
+            if let ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) = profile {
                 let retained = existing.is_some_and(|record| {
                     record.id == *owner && !record.properties.contains_key("Profile")
                 });
@@ -113,12 +139,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
             }
-            let implicit_profile = existing.is_some_and(|record| {
+            let profile_source = if existing.is_some_and(|record| {
                 !record.properties.contains_key("Profile")
-                    && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
-                        || matches!(profile, ProfileRef::Native(native) if native == &record.id))
-            });
-            let profile_source = if implicit_profile {
+                    && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == &record.id)
+                        || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(native)) if native == &record.id))
+            }) {
                 None
             } else {
                 Some(
@@ -167,6 +192,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.remove("Face");
                 properties.remove("Vertex");
             }
+            let unsupported_termination_selection = || {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses an unsupported extrusion termination selection",
+                    feature.id
+                ))
+            };
             let unsupported_extent = || {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses an unsupported extrusion extent",
@@ -175,74 +206,98 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
-                    LinearTermination::Unresolved => {}
+                    LinearTermination::Unresolved {} => {}
                     LinearTermination::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
-                            properties.insert("EndCondition".into(), "Blind".into());
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("EndCondition"),
+                                "Blind".into(),
+                            );
                         }
-                        let key = if positional_depth { "D1" } else { "Depth" };
-                        parameters.insert(
-                            key.into(),
-                            format_length_like(
-                                length.0,
-                                existing
-                                    .and_then(|record| record.parameters.get(key))
-                                    .map(String::as_str),
-                            ),
+                        let key = if positional_depth {
+                            cadmpeg_core::nonblank_literal!("D1")
+                        } else {
+                            cadmpeg_core::nonblank_literal!("Depth")
+                        };
+                        let value = format_length_like(
+                            (*length).into(),
+                            existing
+                                .and_then(|record| record.parameters.get(key.as_str()))
+                                .map(String::as_str),
+                        );
+                        parameters.insert(key, value);
+                    }
+                    LinearTermination::ThroughAll {} => {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "ThroughAll".into(),
                         );
                     }
-                    LinearTermination::ThroughAll => {
-                        properties.insert("EndCondition".into(), "ThroughAll".into());
+                    LinearTermination::ThroughNext {} => {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "ThroughNext".into(),
+                        );
                     }
-                    LinearTermination::ThroughNext => {
-                        properties.insert("EndCondition".into(), "ThroughNext".into());
-                    }
-                    LinearTermination::ToFirst
-                    | LinearTermination::ToLast
+                    LinearTermination::ToFirst {}
+                    | LinearTermination::ToLast {}
                     | LinearTermination::ToShape { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination",
                             feature.id
                         )));
                     }
-                    LinearTermination::ToFace { face, offset }
-                        if face_selection_value(face).is_some() =>
-                    {
-                        let selection = face_selection_value(face).expect("guarded above");
-                        properties.insert("EndCondition".into(), "ToFace".into());
-                        properties.insert("Face".into(), selection);
+                    LinearTermination::ToFace { face, offset } => {
+                        let Some(selection) = face_selection_value(face) else {
+                            return Err(unsupported_termination_selection());
+                        };
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "ToFace".into(),
+                        );
+                        properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
                         if let Some(offset) = offset {
-                            parameters.insert("Depth".into(), format_length_mm(offset.0));
+                            parameters.insert(
+                                cadmpeg_core::nonblank_literal!("Depth"),
+                                format_length_mm(*offset),
+                            );
                         }
                     }
-                    LinearTermination::ToVertex { vertex }
-                        if vertex_selection_value(vertex).is_some() =>
-                    {
-                        let selection = vertex_selection_value(vertex).expect("guarded above");
-                        properties.insert("EndCondition".into(), "ToVertex".into());
-                        properties.insert("Vertex".into(), selection);
+                    LinearTermination::ToVertex { vertex } => {
+                        let Some(selection) = vertex_selection_value(vertex) else {
+                            return Err(unsupported_termination_selection());
+                        };
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "ToVertex".into(),
+                        );
+                        properties.insert(cadmpeg_core::nonblank_literal!("Vertex"), selection);
                     }
-                    LinearTermination::OffsetFromFace { face, offset }
-                        if face_selection_value(face).is_some() =>
-                    {
-                        let selection = face_selection_value(face).expect("guarded above");
-                        properties.insert("EndCondition".into(), "OffsetFromFace".into());
-                        properties.insert("Face".into(), selection);
-                        parameters.insert("Depth".into(), format_length_mm(offset.0));
-                    }
-                    LinearTermination::ToFace { .. }
-                    | LinearTermination::ToVertex { .. }
-                    | LinearTermination::OffsetFromFace { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion termination selection",
-                            feature.id
-                        )));
+                    LinearTermination::OffsetFromFace { face, offset } => {
+                        let Some(selection) = face_selection_value(face) else {
+                            return Err(unsupported_termination_selection());
+                        };
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "OffsetFromFace".into(),
+                        );
+                        properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Depth"),
+                            format_length_mm((*offset).into()),
+                        );
                     }
                 },
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
                     LinearTermination::Blind { length } => {
-                        properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "Symmetric".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Depth"),
+                            format_length_mm((*length).into()),
+                        );
                     }
                     _ => return Err(unsupported_extent()),
                 },
@@ -252,61 +307,69 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             LinearTermination::Blind { length: first },
                             LinearTermination::Blind { length: second },
                         ) => {
-                            properties.insert("EndCondition".into(), "TwoSided".into());
-                            parameters.insert("Depth".into(), format_length_mm(first.0));
-                            parameters.insert("Depth2".into(), format_length_mm(second.0));
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("EndCondition"),
+                                "TwoSided".into(),
+                            );
+                            parameters.insert(
+                                cadmpeg_core::nonblank_literal!("Depth"),
+                                format_length_mm((*first).into()),
+                            );
+                            parameters.insert(
+                                cadmpeg_core::nonblank_literal!("Depth2"),
+                                format_length_mm((*second).into()),
+                            );
                         }
-                        (LinearTermination::ThroughAll, LinearTermination::ThroughAll) => {
-                            properties.insert("EndCondition".into(), "ThroughAllBoth".into());
+                        (LinearTermination::ThroughAll {}, LinearTermination::ThroughAll {}) => {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("EndCondition"),
+                                "ThroughAllBoth".into(),
+                            );
                         }
                         _ => return Err(unsupported_extent()),
                     }
                 }
             }
             match direction {
-                cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved extrusion direction",
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} => {
                     properties.remove("Direction");
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal => {
+                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
                         feature.id
                     )));
                 }
                 cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
-                    require_direction(*vector, &feature.id, "extrusion direction")?;
-                    properties.insert("Direction".into(), format_vector3(*vector));
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Direction"),
+                        format_vector3((*vector).into()),
+                    );
                 }
             }
             if let Some(draft) = first_draft {
-                if !draft.0.is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "SLDPRT feature {} has a non-finite extrusion draft",
-                        feature.id
-                    )));
-                }
-                parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Draft"),
+                    format_angle_rad(draft.into()),
+                );
             }
             if *op != BooleanOp::Unresolved
                 && (properties.contains_key("Operation")
                     || existing.and_then(extrude_feature_op).is_none())
             {
                 properties.insert(
-                    "Operation".into(),
+                    cadmpeg_core::nonblank_literal!("Operation"),
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if !implicit_profile {
-                properties.insert(
-                    "Profile".into(),
-                    profile_source.expect("non-implicit profile was resolved"),
-                );
+            if let Some(profile_source) = profile_source {
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
             let kind = existing.map_or_else(
                 || match op {
@@ -327,18 +390,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_hole(
         &self,
-        profile: &Option<ProfileRef>,
-        profile_filter: &Option<HoleProfileFilter>,
-        face: &Option<FaceSelection>,
-        placements: &Option<Vec<HolePlacement>>,
-        construction: &HoleConstruction,
-        exit_kind: &Option<HoleKind>,
-        diameter: &Option<Length>,
-        extent: &Option<LinearTermination>,
-        bottom: &Option<HoleBottom>,
-        taper_angle: &Option<Angle>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: HoleDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let HoleDefinition {
+            profile,
+            profile_filter,
+            face,
+            placements,
+            construction,
+            exit_kind,
+            diameter,
+            extent,
+            bottom,
+            taper_angle,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let (kind, specification) = match construction {
@@ -378,17 +444,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(diameter) = diameter {
-                parameters.insert("Diameter".into(), format_length_mm(diameter.0));
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Diameter"),
+                    format_length_mm((*diameter).into()),
+                );
             }
             if let Some(kind) = kind {
                 match kind {
                     HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore { .. }
-                    | HoleKind::PartialCountersink { .. }
+                    | HoleKind::PartialCounterbore(..)
+                    | HoleKind::PartialCountersink(..)
                         if existing.is_some() => {}
                     HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore { .. }
-                    | HoleKind::PartialCountersink { .. } => {
+                    | HoleKind::PartialCounterbore(..)
+                    | HoleKind::PartialCountersink(..) => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved hole entry construction",
                             feature.id
@@ -413,8 +482,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
                         parameters.insert(
-                            "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
+                            cadmpeg_core::nonblank_literal!("DrillPointAngle"),
+                            format_angle_rad((*drill_point_angle).into()),
                         );
                     }
                     HoleKind::Counterbore { diameter, depth } => {
@@ -423,9 +492,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadMajorDiameter");
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("CounterboreDiameter"),
+                            format_length_mm((*diameter).into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("CounterboreDepth"),
+                            format_length_mm((*depth).into()),
+                        );
                         parameters.remove("DrillPointAngle");
                     }
                     HoleKind::CounterboreDrilled {
@@ -438,12 +512,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadMajorDiameter");
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
                         parameters.insert(
-                            "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
+                            cadmpeg_core::nonblank_literal!("CounterboreDiameter"),
+                            format_length_mm((*diameter).into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("CounterboreDepth"),
+                            format_length_mm((*depth).into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("DrillPointAngle"),
+                            format_angle_rad((*drill_point_angle).into()),
                         );
                     }
                     HoleKind::Countersink { diameter, angle } => {
@@ -453,9 +532,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
                         parameters.remove("DrillPointAngle");
-                        parameters
-                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("CountersinkDiameter"),
+                            format_length_mm((*diameter).into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("CountersinkAngle"),
+                            format_angle_rad((*angle).into()),
+                        );
                     }
                     HoleKind::Counterdrill { .. } => {
                         return Err(CodecError::NotImplemented(format!(
@@ -482,30 +566,33 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.remove("CountersinkDiameter");
                 parameters.remove("CountersinkAngle");
                 parameters.insert(
-                    "ThreadMajorDiameter".into(),
-                    format_length_mm(major_diameter.0),
+                    cadmpeg_core::nonblank_literal!("ThreadMajorDiameter"),
+                    format_length_mm((*major_diameter).into()),
                 );
-                parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("ThreadDepth"),
+                    format_length_mm((*thread_depth).into()),
+                );
                 if let Some(pitch) = pitch {
-                    parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("ThreadPitch"),
+                        format_length_mm((*pitch).into()),
+                    );
                 } else {
                     parameters.remove("ThreadPitch");
                 }
                 parameters.insert(
-                    "DrillPointAngle".into(),
-                    format_angle_rad(drill_point_angle.0),
+                    cadmpeg_core::nonblank_literal!("DrillPointAngle"),
+                    format_angle_rad((*drill_point_angle).into()),
                 );
             }
             let mut properties = feature.source_properties.clone();
-            match face {
-                Some(face) if face_selection_value(face).is_some() => {
-                    properties.insert(
-                        "Face".into(),
-                        face_selection_value(face).expect("guarded above"),
-                    );
+            match face.as_ref().map(|face| (face, face_selection_value(face))) {
+                Some((_, Some(selection))) => {
+                    properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
                 }
-                Some(FaceSelection::Unresolved) if existing.is_some() => {}
-                Some(FaceSelection::Unresolved) => {
+                Some((FaceSelection::Unresolved, _)) if existing.is_some() => {}
+                Some((FaceSelection::Unresolved, _)) => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved hole face selection",
                         feature.id
@@ -521,21 +608,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Face");
                 }
             }
-            match placements.as_deref().unwrap_or_default() {
-                [cadmpeg_ir::features::HolePlacement::Directed {
+            match placements.unwrap_or_default() {
+                [cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position,
                     direction,
                 }] => {
-                    if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite()
-                    {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite hole position",
-                            feature.id
-                        )));
-                    }
-                    require_direction(*direction, &feature.id, "hole direction")?;
-                    properties.insert("Position".into(), format_point3_mm(*position));
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Position"),
+                        format_point3_mm(*position),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Direction"),
+                        format_vector3((*direction).into()),
+                    );
                 }
                 [] if existing.is_none() => {
                     properties.remove("Position");
@@ -545,7 +630,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 placements
                     if existing.is_some()
                         && placements.iter().all(|placement| {
-                            matches!(placement, cadmpeg_ir::features::HolePlacement::Axis { .. })
+                            matches!(
+                                placement,
+                                cadmpeg_ir::features::holes::HolePlacement::Axis { .. }
+                            )
                         }) => {}
                 _ => {
                     return Err(CodecError::NotImplemented(format!(
@@ -555,15 +643,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match extent {
-                Some(LinearTermination::Blind {
-                    length: Length(depth),
-                }) => {
-                    parameters.insert("Depth".into(), format_length_mm(*depth));
-                    properties.insert("EndCondition".into(), "Blind".into());
+                Some(LinearTermination::Blind { length: depth }) => {
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Depth"),
+                        format_length_mm((*depth).into()),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("EndCondition"),
+                        "Blind".into(),
+                    );
                 }
-                Some(LinearTermination::ThroughAll) => {
+                Some(LinearTermination::ThroughAll {}) => {
                     parameters.remove("Depth");
-                    properties.insert("EndCondition".into(), "ThroughAll".into());
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("EndCondition"),
+                        "ThroughAll".into(),
+                    );
                 }
                 Some(_) => {
                     return Err(CodecError::NotImplemented(format!(

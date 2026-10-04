@@ -5,17 +5,317 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use super::*;
+use super::{
+    identify_variant, outer_container_declarations, outer_container_for_extent,
+    parse_directory_region, parse_extents, reconstruct_logical_stream, scan_bytes, summarize,
+    Census, ContainerScan, Descriptor, Extent, InnerDir, EDGE_DELIMITER, OUTER_MAGIC,
+};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::test_support::{
-    append_e5_record, external_reference_segment, finjpl_stream, outer_body_catpart,
-    outer_directory_catpart, standard_catpart, summary_preview_segment,
+use crate::test_support::test_container::{
+    external_reference_segment, finjpl_stream, outer_body_catpart, outer_directory_catpart,
+    standard_catpart, summary_preview_segment,
 };
+use crate::test_support::test_e5::append_e5_record;
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
+    crate::test_support::with_service_context(|ctx| summarize(ctx, scan))
+        .expect("service budget admits container summary")
+}
+
+fn finjpl_service(body: &super::BodyExtent<'_>) -> Vec<super::FinjplSegment> {
+    crate::test_support::with_service_context(|ctx| super::finjpl_segments(ctx, body))
+        .expect("service budget admits FINJPL segments")
+}
+
+fn preview_service(data: &[u8]) -> Vec<super::PreviewImage> {
+    crate::test_support::with_service_context(|ctx| super::preview_images(ctx, data))
+        .expect("service budget admits previews")
+}
+
+fn external_refs_service(data: &[u8]) -> Vec<super::ExternalReference> {
+    crate::test_support::with_service_context(|ctx| super::external_references(ctx, data))
+        .expect("service budget admits external references")
+}
+
+fn last_save_version_service(data: &[u8]) -> Option<super::LastSaveVersion> {
+    crate::test_support::with_service_context(|ctx| super::last_save_version(ctx, data))
+        .expect("service budget admits version")
+}
+
+fn parse_extents_service(
+    dirbuf: &[u8],
+    o: usize,
+    k: usize,
+    physical_base: usize,
+    file_len: usize,
+) -> Option<(Vec<super::Extent>, usize)> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_extents(ctx, dirbuf, o, k, physical_base, file_len)
+    })
+    .expect("service budget admits extents")
+}
+
+fn parse_directory_region_service(
+    data: &[u8],
+    physical_base: usize,
+    dir_offset: usize,
+    dir_length: usize,
+) -> Option<super::InnerDir> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_directory_region(ctx, data, physical_base, dir_offset, dir_length)
+    })
+    .expect("service budget admits directory")
+}
+
+fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
+    crate::test_support::with_service_context(|ctx| super::descriptor_name(ctx, dirbuf, ds))
+        .expect("service budget admits descriptor name")
+}
+
+fn reconstruct_service(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
+    crate::test_support::with_service_context(|ctx| {
+        let (stream, storage) = reconstruct_logical_stream(ctx, data, descriptor, inner)?;
+        storage.commit()?;
+        Ok::<_, cadmpeg_core::CodecError>(stream)
+    })
+    .expect("service budget admits logical stream")
+}
+
+fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+    crate::test_support::with_service_context(|ctx| super::brep_stream(ctx, data, dir))
+        .expect("service budget admits BREP stream")
+}
+
+fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+    crate::test_support::with_service_context(|ctx| super::main_data_stream(ctx, data, dir))
+        .expect("service budget admits main stream")
+}
+
+fn outer_declarations_service(
+    data: &[u8],
+    dir: &InnerDir,
+) -> Vec<super::OuterContainerDeclaration> {
+    crate::test_support::with_service_context(|ctx| outer_container_declarations(ctx, data, dir))
+        .expect("service budget admits container declarations")
+}
+
+fn record_sources_service(
+    scan: &ContainerScan<'_>,
+) -> Vec<Vec<crate::wire::records::SourceExtent>> {
+    crate::test_support::with_service_context(|ctx| super::consolidated_record_sources(ctx, scan))
+        .expect("service budget admits record sources")
+}
+
+fn record_ranges_service(scan: &ContainerScan<'_>) -> Vec<std::ops::Range<usize>> {
+    crate::test_support::with_service_context(|ctx| super::consolidated_record_ranges(ctx, scan))
+        .expect("service budget admits record ranges")
+}
+
+#[test]
+fn logical_stream_bytes_refuse_retained_limit() {
+    let descriptor = test_descriptor("MainDataStream", 1, 3);
+    let limited = crate::test_support::with_retained_limit(2, |ctx| {
+        let (stream, storage) = reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)?;
+        storage.commit()?;
+        Ok::<_, cadmpeg_core::CodecError>(stream)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_logical_stream_bytes")
+    );
+    assert_eq!(reconstruct_service(b"01234", &descriptor, 0), b"123");
+}
+
+#[test]
+fn logical_stream_roster_refuses_collection_limit() {
+    let bytes = outer_directory_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer directory");
+    let first_len = scan.outer.as_ref().expect("outer directory").descriptors[0].logical_length();
+    let limited = crate::test_support::with_collection_limit(first_len, |ctx| {
+        super::logical_record_streams(ctx, &scan)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_logical_record_streams")
+    );
+    let streams =
+        crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
+            .expect("service budget admits logical streams");
+    assert_eq!(streams.len(), 1);
+}
+
+#[test]
+fn record_source_inner_extents_refuse_collection_limit() {
+    let bytes = outer_directory_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer directory");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::consolidated_record_sources(ctx, &scan)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_record_source_extents")
+    );
+    assert_eq!(record_sources_service(&scan).len(), 1);
+}
+
+#[test]
+fn fbb_run_roster_refuses_collection_limit() {
+    let bytes = [0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    let limited =
+        crate::test_support::with_collection_limit(0, |ctx| super::fbb_run_ranges(ctx, &bytes));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_fbb_run_ranges")
+    );
+    let ranges =
+        crate::test_support::with_service_context(|ctx| super::fbb_run_ranges(ctx, &bytes))
+            .expect("service budget admits FBB runs");
+    assert_eq!(ranges, vec![0..8]);
+}
+
+#[test]
+fn outer_container_stream_identity_refuses_retained_limit() {
+    let (bytes, _) = crate::test_support::test_container::outer_container_catpart(b"graph");
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer container");
+    let outer = scan.outer.as_ref().expect("outer directory");
+    let data_descriptor = outer
+        .descriptors
+        .iter()
+        .find(|descriptor| descriptor.name == "Data")
+        .expect("Data descriptor");
+    let logical = reconstruct_service(&scan.data, data_descriptor, outer.inner);
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_stream_name")
+    );
+    assert_eq!(outer_declarations_service(&scan.data, outer).len(), 1);
+}
+
+#[test]
+fn finjpl_markers_refuse_collection_limit() {
+    let bytes = summary_preview_segment();
+    let body = super::BodyExtent::whole(&bytes);
+    let limited =
+        crate::test_support::with_collection_limit(0, |ctx| super::finjpl_segments(ctx, &body));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_positions")
+    );
+    assert_eq!(finjpl_service(&body).len(), 1);
+}
+
+#[test]
+fn finjpl_primary_name_refuses_retained_limit() {
+    let bytes = summary_preview_segment();
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::finjpl_primary_name(ctx, &bytes, 0, bytes.len())
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_name")
+    );
+    assert_eq!(
+        finjpl_service(&super::BodyExtent::whole(&bytes))[0]
+            .name
+            .as_deref(),
+        Some("CATSummaryInformation")
+    );
+}
+
+#[test]
+fn preview_rows_refuse_collection_limit() {
+    let bytes = summary_preview_segment();
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::preview_images_in_segments(ctx, &bytes, &segments)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_preview_images")
+    );
+    assert_eq!(preview_service(&bytes).len(), 1);
+}
+
+#[test]
+fn external_reference_target_refuses_retained_limit() {
+    let bytes = external_reference_segment("linked.CATPart");
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::external_references_in_segments(ctx, &bytes, &segments)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_external_reference_target")
+    );
+    assert_eq!(external_refs_service(&bytes)[0].target, "linked.CATPart");
+}
+
+#[test]
+fn last_save_build_date_refuses_retained_limit() {
+    let bytes = summary_preview_segment();
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::parse_last_save_version(ctx, &bytes)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_last_save_build_date")
+    );
+    assert_eq!(
+        last_save_version_service(&bytes).expect("version").version,
+        5
+    );
+}
+
+#[test]
+fn summary_attribute_refuses_collection_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| summarize(ctx, &scan));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_summary_attribute")
+    );
+    assert!(!summarize_service(&scan).entries.is_empty());
+}
+
+#[test]
+fn container_note_refuses_retained_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_retained_limit(0, |ctx| super::notes(ctx, &scan));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_note")
+    );
+    let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
+        .expect("service budget admits container notes");
+    assert!(!notes.is_empty());
+}
+
+#[test]
+fn container_notes_refuse_collection_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| super::notes(ctx, &scan));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_notes")
+    );
+    let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
+        .expect("service budget admits container notes");
+    assert!(!notes.is_empty());
+}
 
 fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
     append_e5_test_record_with_payload(bytes, id, &[]);
@@ -24,7 +324,9 @@ fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
 fn append_e5_test_record_with_payload(bytes: &mut Vec<u8>, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(super::E5_MARKER);
     bytes.extend_from_slice(&[0xfe, 0x00]);
-    bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0x00, 0x00]);
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(payload);
@@ -35,8 +337,12 @@ fn outer_with_preamble(body: &[u8]) -> Vec<u8> {
     let directory_offset = 512usize;
     let mut bytes = vec![0u8; directory_length];
     bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
-    bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
-    bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+    bytes[8..12].copy_from_slice(
+        &(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    bytes[12..16].copy_from_slice(
+        &(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(body);
     bytes.resize(directory_offset + directory_length, 0);
     bytes
@@ -67,15 +373,18 @@ fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
 
 #[test]
 fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
-    let scan = scan_bytes(standard_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
     assert_eq!(
-        identify_variant(
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
             scan.inner.as_ref(),
             scan.brep.as_deref(),
             scan.main_data_stream.as_deref(),
             &scan.census,
             true,
-        ),
+        ))
+        .expect("service resource budget"),
         Variant::StandardNested
     );
 }
@@ -87,7 +396,10 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(None, None, None, &census, true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx, None, None, None, &census, true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -98,7 +410,10 @@ fn scan_selects_a_coherent_e5_walk_over_a_zero_entity_record() {
     for id in 0..10 {
         append_e5_test_record(&mut body, id);
     }
-    let scan = scan_bytes(outer_with_preamble(&body));
+    let scan = crate::test_support::with_service_context(|ctx| {
+        scan_bytes(ctx, outer_with_preamble(&body))
+    })
+    .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::E5Stream);
 }
@@ -110,7 +425,15 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
         descriptors: Vec::new(),
     };
     assert_eq!(
-        identify_variant(Some(&inner), None, None, &Census::default(), true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            None,
+            None,
+            &Census::default(),
+            true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -129,15 +452,29 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
     };
 
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::fbb_only_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         Some(2)
     );
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            false
+        ))
+        .expect("service resource budget"),
         Variant::FbbOnly
     );
 }
@@ -157,15 +494,29 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
     };
 
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::fbb_only_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            false
+        ))
+        .expect("service resource budget"),
         Variant::Unknown
     );
 
@@ -175,13 +526,15 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
             Some(&inner),
             Some(&no_vertex_brep),
             Some(&no_vertex_brep),
             &no_vertex_census,
             false,
-        ),
+        ))
+        .expect("service resource budget"),
         Variant::Unknown
     );
 }
@@ -200,7 +553,15 @@ fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
     };
 
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -212,7 +573,14 @@ fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
         append_e5_test_record(&mut body, id);
         body.push(0x7f);
     }
-    assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 
     let mut body = Vec::new();
     for id in 0..10 {
@@ -222,7 +590,14 @@ fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
             body.extend_from_slice(&[0; 12]);
         }
     }
-    assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_some()
+    );
 }
 
 #[test]
@@ -234,7 +609,14 @@ fn e5_stream_ignores_markers_inside_framed_payloads() {
     for id in 1..9 {
         append_e5_test_record(&mut body, id);
     }
-    assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 }
 
 #[test]
@@ -243,8 +625,12 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
     let directory_offset = 512usize;
     let mut bytes = vec![0u8; directory_length];
     bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
-    bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
-    bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+    bytes[8..12].copy_from_slice(
+        &(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    bytes[12..16].copy_from_slice(
+        &(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.resize(directory_offset, 0);
 
     let mut directory = vec![0u8; super::DIR_MAGIC.len()];
@@ -257,8 +643,13 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
     directory.resize(directory_length, 0);
     bytes.extend_from_slice(&directory);
 
-    assert!(super::e5_record_stream(&bytes).is_none());
-    let scan = super::scan_bytes(bytes);
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &bytes))
+            .expect("service work")
+            .is_none()
+    );
+    let scan = crate::test_support::with_service_context(|ctx| super::scan_bytes(ctx, bytes))
+        .expect("service resource budget");
     assert!(scan.finjpl_segments.is_empty());
     assert_eq!(scan.census.e5_markers, 0);
 }
@@ -269,7 +660,7 @@ fn all_e5_record_spans_cross_other_framed_records() {
     append_e5_test_record(&mut body, 1);
     body.extend_from_slice(&[0xe5, 0x0d, 0x13, 0xf4, 0x01, 0x09, 0, 0, 0]);
     append_e5_test_record(&mut body, 2);
-    assert_eq!(super::all_e5_record_spans(&body).len(), 2);
+    assert_eq!(super::all_e5_record_spans(&body).count(), 2);
 }
 
 #[test]
@@ -282,7 +673,14 @@ fn equal_unpreferred_e5_segment_walks_are_ambiguous() {
             append_e5_test_record(&mut body, segment * 10 + id);
         }
     }
-    assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 }
 
 #[test]
@@ -296,7 +694,7 @@ fn brep_stream_requires_unique_canonical_descriptors() {
             test_descriptor("SurfacicReps", 8, 2),
         ],
     };
-    assert!(super::brep_stream(&data, &tied).is_none());
+    assert!(brep_service(&data, &tied).is_none());
 
     let noncanonical = InnerDir {
         inner: 0,
@@ -305,7 +703,7 @@ fn brep_stream_requires_unique_canonical_descriptors() {
             test_descriptor("SurfacicRepsAlias", 4, 4),
         ],
     };
-    assert!(super::brep_stream(&data, &noncanonical).is_none());
+    assert!(brep_service(&data, &noncanonical).is_none());
 
     let unique = InnerDir {
         inner: 0,
@@ -316,11 +714,11 @@ fn brep_stream_requires_unique_canonical_descriptors() {
         ],
     };
     assert_eq!(
-        super::brep_stream(&data, &unique),
+        brep_service(&data, &unique),
         Some(data[4..9].iter().chain(&data[9..11]).copied().collect())
     );
     assert_eq!(
-        super::main_data_stream(&data, &unique),
+        main_data_stream_service(&data, &unique),
         Some(data[4..9].to_vec())
     );
 }
@@ -332,10 +730,50 @@ fn extent_parser_retains_the_raw_flags_word() {
         directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
     }
     let (extents, logical_length) =
-        parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
+        parse_extents_service(&directory, 0, 1, 0, 64).expect("complete extent");
     assert_eq!(logical_length, 8);
     assert_eq!(extents[0].flags, 0xa501_0080);
-    assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    assert!(parse_extents_service(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+}
+
+#[test]
+fn extent_roster_refuses_collection_limit() {
+    let mut directory = vec![0; 24];
+    for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0)] {
+        directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+    }
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        parse_extents(ctx, &directory, 0, 1, 0, 64)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_extents")
+    );
+    assert_eq!(
+        parse_extents_service(&directory, 0, 1, 0, 64)
+            .expect("valid extent")
+            .0
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn directory_descriptor_refuses_collection_limit() {
+    let bytes = outer_directory_catpart();
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        super::parse_outer_stream_directory(ctx, &bytes)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_descriptors")
+    );
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        super::parse_outer_stream_directory(ctx, &bytes)
+    })
+    .expect("service budget admits directory")
+    .expect("valid directory");
+    assert_eq!(parsed.descriptors.len(), 1);
 }
 
 #[test]
@@ -349,7 +787,27 @@ fn descriptor_name_is_anchored_to_the_descriptor_tail() {
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
 
-    assert_eq!(super::descriptor_name(&directory, ds), "MainDataStream");
+    assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
+}
+
+#[test]
+fn descriptor_name_refuses_retained_limit() {
+    let mut directory = vec![0u8; 0x80];
+    let ds = 0x40;
+    let name = b"MainDataStream";
+    let name_start = ds - 3 - name.len() * 2;
+    for (index, byte) in name.iter().enumerate() {
+        directory[name_start + index * 2] = *byte;
+    }
+    directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::descriptor_name(ctx, &directory, ds)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_descriptor_name")
+    );
+    assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
 }
 
 #[test]
@@ -365,10 +823,10 @@ fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
         directory[name_start + index * 2] = *byte;
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 1]);
-    assert!(super::descriptor_name(&directory, ds).is_empty());
+    assert!(descriptor_name_service(&directory, ds).is_empty());
 
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
-    assert_eq!(super::descriptor_name(&directory, ds), "Data");
+    assert_eq!(descriptor_name_service(&directory, ds), "Data");
 }
 
 #[test]
@@ -383,7 +841,7 @@ fn descriptor_name_accepts_the_legacy_fixed_header_form() {
     directory[name_start + name.len() * 2..name_start + name.len() * 2 + 2]
         .copy_from_slice(&[0, 0]);
 
-    assert_eq!(super::descriptor_name(&directory, ds), "RootStorage");
+    assert_eq!(descriptor_name_service(&directory, ds), "RootStorage");
 }
 
 #[test]
@@ -394,26 +852,35 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
     let directory_end = extent_count_offset + 4 + extent_count * 20;
     let mut directory = vec![0u8; directory_end];
     directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
-    directory[descriptor_start + 0x0c..descriptor_start + 0x10]
-        .copy_from_slice(&(extent_count as u32).to_be_bytes());
-    directory[extent_count_offset..extent_count_offset + 4]
-        .copy_from_slice(&(extent_count as u32).to_be_bytes());
+    directory[descriptor_start + 0x0c..descriptor_start + 0x10].copy_from_slice(
+        &(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    directory[extent_count_offset..extent_count_offset + 4].copy_from_slice(
+        &(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes(),
+    );
     for index in 0..extent_count {
         let extent = extent_count_offset + 4 + index * 20;
-        directory[extent..extent + 4].copy_from_slice(&(index as u32).to_be_bytes());
+        directory[extent..extent + 4].copy_from_slice(
+            &(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes(),
+        );
         directory[extent + 4..extent + 8].copy_from_slice(&1u32.to_be_bytes());
         directory[extent + 8..extent + 12].copy_from_slice(&1u32.to_be_bytes());
-        directory[extent + 12..extent + 16].copy_from_slice(&(index as u32).to_be_bytes());
+        directory[extent + 12..extent + 16].copy_from_slice(
+            &(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes(),
+        );
     }
 
-    let parsed =
-        parse_directory_region(&directory, 0, 0, directory.len()).expect("bounded extent roster");
+    let parsed = parse_directory_region_service(&directory, 0, 0, directory.len())
+        .expect("bounded extent roster");
     let descriptor = parsed
         .descriptors
         .iter()
         .find(|descriptor| descriptor.desc_offset == descriptor_start)
         .expect("descriptor at synthesized header");
-    assert_eq!(descriptor.logical_length(), extent_count as u64);
+    assert_eq!(
+        descriptor.logical_length(),
+        cadmpeg_core::decode::u64_from_index(extent_count)
+    );
     assert_eq!(descriptor.extents.len(), extent_count);
 }
 
@@ -435,14 +902,11 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
             },
         ],
     };
-    assert_eq!(
-        reconstruct_logical_stream(b"0123456789", &descriptor, 0),
-        b"1278"
-    );
+    assert_eq!(reconstruct_service(b"0123456789", &descriptor, 0), b"1278");
 
     let mut outside = descriptor.clone();
     outside.extents[1].phys_off = 9;
-    assert!(reconstruct_logical_stream(b"0123456789", &outside, 0).is_empty());
+    assert!(reconstruct_service(b"0123456789", &outside, 0).is_empty());
 }
 
 #[test]
@@ -456,7 +920,7 @@ fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
             flags: 0,
         }],
     };
-    assert!(reconstruct_logical_stream(&[0], &descriptor, usize::MAX).is_empty());
+    assert!(reconstruct_service(&[0], &descriptor, usize::MAX).is_empty());
 }
 
 #[test]
@@ -487,16 +951,16 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
         inner: None,
         brep: None,
         main_data_stream: None,
+        e5_record_range: None,
         previews: Vec::new(),
         last_save_version: None,
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: Vec::new(),
-        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };
-    let summary = summarize(&scan);
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary.entries[0].attributes["extent_flags"],
         "0xa5010080,0x00000000"
@@ -542,7 +1006,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     };
     data.push(0);
 
-    let declarations = outer_container_declarations(&data, &outer);
+    let declarations = outer_declarations_service(&data, &outer);
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].data_offset, 0);
@@ -561,7 +1025,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
 
     let mut prefixed_outer = outer.clone();
     prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
-    let prefixed_declarations = outer_container_declarations(&data, &prefixed_outer);
+    let prefixed_declarations = outer_declarations_service(&data, &prefixed_outer);
     assert_eq!(prefixed_declarations.len(), 1);
     assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
     assert_eq!(
@@ -585,7 +1049,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
             flags: 0,
         }],
     });
-    assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
+    assert!(outer_declarations_service(&data, &ambiguous_outer).is_empty());
 
     let scan = ContainerScan {
         data: data.into(),
@@ -595,16 +1059,16 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
         inner: None,
         brep: None,
         main_data_stream: None,
+        e5_record_range: None,
         previews: Vec::new(),
         last_save_version: None,
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: declarations,
-        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };
-    let summary = summarize(&scan);
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary.entries[1].attributes["container_class"],
         "CATPrtCont"
@@ -658,7 +1122,7 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
     };
     data.push(0);
 
-    let declarations = outer_container_declarations(&data, &outer);
+    let declarations = outer_declarations_service(&data, &outer);
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].class_name, long_class);
@@ -667,17 +1131,26 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
 
 #[test]
 fn detect_high_on_outer_magic() {
-    assert_eq!(CatiaCodec.detect(OUTER_MAGIC), Confidence::High);
-    assert_eq!(CatiaCodec.detect(&standard_catpart()), Confidence::High);
-    assert_eq!(CatiaCodec.detect(b"PK\x03\x04 not catia"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, OUTER_MAGIC),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, &standard_catpart()),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, b"PK\x03\x04 not catia"),
+        Confidence::No
+    );
 }
 
 #[test]
 fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let bytes = summary_preview_segment();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
-    let previews = crate::container::preview_images(&bytes);
+    let previews = preview_service(&bytes);
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].width, 640);
     assert_eq!(previews[0].height, 288);
@@ -687,8 +1160,12 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
         [0xff, 0xd9]
     );
-    let summary =
-        crate::container::summarize(&crate::container::scan_bytes(outer_body_catpart(&bytes)));
+    let summary = summarize_service(
+        &crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
+        })
+        .expect("service resource budget"),
+    );
     assert!(summary.entries.iter().any(|entry| {
         entry.role == ContainerRole::FinjplSegment && entry.name == "CATSummaryInformation"
     }));
@@ -699,13 +1176,13 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         .position(|value| value == [0xff, 0xd9])
         .unwrap();
     truncated.truncate(eoi + 1);
-    assert!(crate::container::preview_images(&truncated).is_empty());
+    assert!(preview_service(&truncated).is_empty());
 }
 
 #[test]
 fn summary_version_parser_requires_one_consistent_tuple() {
     let bytes = summary_preview_segment();
-    let version = crate::container::last_save_version(&bytes).unwrap();
+    let version = last_save_version_service(&bytes).unwrap();
     assert_eq!(version.version, 5);
     assert_eq!(version.release, 27);
     assert_eq!(version.service_pack, 2);
@@ -721,12 +1198,12 @@ fn summary_version_parser_requires_one_consistent_tuple() {
     other[release + 9] = b'2';
     other[release + 10] = b'8';
     conflicting.extend_from_slice(&other);
-    assert!(crate::container::last_save_version(&conflicting).is_none());
+    assert!(last_save_version_service(&conflicting).is_none());
 
     let mut non_summary = summary_preview_segment();
     non_summary[8..12].copy_from_slice(&0x0101_0002u32.to_be_bytes());
-    assert!(crate::container::last_save_version(&non_summary).is_none());
-    assert!(crate::container::preview_images(&non_summary).is_empty());
+    assert!(last_save_version_service(&non_summary).is_none());
+    assert!(preview_service(&non_summary).is_empty());
     let native = crate::native::CatiaNative::decode(&non_summary);
     assert!(native.preview_images.is_empty());
 }
@@ -736,13 +1213,16 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     let mut bytes = external_reference_segment("Support.CATPart");
     bytes.extend_from_slice(&external_reference_segment("Assembly.CATProduct"));
     bytes.extend_from_slice(&external_reference_segment("notes.txt"));
-    let references = crate::container::external_references(&bytes);
+    let references = external_refs_service(&bytes);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
 
-    let scan = crate::container::scan_bytes(outer_body_catpart(&bytes));
-    let summary = crate::container::summarize(&scan);
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
+    })
+    .expect("service resource budget");
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary
             .entries
@@ -785,11 +1265,11 @@ fn summary_preview_requires_a_coherent_frame_header() {
 
     let mut zero_height = valid.clone();
     zero_height[frame + 5..frame + 7].copy_from_slice(&0u16.to_be_bytes());
-    assert!(crate::container::preview_images(&zero_height).is_empty());
+    assert!(preview_service(&zero_height).is_empty());
 
     let mut inconsistent_components = valid;
     inconsistent_components[frame + 9] = 2;
-    assert!(crate::container::preview_images(&inconsistent_components).is_empty());
+    assert!(preview_service(&inconsistent_components).is_empty());
     assert!(crate::native::CatiaNative::decode(&inconsistent_components)
         .preview_images
         .is_empty());
@@ -805,7 +1285,7 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
 
     let mut malformed_prefix = valid.clone();
     malformed_prefix.splice(image_start..image_start, [0xff, 0xd8, 0xff, 0xd9]);
-    let previews = crate::container::preview_images(&malformed_prefix);
+    let previews = preview_service(&malformed_prefix);
     let [preview] = previews.as_slice() else {
         panic!("one complete preview after malformed SOI")
     };
@@ -820,13 +1300,15 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
     let image = valid[image_start..image_end].to_vec();
     let mut duplicate = valid;
     duplicate.extend(image);
-    assert!(crate::container::preview_images(&duplicate).is_empty());
+    assert!(preview_service(&duplicate).is_empty());
 }
 
 #[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
-    let scan = crate::container::scan_bytes(f);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, f))
+            .expect("service resource budget");
     assert_eq!(scan.variant, Variant::StandardNested);
     let dir = scan.inner.expect("inner directory");
     assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
@@ -847,21 +1329,27 @@ fn scan_parses_outer_directory_with_absolute_extents() {
     let directory_offset =
         usize::try_from(u32::from_be_bytes(bytes[8..12].try_into().unwrap())).unwrap();
     assert_eq!(
-        crate::container::outer_stream_directory_range(&bytes),
+        crate::test_support::with_service_context(|ctx| {
+            crate::container::outer_stream_directory_range(ctx, &bytes)
+        })
+        .expect("service resource budget"),
         Some(directory_offset..bytes.len())
     );
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let outer = scan.outer.as_ref().expect("outer directory");
     assert_eq!(outer.inner, 0);
     assert_eq!(outer.descriptors.len(), 1);
     let descriptor = &outer.descriptors[0];
     assert_eq!(descriptor.name, "RootStorage");
     assert_eq!(
-        crate::container::reconstruct_logical_stream(&bytes, descriptor, outer.inner),
+        reconstruct_service(&bytes, descriptor, outer.inner),
         b"outer logical stream"
     );
 
-    let summary = crate::container::summarize(&scan);
+    let summary = summarize_service(&scan);
     let entry = summary
         .entries
         .iter()
@@ -889,12 +1377,12 @@ fn finjpl_parser_splits_segments_and_classifies_type_words() {
     use crate::container::FinjplKind;
 
     let bytes = finjpl_stream();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments.len(), 2);
-    assert_eq!(segments[0].kind, FinjplKind::Storage);
+    assert_eq!(segments[0].kind(), FinjplKind::Storage);
     assert_eq!(segments[0].type_word, 0x0000_008e);
     assert_eq!(segments[0].range, 2..17);
-    assert_eq!(segments[1].kind, FinjplKind::ProjectFlags);
+    assert_eq!(segments[1].kind(), FinjplKind::ProjectFlags);
 }
 
 #[test]
@@ -917,22 +1405,29 @@ fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_mark
     }
     bytes.resize(544, 0);
 
-    let range = crate::container::e5_record_stream(&bytes).expect("coherent E5 stream");
+    let range = crate::test_support::with_service_context(|ctx| {
+        crate::container::e5_record_stream(ctx, &bytes)
+    })
+    .expect("service work")
+    .expect("coherent E5 stream");
     assert_eq!(range.start, expected_start);
     assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
 }
 
 #[test]
 fn consolidated_record_sources_follow_physical_stream_extents() {
-    let scan = crate::container::scan_bytes(standard_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, standard_catpart())
+    })
+    .expect("service resource budget");
     let inner = scan.inner.as_ref().expect("inner stream directory");
     let expected = inner
         .descriptors
         .iter()
         .flat_map(|descriptor| {
             descriptor.extents.iter().map(|extent| {
-                let start = inner.inner + extent.phys_off as usize;
-                start..start + extent.phys_len as usize
+                let start = inner.inner + cadmpeg_core::decode::index_from_u32(extent.phys_off);
+                start..start + cadmpeg_core::decode::index_from_u32(extent.phys_len)
             })
         })
         .collect::<Vec<_>>();
@@ -944,21 +1439,24 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
                 .extents
                 .iter()
                 .map(|extent| {
-                    let start = inner.inner + extent.phys_off as usize;
-                    start..start + extent.phys_len as usize
+                    let start = inner.inner + cadmpeg_core::decode::index_from_u32(extent.phys_off);
+                    start..start + cadmpeg_core::decode::index_from_u32(extent.phys_len)
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    assert_eq!(record_ranges_service(&scan), expected);
     assert_eq!(
-        crate::container::consolidated_record_ranges(&scan),
-        expected
-    );
-    assert_eq!(
-        crate::container::consolidated_record_sources(&scan),
+        record_sources_service(&scan)
+            .into_iter()
+            .map(|source| source
+                .into_iter()
+                .map(|extent| extent.range())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
         expected_sources
     );
-    assert!(crate::container::consolidated_record_ranges(&scan)
+    assert!(record_ranges_service(&scan)
         .iter()
         .all(|range| !range.contains(&inner.inner)));
 }
@@ -981,8 +1479,216 @@ fn fbb_census_separates_groups_from_face_rows() {
     body.extend_from_slice(&[0xaa; 8]);
     body.extend_from_slice(&row);
 
-    assert_eq!(crate::container::fbb_run_ranges(&body), vec![0..16, 24..32]);
-    let scan = crate::container::scan_bytes(standard_catpart());
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::container::fbb_run_ranges(ctx, &body)
+    })
+    .expect("service budget admits FBB runs");
+    assert_eq!(ranges, vec![0..16, 24..32]);
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, standard_catpart())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.census.fbb_runs, 1);
     assert_eq!(scan.census.fbb_face_rows, 2);
+}
+
+#[test]
+fn marker_free_container_searches_refuse_work() {
+    let bytes = [0_u8; 64];
+    for operation in [
+        "catia_finjpl_scan",
+        "catia_fbb_scan",
+        "catia_census_marker_scan",
+    ] {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let error = match operation {
+                "catia_finjpl_scan" => {
+                    super::finjpl_segments(ctx, &super::BodyExtent::whole(&bytes)).map(|_| ())
+                }
+                "catia_fbb_scan" => super::fbb_run_ranges(ctx, &bytes).map(|_| ()),
+                _ => super::count_subslice(ctx, &bytes, b"marker").map(|_| ()),
+            }
+            .expect_err("search must consume work");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+}
+
+#[test]
+fn empty_directory_candidate_scans_refuse_work() {
+    let mut bytes = super::DIR_MAGIC.to_vec();
+    bytes.resize(128, 0);
+    for probe in [false, true] {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let result = if probe {
+                super::directory_region_has_descriptor(ctx, &bytes, 0, 0, bytes.len()).map(|_| ())
+            } else {
+                super::parse_directory_region(ctx, &bytes, 0, 0, bytes.len()).map(|_| ())
+            };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                result.expect_err("candidate scan consumes work")
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_directory_candidate_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+}
+
+#[test]
+fn outer_declarations_release_their_reconstructed_stream() {
+    let data = [0_u8; 64];
+    let directory = InnerDir {
+        inner: 0,
+        descriptors: vec![test_descriptor("Data", 0, 64)],
+    };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(super::outer_container_declarations(ctx, &data, &directory)
+            .expect("discarded stream is temporary")
+            .is_empty());
+    });
+    crate::test_support::with_materialized_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::outer_container_declarations(ctx, &data, &directory)
+                .expect_err("temporary stream storage must be admitted")
+        else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
+    let data = [1_u8, 2, 3, 4, 5, 6];
+    let directory = InnerDir {
+        inner: 0,
+        descriptors: vec![
+            test_descriptor("MainDataStream", 0, 4),
+            test_descriptor("SurfacicReps", 4, 2),
+        ],
+    };
+    crate::test_support::with_retained_limit(8, |ctx| {
+        assert_eq!(
+            super::brep_stream(ctx, &data, &directory)
+                .expect("eight retained vector capacity bytes"),
+            Some(data.to_vec())
+        );
+    });
+    crate::test_support::with_materialized_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::brep_stream(ctx, &data, &directory).expect_err("stream scratch is admitted")
+        else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn jpeg_candidate_suffix_walks_refuse_caller_work_limit() {
+    let mut bytes = summary_preview_segment();
+    let image_start = bytes
+        .windows(3)
+        .position(|value| value == [0xff, 0xd8, 0xff])
+        .expect("SOI");
+    bytes.truncate(image_start);
+    for _ in 0..32 {
+        bytes.extend([0xff, 0xd8, 0xff, 0xda, 0, 2]);
+    }
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    crate::test_support::with_work_limit(u64::try_from(bytes.len() * 2).expect("work"), |ctx| {
+        let error = super::preview_images_in_segments(ctx, &bytes, &segments)
+            .expect_err("repeated suffix walks exceed work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal")
+        };
+        assert_eq!(limit.operation, "catia_jpeg_marker_walk");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    assert!(preview_service(&bytes).is_empty());
+}
+
+#[test]
+fn declaration_candidates_refuse_repeated_suffix_searches() {
+    let mut data = vec![0u8; 1024];
+    for start in (0..900).step_by(64) {
+        data[start + 8..start + 12].copy_from_slice(&[1, 0, 3, 0]);
+        data[start + 16..start + 24].copy_from_slice(&[1, 0, 0x6c, 0, 2, 0, 0, 0]);
+        data[start + 32..start + 36].copy_from_slice(&[2, 0, 0x81, 0x20]);
+    }
+    crate::test_support::with_work_limit(2048, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse_outer_container_declarations(ctx, &data, &[])
+                .expect_err("suffix searches require caller work")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(limit.operation, "catia_container_terminal_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn nested_magic_absence_refuses_unadmitted_search() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse_stream_directory(ctx, &[0; 256]).expect_err("magic search needs work")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(limit.operation, "catia_nested_magic_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn e5_stride_selection_refuses_caller_work() {
+    let mut body = Vec::new();
+    for id in 0..10 {
+        append_e5_test_record(&mut body, id);
+    }
+    let bytes = outer_with_preamble(&body);
+    crate::test_support::with_work_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::e5_record_stream(ctx, &bytes).expect_err("selection needs work")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(limit.operation, "catia_e5_segment_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn container_scan_rejects_wrong_magic_and_truncated_header() {
+    for bytes in [&[][..], &b"garbage!"[..]] {
+        let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::WrongFormat(_))
+        ));
+    }
+    for length in 8..16 {
+        let mut bytes = super::OUTER_MAGIC.to_vec();
+        bytes.resize(length, 0);
+        let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }

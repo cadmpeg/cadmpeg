@@ -4,22 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-#![allow(dead_code)] // Not every generated constant is referenced yet.
-
-/// Tag constants from the table inventory.
-pub(crate) mod token {
-    /// `Start section` (`S`). Spec §Physical representation.
-    pub(crate) const START_SECTION: [u8; 1] = *b"S";
-    /// `Global section` (`G`). Spec §Physical representation.
-    pub(crate) const GLOBAL_SECTION: [u8; 1] = *b"G";
-    /// `Directory Entry section` (`D`). Spec §Physical representation.
-    pub(crate) const DIRECTORY_ENTRY_SECTION: [u8; 1] = *b"D";
-    /// `Parameter Data section` (`P`). Spec §Physical representation.
-    pub(crate) const PARAMETER_DATA_SECTION: [u8; 1] = *b"P";
-    /// `Terminate section` (`T`). Spec §Physical representation.
-    pub(crate) const TERMINATE_SECTION: [u8; 1] = *b"T";
-}
-
 /// Byte offsets for the `binary_flag` record.
 ///
 /// Spec §Physical representation. Record length 80 B.
@@ -40,8 +24,6 @@ pub(crate) mod binary_flag {
     pub(crate) const PRIMITIVE_BIT_LENGTHS: usize = 5;
     /// Offset of `section_displacements` (`bytes[30]`). Spec §Physical representation.
     pub(crate) const SECTION_DISPLACEMENTS: usize = 11;
-    /// Offset of `unassigned` (`bytes[31]`). Spec §Physical representation.
-    pub(crate) const UNASSIGNED: usize = 41;
     /// Offset of `section_marker` (`bytes[1]`). Spec §Physical representation.
     pub(crate) const SECTION_MARKER: usize = 72;
     /// Offset of `sequence_padding` (`bytes[6]`). Spec §Physical representation.

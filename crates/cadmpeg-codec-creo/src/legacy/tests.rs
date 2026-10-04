@@ -1,21 +1,355 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use std::io::Cursor;
+use cadmpeg_test_support::wire;
 
+use crate::test_support::build_prt;
+use crate::test_support::build_prt_raw;
+use crate::test_support::visibgeom_payload;
+use std::io::Cursor;
+use std::ops::Range;
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
-use crate::test_support::*;
 use crate::CreoCodec;
 
-use super::*;
+use super::type_code::LegacyTypeCode;
+use super::{
+    object_node_id, parse_declaration, IntegerPayload, IntegerRun, NumericPayload, NumericRun,
+    ObjectPayload, PrincipalUnitSystem, Real, RealPayload, RealRun, StringPayload, StringValue,
+    UnsignedPayload, ValueKind,
+};
+
+#[test]
+fn serialized_offset_ids_preserve_legacy_wire_text() {
+    for (id, expected) in [
+        (
+            super::serialized_object_node_id(123),
+            "\"creo:legacy_ascii:object#123\"",
+        ),
+        (
+            super::SerializedOffsetId {
+                namespace: "legacy_ascii",
+                kind: "integer",
+                offset: 123,
+            },
+            "\"creo:legacy_ascii:integer#123\"",
+        ),
+        (
+            super::SerializedOffsetId {
+                namespace: "legacy_family",
+                kind: "driver_table",
+                offset: 123,
+            },
+            "\"creo:legacy_family:driver_table#123\"",
+        ),
+    ] {
+        assert_eq!(
+            serde_json::to_string(&id).expect("serialize offset identity"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn legacy_scope_bounds_error_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error = super::scan_scope(&ctx, &[0], 0..2).expect_err("scope end exceeds source length");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo legacy scope bounds error")
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error =
+            super::scan_scope(ctx, &[0], 0..2).expect_err("scope end exceeds source length");
+        assert!(error.to_string().contains("past the file length"));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
+    .expect("service error text admitted");
+}
+
+mod numeric_admission;
+mod string_admission;
+
+fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUnitSystem> {
+    crate::decode::with_test_decode_ctx(|ctx| persistence.principal_unit_system(ctx))
+        .expect("unit selection fits service limits")
+}
+
+fn scan(
+    data: &[u8],
+    ranges: impl IntoIterator<Item = Range<usize>>,
+) -> Result<super::Persistence, cadmpeg_core::CodecError> {
+    crate::decode::with_test_decode_ctx(|ctx| super::scan(ctx, data, ranges))
+}
+
+fn assert_scope_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
+        .expect_err("the next collection item exceeds the limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation)
+    );
+}
+
+#[test]
+fn legacy_scope_vec_refuses_before_first_scope() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 0, "creo legacy parsed scopes");
+}
+
+#[test]
+fn legacy_declaration_index_refuses_before_new_node() {
+    assert_scope_collection_refusal(
+        b"@size 1 1\n0 1 9\n",
+        1,
+        "creo legacy declaration index nodes",
+    );
+}
+
+#[test]
+fn legacy_declaration_vec_refuses_before_row() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 2, "creo legacy declarations");
+}
+
+#[test]
+fn legacy_scope_candidate_vec_refuses_before_value_row() {
+    assert_scope_collection_refusal(
+        b"@size 1 1\n0 1 9\n",
+        3,
+        "creo legacy scope value candidates",
+    );
+}
+
+#[test]
+fn legacy_conflicting_id_set_refuses_before_new_node() {
+    assert_scope_collection_refusal(
+        b"@size 1 1\n@size 1 2\n",
+        3,
+        "creo legacy conflicting declaration IDs",
+    );
+}
+
+#[test]
+fn legacy_declaration_name_refuses_before_retained_copy() {
+    let data = b"@size 1 1\n0 1 9\n";
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo legacy declaration names",
+        |ctx| super::scan(ctx, data, std::iter::once(0..data.len())),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo legacy declaration names")
+    );
+}
+
+fn assert_parent_lookup_refusal(limit: u64, operation: &'static str) {
+    let data = b"@root 1 0\n@child 2 0\n0 1 ->\n1 2 ->\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::parent_object_offsets(&ctx, &persistence.scopes)
+        .expect_err("the next lookup node exceeds the limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation)
+    );
+}
+
+#[test]
+fn legacy_declaration_lookup_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(0, "creo legacy declaration lookup nodes");
+}
+
+#[test]
+fn legacy_active_object_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(2, "creo legacy active object nodes");
+}
+
+#[test]
+fn legacy_parent_offset_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(3, "creo legacy parent offset nodes");
+}
+
+#[test]
+fn legacy_array_dimension_refuses_before_vec_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::array_dimensions(&ctx, b"[2][3]")
+        .expect_err("one dimension exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy array dimensions")
+    );
+}
+
+#[test]
+fn legacy_continuation_run_refuses_before_vec_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::continuation_numeric_runs(&ctx, b"$1,2", super::signed_integer)
+        .expect_err("one run exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy continuation numeric runs")
+    );
+}
+
+fn object_fixture_parts(
+    data: &[u8],
+) -> (super::Persistence, std::collections::BTreeMap<usize, usize>) {
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let parents = crate::decode::with_test_decode_ctx(|ctx| {
+        super::parent_object_offsets(ctx, &persistence.scopes)
+    })
+    .expect("parent lookup fits service limits");
+    (persistence, parents)
+}
+
+fn assert_object_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
+    let (persistence, parents) = object_fixture_parts(data);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
+        .expect_err("the next object item exceeds the limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation)
+    );
+}
+
+#[test]
+fn legacy_object_value_attribute_index_refuses_before_node() {
+    assert_object_collection_refusal(
+        b"@root 1 0\n0 1 ->\n",
+        1,
+        "creo legacy object value attribute nodes",
+    );
+}
+
+#[test]
+fn legacy_object_array_index_refuses_before_node() {
+    assert_object_collection_refusal(
+        b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
+        3,
+        "creo legacy object array index nodes",
+    );
+}
+
+#[test]
+fn legacy_object_array_index_rows_refuse_before_growth() {
+    assert_object_collection_refusal(
+        b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
+        4,
+        "creo legacy object array index rows",
+    );
+}
+
+#[test]
+fn legacy_object_array_elements_refuse_before_growth() {
+    assert_object_collection_refusal(
+        b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
+        6,
+        "creo legacy object array elements",
+    );
+}
+
+#[test]
+fn legacy_object_records_refuse_before_growth() {
+    assert_object_collection_refusal(b"@root 1 0\n0 1 ->\n", 2, "creo legacy object records");
+}
+
+fn assert_object_retained_refusal(data: &[u8], operation: &'static str) {
+    let (persistence, parents) = object_fixture_parts(data);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some(operation),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::object_records(&trial_ctx, data, &persistence.scopes, &parents)
+        },
+    );
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
+        .expect_err("object output needs retained bytes");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == operation)
+    );
+}
+
+#[test]
+fn legacy_object_array_id_refuses_before_string_growth() {
+    assert_object_retained_refusal(
+        b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
+        "creo legacy object array element IDs",
+    );
+}
+
+#[test]
+fn legacy_opaque_object_refuses_before_byte_copy() {
+    assert_object_retained_refusal(
+        b"@root 1 0\n0 1 unknown\n",
+        "creo legacy opaque object bytes",
+    );
+}
+
+#[test]
+fn legacy_object_record_name_refuses_before_string_copy() {
+    assert_object_retained_refusal(b"@root 1 0\n0 1 ->\n", "creo legacy object record names");
+}
 
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.conflicting_declaration_count(), 1);
     assert_eq!(persistence.unresolved_value_count(), 1);
     assert_eq!(persistence.scopes[0].values.len(), 1);
@@ -24,7 +358,7 @@ fn unknown_declaration_codes_retain_scope_identity() {
         persistence.scopes[0].declarations[1].type_code,
         LegacyTypeCode::Other(_)
     ));
-    assert!(parse_declaration(b"@future 1 256", 0).is_none());
+    assert!(parse_declaration(b"@future 1 256").is_none());
 }
 
 #[test]
@@ -32,7 +366,8 @@ fn scan_resolves_declarations_values_and_continuations() {
     let data = b"#P_OBJECT 6\n@root 1 0\n0 1 ->\n@matrix 2 2\n1 2 [2][2]\n\
                      $3FF,0\n$0,3FF\n#END_OF_UGC\n";
 
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let scope = &persistence.scopes[0];
 
     assert_eq!(scope.declarations.len(), 2);
@@ -59,29 +394,87 @@ fn scan_resolves_identifiers_within_independent_scopes() {
         .position(|window| window == b"@other")
         .expect("second scope");
 
-    let persistence = scan(data, [0..second, second..data.len()]);
+    let persistence = scan(data, [0..second, second..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.scopes.len(), 2);
     assert_eq!(persistence.declaration_count(), 2);
     assert_eq!(persistence.value_count(), 2);
     assert_eq!(persistence.conflicting_declaration_count(), 0);
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(persistence.real_values[0].scope_offset, second);
+    assert_eq!(persistence.real_values.rows.len(), 1);
+    assert_eq!(persistence.real_values.rows[0].scope_offset, second);
 }
 
 #[test]
 fn model_name_prefers_root_solid_over_null_view_placeholder() {
     let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n\
 @View 3 0\n@model_name 4 10\n0 3 ->\n1 4 NULL\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let expected_offset = data
         .windows(b"1 2 ROOT".len())
         .position(|window| window == b"1 2 ROOT")
         .expect("model name value");
 
     assert_eq!(
-        persistence.model_name(),
+        crate::decode::with_test_decode_ctx(|ctx| persistence.model_name(ctx))
+            .expect("name resolution fits service limits"),
         Some(("ROOT".to_string(), expected_offset))
+    );
+}
+
+#[test]
+fn legacy_model_name_refuses_before_retained_copy() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo legacy model name"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            persistence.model_name(&trial_ctx)
+        },
+    );
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = persistence
+        .model_name(&ctx)
+        .expect_err("four name bytes exceed the retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy model name")
+    );
+}
+
+#[test]
+fn legacy_model_name_refuses_before_object_index_node() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = persistence
+        .model_name(&ctx)
+        .expect_err("one object requires one index node");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy model name object nodes")
     );
 }
 
@@ -93,9 +486,14 @@ fn model_name_withholds_conflicting_root_identities() {
         .windows(b"@Solid 3".len())
         .position(|window| window == b"@Solid 3")
         .expect("second scope");
-    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.model_name(), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| persistence.model_name(ctx))
+            .expect("conflicting names need no allocation"),
+        None
+    );
 }
 
 #[test]
@@ -106,10 +504,12 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
         .windows(b"@model_name 2".len())
         .position(|window| window == b"@model_name 2")
         .expect("second scope");
-    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
-        persistence.first_source_model_name(),
+        crate::decode::with_test_decode_ctx(|ctx| persistence.first_source_model_name(ctx))
+            .expect("source name fits service limits"),
         Some((
             "ROOT".to_string(),
             data.windows(b"0 1 ROOT".len())
@@ -120,37 +520,60 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
 }
 
 #[test]
+fn legacy_first_source_model_name_refuses_before_retained_copy() {
+    let data = b"@model_name 1 10\n0 1 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = persistence
+        .first_source_model_name(&ctx)
+        .expect_err("four source-name bytes exceed the retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy first source model name")
+    );
+}
+
+#[test]
 fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
-    let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));
+    let persistence = scan(millimeter, std::iter::once(0..millimeter.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
-        persistence.principal_unit_system(),
+        principal_unit_system(&persistence),
         Some(PrincipalUnitSystem::MillimeterNewtonSecond)
     );
     assert_eq!(
-        persistence
-            .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+        principal_unit_system(&persistence)
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.0)
     );
 
     let inch = b"@principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n";
-    let persistence = scan(inch, std::iter::once(0..inch.len()));
+    let persistence = scan(inch, std::iter::once(0..inch.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
-        persistence.principal_unit_system(),
+        principal_unit_system(&persistence),
         Some(PrincipalUnitSystem::InchPoundMassSecond)
     );
     assert_eq!(
-        persistence
-            .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+        principal_unit_system(&persistence)
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(25.4)
     );
 
     let mut repeated = millimeter.to_vec();
     repeated.extend_from_slice(millimeter);
-    let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
-    assert_eq!(persistence.principal_unit_system(), None);
+    let persistence = scan(&repeated, std::iter::once(0..repeated.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    assert_eq!(principal_unit_system(&persistence), None);
 }
 
 #[test]
@@ -173,13 +596,38 @@ fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
 ",
         factor_bits = factor.to_bits()
     );
-    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
-        persistence
-            .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+        principal_unit_system(&persistence)
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(10.0)
+    );
+}
+
+#[test]
+fn legacy_unit_array_refuses_before_element_identity_node() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        "@Solid 1 0\n@unit_arr 2 0\n@type 3 1\n@unit_type 4 1\n@factor 5 2\n@name 6 10\n0 1 ->\n1 2 [1]\n2 2 ->\n3 3 11\n3 4 0\n3 5 {factor_bits:016X}\n3 6 CM\n",
+        factor_bits = factor.to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = persistence
+        .principal_unit_system(&ctx)
+        .expect_err("one array element needs one identity node");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy unit array element identities")
     );
 }
 
@@ -205,9 +653,10 @@ fn legacy_unit_array_conflict_withholds_length_scale() {
         factor_bits = factor.to_bits(),
         other_factor_bits = (factor * 2.0).to_bits()
     );
-    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.principal_unit_system(), None);
+    assert_eq!(principal_unit_system(&persistence), None);
 }
 
 #[test]
@@ -216,27 +665,29 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
             @scale 2 2\n0 2 40396R\n\
             @matrix 3 2\n0 3 [2][2]\n$3FF,2*0,\n$3FF\n\
             @single 4 2\n0 4 [1]\n1 4 400\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.real_values.len(), 4);
-    assert_eq!(persistence.unresolved_real_value_count, 0);
+    assert_eq!(persistence.real_values.rows.len(), 4);
+    assert_eq!(persistence.real_values.unresolved_count, 0);
     assert_eq!(
-        persistence.real_values[0].payload,
+        persistence.real_values.rows[0].payload,
         RealPayload::Scalar {
             value: Real(1.0f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[1].payload,
+        persistence.real_values.rows[1].payload,
         RealPayload::Scalar {
             value: Real(25.4f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[2].payload,
-        RealPayload::Array {
-            dimensions: vec![2, 2],
-            runs: vec![
+        persistence.real_values.rows[2].payload,
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
+            vec![2, 2],
+            vec![
                 RealRun {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
@@ -249,19 +700,24 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
                 },
-            ],
-        }
+            ]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
-    assert_eq!(persistence.real_values[2].payload.element_count(), 4);
+    assert_eq!(persistence.real_values.rows[2].payload.element_count(), 4);
     assert_eq!(
-        persistence.real_values[3].payload,
-        RealPayload::Array {
-            dimensions: vec![1],
-            runs: vec![RealRun {
+        persistence.real_values.rows[3].payload,
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
+            vec![1],
+            vec![RealRun {
                 count: 1,
                 value: Real(2.0f64.to_bits()),
-            }],
-        }
+            }]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
 }
 
@@ -270,10 +726,11 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
     let data = b"@short 1 2\n0 1 [3]\n$2*0\n\
             @lower 2 2\n0 2 3ff\n\
             @infinite 3 2\n0 3 7FF\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert!(persistence.real_values.is_empty());
-    assert_eq!(persistence.unresolved_real_value_count, 3);
+    assert!(persistence.real_values.rows.is_empty());
+    assert_eq!(persistence.real_values.unresolved_count, 3);
 }
 
 #[test]
@@ -281,37 +738,44 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
     let data = b"@minimum 1 1\n0 1 -2147483648\n\
             @array 2 1\n0 2 [4]\n$1,2*-1,0\n\
             @single 3 1\n0 3 [1]\n1 3 42\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.integer_values.len(), 3);
-    assert_eq!(persistence.unresolved_integer_value_count, 0);
+    assert_eq!(persistence.integer_values.rows.len(), 3);
+    assert_eq!(persistence.integer_values.unresolved_count, 0);
     assert_eq!(
-        persistence.integer_values[0].payload,
+        persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: i32::MIN }
     );
     assert_eq!(
-        persistence.integer_values[1].payload,
-        IntegerPayload::Array {
-            dimensions: vec![4],
-            runs: vec![
+        persistence.integer_values.rows[1].payload,
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
+            vec![4],
+            vec![
                 IntegerRun { count: 1, value: 1 },
                 IntegerRun {
                     count: 2,
                     value: -1,
                 },
                 IntegerRun { count: 1, value: 0 },
-            ],
-        }
+            ]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
     assert_eq!(
-        persistence.integer_values[2].payload,
-        IntegerPayload::Array {
-            dimensions: vec![1],
-            runs: vec![IntegerRun {
+        persistence.integer_values.rows[2].payload,
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
+            vec![1],
+            vec![IntegerRun {
                 count: 1,
                 value: 42,
-            }],
-        }
+            }]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
 }
 
@@ -319,10 +783,11 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
 fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
     let data = b"@short 1 1\n0 1 [2]\n$0\n\
             @overflow 2 1\n0 2 2147483648\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert!(persistence.integer_values.is_empty());
-    assert_eq!(persistence.unresolved_integer_value_count, 2);
+    assert!(persistence.integer_values.rows.is_empty());
+    assert_eq!(persistence.integer_values.unresolved_count, 2);
 }
 
 #[test]
@@ -336,65 +801,70 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.type_5_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_5_value_count, 0);
+    assert_eq!(persistence.type_5_values.rows.len(), 2);
+    assert_eq!(persistence.type_5_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_5_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![3],
-            runs: vec![
+        persistence.type_5_values.rows[1].payload,
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
+            vec![3],
+            vec![
                 NumericRun { count: 1, value: 0 },
                 NumericRun {
                     count: 2,
                     value: 144,
                 },
-            ],
-        }
+            ]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
-    assert_eq!(persistence.type_6_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_6_value_count, 0);
+    assert_eq!(persistence.type_6_values.rows.len(), 2);
+    assert_eq!(persistence.type_6_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_6_values[0].payload,
+        persistence.type_6_values.rows[0].payload,
         RealPayload::Scalar {
             value: Real(2.0f64.to_bits())
         }
     );
-    assert_eq!(persistence.type_7_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_7_value_count, 0);
-    assert_eq!(persistence.type_9_values.len(), 1);
-    assert_eq!(persistence.unresolved_type_9_value_count, 0);
-    assert_eq!(persistence.type_11_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_11_value_count, 0);
+    assert_eq!(persistence.type_7_values.rows.len(), 2);
+    assert_eq!(persistence.type_7_values.unresolved_count, 0);
+    assert_eq!(persistence.type_9_values.rows.len(), 1);
+    assert_eq!(persistence.type_9_values.unresolved_count, 0);
+    assert_eq!(persistence.type_11_values.rows.len(), 2);
+    assert_eq!(persistence.type_11_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_11_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![1],
-            runs: vec![NumericRun {
+        persistence.type_11_values.rows[1].payload,
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
+            vec![1],
+            vec![NumericRun {
                 count: 1,
                 value: 14633,
-            }],
-        }
+            }]
+        ))
+        .expect("numeric array work admission")
+        .expect("complete numeric array")
     );
-    assert_eq!(
-        persistence.type_11_values[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_11_values.rows[1].parent, Some(root_offset));
 }
 
 #[test]
 fn remaining_numeric_types_withhold_undefined_values() {
     let data = b"@negative 1 5\n0 1 -1\n@nonfinite 2 6\n0 2 7FF\n\
             @short 3 11\n0 3 [2]\n$1\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert!(persistence.type_5_values.is_empty());
-    assert_eq!(persistence.unresolved_type_5_value_count, 1);
-    assert!(persistence.type_6_values.is_empty());
-    assert_eq!(persistence.unresolved_type_6_value_count, 1);
-    assert!(persistence.type_11_values.is_empty());
-    assert_eq!(persistence.unresolved_type_11_value_count, 1);
+    assert!(persistence.type_5_values.rows.is_empty());
+    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert!(persistence.type_6_values.rows.is_empty());
+    assert_eq!(persistence.type_6_values.unresolved_count, 1);
+    assert!(persistence.type_11_values.rows.is_empty());
+    assert_eq!(persistence.type_11_values.unresolved_count, 1);
 }
 
 #[test]
@@ -406,36 +876,34 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.type_3_values.len(), 3);
-    assert_eq!(persistence.unresolved_type_3_value_count, 1);
-    assert_eq!(persistence.type_3_values[0].payload, StringValue::Null);
+    assert_eq!(persistence.type_3_values.rows.len(), 3);
+    assert_eq!(persistence.type_3_values.unresolved_count, 1);
+    assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
     assert_eq!(
-        persistence.type_3_values[1].payload,
+        persistence.type_3_values.rows[1].payload,
         StringValue::Utf8 {
             text: "texture-name".to_string(),
         }
     );
     assert_eq!(
-        persistence.type_3_values[2].payload,
+        persistence.type_3_values.rows[2].payload,
         StringValue::Bytes { bytes: vec![0xff] }
     );
-    assert_eq!(
-        persistence.type_3_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_3_values.rows[0].parent, Some(root_offset));
 
-    assert_eq!(persistence.type_4_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_4_value_count, 0);
+    assert_eq!(persistence.type_4_values.rows.len(), 2);
+    assert_eq!(persistence.type_4_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_4_values[0].payload,
+        persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
             text: "NULL".to_string(),
         }
     );
     assert_eq!(
-        persistence.type_4_values[1].payload,
+        persistence.type_4_values.rows[1].payload,
         StringValue::Utf8 {
             text: String::new(),
         }
@@ -451,7 +919,8 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.string_values.len(), 5);
     assert_eq!(persistence.incomplete_string_array_count, 0);
@@ -507,17 +976,15 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
             .undecoded_encoding_count(),
         1
     );
-    assert_eq!(
-        persistence.string_values[4].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.string_values[4].parent, Some(root_offset));
 }
 
 #[test]
 fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
     let data = b"@names 1 10\n0 1 [2]\n1 1 only\n\
             @continued 2 10\n0 2 first\n$second\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
@@ -539,7 +1006,8 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 fn array_completeness_wire_retains_continuation_failures() {
     let data = b"@names 1 10\n0 1 [1]\n$header\n1 1 value\n\
         @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.incomplete_string_array_count, 2);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
@@ -585,16 +1053,14 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
         .windows(b"2 3 NULL".len())
         .position(|window| window == b"2 3 NULL")
         .expect("second child offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
     assert!(persistence.objects[1].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 0);
-    assert_eq!(
-        persistence.objects[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.objects[1].parent, Some(root_offset));
     assert_eq!(
         persistence.objects[1].payload,
         ObjectPayload::Array {
@@ -605,15 +1071,12 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
             ],
         }
     );
-    assert_eq!(persistence.integer_values.len(), 1);
+    assert_eq!(persistence.integer_values.rows.len(), 1);
+    assert_eq!(persistence.integer_values.rows[0].parent, Some(root_offset));
+    assert_eq!(persistence.real_values.rows.len(), 1);
     assert_eq!(
-        persistence.integer_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(
-        persistence.real_values[0].parent.as_deref(),
-        Some(object_node_id(first_child_offset).as_str())
+        persistence.real_values.rows[0].parent,
+        Some(first_child_offset)
     );
     assert_eq!(persistence.objects[1].offset, array_offset);
 }
@@ -621,7 +1084,8 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 #[test]
 fn type_0_objects_retain_incomplete_and_opaque_forms() {
     let data = b"@array 1 0\n0 1 [2]\n@future 2 0\n0 2 token\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
@@ -643,7 +1107,8 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 fn scan_withholds_ambiguous_and_undeclared_values() {
     let data = b"#P_OBJECT 6\n$orphan\n@field 7 1\n@other 7 2\n1 7 4\n2 99 5\n";
 
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let scope = &persistence.scopes[0];
 
     assert!(scope.values.is_empty());
@@ -657,12 +1122,12 @@ fn scan_decodes_active_principal_unit() {
     let mut payload = visibgeom_payload(5, 12);
     payload.extend_from_slice(b"_principal_sys_units_id\0\x33");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(
         scan.framing
             .principal_unit
-            .map(crate::legacy::PrincipalUnitSystem::token)
+            .map(|unit| unit.to_string())
             .as_deref(),
         Some("mmNs")
     );
@@ -685,35 +1150,35 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(source.attributes["principal_unit"], "inLbmS");
     assert_eq!(source.attributes["source_length_scale_mm"], "25.4");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_principal_unit_count"],
+        wire::coverage(result.report())["decoded_legacy_principal_unit_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_real_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_real_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_real_element_count"],
+        wire::coverage(result.report())["decoded_legacy_real_element_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_integer_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_integer_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_object_arrow_count"],
+        wire::coverage(result.report())["decoded_legacy_object_arrow_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_string_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_string_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_string_element_count"],
+        wire::coverage(result.report())["decoded_legacy_string_element_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["undecoded_legacy_string_encoding_count"],
+        wire::coverage(result.report())["undecoded_legacy_string_encoding_count"],
         1
     );
     let reals = &result
@@ -813,43 +1278,43 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy numbered numeric decode");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_element_count"],
         4
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_element_count"],
         5
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_7_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_7_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_9_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_9_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_11_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_11_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_11_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_11_element_count"],
         1
     );
 
@@ -895,19 +1360,19 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy type-3/type-4 decode");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_3_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_3_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_4_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_4_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_3_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_3_value_count"],
         0
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_4_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_4_value_count"],
         0
     );
 
@@ -953,35 +1418,35 @@ fn incomplete_legacy_values_are_reported() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy incomplete-array decode");
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_real_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_real_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_integer_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_integer_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["incomplete_legacy_object_array_count"],
+        wire::coverage(result.report())["incomplete_legacy_object_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_object_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_object_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["incomplete_legacy_string_array_count"],
+        wire::coverage(result.report())["incomplete_legacy_string_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_string_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_string_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_3_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_3_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["undecoded_legacy_type_4_encoding_count"],
+        wire::coverage(result.report())["undecoded_legacy_type_4_encoding_count"],
         1
     );
     assert_eq!(
@@ -989,7 +1454,9 @@ fn incomplete_legacy_values_are_reported() {
             .report()
             .losses
             .iter()
-            .filter(|loss| { loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::RecordNotTyped })
+            .filter(|loss| {
+                loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
+            })
             .count(),
         7
     );
@@ -1009,7 +1476,7 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n\
         #P_OBJECT 6\n@P_object 1 0\n0 1 ->\n@value #END_OF_P_OBJECT\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
@@ -1019,13 +1486,18 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
     assert_eq!(legacy.persistence.declaration_count(), 1);
     assert_eq!(legacy.persistence.value_count(), 1);
-    let classification = crate::dialect::classify(&scan);
-    assert!(container::summarize(&scan, &classification)
-        .notes
-        .iter()
-        .any(|note| {
-            note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
-        }));
+    let classification =
+        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+            .expect("dialect classification admitted");
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+            .expect("container summary admitted")
+            .notes
+            .iter()
+            .any(|note| {
+                note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
+            })
+    );
 }
 
 #[test]
@@ -1046,13 +1518,13 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
     let section_offset = data.len();
     data.extend_from_slice(section);
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name, "BasicData");
-    assert_eq!(scan.framing.sections[0].offset, section_offset);
-    assert_eq!(scan.framing.sections[0].length, section.len());
+    assert_eq!(scan.framing.sections[0].name(), "BasicData");
+    assert_eq!(scan.framing.sections[0].offset(), section_offset);
+    assert_eq!(scan.framing.sections[0].length(), section.len());
     let persistence = &scan
         .framing
         .layout
@@ -1068,7 +1540,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release 16.0  All Rights Reserved\n";
-    let scan = container::scan_bytes(release.as_slice());
+    let scan = container::scan_bytes_ok(release.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "12");
     assert_eq!(legacy.product_release.as_deref(), Some("16.0"));
@@ -1089,13 +1561,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
 
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";
-    let scan = container::scan_bytes(concatenated_release.as_slice());
+    let scan = container::scan_bytes_ok(concatenated_release.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release.as_deref(), Some("18.0"));
 
     let unspecified = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER\n";
-    let scan = container::scan_bytes(unspecified.as_slice());
+    let scan = container::scan_bytes_ok(unspecified.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release, None);
 }
@@ -1104,13 +1576,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
 fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout() {
     let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
     assert_eq!(
-        container::scan_bytes(incomplete).framing.layout,
+        container::scan_bytes_ok(incomplete).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
     let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER";
     assert_eq!(
-        container::scan_bytes(empty_schema).framing.layout,
+        container::scan_bytes_ok(empty_schema).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 
@@ -1122,7 +1594,67 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
         )],
     );
     assert_eq!(
-        container::scan_bytes(embedded).framing.layout,
+        container::scan_bytes_ok(embedded).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
+}
+
+#[test]
+fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
+    let data = b"@nullable 1 3\n@bytes 2 4\n@unsigned 3 5\n@real 4 6\n\
+        0 1 NULL\n0 1 text\n$continued\n0 1 other\n$continued\n\
+        0 2 NULL\n0 3 7\n0 3 -1\n0 4 3FF\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
+    assert_eq!(persistence.type_3_values.unresolved_count, 2);
+    assert_eq!(
+        persistence.type_4_values.rows[0].payload,
+        StringValue::Utf8 {
+            text: "NULL".to_owned()
+        }
+    );
+    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert_eq!(
+        persistence.type_5_values.rows[0].payload,
+        NumericPayload::Scalar { value: 7 }
+    );
+    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(
+        persistence.type_6_values.rows[0].payload,
+        NumericPayload::Scalar {
+            value: Real::from_bits(1.0f64.to_bits())
+        }
+    );
+    assert_eq!(persistence.type_6_values.unresolved_count, 0);
+}
+
+#[test]
+fn value_kind_types_are_distinct_and_preserve_identity_tokens() {
+    let token = |code: crate::legacy::type_code::LegacyTypeCode| code.identity_token();
+    assert_eq!(
+        token(super::declaration_code(ValueKind::INTEGER)),
+        "integer"
+    );
+    assert_eq!(token(super::declaration_code(ValueKind::REAL)), "real");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE3)), "type_3");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE4)), "type_4");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE5)), "type_5");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE6)), "type_6");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE7)), "type_7");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE9)), "type_9");
+    assert_eq!(token(super::declaration_code(ValueKind::TYPE11)), "type_11");
+}
+
+#[test]
+fn numeric_array_withholds_child_at_maximum_depth() {
+    let data = b"@value 1 1\n4294967295 1 [1]\n4294967295 1 7\n";
+    let persistence =
+        scan(data, std::iter::once(0..data.len())).expect("maximum-depth fixture is admitted");
+    assert_eq!(persistence.integer_values.rows.len(), 1);
+    assert!(matches!(
+        persistence.integer_values.rows[0].payload,
+        IntegerPayload::Scalar { value: 7 }
+    ));
+    assert_eq!(persistence.integer_values.unresolved_count, 1);
 }

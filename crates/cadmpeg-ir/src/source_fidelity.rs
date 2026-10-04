@@ -4,67 +4,45 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::annotations::Annotations;
-use crate::document::CadIr;
+use crate::document::{CadIr, IrVersion};
+use crate::hash::digest::Sha256Digest;
+use crate::ids::UnknownId;
 use crate::native::NativeConvertError;
-use crate::report::DecodeReport;
+use crate::provenance::SourceOwner;
+use crate::report::decode::DecodeReport;
 use crate::unknown::UnknownRecord;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DecodeSidecar {
+    /// Exact IR wire version shared with the CADIR document.
+    ir_version: IrVersion,
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
-    pub ir_sha256: String,
+    pub ir_sha256: Sha256Digest,
     /// Native decode transfer report.
     pub report: DecodeReport,
     /// Decode-time annotations and retained source records.
     pub fidelity: SourceFidelity,
 }
 
-/// Read shape of [`DecodeSidecar`], validated before it becomes one.
-#[derive(Deserialize)]
-struct DecodeSidecarWire {
-    ir_sha256: String,
-    report: DecodeReport,
-    fidelity: SourceFidelity,
-}
-
-impl<'de> Deserialize<'de> for DecodeSidecar {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DecodeSidecarWire::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
-    }
-}
-
 impl DecodeSidecar {
-    fn from_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
-        wire.fidelity
-            .validate()
-            .map_err(DecodeSidecarParseError::Fidelity)?;
-        Ok(Self {
-            ir_sha256: wire.ir_sha256,
-            report: wire.report,
-            fidelity: wire.fidelity,
-        })
-    }
-
-    /// Binds decode metadata to exact serialized CADIR bytes.
-    pub fn bind(ir_bytes: &[u8], report: DecodeReport, fidelity: SourceFidelity) -> Self {
-        Self::bind_sha256(crate::hash::sha256_hex(ir_bytes), report, fidelity)
-    }
-
     /// Binds decode metadata to a previously computed CADIR SHA-256 digest.
     pub fn bind_sha256(
-        ir_sha256: impl Into<String>,
+        ir_sha256: Sha256Digest,
         report: DecodeReport,
-        mut fidelity: SourceFidelity,
+        fidelity: SourceFidelity,
     ) -> Self {
-        fidelity.finalize();
         Self {
-            ir_sha256: ir_sha256.into(),
+            ir_version: IrVersion,
+            ir_sha256,
             report,
             fidelity,
         }
@@ -72,31 +50,44 @@ impl DecodeSidecar {
 
     /// Returns whether this sidecar is bound to the supplied CADIR bytes.
     pub fn matches(&self, ir_bytes: &[u8]) -> bool {
-        self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
+        self.ir_sha256 == Sha256Digest::digest(ir_bytes)
     }
 
-    /// Finalizes this sidecar and serializes it as canonical compact JSON.
-    pub fn to_canonical_json(&mut self) -> Result<String, serde_json::Error> {
-        self.fidelity.finalize();
-        serde_json::to_string(&*self)
+    /// Serializes this sidecar as canonical JSON.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a non-finite float: the sidecar is an IR document and takes
+    /// the same write route as every other.
+    pub fn to_canonical_json(
+        &self,
+    ) -> Result<String, crate::hash::finite_json::CanonicalJsonError> {
+        crate::hash::finite_json::to_canonical_json_string(self)
     }
 
-    /// Parses a decode sidecar and validates its retained records.
+    /// Parses a decode sidecar.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        let wire: DecodeSidecarWire =
-            serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
-        Self::from_wire(wire)
+        serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)
     }
 }
 
 /// Returns the sidecar path for a CADIR path.
-pub fn decode_sidecar_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("");
-    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
-    path.with_file_name(format!("{stem}.fidelity.json"))
+///
+/// The sidecar is named after the CADIR file, so a path that names no file has
+/// no sidecar path and answers `None`. `Path::file_name` answers `None` for the
+/// empty path, for a path that is a root, and for a path whose last component
+/// is `..`. The remaining paths all have a name, so `with_file_name` replaces
+/// it.
+pub fn decode_sidecar_path(path: &Path) -> Option<PathBuf> {
+    let file_name = path.file_name()?;
+    let stem = match (path.extension(), path.file_stem()) {
+        (Some(extension), Some(stem)) if extension == "json" => stem,
+        _ if file_name == ".json" => std::ffi::OsStr::new(""),
+        _ => file_name,
+    };
+    let mut sidecar_name = stem.to_os_string();
+    sidecar_name.push(".fidelity.json");
+    Some(path.with_file_name(sidecar_name))
 }
 
 /// Failure parsing a decode sidecar.
@@ -105,91 +96,164 @@ pub enum DecodeSidecarParseError {
     /// Invalid JSON.
     #[error("invalid decode-sidecar JSON: {0}")]
     Json(serde_json::Error),
-    /// Invalid source fidelity.
-    #[error(transparent)]
-    Fidelity(FidelityError),
+}
+
+/// The retained image of a source record: its bytes, or the length and digest
+/// of bytes that are not retained.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RetainedBytes {
+    /// The source bytes themselves. Their length and digest are functions of
+    /// them, so neither is stored.
+    Inline {
+        /// Retained source bytes.
+        #[serde(with = "crate::bytes")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        data: Vec<u8>,
+    },
+    /// Unavailable source bytes, described by their length and digest.
+    Digest {
+        /// Number of source bytes.
+        byte_len: u64,
+        /// Lowercase hexadecimal SHA-256 of the source bytes.
+        sha256: Sha256Digest,
+    },
+}
+
+impl RetainedBytes {
+    /// Returns the number of source bytes.
+    #[must_use]
+    pub fn byte_len(&self) -> u64 {
+        match self {
+            Self::Inline { data } => cadmpeg_core::decode::u64_from_index(data.len()),
+            Self::Digest { byte_len, .. } => *byte_len,
+        }
+    }
+
+    /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
+    #[must_use]
+    pub fn sha256(&self) -> String {
+        match self {
+            Self::Inline { data } => crate::hash::sha256_hex(data),
+            Self::Digest { sha256, .. } => sha256.as_str().to_owned(),
+        }
+    }
+
+    /// Returns the source bytes when they are retained.
+    #[must_use]
+    pub fn data(&self) -> Option<&[u8]> {
+        match self {
+            Self::Inline { data } => Some(data),
+            Self::Digest { .. } => None,
+        }
+    }
 }
 
 /// Source bytes retained for native recovery or replay.
+///
+/// The record is addressed by its id in
+/// [`SourceFidelity::retained_records`], so it carries no id of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "RetainedSourceRecordWire")]
 pub struct RetainedSourceRecord {
-    /// Stable record identifier.
-    id: String,
     /// Source stream containing the record.
-    stream: String,
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    stream: SourceOwner,
     /// First byte offset in the source stream.
     offset: u64,
-    /// Number of source bytes.
-    byte_len: u64,
-    /// Lowercase hexadecimal SHA-256 of the source bytes.
-    sha256: String,
-    /// Retained bytes, when available.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "crate::bytes::option"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    data: Option<Vec<u8>>,
+    /// Retained image of the source bytes.
+    bytes: RetainedBytes,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct RetainedSourceRecordWire {
+    /// Source stream containing the record.
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    stream: SourceOwner,
+    /// First byte offset in the source stream.
+    offset: u64,
+    /// Retained image of the source bytes.
+    bytes: RetainedBytes,
+}
+
+/// A source record's exclusive end offset exceeds the offset domain.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("source record {record}: offset {offset} + {byte_len} bytes exceeds u64")]
+pub struct SourceExtentError {
+    /// Identity or stream spelling of the affected record.
+    pub record: String,
+    /// First byte offset.
+    pub offset: u64,
+    /// Byte length.
+    pub byte_len: u64,
+}
+
+impl From<SourceExtentError> for cadmpeg_core::CodecError {
+    fn from(error: SourceExtentError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
+fn require_extent(record: &str, offset: u64, byte_len: u64) -> Result<(), SourceExtentError> {
+    offset
+        .checked_add(byte_len)
+        .map(|_| ())
+        .ok_or_else(|| SourceExtentError {
+            record: record.to_owned(),
+            offset,
+            byte_len,
+        })
+}
+
+impl TryFrom<RetainedSourceRecordWire> for RetainedSourceRecord {
+    type Error = SourceExtentError;
+
+    fn try_from(wire: RetainedSourceRecordWire) -> Result<Self, Self::Error> {
+        Self::from_bytes(wire.stream, wire.offset, wire.bytes)
+    }
 }
 
 impl RetainedSourceRecord {
-    /// Retains source bytes and derives their length and SHA-256 digest.
+    /// Retain a whole source stream. Its start is zero, so its extent fits.
     #[must_use]
-    pub fn retained(
-        id: impl Into<String>,
-        stream: impl Into<String>,
-        offset: u64,
-        data: Vec<u8>,
-    ) -> Self {
+    pub fn whole(stream: impl Into<SourceOwner>, data: Vec<u8>) -> Self {
         Self {
-            id: id.into(),
             stream: stream.into(),
-            offset,
-            byte_len: data.len() as u64,
-            sha256: crate::hash::sha256_hex(&data),
-            data: Some(data),
+            offset: 0,
+            bytes: RetainedBytes::Inline { data },
         }
     }
 
-    /// Records unavailable source bytes by their stored length and digest.
-    #[must_use]
-    pub fn unavailable(
-        id: impl Into<String>,
-        stream: impl Into<String>,
+    /// Records a source record from a retained image already in hand.
+    pub fn from_bytes(
+        stream: impl Into<SourceOwner>,
         offset: u64,
-        byte_len: u64,
-        sha256: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            stream: stream.into(),
+        bytes: RetainedBytes,
+    ) -> Result<Self, SourceExtentError> {
+        let stream = stream.into();
+        require_extent(stream.as_str(), offset, bytes.byte_len())?;
+        Ok(Self {
+            stream,
             offset,
-            byte_len,
-            sha256: sha256.into(),
-            data: None,
-        }
-    }
-
-    fn from_unknown(stream: String, record: UnknownRecord) -> Self {
-        let (id, offset, byte_len, sha256, data, _) = record.into_parts();
-        match data {
-            Some(data) => Self::retained(id.into_string(), stream, offset, data),
-            None => Self::unavailable(id.into_string(), stream, offset, byte_len, sha256),
-        }
-    }
-
-    /// Returns the stable record identifier.
-    #[must_use]
-    pub fn id(&self) -> &str {
-        &self.id
+            bytes,
+        })
     }
 
     /// Returns the source stream containing the record.
     #[must_use]
     pub fn stream(&self) -> &str {
-        &self.stream
+        self.stream.as_str()
+    }
+
+    /// Assign a containing source owner without changing the admitted byte extent.
+    #[must_use]
+    pub fn with_owner(mut self, stream: impl Into<SourceOwner>) -> Self {
+        self.stream = stream.into();
+        self
     }
 
     /// Returns the first byte offset in the source stream.
@@ -200,60 +264,72 @@ impl RetainedSourceRecord {
 
     /// Returns the number of source bytes.
     #[must_use]
-    pub const fn byte_len(&self) -> u64 {
-        self.byte_len
+    pub fn byte_len(&self) -> u64 {
+        self.bytes.byte_len()
+    }
+
+    /// Returns the exclusive end offset admitted by construction.
+    #[must_use]
+    pub fn end_offset(&self) -> u64 {
+        self.offset + self.bytes.byte_len()
     }
 
     /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
     #[must_use]
-    pub fn sha256(&self) -> &str {
-        &self.sha256
+    pub fn sha256(&self) -> String {
+        self.bytes.sha256()
     }
 
     /// Returns the retained bytes when available.
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
-        self.data.as_deref()
+        self.bytes.data()
+    }
+
+    fn from_unknown(
+        stream: SourceOwner,
+        record: UnknownRecord,
+    ) -> Result<(UnknownId, Self), NativeConvertError> {
+        let (id, offset, raw, _) = record.into_parts();
+        let bytes = match raw {
+            crate::unknown::RawRetainedBytes::Inline { data } => RetainedBytes::Inline { data },
+            crate::unknown::RawRetainedBytes::Digest { byte_len, sha256 } => {
+                RetainedBytes::Digest {
+                    byte_len,
+                    sha256: Sha256Digest::try_from(sha256).map_err(|error| {
+                        NativeConvertError::InvalidCollection(format!(
+                            "retained record {id}: {error}"
+                        ))
+                    })?,
+                }
+            }
+        };
+        let retained = Self::from_bytes(stream, offset, bytes).map_err(|error| {
+            NativeConvertError::InvalidCollection(format!("retained record {id}: {error}"))
+        })?;
+        Ok((id, retained))
     }
 }
 
-/// Validation failure in source metadata.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum FidelityError {
-    /// Two retained records share an identifier.
-    #[error("duplicate retained source record: {id}")]
-    DuplicateRecord {
-        /// The repeated identifier.
-        id: String,
-    },
-    /// Retained data has the wrong length.
-    #[error("retained source record {id} declares {declared} bytes but contains {actual}")]
-    Length {
-        /// The record identifier.
-        id: String,
-        /// Declared byte length.
-        declared: u64,
-        /// Actual retained byte length.
-        actual: u64,
-    },
-    /// Retained data has the wrong digest.
-    #[error("retained source record {id} does not match its SHA-256 digest")]
-    Digest {
-        /// The record identifier.
-        id: String,
-    },
-}
-
 /// Decode-time source annotations and retained native records.
+///
+/// Retained identities are admitted only through checked insertion.
+///
+/// ```compile_fail
+/// let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+/// fidelity.retained_records().clear();
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
-    /// Native records retained for recovery or replay.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub retained_records: Vec<RetainedSourceRecord>,
+    /// Native records retained for recovery or replay, keyed by record id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
 
 impl SourceFidelity {
@@ -261,20 +337,89 @@ impl SourceFidelity {
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
-            retained_records: Vec::new(),
+            retained_records: std::collections::BTreeMap::new(),
         }
     }
 
-    /// Sorts retained records into canonical source order.
-    pub fn finalize(&mut self) {
-        self.retained_records.sort_by(|left, right| {
-            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
-        });
+    /// Consume the source metadata without copying its retained bytes.
+    pub fn into_parts(self) -> (Annotations, BTreeMap<UnknownId, RetainedSourceRecord>) {
+        (self.annotations, self.retained_records)
+    }
+
+    /// Append source metadata after checking both tables for identity collisions.
+    /// Failure leaves this source metadata unchanged.
+    pub fn append(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for id in other.retained_records.keys() {
+            let work = id
+                .as_str()
+                .len()
+                .checked_add(1)
+                .and_then(|bytes| {
+                    self.retained_records
+                        .len()
+                        .checked_add(1)
+                        .and_then(|count| bytes.checked_mul(count))
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("check appended source records", u64::MAX - 1, u64::MAX)
+                })?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(work),
+                "check appended source records",
+            )?;
+            if self.retained_records.contains_key(id) {
+                return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                    format_args!("duplicate retained or native unknown record {id}"),
+                    "report duplicate source record",
+                )?));
+            }
+        }
+        crate::annotations::admit_btree_append(
+            ctx,
+            &self.retained_records,
+            &other.retained_records,
+            |id| id.as_str().len(),
+            "append source records",
+        )?;
+        self.annotations
+            .append(ctx, other.annotations, "append source provenance")?
+            .map_err(cadmpeg_core::CodecError::from)?;
+        self.retained_records.append(&mut other.retained_records);
+        Ok(())
     }
 
     /// Finds a retained source record by identifier.
     pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
-        self.retained_records.iter().find(|record| record.id == id)
+        self.retained_records.get(id)
+    }
+
+    /// Borrow retained records in identity order.
+    pub fn retained_records(&self) -> &BTreeMap<UnknownId, RetainedSourceRecord> {
+        &self.retained_records
+    }
+
+    /// Insert one record without replacing an existing identity.
+    pub fn insert_retained_record(
+        &mut self,
+        id: UnknownId,
+        record: RetainedSourceRecord,
+    ) -> Result<(), NativeConvertError> {
+        match self.retained_records.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(record);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(duplicate_record(entry.key())),
+        }
+    }
+
+    /// Remove a retained image when its source is replaced or ceases to apply.
+    pub fn remove_retained_record(&mut self, id: &str) -> Option<RetainedSourceRecord> {
+        self.retained_records.remove(id)
     }
 
     /// Retains source records without adding them to the product model.
@@ -283,142 +428,447 @@ impl SourceFidelity {
     /// rather than being copied into it.
     pub fn retain_unknown_records(
         &mut self,
-        stream: &str,
+        stream: impl Into<SourceOwner>,
         records: impl IntoIterator<Item = UnknownRecord>,
-    ) {
-        self.retained_records.extend(
-            records
-                .into_iter()
-                .map(|record| RetainedSourceRecord::from_unknown(stream.into(), record)),
-        );
+    ) -> Result<(), NativeConvertError> {
+        let stream = stream.into();
+        let mut incoming = BTreeMap::new();
+        for record in records {
+            if self.retained_records.contains_key(record.id()) || incoming.contains_key(record.id())
+            {
+                return Err(duplicate_record(record.id()));
+            }
+            let (id, record) = RetainedSourceRecord::from_unknown(stream.clone(), record)?;
+            incoming.insert(id, record);
+        }
+        self.retained_records.extend(incoming);
+        Ok(())
     }
 
-    /// Stores source bytes in the sidecar and references in the product model.
-    ///
-    /// The records are consumed and split as they arrive: the retained bytes
-    /// move into the sidecar and the identity and links move into the product
-    /// arena, so neither the retained source image nor the derived product
-    /// references are ever duplicated. A caller that still needs a record
-    /// afterwards clones that record itself.
+    /// Stores source bytes and native references within the decode budget.
+    /// Both destinations are committed after all admission succeeds.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
         format: &str,
-        records: impl IntoIterator<Item = UnknownRecord>,
-    ) -> Result<(), NativeConvertError> {
-        let Self {
-            annotations,
-            retained_records,
-        } = self;
-        ir.set_native_unknowns_from(
-            format,
-            records.into_iter().map(|record| {
-                let (id, offset, byte_len, sha256, data, links) = record.into_parts();
-                let stream = annotations.provenance.get(id.as_str()).map_or_else(
-                    || "source".into(),
-                    |provenance| provenance.stream().to_owned(),
-                );
-                let product = crate::NativeUnknownRecord {
-                    id: id.clone(),
-                    links,
-                };
-                let retained = match data {
-                    Some(data) => {
-                        RetainedSourceRecord::retained(id.into_string(), stream, offset, data)
-                    }
-                    None => RetainedSourceRecord::unavailable(
-                        id.into_string(),
-                        stream,
-                        offset,
-                        byte_len,
-                        sha256,
-                    ),
-                };
-                retained_records.push(retained);
-                product
-            }),
-        )
-    }
-
-    /// Validates retained record identity and payload integrity.
-    pub fn validate(&self) -> Result<(), FidelityError> {
-        let mut ids = std::collections::BTreeSet::new();
-        for record in &self.retained_records {
-            if !ids.insert(&record.id) {
-                return Err(FidelityError::DuplicateRecord {
-                    id: record.id.clone(),
-                });
-            }
-            if let Some(data) = &record.data {
-                let actual = data.len() as u64;
-                if actual != record.byte_len {
-                    return Err(FidelityError::Length {
-                        id: record.id.clone(),
-                        declared: record.byte_len,
-                        actual,
-                    });
-                }
-                if crate::hash::sha256_hex(data) != record.sha256 {
-                    return Err(FidelityError::Digest {
-                        id: record.id.clone(),
-                    });
-                }
-            }
+        records: Vec<UnknownRecord>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        if records.is_empty() {
+            return Ok(());
         }
+        let mut products: Vec<crate::NativeUnknownRecord> = match ir.native.namespace(format) {
+            Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
+            None => Vec::new(),
+        };
+        let (existing_ids, _identity_storage) =
+            ctx.with_scoped_storage("native unknown existing identities", || {
+                let mut existing_ids = BTreeSet::new();
+                for record in ir
+                    .native
+                    .0
+                    .values()
+                    .filter_map(|namespace| namespace.arenas().get("unknowns"))
+                    .flatten()
+                {
+                    ctx.charge_work(
+                        u64_from_index(record.id().len()),
+                        "native unknown identity scan",
+                    )?;
+                    ctx.insert_btree_set(
+                        &mut existing_ids,
+                        record.id(),
+                        "native unknown existing identities",
+                    )?;
+                }
+                Ok::<_, CodecError>(existing_ids)
+            })?;
+        let mut retained = BTreeMap::new();
+        for record in records {
+            if self.retained_records.contains_key(record.id())
+                || existing_ids.contains(record.id().as_str())
+                || retained.contains_key(record.id())
+            {
+                return Err(duplicate_record(record.id()).into());
+            }
+            let id = record
+                .id()
+                .try_clone_for_decode(ctx, "native unknown product identity")?;
+            let mut links = Vec::new();
+            ctx.charge_collection_items(
+                u64_from_index(record.links().len()),
+                "native unknown product links",
+            )?;
+            links.try_reserve_exact(record.links().len()).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "native unknown product links",
+                        ),
+                        0,
+                        u64_from_index(record.links().len()),
+                        "native unknown product links",
+                    ),
+                )
+            })?;
+            for link in record.links() {
+                let text = ctx.copy_retained_text(link, "native unknown product link text")?;
+                links.push(crate::ids::Identity::new(text).map_err(CodecError::malformed)?);
+            }
+            ctx.charge_collection_items(1, "native unknown products")?;
+            products.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("native unknown products"),
+                        0,
+                        1,
+                        "native unknown products",
+                    ),
+                )
+            })?;
+            products.push(crate::NativeUnknownRecord { id, links });
+            let stream = if let Some(provenance) =
+                self.annotations.provenance.get(record.id().as_str())
+            {
+                SourceOwner::from(
+                    ctx.copy_retained_text(provenance.stream(), "native unknown source stream")?,
+                )
+            } else {
+                SourceOwner::Root
+            };
+            let (id, record) = RetainedSourceRecord::from_unknown(stream, record)?;
+            ctx.insert_btree_map(&mut retained, id, record, "native unknown retained index")?;
+        }
+
+        let mut native_records = Vec::new();
+        ctx.charge_collection_items(
+            u64_from_index(products.len()),
+            "native unknown arena records",
+        )?;
+        native_records
+            .try_reserve_exact(products.len())
+            .map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "native unknown arena records",
+                        ),
+                        0,
+                        u64_from_index(products.len()),
+                        "native unknown arena records",
+                    ),
+                )
+            })?;
+        for product in &products {
+            let id = product
+                .id
+                .try_clone_for_decode(ctx, "native unknown arena identity")?
+                .into();
+            let mut fields = serde_json::Map::new();
+            if !product.links.is_empty() {
+                let mut links = Vec::new();
+                ctx.charge_collection_items(
+                    u64_from_index(product.links.len()),
+                    "native unknown arena links",
+                )?;
+                links.try_reserve_exact(product.links.len()).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "native unknown arena links",
+                            ),
+                            0,
+                            u64_from_index(product.links.len()),
+                            "native unknown arena links",
+                        ),
+                    )
+                })?;
+                for link in &product.links {
+                    links.push(serde_json::Value::String(ctx.copy_retained_text(
+                        link.as_str(),
+                        "native unknown arena link text",
+                    )?));
+                }
+                ctx.charge_collection_items(1, "native unknown arena link field")?;
+                let field =
+                    ctx.copy_retained_text("links", "native unknown arena link field name")?;
+                fields.insert(field, serde_json::Value::Array(links));
+            }
+            native_records.push(crate::native::NativeRecord::new(id, fields)?);
+        }
+        ctx.stable_sort_by(
+            &mut native_records,
+            |left, right| left.id().cmp(right.id()),
+            |record| record.id().len(),
+            "native unknown arena records sort",
+        )?;
+        if let Some(pair) = native_records
+            .windows(2)
+            .find(|pair| pair[0].id() == pair[1].id())
+        {
+            let id = pair[0].id();
+            ctx.charge_retained(u64_from_index(id.len()), "native unknown duplicate message")?;
+            return Err(NativeConvertError::InvalidCollection(format!(
+                "duplicate native unknown record {id}"
+            ))
+            .into());
+        }
+        ctx.charge_collection_items(2, "native unknown namespace and arena")?;
+        ctx.charge_retained(
+            u64_from_index(format.len()),
+            "native unknown namespace name",
+        )?;
+        let arena_name = ctx.copy_retained_text("unknowns", "native unknown arena name")?;
+        ctx.charge_collection_items(
+            u64_from_index(retained.len()),
+            "native unknown retained records",
+        )?;
+        ir.native
+            .namespace_mut(format)
+            .arenas_mut()
+            .insert(arena_name, native_records);
+        self.retained_records.extend(retained);
         Ok(())
     }
 }
 
+fn duplicate_record(id: &UnknownId) -> NativeConvertError {
+    NativeConvertError::InvalidCollection(format!(
+        "duplicate retained or native unknown record {id}"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    mod admission;
+    mod unknown_keys;
 
-    fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
-        RetainedSourceRecord::retained(id.to_owned(), "source", 0, data.to_vec())
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
+        SourceFidelity,
+    };
+    use crate::document::CadIr;
+    use crate::hash::digest::Sha256Digest;
+    use crate::ids::UnknownId;
+    use crate::report::decode::DecodeReport;
+    use crate::unknown::UnknownRecord;
+
+    fn record(data: &[u8]) -> RetainedSourceRecord {
+        RetainedSourceRecord::whole("source", data.to_vec())
+    }
+
+    fn id(key: &str) -> UnknownId {
+        UnknownId::mint(format!("synthetic:source:record#{key}")).expect("fixture identity")
     }
 
     fn report() -> DecodeReport {
         DecodeReport::unclassified(
             "test",
-            crate::report::DecodeTransfer::full(true),
+            crate::report::decode::DecodeTransfer::full(true),
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),
-            crate::report::TransferLedger::default(),
+            crate::report::decode::TransferLedger::default(),
         )
     }
 
     #[test]
-    fn finalize_orders_retained_records() {
-        let mut sidecar = SourceFidelity {
-            retained_records: vec![record("b", &[2]), record("a", &[1])],
-            ..SourceFidelity::default()
-        };
-        sidecar.finalize();
-        assert_eq!(sidecar.retained_records[0].id(), "a");
+    fn retained_records_are_keyed_by_their_id() {
+        let mut sidecar = SourceFidelity::default();
+        sidecar
+            .insert_retained_record(id("b"), record(&[2]))
+            .unwrap();
+        sidecar
+            .insert_retained_record(id("a"), record(&[1]))
+            .unwrap();
+        assert_eq!(
+            sidecar.retained_records.keys().cloned().collect::<Vec<_>>(),
+            [id("a"), id("b")]
+        );
+        assert_eq!(
+            sidecar.retained_record(id("a").as_str()),
+            Some(&record(&[1]))
+        );
+
+        // A record id is a map key, so a document cannot carry two records
+        // under one id. `serde_json` hands both to the visitor, so the reader
+        // refuses the second by name rather than keeping the last.
+        let error = serde_json::from_str::<SourceFidelity>(
+            r#"{"retained_records":{
+                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"AQ=="}},
+                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+        )
+        .expect_err("a repeated record id states two records under one identity")
+        .to_string();
+        assert!(
+            error.contains("duplicate key synthetic:source:record#a"),
+            "{error}"
+        );
+
+        let single = serde_json::from_str::<SourceFidelity>(
+            r#"{"retained_records":{
+                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+        )
+        .expect("one record under one id reads");
+        assert_eq!(
+            single
+                .retained_record("synthetic:source:record#a")
+                .and_then(RetainedSourceRecord::data),
+            Some([2].as_slice())
+        );
     }
 
     #[test]
-    fn validation_rejects_false_payload_metadata() {
-        let mut wire = serde_json::to_value(record("a", &[1, 2])).unwrap();
-        wire["sha256"] = crate::hash::sha256_hex(&[2, 1]).into();
-        let malformed = serde_json::from_value(wire).unwrap();
-        let mut sidecar = SourceFidelity::default();
-        sidecar.retained_records.push(malformed);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::Digest { .. })
-        ));
+    fn a_retained_record_derives_its_length_and_digest_from_inline_bytes() {
+        let inline = record(&[1, 2, 3]);
+        assert_eq!(inline.byte_len(), 3);
+        assert_eq!(inline.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
+        assert_eq!(inline.data(), Some([1, 2, 3].as_slice()));
+
+        let wire = serde_json::to_value(&inline).expect("serializes");
+        assert_eq!(wire["bytes"]["retention"], "inline");
+        assert!(wire["bytes"].get("byte_len").is_none());
+        assert!(wire["bytes"].get("sha256").is_none());
+        assert_eq!(
+            serde_json::from_value::<RetainedSourceRecord>(wire.clone()).expect("round trip"),
+            inline
+        );
+
+        let mut restated = wire;
+        restated["bytes"]["byte_len"] = serde_json::json!(3);
+        let error = serde_json::from_value::<RetainedSourceRecord>(restated)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("byte_len"), "{error}");
+    }
+
+    #[test]
+    fn unknown_conversion_keeps_the_retained_bytes_as_the_record_image() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        for attach in [false, true] {
+            let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
+                "id": "synthetic:model:unknown#0",
+                "offset": 7,
+                "retention": {"retention": "inline", "data": "AQID"}
+            }))
+            .unwrap();
+            let mut fidelity = SourceFidelity::default();
+            if attach {
+                fidelity
+                    .attach_native_unknown_records(
+                        &mut CadIr::empty(),
+                        "synthetic",
+                        [unknown].into(),
+                        &ctx,
+                    )
+                    .unwrap();
+            } else {
+                fidelity
+                    .retain_unknown_records("source", [unknown])
+                    .unwrap();
+            }
+            let retained = fidelity
+                .retained_record("synthetic:model:unknown#0")
+                .expect("record is keyed by its id");
+            assert_eq!(retained.byte_len(), 3);
+            assert_eq!(retained.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
+            assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
+        }
+    }
+
+    /// `serde_json` hands every object key to the visitor, duplicates
+    /// included, and a derived map keeps the last. An identity-keyed map that
+    /// a document states twice is refused by name, not silently reduced.
+    #[test]
+    fn a_restated_record_id_is_refused_by_name() {
+        let record = |stream: &str| {
+            serde_json::json!({
+                "stream": stream,
+                "offset": 0,
+                "bytes": {
+                    "retention": "digest",
+                    "byte_len": 3,
+                    "sha256": crate::hash::sha256_hex(&[1, 2, 3])
+                }
+            })
+        };
+        let one: SourceFidelity = serde_json::from_value(serde_json::json!({
+            "retained_records": {"synthetic:source:record#a": record("s")}
+        }))
+        .expect("one record reads");
+        assert_eq!(one.retained_records.len(), 1);
+
+        let text = format!(
+            r#"{{"retained_records":{{"synthetic:source:record#a":{},"synthetic:source:record#a":{}}}}}"#,
+            record("s"),
+            record("t")
+        );
+        let text = text.as_str();
+        let error = serde_json::from_str::<SourceFidelity>(text)
+            .expect_err("a restated record id states two records under one identity")
+            .to_string();
+        assert!(
+            error.contains("duplicate key synthetic:source:record#a"),
+            "{error}"
+        );
+    }
+
+    /// The sidecar is an IR document and takes the one finite write route.
+    ///
+    /// No type reachable from a `DecodeSidecar` carries an `f64` today, so the
+    /// sidecar itself cannot be built holding a non-finite float. What the test
+    /// can state is both halves that make the claim: the sidecar's text is what
+    /// an independent writer produces for the same value, and the route the
+    /// method delegates to refuses a non-finite float in a struct field.
+    #[derive(serde::Serialize)]
+    struct FloatBearing {
+        value: f64,
+    }
+
+    #[test]
+    fn the_sidecar_writes_through_the_finite_route() {
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
+        assert_eq!(
+            sidecar.to_canonical_json().expect("the sidecar writes"),
+            serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
+        );
+
+        let refused =
+            crate::hash::finite_json::to_canonical_json_string(&FloatBearing { value: f64::NAN });
+        assert!(
+            refused.is_err(),
+            "the route the sidecar delegates to refuses a non-finite float"
+        );
+        assert!(
+            crate::hash::finite_json::to_canonical_json_string(&FloatBearing { value: 1.0 })
+                .is_ok()
+        );
     }
 
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes() {
-        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
 
         let digest_sidecar = DecodeSidecar::bind_sha256(
-            crate::hash::sha256_hex(b"cad-ir"),
+            Sha256Digest::digest(b"cad-ir"),
             sidecar.report.clone(),
             sidecar.fidelity.clone(),
         );
@@ -429,18 +879,60 @@ mod tests {
     }
 
     #[test]
-    fn decode_sidecar_uses_decode_report_dialect_omission_policy() {
-        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
-        let json = sidecar.to_canonical_json().expect("serialize sidecar");
-        assert!(json.contains("\"dialects\":null"), "{json}");
-        let truncated = json.replace(",\"dialects\":null", "");
-        assert!(!truncated.contains("dialects"), "{truncated}");
+    fn cadir_and_fidelity_sidecar_round_trip_preserves_annotation_streams() {
+        let ir = CadIr::empty();
+        let ir_json = ir.to_canonical_json().expect("serialize CADIR");
+        assert_eq!(CadIr::from_json(&ir_json).expect("parse CADIR"), ir);
 
-        let parsed = DecodeSidecar::from_json(&truncated)
-            .expect("the reusable decode-report wire accepts omitted dialects");
+        let mut builder = crate::AnnotationBuilder::new();
+        let stream = crate::annotations::StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            crate::stream_name!(" \t"),
+            "fixture stream handle",
+        )
+        .unwrap();
+        builder
+            .note(
+                &cadmpeg_test_support::service_decode_context(),
+                "synthetic:point#0",
+                &stream,
+                17,
+                Some("point"),
+            )
+            .unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
+            report(),
+            SourceFidelity::with_annotations(builder.build()),
+        );
+
+        let sidecar_json = sidecar.to_canonical_json().expect("serialize sidecar");
+        let parsed = DecodeSidecar::from_json(&sidecar_json).expect("parse sidecar");
+        assert_eq!(parsed, sidecar);
+        assert_eq!(
+            parsed.fidelity.annotations.provenance["synthetic:point#0"].stream(),
+            " \t"
+        );
+    }
+
+    #[test]
+    fn decode_sidecar_states_its_report_identity_once() {
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert!(
+            json.contains("\"classification\": \"unclassified\"")
+                && json.contains("\"format\": \"test\""),
+            "{json}"
+        );
+
+        let parsed = DecodeSidecar::from_json(&json).expect("the sidecar round-trips");
         assert!(parsed.report.dialects().is_none());
         assert_eq!(
-            serde_json::from_str::<DecodeSidecar>(&truncated)
+            serde_json::from_str::<DecodeSidecar>(&json)
                 .expect("direct sidecar deserialization uses the same policy"),
             parsed
         );
@@ -448,7 +940,11 @@ mod tests {
 
     #[test]
     fn decode_sidecar_reports_a_missing_report_at_the_outer_boundary() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         let mut value = serde_json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
 
@@ -461,39 +957,79 @@ mod tests {
     }
 
     #[test]
-    fn public_decode_sidecar_deserialization_validates_retained_payloads() {
+    fn a_sidecar_record_cannot_restate_the_length_of_its_inline_bytes() {
         let mut fidelity = SourceFidelity::default();
-        fidelity.retained_records.push(record("record", b"payload"));
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), fidelity);
+        fidelity
+            .insert_retained_record(id("record"), record(b"payload"))
+            .unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            fidelity,
+        );
         let mut value = serde_json::to_value(sidecar).unwrap();
-        value["fidelity"]["retained_records"][0]["byte_len"] = 1.into();
+        value["fidelity"]["retained_records"]["synthetic:source:record#record"]["bytes"]
+            ["byte_len"] = 1.into();
         let json = value.to_string();
 
-        let direct_error = serde_json::from_str::<DecodeSidecar>(&json)
-            .expect_err("public deserialization must validate fidelity");
-        assert!(
-            direct_error
-                .to_string()
-                .contains("retained source record record declares 1 bytes but contains 7"),
-            "{direct_error}"
-        );
-        assert!(matches!(
-            DecodeSidecar::from_json(&json),
-            Err(DecodeSidecarParseError::Fidelity(
-                FidelityError::Length { .. }
-            ))
-        ));
+        let error = serde_json::from_str::<DecodeSidecar>(&json)
+            .expect_err("an inline record has no length field");
+        assert!(error.to_string().contains("byte_len"), "{error}");
     }
 
     #[test]
     fn decode_sidecar_path_replaces_only_a_trailing_json_suffix() {
         assert_eq!(
             decode_sidecar_path(Path::new("part.cadir.json")),
-            PathBuf::from("part.cadir.fidelity.json")
+            Some(PathBuf::from("part.cadir.fidelity.json"))
         );
         assert_eq!(
             decode_sidecar_path(Path::new("part.cadir")),
-            PathBuf::from("part.cadir.fidelity.json")
+            Some(PathBuf::from("part.cadir.fidelity.json"))
         );
+        for (source, sidecar) in [
+            ("dir/.json", "dir/.fidelity.json"),
+            ("dir/part.JSON", "dir/part.JSON.fidelity.json"),
+            ("dir/part.json.cadir", "dir/part.json.cadir.fidelity.json"),
+        ] {
+            assert_eq!(
+                decode_sidecar_path(Path::new(source)),
+                Some(PathBuf::from(sidecar))
+            );
+        }
+    }
+
+    #[test]
+    fn decode_sidecar_path_is_absent_for_a_path_that_names_no_file() {
+        for source in ["..", "/", "", "dir/..", "/.."] {
+            assert_eq!(
+                decode_sidecar_path(Path::new(source)),
+                None,
+                "{source} names no file"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn decode_sidecar_path_preserves_distinct_non_utf8_filenames() {
+        use std::os::unix::ffi::OsStringExt;
+
+        for byte in [0xfe, 0xff] {
+            for suffix in [b".json".as_slice(), b".cadir".as_slice()] {
+                let mut name = vec![byte];
+                name.extend_from_slice(suffix);
+                let path = Path::new("directory").join(std::ffi::OsString::from_vec(name));
+                let mut expected = vec![byte];
+                if suffix != b".json" {
+                    expected.extend_from_slice(suffix);
+                }
+                expected.extend_from_slice(b".fidelity.json");
+                assert_eq!(
+                    decode_sidecar_path(&path),
+                    Some(Path::new("directory").join(std::ffi::OsString::from_vec(expected))),
+                );
+            }
+        }
     }
 }

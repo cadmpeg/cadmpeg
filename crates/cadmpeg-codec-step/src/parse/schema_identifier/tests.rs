@@ -28,11 +28,9 @@ fn admitted(identifier: &str) -> Admitted {
         identifier,
         "the admission keeps the source text"
     );
-    match admitted {
-        AdmittedSchemaIdentifier::Valid { .. } => Admitted::Valid,
-        AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
-            name, component, ..
-        } => Admitted::OutOfRange(name, component),
+    match admitted.out_of_range() {
+        None => Admitted::Valid,
+        Some((name, component)) => Admitted::OutOfRange(name.to_owned(), component.to_owned()),
     }
 }
 
@@ -112,10 +110,15 @@ fn classifier_admits_in_range_object_identifiers() {
 fn admitted_identifiers_keep_numeric_components_with_named_roots() {
     let admitted = AdmittedSchemaIdentifier::admit("AP242 { iso 0 10303 442 4 1 4 }".to_owned())
         .expect("named ISO root is admitted");
-    assert_eq!(
-        admitted.numeric_object_identifier().as_deref(),
-        Some([1, 0, 10303, 442, 4, 1, 4].as_slice())
-    );
+    crate::test_support::with_service_context(admitted.text().as_bytes(), |_, ctx| {
+        assert_eq!(
+            admitted
+                .numeric_object_identifier(ctx)
+                .expect("numeric components fit local storage")
+                .as_deref(),
+            Some([1, 0, 10303, 442, 4, 1, 4].as_slice())
+        );
+    });
 }
 
 #[test]
@@ -175,4 +178,15 @@ fn split_separates_the_schema_name_from_the_object_identifier() {
             "{identifier}"
         );
     }
+}
+
+#[test]
+fn admitted_schema_identifiers_expose_only_proved_text_and_diagnostics() {
+    assert!(AdmittedSchemaIdentifier::admit("!".to_owned()).is_none());
+    let identifier =
+        AdmittedSchemaIdentifier::admit("AP242 { 1 40 }".to_owned()).expect("recoverable OID");
+    assert_eq!(identifier.text(), "AP242 { 1 40 }");
+    assert_eq!(identifier.out_of_range(), Some(("AP242", "40")));
+    let valid = AdmittedSchemaIdentifier::admit("AP242 { 1 39 }".to_owned()).expect("valid OID");
+    assert_eq!(valid.out_of_range(), None);
 }

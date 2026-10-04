@@ -6,9 +6,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Identity form of a drawing or semantic-annotation reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ReferenceTargetWire", into = "ReferenceTargetWire")]
+#[serde(from = "ReferenceTargetWire", into = "ReferenceTargetWire")]
+#[serde(deny_unknown_fields)]
 pub enum ReferenceTarget {
     /// Explicit null reference.
     Null,
@@ -32,20 +33,14 @@ impl ReferenceTarget {
             Self::Null | Self::External { .. } => None,
         }
     }
-
-    /// Whether this is an explicit null reference.
-    #[must_use]
-    pub const fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
-    }
 }
 
 /// One reference target and its ordered model-subelement selectors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ReferenceSelection {
     /// Local, external, or explicit-null target identity.
-    #[serde(flatten)]
     pub target: ReferenceTarget,
     /// Ordered model subelement selectors.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -67,70 +62,36 @@ impl ReferenceSelection {
     pub fn local_target(&self) -> Option<&str> {
         self.target.local()
     }
-
-    /// Whether this selection is an explicit null reference.
-    #[must_use]
-    pub const fn is_null(&self) -> bool {
-        self.target.is_null()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ReferenceTargetWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_document: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_object: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    is_null: bool,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ReferenceTargetWire {
+    /// Explicit null reference.
+    Null {},
+    /// Identity within the current document.
+    Local {
+        /// Identity of the referenced object in the current document.
+        target: String,
+    },
+    /// Identity within another document.
+    External {
+        /// Identity of the referenced document.
+        document: String,
+        /// Identity of the referenced object in that document.
+        object: String,
+    },
 }
 
-impl TryFrom<ReferenceTargetWire> for ReferenceTarget {
-    type Error = &'static str;
-
-    fn try_from(wire: ReferenceTargetWire) -> Result<Self, Self::Error> {
-        match (
-            wire.is_null,
-            wire.target,
-            wire.external_document,
-            wire.external_object,
-        ) {
-            (true, None, None, None) => Ok(Self::Null),
-            (false, Some(target), None, None) => Ok(Self::Local(target)),
-            (false, None, Some(document), Some(object)) => {
-                Ok(Self::External { document, object })
+impl From<ReferenceTargetWire> for ReferenceTarget {
+    fn from(wire: ReferenceTargetWire) -> Self {
+        match wire {
+            ReferenceTargetWire::Null {} => Self::Null,
+            ReferenceTargetWire::Local { target } => Self::Local(target),
+            ReferenceTargetWire::External { document, object } => {
+                Self::External { document, object }
             }
-            _ => Err(
-                "reference target requires exactly is_null, target, or external_document with external_object",
-            ),
-        }
-    }
-}
-
-impl From<ReferenceTarget> for ReferenceTargetWire {
-    fn from(target: ReferenceTarget) -> Self {
-        match target {
-            ReferenceTarget::Null => Self {
-                target: None,
-                external_document: None,
-                external_object: None,
-                is_null: true,
-            },
-            ReferenceTarget::Local(target) => Self {
-                target: Some(target),
-                external_document: None,
-                external_object: None,
-                is_null: false,
-            },
-            ReferenceTarget::External { document, object } => Self {
-                target: None,
-                external_document: Some(document),
-                external_object: Some(object),
-                is_null: false,
-            },
         }
     }
 }
@@ -140,15 +101,15 @@ mod tests {
     use super::{ReferenceSelection, ReferenceTarget};
 
     #[test]
-    fn reference_targets_preserve_the_flat_wire_fields() {
+    fn a_reference_target_is_one_nested_tagged_object() {
         let cases = [
             (
                 ReferenceTarget::Null,
-                serde_json::json!({ "is_null": true }),
+                serde_json::json!({ "target": { "kind": "null" } }),
             ),
             (
                 ReferenceTarget::Local("local-id".into()),
-                serde_json::json!({ "target": "local-id" }),
+                serde_json::json!({ "target": { "kind": "local", "target": "local-id" } }),
             ),
             (
                 ReferenceTarget::External {
@@ -156,8 +117,11 @@ mod tests {
                     object: "object".into(),
                 },
                 serde_json::json!({
-                    "external_document": "document",
-                    "external_object": "object"
+                    "target": {
+                        "kind": "external",
+                        "document": "document",
+                        "object": "object"
+                    }
                 }),
             ),
         ];
@@ -174,23 +138,47 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(selection).unwrap(),
-            serde_json::json!({ "target": "local-id", "subelements": ["Face1"] })
+            serde_json::json!({
+                "target": { "kind": "local", "target": "local-id" },
+                "subelements": ["Face1"]
+            })
         );
     }
 
     #[test]
-    fn reference_targets_reject_mixed_wire_forms() {
+    fn a_reference_target_carries_no_key_of_another_form() {
         for wire in [
-            serde_json::json!({}),
-            serde_json::json!({ "target": "local", "is_null": true }),
-            serde_json::json!({ "external_document": "document" }),
+            serde_json::json!({ "target": {} }),
+            serde_json::json!({ "target": { "kind": "null", "target": "local" } }),
+            serde_json::json!({ "target": { "kind": "external", "document": "document" } }),
             serde_json::json!({
-                "target": "local",
-                "external_document": "document",
-                "external_object": "object"
+                "target": {
+                    "kind": "local",
+                    "target": "local",
+                    "document": "document",
+                    "object": "object"
+                }
             }),
+            serde_json::json!({ "is_null": true }),
+            serde_json::json!({ "target": "local-id" }),
         ] {
-            assert!(serde_json::from_value::<ReferenceSelection>(wire).is_err());
+            assert!(
+                serde_json::from_value::<ReferenceSelection>(wire.clone()).is_err(),
+                "{wire}"
+            );
         }
+
+        let bogus = serde_json::json!({
+            "target": { "kind": "local", "target": "local-id" },
+            "zz_bogus": 1
+        });
+        let error = serde_json::from_value::<ReferenceSelection>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
     }
 }
+
+mod identity_rewrite;
+
+mod serialization;

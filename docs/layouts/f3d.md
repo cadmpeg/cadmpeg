@@ -1534,10 +1534,13 @@ Parsed by:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The As-built form uses the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form uses the same standard offsets.
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form is admitted by its class pair and frame length.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The As-built form uses the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The class-430/262 748-byte Assemble form uses the standard locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The variable-span class-283/264 and class-347/260 Assemble forms use the standard locator-reference offsets and are admitted by class pair.
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The compact assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 744-byte Assemble form is admitted by its class pair and frame length.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 633-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 732-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The class-430/262 744-byte Assemble form uses the compact locator-reference offsets.
 
 ## `assembly_as_built_421_scope`
 

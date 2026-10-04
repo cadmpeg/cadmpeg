@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
@@ -58,7 +55,13 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         ),
-        (b"364", b"263", 76u32, [0, 0, 0, 0], identity_matrix()),
+        (
+            b"364",
+            b"263",
+            76u32,
+            [0, 0, 0, 0],
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows(),
+        ),
     ];
 
     for (class_tag, paired_class_tag, record_index, prefix_marker, transform) in cases {
@@ -78,18 +81,34 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:test:scope#1",
-            crate::records::feature::DesignFeatureKind::WorkPlane,
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
-        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-            .expect("325-byte WorkPlane frame");
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![record_index]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let decoded = exact_work_plane_frame(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+        )
+        .expect("325-byte WorkPlane frame");
         for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
             for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
                 assert!((actual - expected).abs() < EPS_WORK_PLANE_TEST_VALUE);
             }
         }
-        assert_eq!(decoded.transform_offset, work_plane_325::MATRIX as u64);
+        assert_eq!(
+            decoded.transform_offset,
+            u64_from_index(work_plane_325::MATRIX)
+        );
         assert_eq!(decoded.reference, None);
     }
 }

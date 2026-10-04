@@ -38,90 +38,100 @@
       "surfaces": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.3333333333333333,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.6666666666666666,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.3333333333333333,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.3333333333333333,
-                "y": 0.3333333333333333,
-                "z": 0.0
-              },
-              {
-                "x": 0.3333333333333333,
-                "y": 0.6666666666666666,
-                "z": 0.0
-              },
-              {
-                "x": 0.3333333333333333,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.6666666666666666,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.6666666666666666,
-                "y": 0.3333333333333333,
-                "z": 0.0
-              },
-              {
-                "x": 0.6666666666666666,
-                "y": 0.6666666666666666,
-                "z": 0.0
-              },
-              {
-                "x": 0.6666666666666666,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.3333333333333333,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.6666666666666666,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              }
-            ],
             "kind": "nurbs",
-            "u_count": 4,
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 0.3333333333333333,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 0.6666666666666666,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  }
+                ],
+                [
+                  {
+                    "x": 0.3333333333333333,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.3333333333333333,
+                    "y": 0.3333333333333333,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.3333333333333333,
+                    "y": 0.6666666666666666,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.3333333333333333,
+                    "y": 1.0,
+                    "z": 0.0
+                  }
+                ],
+                [
+                  {
+                    "x": 0.6666666666666666,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.6666666666666666,
+                    "y": 0.3333333333333333,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.6666666666666666,
+                    "y": 0.6666666666666666,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.6666666666666666,
+                    "y": 1.0,
+                    "z": 0.0
+                  }
+                ],
+                [
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.3333333333333333,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.6666666666666666,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 3,
             "u_knots": [
               0.0,
@@ -134,7 +144,6 @@
               1.0
             ],
             "u_periodic": false,
-            "v_count": 4,
             "v_degree": 3,
             "v_knots": [
               0.0,
@@ -3594,20 +3603,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -3618,28 +3628,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.spline-header-not-transferred",
           "kind": "metadata_not_transferred",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "Type 114 curve and patch types are retained only in native parameters",
         "provenance": {
@@ -3658,28 +3668,34 @@
       "parameter_tokens=201",
       "external_references=0"
     ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted with an attributed loss",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted with an attributed loss",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 1053,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTQgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTQgICAgICAgMCAgICAgICAwICAgICAgIDcgICAgICAgMCAgICAgICAgICAgICAgICAgU1BMU1VSRiAgICAgICAwRCAgICAgIDIKMTE0LDMsMSwxLDEsMCwxLDAsMSwwLDEsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMSwwLCAgICAgICAxUCAgICAgIDEKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDIKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDMKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDQKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDUKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDYKMCwwLDAsMCwwLDAsMCwwLDAsMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDcKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTQgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTQgICAgICAgMCAgICAgICAwICAgICAgIDcgICAgICAgMCAgICAgICAgICAgICAgICAgU1BMU1VSRiAgICAgICAwRCAgICAgIDIKMTE0LDMsMSwxLDEsMCwxLDAsMSwwLDEsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMSwwLCAgICAgICAxUCAgICAgIDEKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDIKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDMKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDQKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDUKMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLCAgICAgICAxUCAgICAgIDYKMCwwLDAsMCwwLDAsMCwwLDAsMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDcKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "a81e3d2e40069d17128864b187449620c643b4222900258ff489aea25e20c1ae",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

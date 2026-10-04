@@ -1,16 +1,5 @@
 {
   "container_kind": "3dm-chunks",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "archive_version": "50"
-      },
-      "dialect": "rhino:archive-50",
-      "format": "rhino"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -19,11 +8,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000014",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -32,11 +24,14 @@
         "record_count": "1",
         "size": "72"
       },
-      "compressed_size": 72,
       "compression": "none",
       "name": "table-0x10000015",
       "role": "table",
-      "uncompressed_size": 60
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 60
+      }
     },
     {
       "attributes": {
@@ -46,11 +41,14 @@
         "record_count": "1",
         "size": "848"
       },
-      "compressed_size": 848,
       "compression": "none",
       "name": "table-0x10000013",
       "role": "table",
-      "uncompressed_size": 836
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 836
+      }
     },
     {
       "attributes": {
@@ -59,14 +57,28 @@
         "nil_uuid": "false",
         "total_record_bytes": "824"
       },
-      "compressed_size": 824,
       "compression": "none",
       "name": "class-f09ba4d9-455b-42c3-ba3b-e6ccacef853b",
       "role": "object-class",
-      "uncompressed_size": 824
+      "size": {
+        "form": "exact",
+        "size": 824
+      }
     }
   ],
-  "format": "rhino",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "50"
+        },
+        "dialect": "rhino:archive-50"
+      }
+    }
+  },
   "notes": [
     "archive version 50",
     "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa77bfe90",

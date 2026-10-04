@@ -3,12 +3,14 @@
 //! fixtures.
 //!
 //! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs. This harness
-//! never writes them. `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
+//! never writes them. `UPDATE_GOLDEN=1` rewrites the goldens under
+//! `tests/golden/` whose own comparison fails, and nothing else.
 //!
 //! `tests/golden/inspect/` pins the container summary and
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity.
+
+use cadmpeg_test_support::EditableDecodeResult;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -16,10 +18,12 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
-use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{
+    snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+};
 
 use super::FcstdCodec;
 
@@ -64,21 +68,22 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too. Native arena values are omitted;
-/// arena populations and record identities are pinned.
+/// fidelity. A decode error is frozen too. Native arenas state their
+/// populations and either their records or a digest of those records.
+///
+/// The native block is replaced before the authoring-path walk, so that walk
+/// descends only what the snapshot keeps. The digest reads the typed arenas, so
+/// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let native_shape = native_shape(&result.ir().native);
+            let result = EditableDecodeResult::from(result);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
-                *native = serde_json::json!({
-                    "__elided": "native arena values are omitted; structure is pinned by identity",
-                    "__arena_counts": native_shape["counts"].clone(),
-                    "__shape_sha256": native_shape["sha256"].clone(),
-                });
+                *native = elided_native(&result.ir().native);
             }
+            elide_authoring_paths(&mut ir);
             serde_json::json!({
                 "ir": ir,
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
@@ -91,36 +96,117 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
-/// Summarizes native arena structure without hashing platform-dependent values.
-fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
+/// Prefix of an elided string leaf. A source property whose value is an
+/// absolute filesystem path from the machine that authored the fixture is
+/// corpus content that must not be checked in; the digest still pins the
+/// decoded value.
+const ELIDED_PATH_PREFIX: &str = "__elided_authoring_path_sha256:";
+
+/// Replaces every string leaf carrying a POSIX home path or a Windows drive
+/// path with its digest. The decoded value stays pinned; the path does not
+/// enter the repository.
+fn elide_authoring_paths(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => {
+            if carries_authoring_path(text) {
+                *text = format!(
+                    "{ELIDED_PATH_PREFIX}{}",
+                    cadmpeg_ir::hash::sha256_hex(text.as_bytes())
+                );
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                elide_authoring_paths(item);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for field in fields.values_mut() {
+                elide_authoring_paths(field);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// True when the text carries an absolute filesystem path of an authoring
+/// machine. A URL path segment is not one: it follows a host name, so the
+/// character before the segment is not a quote, a space, or the start.
+fn carries_authoring_path(text: &str) -> bool {
+    const ROOTS: [&str; 3] = ["/home/", "/Users/", "/root/"];
+    for root in ROOTS {
+        for (index, _) in text.match_indices(root) {
+            let preceding = text[..index].chars().next_back();
+            if preceding.is_none_or(|character| !character.is_alphanumeric()) {
+                return true;
+            }
+        }
+    }
+    text.as_bytes().windows(3).any(|window| {
+        window[0].is_ascii_alphabetic() && window[1] == b':' && matches!(window[2], b'\\' | b'/')
+    })
+}
+
+/// The block the decode snapshot writes in place of the native arenas.
+///
+/// [`NATIVE_ELISION_KEY`] states what the block stands for, and the
+/// `cadmpeg-ir` golden sweep reads that key to recognise an elided document.
+/// `__arena_counts` states each arena's population, which a reviewer reads
+/// directly. `__arena_sha256` carries one digest per arena over the canonical
+/// JSON a CADIR document writes for that arena's records. `__arena_values` pins
+/// attachment and product-node records directly so calculated frames use the
+/// numeric comparison tolerance across platform math libraries.
+///
+/// The digest is per arena, not one over the whole namespace, so a drifted
+/// record names the arena it sits in. The digest and value maps cover every
+/// arena named in the count map. Their union covers every record byte the
+/// whole-namespace digest covered, since the arena and namespace names are the
+/// keys the golden prints.
+fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let mut counts = serde_json::Map::new();
-    let mut shape = serde_json::Map::new();
+    let mut digests = serde_json::Map::new();
+    let mut values = serde_json::Map::new();
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
-        let mut namespace_shape = serde_json::Map::new();
+        let mut namespace_digests = serde_json::Map::new();
+        let mut namespace_values = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
-            let mut ids = records
-                .iter()
-                .map(|record| record.id().to_owned())
-                .collect::<Vec<_>>();
-            ids.sort_unstable();
             namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
-            namespace_shape.insert(
+            if matches!(arena.as_str(), "attachments" | "product_nodes") && !records.is_empty() {
+                namespace_values.insert(arena.clone(), serde_json::json!(records));
+                continue;
+            }
+            namespace_digests.insert(
                 arena.clone(),
-                serde_json::json!({
-                    "count": records.len(),
-                    "ids": ids,
-                }),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                    &cadmpeg_test_support::service_decode_context(),
+                    records,
+                    "native arena golden digest"
+                )
+                .expect("the native records state canonical JSON")),
             );
         }
-        counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
-        shape.insert(format.clone(), serde_json::Value::Object(namespace_shape));
+        counts.insert(format.clone(), namespace_counts.into());
+        digests.insert(format.clone(), namespace_digests.into());
+        if !namespace_values.is_empty() {
+            values.insert(format.clone(), namespace_values.into());
+        }
     }
-    let shape = serde_json::Value::Object(shape);
-    serde_json::json!({
-        "counts": counts,
-        "sha256": cadmpeg_ir::hash::canonical_json_sha256(&shape),
-    })
+    let mut block = serde_json::Map::new();
+    block.insert(
+        NATIVE_ELISION_KEY.to_owned(),
+        serde_json::json!(if values.is_empty() {
+            NATIVE_ELISION_MARKER
+        } else {
+            "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+        }),
+    );
+    block.insert("__arena_counts".to_owned(), counts.into());
+    block.insert("__arena_sha256".to_owned(), digests.into());
+    if !values.is_empty() {
+        block.insert("__arena_values".to_owned(), values.into());
+    }
+    block.into()
 }
 
 /// Serializes one re-encoded document by archive membership: entry names in
@@ -152,10 +238,14 @@ fn encode_snapshot(bytes: &[u8]) -> String {
 
 /// Decodes `bytes` and writes the document back, returning the export report and
 /// the produced archive, or the first refusal as text.
-fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), String> {
-    let decoded = FcstdCodec
-        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-        .map_err(|error| error.to_string())?;
+fn encode_once(
+    bytes: &[u8],
+) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
+    let decoded = EditableDecodeResult::from(
+        FcstdCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .map_err(|error| error.to_string())?,
+    );
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
@@ -210,11 +300,12 @@ fn golden_output_is_deterministic() {
 /// Pins STEP output by content for this crate's fixtures. Export errors are
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
-    let decoded =
+    let decoded = EditableDecodeResult::from(
         match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
             Ok(decoded) => decoded,
             Err(error) => return format!("decode_error: {error}\n"),
-        };
+        },
+    );
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),
@@ -264,6 +355,10 @@ fn lines_agree(left: &str, right: &str) -> bool {
 }
 
 /// Compares every fixture's STEP export against `tests/golden/step/`.
+///
+/// Under `update` a golden this comparison rejects is rewritten; one it accepts
+/// keeps its committed text, because these exports carry numbers the comparison
+/// holds only to a tolerance and a verbatim rewrite moves their last place.
 fn check_step_branch(update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/step");
     let mut failures = Vec::new();
@@ -272,24 +367,24 @@ fn check_step_branch(update: bool) -> Vec<String> {
         let actual = step_snapshot(&bytes);
         let path = dir.join(format!("{name}.step"));
         produced.insert(format!("{name}.step"));
-        if update {
-            std::fs::write(&path, actual.as_bytes())
-                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-            continue;
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(expected) => {
-                if let Err(mismatch) = step_texts_agree(&expected, &actual) {
-                    failures.push(format!(
-                        "fixture `{name}`: STEP export diverged from {}\n    {mismatch}",
-                        path.display()
-                    ));
-                }
-            }
-            Err(error) => failures.push(format!(
+        let failure = match std::fs::read_to_string(&path) {
+            Ok(expected) => step_texts_agree(&expected, &actual).err().map(|mismatch| {
+                format!(
+                    "fixture `{name}`: STEP export diverged from {}\n    {mismatch}",
+                    path.display()
+                )
+            }),
+            Err(error) => Some(format!(
                 "fixture `{name}`: cannot read {} ({error}); regenerate with `{REGENERATE}`",
                 path.display()
             )),
+        };
+        let Some(failure) = failure else { continue };
+        if update {
+            std::fs::write(&path, actual.as_bytes())
+                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+        } else {
+            failures.push(failure);
         }
     }
     for orphan in std::fs::read_dir(&dir)
@@ -384,5 +479,170 @@ mod step_comparison {
     #[test]
     fn a_dropped_record_disagrees() {
         assert!(step_texts_agree(&format!("{LINUX_VECTOR}#96 = X();\n"), LINUX_VECTOR).is_err());
+    }
+}
+
+mod native_elision {
+    use super::elided_native;
+
+    /// One record under `id` whose only codec-owned member is `name`.
+    fn named_record(id: &str, name: &str) -> cadmpeg_ir::NativeRecord {
+        let mut fields = serde_json::Map::new();
+        fields.insert("name".to_owned(), serde_json::json!(name));
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            fields,
+        )
+        .expect("a well-formed native record")
+    }
+
+    /// One namespace holding one record whose only codec-owned member is `name`.
+    fn one_object_native(name: &str) -> cadmpeg_ir::Native {
+        let mut native = cadmpeg_ir::Native::default();
+        native.namespace_mut("fcstd").arenas_mut().insert(
+            "objects".to_owned(),
+            vec![named_record("fcstd:native:object#Box", name)],
+        );
+        native
+    }
+
+    /// The same namespace with a second arena, so a test can state which arena
+    /// a drift reaches.
+    fn two_arena_native(object_name: &str, property_name: &str) -> cadmpeg_ir::Native {
+        let mut native = one_object_native(object_name);
+        native.namespace_mut("fcstd").arenas_mut().insert(
+            "properties".to_owned(),
+            vec![named_record("fcstd:native:property#Length", property_name)],
+        );
+        native
+    }
+
+    /// The digest one arena carries in the written block.
+    fn arena_digest(block: &serde_json::Value, arena: &str) -> serde_json::Value {
+        block["__arena_sha256"]["fcstd"][arena].clone()
+    }
+
+    /// What the digest read before it read the records: each arena's name, its
+    /// population and its sorted record identities. This is the control: a
+    /// digest over it alone cannot separate two records that differ in any
+    /// other member.
+    fn identity_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
+        let mut shape = serde_json::Map::new();
+        for (format, namespace) in &native.0 {
+            let mut arenas = serde_json::Map::new();
+            for (arena, records) in namespace.arenas() {
+                let mut ids = records
+                    .iter()
+                    .map(|record| record.id().to_owned())
+                    .collect::<Vec<_>>();
+                ids.sort_unstable();
+                arenas.insert(
+                    arena.clone(),
+                    serde_json::json!({ "count": records.len(), "ids": ids }),
+                );
+            }
+            shape.insert(format.clone(), serde_json::Value::Object(arenas));
+        }
+        serde_json::Value::Object(shape)
+    }
+
+    #[test]
+    fn a_changed_non_id_member_moves_the_digest() {
+        let (before, after) = (one_object_native("Box"), one_object_native("Cube"));
+        assert_eq!(
+            identity_shape(&before),
+            identity_shape(&after),
+            "the two documents must hold the same arena, population and identity"
+        );
+        let (before, after) = (elided_native(&before), elided_native(&after));
+        assert_eq!(before["__arena_counts"], after["__arena_counts"]);
+        assert!(
+            arena_digest(&before, "objects") != arena_digest(&after, "objects"),
+            "the digest must state a member other than the record identity"
+        );
+    }
+
+    #[test]
+    fn a_drift_moves_only_the_digest_of_its_own_arena() {
+        let before = elided_native(&two_arena_native("Box", "Length"));
+        let after = elided_native(&two_arena_native("Box", "Width"));
+        assert_eq!(
+            arena_digest(&before, "objects"),
+            arena_digest(&after, "objects"),
+            "an arena no record moved in must keep its digest"
+        );
+        assert!(
+            arena_digest(&before, "properties") != arena_digest(&after, "properties"),
+            "the arena the drifted record sits in must be the one whose digest moves"
+        );
+    }
+
+    #[test]
+    fn each_digest_is_the_canonical_json_of_its_arena() {
+        let native = two_arena_native("Box", "Length");
+        let block = elided_native(&native);
+        for arena in ["objects", "properties"] {
+            let records = &native.0["fcstd"].arenas()[arena];
+            assert_eq!(
+                arena_digest(&block, arena),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                    &cadmpeg_test_support::service_decode_context(),
+                    records,
+                    "native arena golden digest"
+                )
+                .expect("the native records state canonical JSON")),
+                "the digest of `{arena}` covers the bytes a CADIR document writes for it"
+            );
+        }
+    }
+
+    #[test]
+    fn placement_snapshots_compare_calculated_frames_and_pin_other_fields() {
+        for (arena, frame_field) in [
+            ("attachments", "effective_frame"),
+            ("product_nodes", "local_transform"),
+        ] {
+            let mut native = cadmpeg_ir::Native::default();
+            let mut fields = serde_json::Map::new();
+            fields.insert(
+                "object".to_owned(),
+                serde_json::json!("fcstd:native:object#Box"),
+            );
+            fields.insert(
+                frame_field.to_owned(),
+                serde_json::json!([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]),
+            );
+            let record = cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("fcstd:native:attachment#Box").unwrap(),
+                fields,
+            )
+            .unwrap();
+            native
+                .namespace_mut("fcstd")
+                .arenas_mut()
+                .insert(arena.to_owned(), vec![record]);
+            let before = elided_native(&native);
+            assert!(before["__arena_sha256"]["fcstd"][arena].is_null());
+            assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
+            assert_eq!(
+                before["__arena_values"]["fcstd"][arena],
+                serde_json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
+            );
+            let mut after = before.clone();
+            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =
+                serde_json::json!(1.0 + cadmpeg_ir::compare::FLOAT_TOLERANCE / 4.0);
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_ok());
+            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] = serde_json::json!(2.0);
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
+            let mut after = before.clone();
+            after["__arena_values"]["fcstd"][arena][0]["object"] =
+                serde_json::json!("fcstd:native:object#Other");
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
+        }
     }
 }

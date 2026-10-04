@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
+use cadmpeg_core::text::NonBlankString;
+
+use cadmpeg_ir::scalar::PositiveLength;
 use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
@@ -9,7 +12,7 @@ use super::CatiaAllocationReferenceEncoding;
 /// consolidated owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartSideAxis {
+pub(crate) enum CatiaOwnerChartSideAxis {
     /// First surface parameter.
     FirstParameter,
     /// Second surface parameter.
@@ -19,7 +22,7 @@ pub enum CatiaOwnerChartSideAxis {
 /// Family-and-class carrier production that opens an owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartCarrier {
+pub(super) enum CatiaOwnerChartCarrier {
     /// B-family class-`0x28` cylinder carrier.
     B28,
     /// B-family class-`0x2b` torus carrier.
@@ -30,29 +33,42 @@ pub enum CatiaOwnerChartCarrier {
 
 /// Outer alias row selected by a unique width-coded support tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CatiaOwnerChartAliasBinding {
-    /// Exact outer alias row.
-    pub row: String,
-    /// Canonical persistent surface tag selected through the alias row.
-    pub canonical_tag: Option<u32>,
+pub(super) struct CatiaOwnerChartAliasBinding {
+    row: NonBlankString,
+    canonical_tag: Option<u32>,
+}
+
+impl CatiaOwnerChartAliasBinding {
+    /// Binds a non-empty outer alias row to its optional canonical surface tag.
+    pub(super) fn new(row: NonBlankString, canonical_tag: Option<u32>) -> Self {
+        Self { row, canonical_tag }
+    }
+
+    /// Returns the exact outer alias row.
+    #[cfg(test)]
+    pub(super) fn row(&self) -> &str {
+        self.row.as_str()
+    }
+
+    #[cfg(test)]
+    pub(super) fn canonical_tag(&self) -> Option<u32> {
+        self.canonical_tag
+    }
 }
 
 /// One allocation-local reference in an owner-chart bridge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaOwnerChartBridgeReferenceWire",
-    into = "CatiaOwnerChartBridgeReferenceWire"
-)]
-pub struct CatiaOwnerChartBridgeReference {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "CatiaOwnerChartBridgeReferenceWire")]
+pub(super) struct CatiaOwnerChartBridgeReference {
     /// Decoded allocation-local value.
-    pub value: u32,
+    pub(super) value: u32,
     /// Addressing form and its optional width-coded alias binding.
-    pub address: CatiaOwnerChartAddress,
+    pub(super) address: CatiaOwnerChartAddress,
 }
 
 /// Addressing form of an owner-chart reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaOwnerChartAddress {
+pub(super) enum CatiaOwnerChartAddress {
     /// Backward framed-record distance.
     BackwardDistance,
     /// Ordinal in the immediately owned allocation.
@@ -70,7 +86,7 @@ pub enum CatiaOwnerChartAddress {
 }
 
 impl CatiaOwnerChartBridgeReference {
-    pub fn new(value: u32, encoding: CatiaAllocationReferenceEncoding) -> Self {
+    pub(super) fn new(value: u32, encoding: CatiaAllocationReferenceEncoding) -> Self {
         let address = match encoding {
             CatiaAllocationReferenceEncoding::BackwardDistance => {
                 CatiaOwnerChartAddress::BackwardDistance
@@ -86,7 +102,7 @@ impl CatiaOwnerChartBridgeReference {
         Self { value, address }
     }
 
-    pub fn encoding(&self) -> CatiaAllocationReferenceEncoding {
+    pub(super) fn encoding(&self) -> CatiaAllocationReferenceEncoding {
         match self.address {
             CatiaOwnerChartAddress::BackwardDistance => {
                 CatiaAllocationReferenceEncoding::BackwardDistance
@@ -102,7 +118,7 @@ impl CatiaOwnerChartBridgeReference {
     }
 
     #[cfg(test)]
-    pub fn alias(&self) -> Option<&CatiaOwnerChartAliasBinding> {
+    pub(super) fn alias(&self) -> Option<&CatiaOwnerChartAliasBinding> {
         match &self.address {
             CatiaOwnerChartAddress::WidthCoded { alias } => alias.as_ref(),
             _ => None,
@@ -114,19 +130,59 @@ impl CatiaOwnerChartBridgeReference {
 struct CatiaOwnerChartBridgeReferenceWire {
     value: u32,
     encoding: CatiaAllocationReferenceEncoding,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_alias_row"
+    )]
     alias_row: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_canonical_surface_tag"
+    )]
     canonical_surface_tag: Option<u32>,
 }
 
+#[derive(Serialize)]
+struct CatiaOwnerChartBridgeReferenceWireRef<'a> {
+    value: u32,
+    encoding: CatiaAllocationReferenceEncoding,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alias_row: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    canonical_surface_tag: Option<u32>,
+}
+
+impl Serialize for CatiaOwnerChartBridgeReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (alias_row, canonical_surface_tag) = match &self.address {
+            CatiaOwnerChartAddress::WidthCoded {
+                alias: Some(binding),
+            } => (Some(binding.row.as_str()), binding.canonical_tag),
+            _ => (None, None),
+        };
+        CatiaOwnerChartBridgeReferenceWireRef {
+            value: self.value,
+            encoding: self.encoding(),
+            alias_row,
+            canonical_surface_tag,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaOwnerChartBridgeReference> for CatiaOwnerChartBridgeReferenceWire {
     fn from(value: CatiaOwnerChartBridgeReference) -> Self {
         let encoding = value.encoding();
         let (alias_row, canonical_surface_tag) = match value.address {
             CatiaOwnerChartAddress::WidthCoded {
                 alias: Some(binding),
-            } => (Some(binding.row), binding.canonical_tag),
+            } => (Some(binding.row.into_string()), binding.canonical_tag),
             _ => (None, None),
         };
         Self {
@@ -147,7 +203,11 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
             (None, Some(_)) => {
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
-            (Some(row), canonical_tag) => Some(CatiaOwnerChartAliasBinding { row, canonical_tag }),
+            (Some(row), canonical_tag) => {
+                let row = NonBlankString::new(row)
+                    .ok_or_else(|| "owner-chart alias_row must not be empty".to_owned())?;
+                Some(CatiaOwnerChartAliasBinding::new(row, canonical_tag))
+            }
         };
         let mut reference = Self::new(wire.value, wire.encoding);
         match &mut reference.address {
@@ -163,7 +223,7 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
 
 /// Middle construction control in a five-reference owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatiaOwnerChartMiddleControl {
+pub(crate) enum CatiaOwnerChartMiddleControl {
     /// Control byte `0x03`.
     Control03,
     /// Control byte `0x05`.
@@ -179,7 +239,7 @@ impl CatiaOwnerChartMiddleControl {
         }
     }
 
-    pub(crate) fn as_byte(self) -> u8 {
+    fn as_byte(self) -> u8 {
         match self {
             Self::Control03 => 0x03,
             Self::Control05 => 0x05,
@@ -189,7 +249,7 @@ impl CatiaOwnerChartMiddleControl {
 
 /// Terminal construction control in a five-reference owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatiaOwnerChartTerminalControl {
+pub(crate) enum CatiaOwnerChartTerminalControl {
     /// Control byte `0x01`.
     Control01,
     /// Control byte `0x05`.
@@ -205,7 +265,7 @@ impl CatiaOwnerChartTerminalControl {
         }
     }
 
-    pub(crate) fn as_byte(self) -> u8 {
+    fn as_byte(self) -> u8 {
         match self {
             Self::Control01 => 0x01,
             Self::Control05 => 0x05,
@@ -215,7 +275,7 @@ impl CatiaOwnerChartTerminalControl {
 
 /// Structurally complete class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, PartialEq)]
-pub enum CatiaOwnerChartBridge {
+pub(super) enum CatiaOwnerChartBridge {
     /// Five-reference supported-surface construction.
     SupportedSurface {
         /// Record byte offset.
@@ -231,7 +291,7 @@ pub enum CatiaOwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: f64,
+        construction_radius: PositiveLength,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -285,6 +345,7 @@ impl CatiaOwnerChartCarrier {
 }
 
 impl CatiaOwnerChartBridgeWire {
+    #[cfg(test)]
     fn from_bridge(bridge: CatiaOwnerChartBridge, carrier: CatiaOwnerChartCarrier) -> Self {
         match bridge {
             CatiaOwnerChartBridge::SupportedSurface {
@@ -308,7 +369,7 @@ impl CatiaOwnerChartBridgeWire {
                     terminal_control.as_byte(),
                     0x05,
                 ],
-                construction_radius,
+                construction_radius: construction_radius.get(),
             },
             CatiaOwnerChartBridge::Extended {
                 byte_offset,
@@ -337,6 +398,8 @@ impl CatiaOwnerChartBridgeWire {
                         "owner-chart bridge framing controls do not match carrier".to_owned()
                     );
                 }
+                let construction_radius = PositiveLength::new(construction_radius)
+                    .ok_or_else(|| "construction_radius must be finite and positive".to_owned())?;
                 let middle_controls = [
                     CatiaOwnerChartMiddleControl::from_byte(controls[2])
                         .ok_or("invalid first owner-chart middle control")?,
@@ -379,24 +442,21 @@ impl CatiaOwnerChartBridgeWire {
 }
 
 /// Source-closed carrier chart terminated by an owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaOwnerChartRelationWire",
-    into = "CatiaOwnerChartRelationWire"
-)]
-pub struct CatiaOwnerChartRelation {
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaOwnerChartRelationWire")]
+pub(crate) struct CatiaOwnerChartRelation {
     /// Carrier record byte offset.
-    pub carrier_byte_offset: u64,
+    pub(super) carrier_byte_offset: u64,
     /// Family-and-class carrier production.
-    pub carrier: CatiaOwnerChartCarrier,
+    pub(super) carrier: CatiaOwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
-    pub bridge: CatiaOwnerChartBridge,
+    pub(super) bridge: CatiaOwnerChartBridge,
     /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
-    pub parameter_point_byte_offsets: [u64; 4],
+    pub(super) parameter_point_byte_offsets: [u64; 4],
 }
 
 impl CatiaOwnerChartRelation {
-    pub fn side_axis(&self) -> CatiaOwnerChartSideAxis {
+    pub(crate) fn side_axis(&self) -> CatiaOwnerChartSideAxis {
         match self.carrier {
             CatiaOwnerChartCarrier::B28 => CatiaOwnerChartSideAxis::FirstParameter,
             CatiaOwnerChartCarrier::B2b | CatiaOwnerChartCarrier::A32 => {
@@ -415,6 +475,85 @@ struct CatiaOwnerChartRelationWire {
     parameter_point_byte_offsets: [u64; 4],
 }
 
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CatiaOwnerChartBridgeWireRef<'a> {
+    SupportedSurface {
+        byte_offset: u64,
+        carrier_surface: &'a CatiaOwnerChartBridgeReference,
+        support_surfaces: &'a [CatiaOwnerChartBridgeReference; 2],
+        support_pcurves: &'a [CatiaOwnerChartBridgeReference; 2],
+        controls: [u8; 6],
+        construction_radius: f64,
+    },
+    Extended {
+        byte_offset: u64,
+        references: &'a [CatiaOwnerChartBridgeReference; 8],
+        controls: [u8; 4],
+        terminal_controls: [u8; 2],
+    },
+}
+
+#[derive(Serialize)]
+struct CatiaOwnerChartRelationWireRef<'a> {
+    carrier_byte_offset: u64,
+    carrier: CatiaOwnerChartCarrier,
+    bridge: CatiaOwnerChartBridgeWireRef<'a>,
+    side_axis: CatiaOwnerChartSideAxis,
+    parameter_point_byte_offsets: &'a [u64; 4],
+}
+
+impl Serialize for CatiaOwnerChartRelation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bridge = match &self.bridge {
+            CatiaOwnerChartBridge::SupportedSurface {
+                byte_offset,
+                carrier_surface,
+                support_surfaces,
+                support_pcurves,
+                middle_controls,
+                terminal_control,
+                construction_radius,
+            } => CatiaOwnerChartBridgeWireRef::SupportedSurface {
+                byte_offset: *byte_offset,
+                carrier_surface,
+                support_surfaces,
+                support_pcurves,
+                controls: [
+                    self.carrier.selector(),
+                    0x05,
+                    middle_controls[0].as_byte(),
+                    middle_controls[1].as_byte(),
+                    terminal_control.as_byte(),
+                    0x05,
+                ],
+                construction_radius: construction_radius.get(),
+            },
+            CatiaOwnerChartBridge::Extended {
+                byte_offset,
+                references,
+            } => CatiaOwnerChartBridgeWireRef::Extended {
+                byte_offset: *byte_offset,
+                references,
+                controls: [self.carrier.selector(), 0x09, 0x05, 0x05],
+                terminal_controls: [0x01, 0x05],
+            },
+        };
+        CatiaOwnerChartRelationWireRef {
+            carrier_byte_offset: self.carrier_byte_offset,
+            carrier: self.carrier,
+            bridge,
+            side_axis: self.side_axis(),
+            parameter_point_byte_offsets: &self.parameter_point_byte_offsets,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaOwnerChartRelation> for CatiaOwnerChartRelationWire {
     fn from(value: CatiaOwnerChartRelation) -> Self {
         let side_axis = value.side_axis();
@@ -447,16 +586,144 @@ impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
+        CatiaOwnerChartBridgeReference, CatiaOwnerChartBridgeReferenceWire,
+        CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation, CatiaOwnerChartRelationWire,
+    };
     use serde_json::json;
+
+    fn owner_chart() -> CatiaOwnerChartRelation {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+        );
+        native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("owner chart")
+            .clone()
+    }
+
+    #[test]
+    fn owner_chart_bridge_reference_borrowed_wire_preserves_json_bytes() {
+        let chart = owner_chart();
+        let CatiaOwnerChartBridge::SupportedSurface {
+            carrier_surface, ..
+        } = chart.bridge
+        else {
+            panic!("supported surface bridge")
+        };
+        let alias = CatiaOwnerChartAliasBinding::new(
+            cadmpeg_core::text::NonBlankString::new("catia:test:alias#0").expect("nonblank alias"),
+            Some(5),
+        );
+        let bound = CatiaOwnerChartBridgeReference {
+            value: 5,
+            address: CatiaOwnerChartAddress::WidthCoded { alias: Some(alias) },
+        };
+        for reference in [carrier_surface, bound] {
+            let owned: CatiaOwnerChartBridgeReferenceWire = reference.clone().into();
+            assert_eq!(
+                serde_json::to_vec(&reference).expect("borrowed reference JSON"),
+                serde_json::to_vec(&owned).expect("owned reference JSON")
+            );
+        }
+    }
+
+    #[test]
+    fn owner_chart_bridge_reference_retained_limit_refuses_json_record() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            reference: &'a CatiaOwnerChartBridgeReference,
+        }
+        let chart = owner_chart();
+        let CatiaOwnerChartBridge::SupportedSurface {
+            carrier_surface, ..
+        } = &chart.bridge
+        else {
+            panic!("supported surface bridge")
+        };
+
+        let record = Record {
+            id: "catia:test:bridge-reference#0",
+            reference: carrier_surface,
+        };
+        let arena_name = "bridge_references";
+        let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
+        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        });
+        let error = refused.expect_err("record exceeds retained-byte limit");
+        assert!(error.to_string().contains("RetainedBytes"), "{error}");
+        crate::test_support::with_service_context(|ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace
+                .set_arena(ctx, arena_name, std::slice::from_ref(&record))
+                .expect("service profile admits reference");
+        });
+    }
+
+    #[test]
+    fn owner_chart_relation_borrowed_wire_preserves_json_bytes() {
+        for bytes in [
+            crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x2b),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x32),
+            crate::test_support::test_b2::b2_owner_chart_stream_with_extended_bridge(),
+        ] {
+            let native = crate::native::CatiaNative::decode(&bytes);
+            let chart = native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("owner chart");
+            let owned: CatiaOwnerChartRelationWire = chart.clone().into();
+            assert_eq!(
+                serde_json::to_vec(chart).expect("borrowed chart JSON"),
+                serde_json::to_vec(&owned).expect("owned chart JSON")
+            );
+        }
+    }
+
+    #[test]
+    fn owner_chart_relation_retained_limit_refuses_json_record() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            chart: &'a CatiaOwnerChartRelation,
+        }
+        let chart = owner_chart();
+
+        let record = Record {
+            id: "catia:test:owner-chart#0",
+            chart: &chart,
+        };
+        let arena_name = "owner_charts";
+        let json_len = serde_json::to_vec(&record).expect("chart JSON").len();
+        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        });
+        let error = refused.expect_err("record exceeds retained-byte limit");
+        assert!(error.to_string().contains("RetainedBytes"), "{error}");
+        crate::test_support::with_service_context(|ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace
+                .set_arena(ctx, arena_name, std::slice::from_ref(&record))
+                .expect("service profile admits chart");
+        });
+    }
 
     #[test]
     fn bridge_wire_checks_framing_and_variable_controls() {
         for bytes in [
-            crate::test_support::b2_owner_chart_stream(0x28),
-            crate::test_support::b2_owner_chart_stream(0x2b),
-            crate::test_support::b2_owner_chart_stream(0x32),
-            crate::test_support::b2_owner_chart_stream_with_extended_bridge(),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x2b),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x32),
+            crate::test_support::test_b2::b2_owner_chart_stream_with_extended_bridge(),
         ] {
             let native = crate::native::CatiaNative::decode(&bytes);
             let relation = native.consolidated_owner_packets[0]
@@ -479,9 +746,60 @@ mod tests {
     }
 
     #[test]
+    fn bridge_wire_rejects_invalid_construction_radius() {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+        );
+        let relation = native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("supported owner chart");
+        for radius in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut wire =
+                CatiaOwnerChartBridgeWire::from_bridge(relation.bridge.clone(), relation.carrier);
+            let CatiaOwnerChartBridgeWire::SupportedSurface {
+                construction_radius,
+                ..
+            } = &mut wire
+            else {
+                panic!("supported surface");
+            };
+            *construction_radius = radius;
+            assert_eq!(
+                wire.into_bridge(relation.carrier)
+                    .expect_err("invalid construction radius"),
+                "construction_radius must be finite and positive"
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_preserves_independent_middle_control_bytes() {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+        );
+        let relation = native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("source-closed owner chart");
+        let original = serde_json::to_value(relation).expect("serialize owner chart");
+        for first in [0x03, 0x05] {
+            for second in [0x03, 0x05] {
+                let mut wire = original.clone();
+                wire["bridge"]["controls"][2] = json!(first);
+                wire["bridge"]["controls"][3] = json!(second);
+                let decoded: CatiaOwnerChartRelation =
+                    serde_json::from_value(wire.clone()).expect("independent middle controls");
+                assert_eq!(
+                    serde_json::to_value(decoded).expect("serialize admitted middle controls"),
+                    wire
+                );
+            }
+        }
+    }
+
+    #[test]
     fn relation_wire_checks_the_carrier_derived_axis() {
         for carrier_class in [0x28, 0x2b, 0x32] {
-            let bytes = crate::test_support::b2_owner_chart_stream(carrier_class);
+            let bytes = crate::test_support::test_b2::b2_owner_chart_stream(carrier_class);
             let native = crate::native::CatiaNative::decode(&bytes);
             let relation = native.consolidated_owner_packets[0]
                 .owner_chart()
@@ -533,6 +851,19 @@ mod tests {
     }
 
     #[test]
+    fn reference_wire_rejects_empty_alias_rows() {
+        for canonical_tag in [None, Some(23)] {
+            let mut wire = json!({ "value": 17, "encoding": "width_coded", "alias_row": "" });
+            if let Some(tag) = canonical_tag {
+                wire["canonical_surface_tag"] = json!(tag);
+            }
+            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire)
+                .expect_err("empty alias row");
+            assert!(error.to_string().contains("alias_row must not be empty"));
+        }
+    }
+
+    #[test]
     fn reference_wire_rejects_aliases_on_other_encodings_and_targets_without_rows() {
         for encoding in [
             "backward_distance",
@@ -548,3 +879,11 @@ mod tests {
         assert!(serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_alias_row, String, "alias_row");
+cadmpeg_core::named_optional_field!(
+    deserialize_canonical_surface_tag,
+    u32,
+    "canonical_surface_tag"
+);

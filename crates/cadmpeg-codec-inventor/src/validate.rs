@@ -4,7 +4,15 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
-use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::{
+    report::{
+        check::{Check, Finding},
+        Severity,
+    },
+    CadIr, NativeUnknownRecord,
+};
 
 use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
@@ -13,11 +21,11 @@ use crate::feature::{
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform,
+    PmDcSketchEntityKind, PmDcTransform, PointTail,
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
-use crate::native::ufrx::UfrxRecord;
+use crate::native::ufrx::{ExternalReferenceRecord, UfrxRecord};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
     DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
@@ -101,9 +109,12 @@ const ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
-pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
+pub(crate) fn validate_native(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("inventor") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let actual_arenas = namespace
         .arenas()
@@ -120,24 +131,34 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .difference(&expected_arenas)
             .copied()
             .collect::<Vec<_>>();
-        missing.sort_unstable();
-        unexpected.sort_unstable();
-        return vec![finding(
+        ctx.sort_unstable_by(
+            &mut missing,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor missing arena sort",
+        )?;
+        ctx.sort_unstable_by(
+            &mut unexpected,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor unexpected arena sort",
+        )?;
+        return Ok(vec![finding(
             Check::NativeLinks,
             format!(
                 "Inventor native namespace has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
             ),
             None,
-        )];
+        )]);
     }
     let data = match NativeData::load(namespace) {
         Ok(data) => data,
         Err(error) => {
-            return vec![finding(
+            return Ok(vec![finding(
                 Check::NativeLinks,
                 format!("Inventor native arenas are invalid: {error}"),
                 None,
-            )];
+            )]);
         }
     };
 
@@ -164,7 +185,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
-    validate_assembly(ir, &data, &mut findings);
+    validate_assembly(ctx, ir, &data, &mut findings)?;
     validate_presentation(ir, &data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
@@ -180,7 +201,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             Some(issue.id.clone()),
         ));
     }
-    findings
+    Ok(findings)
 }
 
 fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -194,9 +215,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_parameters.iter().map(|record| {
@@ -229,10 +249,10 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     );
     for parameter in &data.pm_dc_parameters {
         let references = [
-            parameter.header.next.index,
-            parameter.header.context.index,
-            parameter.unit.index,
-            parameter.formula.index,
+            parameter.header.next.index(),
+            parameter.header.context.index(),
+            parameter.unit.index(),
+            parameter.formula.index(),
         ];
         if raw.get(&(
             parameter.identity.segment_token.as_str(),
@@ -240,7 +260,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&parameter.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&parameter.identity.segment_token, reference))
+                .any(|reference| !resolves(parameter.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -253,14 +273,14 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for expression in &data.pm_dc_expressions {
-        let mut references = vec![expression.unit.index];
+        let mut references = vec![expression.unit.index()];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {}
             PmDcExpressionKind::ParameterReference { operand, .. }
-            | PmDcExpressionKind::Unary { operand, .. } => references.push(operand.index),
+            | PmDcExpressionKind::Unary { operand, .. } => references.push(operand.index()),
             PmDcExpressionKind::Binary { left, right, .. } => {
-                references.push(left.index);
-                references.push(right.index);
+                references.push(left.index());
+                references.push(right.index());
             }
         }
         if raw.get(&(
@@ -269,7 +289,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&expression.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&expression.identity.segment_token, reference))
+                .any(|reference| !resolves(expression.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -292,8 +312,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 .references()
                 .iter()
                 .chain(denominators.references())
-                .map(|reference| reference.index)
-                .chain(std::iter::once(derived.index))
+                .map(|reference| reference.index())
+                .chain(std::iter::once(derived.index()))
                 .collect::<Vec<_>>(),
             PmDcUnitKind::Base { .. } => Vec::new(),
         };
@@ -303,7 +323,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&unit.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&unit.identity.segment_token, reference))
+                .any(|reference| !resolves(unit.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -365,9 +385,9 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         raw.get(&(token, ordinal)).copied() == Some(type_id)
     };
     let references_resolve = |token: &str, references: &[u32]| {
-        references.iter().all(|reference| {
-            *reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-        })
+        references
+            .iter()
+            .all(|reference| *reference == 0 || raw.contains_key(&(token, reference - 1)))
     };
     unique(
         findings,
@@ -421,10 +441,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     );
     for sketch in &data.pm_dc_sketches {
         let references = [
-            sketch.header.next.index,
-            sketch.header.context.index,
-            sketch.transform.index,
-            sketch.direction.index,
+            sketch.header.next.index(),
+            sketch.header.context.index(),
+            sketch.transform.index(),
+            sketch.direction.index(),
         ]
         .into_iter()
         .chain(
@@ -432,21 +452,21 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 .entities
                 .references()
                 .iter()
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         )
         .chain(
             sketch
                 .auxiliary
                 .iter()
                 .flat_map(super::pmdc::PmDcReferenceList::references)
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         )
         .collect::<Vec<_>>();
         if !record_is_exact(
-            &sketch.identity.segment_token,
+            sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
-            &sketch.identity.type_id,
-        ) || !references_resolve(&sketch.identity.segment_token, &references)
+            sketch.identity.type_id.as_str(),
+        ) || !references_resolve(sketch.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -457,23 +477,23 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for entity in &data.pm_dc_sketch_entities {
         let mut references = vec![
-            entity.header.next.index,
-            entity.header.context.index,
-            entity.sketch.index,
+            entity.header.next.index(),
+            entity.header.context.index(),
+            entity.sketch.index(),
         ];
         let mut add_list = |list: &PmDcReferenceList| {
-            references.extend(list.references().iter().map(|reference| reference.index));
+            references.extend(list.references().iter().map(|reference| reference.index()));
         };
         match &entity.kind {
             PmDcSketchEntityKind::Point {
                 endpoint_of,
                 center_of,
-                associations,
+                tail,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
-                if let Some(associations) = associations {
+                if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
                 }
             }
@@ -501,14 +521,14 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 for list in auxiliary {
                     add_list(list);
                 }
-                references.push(center.index);
+                references.push(center.index());
             }
         }
         if !record_is_exact(
-            &entity.identity.segment_token,
+            entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
-            &entity.identity.type_id,
-        ) || !references_resolve(&entity.identity.segment_token, &references)
+            entity.identity.type_id.as_str(),
+        ) || !references_resolve(entity.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -519,12 +539,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for transform in &data.pm_dc_transforms {
         if !record_is_exact(
-            &transform.identity.segment_token,
+            transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
-            &transform.identity.type_id,
+            transform.identity.type_id.as_str(),
         ) || !references_resolve(
-            &transform.identity.segment_token,
-            &[transform.header.next.index, transform.header.context.index],
+            transform.identity.segment_token.as_str(),
+            &[
+                transform.header.next.index(),
+                transform.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -536,27 +559,27 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     for constraint in &data.pm_dc_sketch_constraints {
         let header = &constraint.header;
         let mut references = vec![
-            header.content.next.index,
-            header.content.context.index,
-            header.group.index,
-            header.parameter.index,
+            header.content.next.index(),
+            header.content.context.index(),
+            header.group.index(),
+            header.parameter.index(),
         ];
         for (key, _) in header.scalar_map.entries() {
-            references.push(key.index);
+            references.push(key.index());
         }
         for (key, value) in header.reference_map.entries() {
-            references.extend([key.index, value.index]);
+            references.extend([key.index(), value.index()]);
         }
         match constraint.kind {
             PmDcSketchConstraintKind::Coincident { first, second }
             | PmDcSketchConstraintKind::Parallel { first, second, .. }
             | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
             | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-                references.extend([first.index, second.index]);
+                references.extend([first.index(), second.index()]);
             }
             PmDcSketchConstraintKind::Horizontal { entity, .. }
             | PmDcSketchConstraintKind::Vertical { entity, .. } => {
-                references.push(entity.index);
+                references.push(entity.index());
             }
             PmDcSketchConstraintKind::HorizontalDistance {
                 first,
@@ -569,25 +592,25 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 second,
                 parameter,
                 ..
-            } => references.extend([first.index, second.index, parameter.index]),
+            } => references.extend([first.index(), second.index(), parameter.index()]),
             PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references.push(entity.index);
+                references.push(entity.index());
             }
             PmDcSketchConstraintKind::Diameter {
                 reference, entity, ..
-            } => references.extend([reference.index, entity.index]),
+            } => references.extend([reference.index(), entity.index()]),
             PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                references.extend([entity.index, center.index]);
+                references.extend([entity.index(), center.index()]);
             }
             PmDcSketchConstraintKind::EqualRadius { first, second } => {
-                references.extend([first.index, second.index]);
+                references.extend([first.index(), second.index()]);
             }
         }
         if !record_is_exact(
-            &constraint.identity.segment_token,
+            constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
-            &constraint.identity.type_id,
-        ) || !references_resolve(&constraint.identity.segment_token, &references)
+            constraint.identity.type_id.as_str(),
+        ) || !references_resolve(constraint.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -598,12 +621,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for direction in &data.pm_dc_directions {
         if !record_is_exact(
-            &direction.identity.segment_token,
+            direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
-            &direction.identity.type_id,
+            direction.identity.type_id.as_str(),
         ) || !references_resolve(
-            &direction.identity.segment_token,
-            &[direction.header.next.index, direction.header.context.index],
+            direction.identity.segment_token.as_str(),
+            &[
+                direction.header.next.index(),
+                direction.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -636,7 +662,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch does not resolve to its PmDc source record".into(),
-                Some(sketch.id.0.clone()),
+                Some(sketch.id.as_str().to_owned()),
             ));
         }
     }
@@ -653,7 +679,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
-                Some(entity.id().0.clone()),
+                Some(entity.id().as_str().to_owned()),
             ));
         }
     }
@@ -667,7 +693,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Inventor neutral sketch constraint does not resolve to its PmDc source record"
                     .into(),
-                Some(constraint.id.0.clone()),
+                Some(constraint.id.as_str().to_owned()),
             ));
         }
     }
@@ -691,9 +717,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_features.iter().map(|record| {
@@ -745,14 +770,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         "Inventor PmDc feature label",
     );
     for feature in &data.pm_dc_features {
-        let references = [feature.header.next.index, feature.header.context.index]
+        let references = [feature.header.next.index(), feature.header.context.index()]
             .into_iter()
             .chain(
                 feature
                     .properties
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             );
         if raw.get(&(
             feature.identity.segment_token.as_str(),
@@ -760,7 +785,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.identity.segment_token, reference))
+                .any(|reference| !resolves(feature.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -770,27 +795,27 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for feature in &data.pm_dc_pattern_features {
-        let references = [feature.header.next.index, feature.header.context.index]
+        let references = [feature.header.next.index(), feature.header.context.index()]
             .into_iter()
             .chain(
                 feature
                     .properties
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .chain(
                 feature
                     .participants
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .chain(
                 feature
                     .property_slots
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             );
         if raw.get(&(
             feature.identity.segment_token.as_str(),
@@ -798,7 +823,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.identity.segment_token, reference))
+                .any(|reference| !resolves(feature.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -808,26 +833,34 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for property in &data.pm_dc_feature_properties {
-        let mut references = vec![property.header.next.index, property.header.context.index];
+        let mut references = vec![
+            property.header.next.index(),
+            property.header.context.index(),
+        ];
         match &property.kind {
             PmDcFeaturePropertyKind::References { items, .. } => {
-                references.extend(items.references().iter().map(|reference| reference.index));
+                references.extend(items.references().iter().map(|reference| reference.index()));
             }
-            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index),
+            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index()),
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
-                references.push(entity_link.index);
+                references.push(entity_link.index());
             }
             PmDcFeaturePropertyKind::Placement {
                 transform,
                 point,
                 value,
-            } => references.extend([transform.index, point.index, value.index]),
+            } => references.extend([transform.index(), point.index(), value.index()]),
             PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
                 radius,
                 selection,
                 continuity,
-            } => references.extend([edges.index, radius.index, selection.index, continuity.index]),
+            } => references.extend([
+                edges.index(),
+                radius.index(),
+                selection.index(),
+                continuity.index(),
+            ]),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
@@ -840,7 +873,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&property.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&property.identity.segment_token, reference))
+                .any(|reference| !resolves(property.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -851,9 +884,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for link in &data.pm_dc_entity_style_links {
         let references = [
-            link.header.owner.index,
-            link.header.parent.index,
-            link.header.next.index,
+            link.header.owner.index(),
+            link.header.parent.index(),
+            link.header.next.index(),
         ];
         if raw.get(&(
             link.identity.segment_token.as_str(),
@@ -861,7 +894,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&link.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&link.identity.segment_token, reference))
+                .any(|reference| !resolves(link.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -872,9 +905,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for label in &data.pm_dc_feature_labels {
         let references = [
-            label.header.owner.index,
-            label.header.parent.index,
-            label.header.next.index,
+            label.header.owner.index(),
+            label.header.parent.index(),
+            label.header.next.index(),
         ]
         .into_iter()
         .chain(
@@ -882,17 +915,15 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 .participants
                 .references()
                 .iter()
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         );
         if raw.get(&(
             label.identity.segment_token.as_str(),
             label.identity.record_ordinal,
         )) != Some(&label.identity.type_id.as_str())
-            || label.name.is_empty()
-            || label.class_id.len() != 32
             || references
                 .into_iter()
-                .any(|reference| !resolves(&label.identity.segment_token, reference))
+                .any(|reference| !resolves(label.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -903,8 +934,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for terminator in &data.pm_dc_feature_terminators {
         let references = [
-            terminator.header.next.index,
-            terminator.header.context.index,
+            terminator.header.next.index(),
+            terminator.header.context.index(),
         ];
         if raw.get(&(
             terminator.identity.segment_token.as_str(),
@@ -912,7 +943,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&terminator.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&terminator.identity.segment_token, reference))
+                .any(|reference| !resolves(terminator.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -933,7 +964,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             Some((
                 (
                     label.identity.segment_token.as_str(),
-                    label.header.owner.index.checked_sub(1)?,
+                    label.header.owner.index().checked_sub(1)?,
                 ),
                 label,
             ))
@@ -976,28 +1007,19 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let (expected_class, output_slot) = match &feature.definition {
-            cadmpeg_ir::features::FeatureDefinition::Extrude { .. } => {
-                ("3111a90cd0118b83000819b00524dc09", 26)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Fillet { .. } => {
-                ("dc15f7f1d1114205000830b00524dc09", 15)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Chamfer { .. } => {
-                ("3f7100f9d2118b6f6000f0a89dccefb0", 11)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Hole { .. } => {
-                ("1a7d751fd2119c54a00020803603c8c9", 24)
-            }
-            _ => ("", usize::MAX),
+        let Some(family) =
+            crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
+        else {
+            continue;
         };
-        if expected_class.is_empty()
-            || labels
-                .get(&(
-                    raw_feature.identity.segment_token.as_str(),
-                    raw_feature.identity.record_ordinal,
-                ))
-                .is_none_or(|label| label.class_id != expected_class)
+        let expected_class = family.class_id();
+        let output_slot = family.output_slot();
+        if labels
+            .get(&(
+                raw_feature.identity.segment_token.as_str(),
+                raw_feature.identity.record_ordinal,
+            ))
+            .is_none_or(|label| label.class_id() != expected_class)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1009,7 +1031,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .properties
             .references()
             .get(output_slot)
-            .and_then(|reference| reference.index.checked_sub(1))
+            .and_then(|reference| reference.index().checked_sub(1))
             .and_then(|ordinal| {
                 properties_by_record
                     .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
@@ -1057,7 +1079,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .references()
             .iter()
             .filter_map(|reference| {
-                let ordinal = reference.index.checked_sub(1)?;
+                let ordinal = reference.index().checked_sub(1)?;
                 properties_by_record
                     .get(&(collection.identity.segment_token.as_str(), ordinal))
                     .filter(|property| {
@@ -1067,7 +1089,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             })
             .collect::<Vec<_>>();
         if expected_bodies.len() != items.references().len()
-            || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
+            || expected_bodies
+                != result
+                    .bodies()
+                    .iter()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    .collect::<Vec<_>>()
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1132,14 +1159,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| record.id.as_str()),
+            .map(PmGraphicsStyleCollectionRecord::id),
         "PmGraphics style-collection id",
     );
     unique(
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+            .map(|record| (record.segment_token(), record.record_ordinal())),
         "PmGraphics style-collection record key",
     );
     unique(
@@ -1242,14 +1269,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        for reference in std::iter::once(record.surface.index)
-            .chain(std::iter::once(record.parent.index))
+        for reference in std::iter::once(record.surface.index())
+            .chain(std::iter::once(record.parent.index()))
             .chain(
                 record
                     .edge_references
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .filter(|reference| *reference != 0)
         {
@@ -1264,8 +1291,8 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 ));
             }
         }
-        if record.styles.index != 0 {
-            let target = record.styles.index - 1;
+        if record.styles.index() != 0 {
+            let target = record.styles.index() - 1;
             if raw_records.get(&(record.segment_token.as_str(), target))
                 != Some(&"0786eb48d2110c076000f99ac5361ab0")
             {
@@ -1279,28 +1306,25 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
     }
     for record in &data.pm_graphics_style_collections {
-        let key = (record.segment_token.as_str(), record.record_ordinal);
+        let key = (record.segment_token(), record.record_ordinal());
         if raw_records.get(&key) != Some(&"0786eb48d2110c076000f99ac5361ab0") {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmGraphics style collection does not resolve to its RSe record".into(),
-                Some(record.id.clone()),
+                Some(record.id().to_owned()),
             ));
         }
         for reference in record.style_references.references() {
-            if reference.index == 0
-                || !raw_keys.contains(&(
-                    record.segment_token.as_str(),
-                    reference.index.saturating_sub(1),
-                ))
+            if reference.index() == 0
+                || !raw_keys.contains(&(record.segment_token(), reference.index() - 1))
             {
                 findings.push(finding(
                     Check::NativeLinks,
                     format!(
                         "Inventor PmGraphics style-collection reference {} does not resolve",
-                        reference.index
+                        reference.index()
                     ),
-                    Some(record.id.clone()),
+                    Some(record.id().to_owned()),
                 ));
             }
         }
@@ -1325,18 +1349,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.active_carrier.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} active-carrier state records",
-                data.active_carrier.len()
-            ),
-            None,
-        ));
-        return;
-    }
-    let carrier = &data.active_carrier[0];
+    let carrier = &data.active_carrier;
     if let ActiveCarrierRecord::Selected {
         id,
         segment_token,
@@ -1410,7 +1423,7 @@ struct NativeData {
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     feature_record_issues: Vec<RecordIssue>,
-    active_carrier: Vec<ActiveCarrierRecord>,
+    active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
 }
 
@@ -1470,7 +1483,7 @@ impl NativeData {
             pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,
             pm_dc_entity_style_links: namespace.arena_as("pm_dc_entity_style_links")?,
             feature_record_issues: namespace.arena_as("feature_record_issues")?,
-            active_carrier: namespace.arena_as("active_carrier")?,
+            active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as("unknowns")?,
         })
     }
@@ -1616,7 +1629,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
             sections
                 .entry(record.token.as_str())
                 .or_default()
-                .insert(record.number);
+                .insert(u8::from(record.number));
             sections
         },
     );
@@ -1633,7 +1646,9 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     for (token, meta) in metadata_by_token {
         let expected_sections = (1_u8..=11).collect::<HashSet<_>>();
         if sections_by_token.get(token) != Some(&expected_sections)
-            || types_by_token.get(token).map_or(0, HashSet::len) as u64 != meta.type_count
+            || cadmpeg_core::decode::u64_from_index(
+                types_by_token.get(token).map_or(0, HashSet::len),
+            ) != meta.type_count
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1813,7 +1828,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         findings,
         data.protein_assets
             .iter()
-            .map(|record| (record.entry_name.as_str(), record.ordinal)),
+            .map(|record| (record.entry_name.as_str(), record.ordinal())),
         "Protein decoded-record position",
     );
     let entry_names = data
@@ -1823,10 +1838,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
     for asset in &data.protein_assets {
-        if asset.ordinal != asset.asset.ordinal
-            || !asset.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(asset.entry_name.as_str())
-        {
+        if !entry_names.contains(asset.entry_name.as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor Protein asset position is inconsistent or does not resolve to a package entry"
@@ -1861,12 +1873,10 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
     let accepted_positions = data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .collect::<HashSet<_>>();
     for rejection in &data.protein_rejections {
-        if rejection.detail.is_empty()
-            || !rejection.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(rejection.entry_name.as_str())
+        if !entry_names.contains(rejection.entry_name.as_str())
             || accepted_positions.contains(&(rejection.entry_name.as_str(), rejection.ordinal))
         {
             findings.push(finding(
@@ -1884,7 +1894,7 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .chain(
             data.protein_rejections
                 .iter()
@@ -1919,7 +1929,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         data.ufrx
             .external_references()
             .iter()
-            .map(|record| record.ordinal),
+            .map(ExternalReferenceRecord::ordinal),
         "external reference ordinal",
     );
     unique(
@@ -1949,18 +1959,9 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .iter()
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
-    for state in data.ufrx.model_states() {
-        if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor UFRxDoc model-state framing is inconsistent".into(),
-                Some(state.id.clone()),
-            ));
-        }
-    }
     if model_state_ordinals.len() != data.ufrx.model_states().len()
-        || model_state_ordinals
-            != (0..data.ufrx.model_states().len() as u32).collect::<HashSet<_>>()
+        || !u32::try_from(data.ufrx.model_states().len())
+            .is_ok_and(|count| model_state_ordinals == (0..count).collect::<HashSet<_>>())
     {
         findings.push(finding(
             Check::NativeLinks,
@@ -1968,45 +1969,21 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    if let UfrxRecord::ParsedPrefix {
-        id,
-        representation: Some(representation),
-        ..
-    } = record
-    {
-        let representation_pair_present = representation.active_representation.is_some();
-        let empty_representation = representation
-            .active_representation
-            .as_ref()
-            .is_some_and(|(name, kind)| name.is_empty() || kind.is_empty());
-        let expected_pair = document_kind(ir).and_then(|kind| match kind {
-            "assembly" => Some(true),
-            "part" => Some(false),
-            _ => None,
-        });
-        if empty_representation
-            || expected_pair.is_some_and(|expected| representation_pair_present != expected)
-            || representation.active_model_state.is_empty()
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor UFRxDoc representation state is inconsistent".into(),
-                Some(id.clone()),
-            ));
-        }
-    }
-    for reference in data.ufrx.external_references() {
-        if reference.path.is_empty()
-            && reference
-                .document_id
-                .chars()
-                .all(|character| character == '0')
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor external reference has neither a path nor a document id".into(),
-                Some(reference.id.clone()),
-            ));
+    if let UfrxRecord::ParsedPrefix(payload) = record {
+        if let Some(representation) = payload.representation.as_ref() {
+            let representation_pair_present = representation.active_representation.is_some();
+            let expected_pair = document_kind(ir).and_then(|kind| match kind {
+                "assembly" => Some(true),
+                "part" => Some(false),
+                _ => None,
+            });
+            if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor UFRxDoc representation state is inconsistent".into(),
+                    Some(payload.id.clone()),
+                ));
+            }
         }
     }
     unique(
@@ -2017,15 +1994,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| record.ordinal),
         "embedded reference ordinal",
     );
-    for reference in data.ufrx.embedded_references() {
-        if reference.record_len == 0 || reference.record_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor embedded-reference framing is inconsistent".into(),
-                Some(reference.id.clone()),
-            ));
-        }
-    }
     unique(
         findings,
         data.ufrx
@@ -2051,10 +2019,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         *actual_counts
             .entry(occurrence.file_reference_id)
             .or_default() += 1;
-        if occurrence.record_len == 0
-            || occurrence.record_sha256.len() != 64
-            || occurrence.header_padding_words > 8
-            || !reference_ids.contains(&occurrence.file_reference_id)
+        if !reference_ids.contains(&occurrence.file_reference_id)
             || (assembly_document && !assembly_ids.contains(&occurrence.occurrence_id))
         {
             findings.push(finding(
@@ -2076,13 +2041,18 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor external-reference occurrence count does not match its typed records"
                     .into(),
-                Some(reference.id.clone()),
+                Some(reference.id().clone()),
             ));
         }
     }
 }
 
-fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_assembly(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     unique(
         findings,
         data.assembly_occurrences
@@ -2103,14 +2073,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
     for placement in &data.assembly_placements {
-        if !occurrence_ids.contains(&placement.occurrence_id)
-            || placement.suffix_sha256.len() != 64
-            || placement
-                .transform
-                .iter()
-                .flatten()
-                .any(|value| !value.is_finite())
-        {
+        if !occurrence_ids.contains(&placement.occurrence_id) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor assembly placement does not resolve to a finite occurrence".into(),
@@ -2125,7 +2088,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .iter()
             .map(|reference| u64::from(reference.occurrence_count))
             .sum::<u64>();
-        if declared != data.assembly_occurrences.len() as u64 {
+        if declared != cadmpeg_core::decode::u64_from_index(data.assembly_occurrences.len()) {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -2147,14 +2110,18 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         ));
     }
     let mut projected = crate::assembly::project_occurrences(
+        ctx,
         data.ufrx.occurrences(),
         data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
-    );
-    projected
-        .occurrences
-        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    )?;
+    ctx.stable_sort_by(
+        &mut projected.occurrences,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "Inventor projected occurrence sort",
+    )?;
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,
@@ -2162,6 +2129,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             None,
         ));
     }
+    Ok(())
 }
 
 fn is_assembly_document(ir: &CadIr) -> bool {

@@ -16,7 +16,9 @@ use std::fmt;
 
 use crate::document::CadIr;
 use crate::report::{
-    Coverage, DecodeReport, Finding, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
+    check::Finding,
+    decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
+    loss::{LossNote as DecodeLoss, StrictConsequence},
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -57,6 +59,7 @@ impl fmt::Display for FormatId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Confidence {
     /// Definitely not this format.
     No,
@@ -82,6 +85,7 @@ impl fmt::Display for Confidence {
 /// Options controlling source decoding.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,
@@ -95,9 +99,8 @@ pub struct DecodeOptions {
 /// The sealed [`Codec`] wrapper constructs this value after it stamps the source
 /// classification onto the report and finalizes the IR and source fidelity.
 /// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
-/// finalization. Read through [`Self::ir`], [`Self::report`], and
-/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`] before editing
-/// either document.
+/// finalization. Read through [`Self::ir`] and [`Self::report`]. Consume with
+/// [`Self::into_parts`] to obtain the source fidelity or edit either document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -185,8 +188,8 @@ pub struct Decoded {
 /// A [`DecodeReport`] without its classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodeBody {
-    /// Whether B-rep geometry was transferred into the IR.
-    pub geometry_transferred: bool,
+    /// The backend transfer outcome.
+    pub transfer: DecodeTransfer,
     /// Coverage measures keyed by their declared name.
     pub coverage: Coverage,
     /// Losses resolved during decoding.
@@ -198,11 +201,11 @@ pub struct DecodeBody {
 }
 
 impl DecodeBody {
-    /// An empty body with the given B-rep geometry outcome.
+    /// An empty body with the given transfer outcome.
     #[must_use]
-    pub fn new(geometry_transferred: bool) -> Self {
+    pub fn new(transfer: DecodeTransfer) -> Self {
         Self {
-            geometry_transferred,
+            transfer,
             coverage: Coverage::default(),
             losses: Vec::new(),
             notes: Vec::new(),
@@ -217,24 +220,36 @@ impl DecodeResult {
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
-    #[must_use]
-    pub(crate) fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
+    fn new(
+        decoded: Decoded,
+        format: FormatId,
+        container_only: bool,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             body,
-            mut source_fidelity,
+            source_fidelity,
         } = decoded;
         let classification = match ir.source.as_ref() {
-            Some(source) => source.classification().clone(),
-            None => FormatIdentity::unclassified(format.as_str()),
+            Some(source) => match source.classification() {
+                FormatIdentity::Classified { dialects } => FormatIdentity::classified(
+                    dialects.try_clone_for_decode(ctx, "decode result classification")?,
+                ),
+                FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(
+                    ctx.copy_retained_text(format, "decode result classification")?,
+                ),
+            },
+            None => FormatIdentity::unclassified(
+                ctx.copy_retained_text(format.as_str(), "decode result classification")?,
+            ),
         };
-        ir.finalize();
-        source_fidelity.finalize();
-        Self {
+        ir.finalize(ctx)?;
+        Ok(Self {
             ir,
             report: DecodeReport::from_body(classification, body, container_only),
             source_fidelity,
-        }
+        })
     }
 
     /// Borrow the finalized IR.
@@ -245,11 +260,6 @@ impl DecodeResult {
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
-    }
-
-    /// Borrow source fidelity.
-    pub fn source_fidelity(&self) -> &SourceFidelity {
-        &self.source_fidelity
     }
 
     /// Consume into IR, report, and source fidelity.
@@ -273,13 +283,16 @@ pub trait CodecBackend {
     /// namespace or has no validator for it. The sealed wrapper exposes it as
     /// [`Codec::validate_native`], which the application runs after
     /// `validate_neutral`.
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        let _ = ir;
-        Vec::new()
+    fn validate_native(_ctx: &DecodeContext<'_>, _ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        Ok(Vec::new())
     }
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence;
+    fn detect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+    ) -> Result<Confidence, CodecError>;
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -322,7 +335,7 @@ mod sealed {
 /// struct Rogue;
 /// impl CodecBackend for Rogue {
 ///     const FORMAT: FormatId = FormatId::new("rogue");
-///     fn detect_impl(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn detect_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
@@ -330,9 +343,10 @@ mod sealed {
 /// }
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
-///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
-///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
-///         Vec::new()
+///     fn detect(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
+///     fn validate_native(&self, _: &DecodeContext<'_>, _: &cadmpeg_ir::CadIr)
+///         -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+///         Ok(Vec::new())
 ///     }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
@@ -347,11 +361,15 @@ pub trait Codec: sealed::Sealed {
     fn id(&self) -> FormatId;
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect(&self, prefix: &[u8]) -> Confidence;
+    fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError>;
 
     /// Findings this codec reports over its own native namespace,
     /// [`CodecBackend::validate_native`].
-    fn validate_native(&self, ir: &CadIr) -> Vec<Finding>;
+    fn validate_native(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Vec<Finding>, CodecError>;
 
     /// Inspects the source under its input and resource limits.
     fn inspect(
@@ -376,6 +394,15 @@ pub trait Codec: sealed::Sealed {
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
+
+    /// Decodes an acquired root in the caller's detection session.
+    /// The caller finishes the session after this method returns.
+    fn decode_with_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, DecodeFailure>;
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
@@ -383,12 +410,16 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         C::FORMAT
     }
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
-        self.detect_impl(prefix)
+    fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {
+        self.detect_impl(ctx, prefix)
     }
 
-    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
-        C::validate_native(ir)
+    fn validate_native(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Vec<Finding>, CodecError> {
+        C::validate_native(ctx, ir)
     }
 
     fn inspect(
@@ -423,19 +454,37 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
-        let decoded = self.decode_impl(&ctx, root);
+        let result = self.decode_with_context(&ctx, root, options);
         ctx.finish_session()?;
-        let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
+        result
+    }
+
+    fn decode_with_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, DecodeFailure> {
+        let decoded = self.decode_impl(ctx, root)?;
+        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
         if result.report().format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(format!(
-                "codec {:?} decoded a {:?} document",
-                C::FORMAT.as_str(),
-                result.report().format()
-            ))
+            return Err(CodecError::WrongFormat(ctx.format_retained(
+                format_args!(
+                    "codec {:?} decoded a {:?} document",
+                    C::FORMAT.as_str(),
+                    result.report().format()
+                ),
+                "decode format refusal",
+            )?)
             .into());
         }
+        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(result.report().losses.len()),
+                    "decode strict loss scan",
+                )?;
                 result
                     .report()
                     .losses
@@ -447,9 +496,12 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
-            return Err(DecodeFailure::StrictRejected {
-                rejection: StrictDecodeRejection::new(report, loss_index),
-            });
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DecodeReport>()),
+                "decode strict rejection report",
+            )?;
+            let rejection = StrictDecodeRejection::new(report, loss_index);
+            return Err(DecodeFailure::StrictRejected { rejection });
         }
         Ok(result)
     }

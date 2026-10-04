@@ -7,26 +7,27 @@ use reporting::{
     command_body_json, command_report_json, fidelity_diff, fidelity_differs, print_check_report,
     print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
     print_source_diff, refused_command_report_json, write_command_report, write_json_report,
-    write_refused_json_report, CommandReportBody,
+    write_payload_report, CommandReportBody, Payload,
 };
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
-use cadmpeg_core::decode::InspectOptions;
-use serde::Serialize;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, InspectOptions};
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
     Inspected, Selection,
 };
 
-use crate::application::artifact_store;
+use crate::application::artifact_store::{self, FileDestination};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal};
 use crate::application::transcoder::{
@@ -57,57 +58,35 @@ fn print_load_notice(document: &LoadedDocument) {
 }
 
 /// CLI-facing conversion arguments assembled from argv.
-pub struct ConversionArgs {
+pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
-    pub losses: LossPolicy,
+    pub(crate) losses: LossPolicy,
     /// Permit export when validation reports errors.
-    pub allow_errors: bool,
+    pub(crate) allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
-    pub allow_empty: bool,
+    pub(crate) allow_empty: bool,
     /// CAD output destination and its overwrite policy.
-    pub destination: DestinationPolicy,
-    /// Replace an existing command report.
-    pub overwrite_report: bool,
+    pub(crate) destination: DestinationPolicy,
     /// Optional path for the JSON command report.
-    pub report: Option<PathBuf>,
+    pub(crate) report: Option<FileDestination>,
     /// Explicit input format selected by the user.
-    pub forced_input: Option<ForcedInput>,
+    pub(crate) forced_input: Option<ForcedInput>,
 }
 
 /// Attempt to persist a semantic refusal without replacing it with a report
 /// I/O failure. The original refusal controls the process exit status; report
 /// persistence failure remains visible on stderr.
-fn write_refusal_command_report(
+fn write_refusal<P: reporting::ReportBody>(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
-    refusal: &ConversionRefusal,
-) {
-    let body = CommandReportBody::Refused(refusal);
-    if !refusal.may_write_report() {
-        return;
-    }
-    if let Err(error) = write_command_report(input, output, force, command, body) {
-        eprintln!(
-            "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
-            refusal.code()
-        );
-    }
-}
-
-fn write_refusal_report<P: Serialize>(
-    input: &Path,
-    output: Option<&Path>,
-    force: bool,
-    command: &'static str,
-    payload: &P,
+    payload: Payload<'_, P>,
     refusal: &ConversionRefusal,
 ) {
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) = write_refused_json_report(input, output, force, command, payload, refusal) {
+    if let Err(error) = write_payload_report(input, output, command, payload) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -124,48 +103,102 @@ pub(crate) struct DiffInput<'a> {
     pub(crate) forced: Option<ForcedInput>,
 }
 
+/// How the codec that read the inspected input was chosen.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum InputSelection {
+    /// The caller forced the codec, so no detection ran.
+    Forced,
+    /// Content detection named the codec at this confidence.
+    Detected {
+        confidence: cadmpeg_ir::codec::Confidence,
+    },
+}
+
+impl From<cadmpeg_registry::Selection> for InputSelection {
+    fn from(selection: cadmpeg_registry::Selection) -> Self {
+        match selection {
+            cadmpeg_registry::Selection::Forced => Self::Forced,
+            cadmpeg_registry::Selection::Detected { confidence } => Self::Detected { confidence },
+        }
+    }
+}
+
+impl InputSelection {
+    /// Renders the selection the way the plain-text report states it.
+    fn label(self) -> String {
+        match self {
+            Self::Forced => " (forced)".to_string(),
+            Self::Detected { confidence } => format!(" (detected {confidence})"),
+        }
+    }
+}
+
 /// `inspect` payload. `summary` is `null` on a refusal, where no container
 /// summary was produced.
 #[derive(Serialize)]
 struct InspectPayload<'a> {
-    confidence: Option<cadmpeg_ir::codec::Confidence>,
+    selection: InputSelection,
     summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
-#[derive(Serialize)]
 struct DiffReportPayload<'a> {
-    different: bool,
     diff: &'a cadmpeg_ir::IrDiff,
     source_fidelity: &'a reporting::FidelitySummary,
 }
 
+impl DiffReportPayload<'_> {
+    fn different(&self) -> bool {
+        !self.diff.is_empty() || fidelity_differs(self.source_fidelity)
+    }
+}
+
+impl Serialize for DiffReportPayload<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DiffReportPayload", 3)?;
+        state.serialize_field("different", &self.different())?;
+        state.serialize_field("diff", self.diff)?;
+        state.serialize_field("source_fidelity", self.source_fidelity)?;
+        state.end()
+    }
+}
+
 /// Inspect a native container and print its entries.
-pub fn inspect(
+pub(crate) fn inspect(
     inputs: &InputCatalog,
     path: &Path,
-    forced: Option<ForcedInput>,
+    forced: Option<&'static cadmpeg_registry::NativeDescriptor>,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
     limits: cadmpeg_core::decode::ResourceLimits,
 ) -> CommandResult<()> {
-    if matches!(forced, Some(ForcedInput::Cadir)) {
-        return Err(anyhow!("inspect requires a container input, not cadir").into());
-    }
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let Inspected {
         selection, summary, ..
-    } = match resolve_and_inspect_with(inputs, &mut file, forced, &InspectOptions { limits }) {
+    } = match resolve_and_inspect_with(
+        inputs,
+        &mut file,
+        forced.map(ForcedInput::Codec),
+        &InspectOptions { limits },
+    ) {
         Ok(inspected) => inspected,
         Err(InspectError::Io(error)) => {
-            return Err(inspect_io_error(path, limits.max_input_bytes, error).into())
+            return Err(inspect_io_error(path, limits.max_input_bytes, error).into());
+        }
+        Err(InspectError::Detection(error)) => return Err(error.into()),
+        Err(InspectError::Unresolved(cadmpeg_registry::ResolveSourceError::Codec(error))) => {
+            return Err(error.into())
         }
         Err(InspectError::Unresolved(error)) => {
-            return Err(loader::detection_failure(&error).into())
+            return Err(loader::detection_failure(&error).into());
         }
         Err(InspectError::Cadir | InspectError::Unrecognized) => {
-            return Err(inspect_unrecognized(path).into())
+            return Err(inspect_unrecognized(path).into());
         }
+        Err(InspectError::Codec {
+            error: cadmpeg_core::CodecError::ResourceLimit(limit),
+            ..
+        }) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit).into()),
         Err(InspectError::Codec {
             selection,
             error: cadmpeg_core::CodecError::UnsupportedDialect { dialects, message },
@@ -173,10 +206,16 @@ pub fn inspect(
         }) => {
             let refusal = ConversionRefusal::unsupported_dialect(dialects, message);
             let payload = InspectPayload {
-                confidence: selection.confidence(),
+                selection: selection.into(),
                 summary: None,
             };
-            write_refusal_report(path, report_path, force, "inspect", &payload, &refusal);
+            write_refusal(
+                path,
+                report_path,
+                "inspect",
+                Payload::Refused(&payload, &refusal),
+                &refusal,
+            );
             if json {
                 println!(
                     "{}",
@@ -188,15 +227,15 @@ pub fn inspect(
         Err(InspectError::Codec { error, .. }) => {
             return Err(anyhow::Error::new(error)
                 .context(format!("inspecting {}", path.display()))
-                .into())
+                .into());
         }
     };
-    let confidence = selection.confidence();
+    let selection = InputSelection::from(selection);
     let payload = InspectPayload {
-        confidence,
+        selection,
         summary: Some(&summary),
     };
-    write_json_report(path, report_path, force, "inspect", &payload)?;
+    write_json_report(path, report_path, "inspect", &payload)?;
     if json {
         println!("{}", command_report_json("inspect", &payload)?);
         return Ok(());
@@ -204,21 +243,23 @@ pub fn inspect(
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
         summary.format(),
-        confidence.map_or_else(
-            || " (forced)".to_string(),
-            |value| format!(" (detected {value})")
-        ),
+        selection.label(),
         summary.container_kind,
         summary.entries.len()
     );
-    for line in crate::registry_view::dialect_lines(summary.dialects()) {
+    for line in crate::registry_view::dialect_lines(summary.dialects())? {
         println!("{line}");
     }
     println!();
     for entry in &summary.entries {
+        let size =
+            |size: Option<u64>| size.map_or_else(|| "-".to_string(), |size| size.to_string());
         println!(
             "  {:<14} {:>10} → {:<10}  {}",
-            entry.role, entry.compressed_size, entry.uncompressed_size, entry.name
+            entry.role,
+            size(entry.stored_size()),
+            size(entry.expanded_size()),
+            entry.name
         );
         for (key, value) in &entry.attributes {
             println!("        {key} = {value}");
@@ -253,24 +294,22 @@ fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyh
 }
 
 /// Dump a native CAD file and write CADIR JSON.
-pub fn dump(
+pub(crate) fn dump(
     inputs: &InputCatalog,
     path: &Path,
-    out: Option<&Path>,
-    force: bool,
-    report_path: Option<&Path>,
+    destination: &DestinationPolicy,
+    report_path: Option<&FileDestination>,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> CommandResult<()> {
-    let destination = DestinationPolicy::new(out.map(Path::to_path_buf), force, false);
     let destination = destination.resolve(path)?;
     if let Some(report_path) = report_path {
-        artifact_store::check_output_path(path, report_path, force)?;
+        report_path.check(path)?;
         if let Some(out) = destination.path() {
             artifact_store::check_distinct_output_paths(
                 out,
                 "CADIR output",
-                report_path,
+                &report_path.path,
                 "command report",
             )?;
         }
@@ -282,7 +321,13 @@ pub fn dump(
                 return Err(error);
             };
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, Some(report_path), force, "dump", refusal);
+                write_refusal(
+                    path,
+                    Some(report_path),
+                    "dump",
+                    CommandReportBody::Refused(refusal).payload(),
+                    refusal,
+                );
             }
             return Err(error);
         }
@@ -304,7 +349,6 @@ pub fn dump(
     write_command_report(
         path,
         report_path,
-        force,
         "dump",
         CommandReportBody::Ok {
             decode_report: loaded.decode_report(),
@@ -316,20 +360,25 @@ pub fn dump(
 }
 
 /// Load and check CADIR, printing a human-readable or JSON report.
-pub fn check_cmd(
+pub(crate) fn check_cmd(
     inputs: &InputCatalog,
     path: &Path,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
 ) -> CommandResult<()> {
     let loaded = match loader::load_artifact(inputs, path, args.options(), forced) {
         Ok(loaded) => loaded,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, report_path, force, "check", refusal);
+                write_refusal(
+                    path,
+                    report_path,
+                    "check",
+                    CommandReportBody::Refused(refusal).payload(),
+                    refusal,
+                );
             }
             return Err(error);
         }
@@ -339,14 +388,19 @@ pub fn check_cmd(
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
+    let validation_arena = DecodeArena::new();
+    let (validation_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &validation_arena, &args.options().policy)?;
     let report = validate_ir(
+        &validation_ctx,
         inputs,
         &loaded.ir,
         loaded.fidelity(),
         loaded
             .decode_report()
             .map_or_else(Vec::new, |report| report.losses.clone()),
-    );
+    )?;
+    validation_ctx.finish_session()?;
     let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
         operation: crate::application::refusal::CheckOperation::Check,
         decode_report: loaded.decode_report().cloned(),
@@ -360,7 +414,7 @@ pub fn check_cmd(
             export: None,
         },
     };
-    write_command_report(path, report_path, force, "check", body)?;
+    write_command_report(path, report_path, "check", body)?;
     if json {
         writeln!(stdout, "{}", command_body_json("check", body)?)?;
     } else {
@@ -373,7 +427,7 @@ pub fn check_cmd(
 }
 
 /// Convert a CAD file to another format.
-pub fn convert(
+pub(crate) fn convert(
     inputs: &InputCatalog,
     path: &Path,
     to: Option<&str>,
@@ -390,11 +444,11 @@ pub fn convert(
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(
+                write_refusal(
                     path,
-                    conversion.report.as_deref(),
-                    conversion.overwrite_report,
+                    conversion.report.as_ref(),
                     "convert",
+                    CommandReportBody::Refused(refusal).payload(),
                     refusal,
                 );
             }
@@ -402,13 +456,13 @@ pub fn convert(
         }
     };
     let target = export_target(selection);
-    if let Some(report_path) = conversion.report.as_deref() {
-        artifact_store::check_output_path(path, report_path, conversion.overwrite_report)?;
+    if let Some(report_path) = conversion.report.as_ref() {
+        report_path.check(path)?;
         if let Some(destination) = policy.destination.path() {
             artifact_store::check_distinct_output_paths(
                 destination,
                 "CAD output",
-                report_path,
+                &report_path.path,
                 "command report",
             )?;
         }
@@ -432,11 +486,11 @@ pub fn convert(
         if let Some(validation) = reports.check {
             print_check_report(&mut stderr, validation)?;
         }
-        write_refusal_command_report(
+        write_refusal(
             path,
-            conversion.report.as_deref(),
-            conversion.overwrite_report,
+            conversion.report.as_ref(),
             "convert",
+            CommandReportBody::Refused(refusal).payload(),
             refusal,
         );
         Ok(())
@@ -480,8 +534,7 @@ pub fn convert(
     print_export_emission(&mut io::stderr(), &emission)?;
     if let Err(error) = write_command_report(
         path,
-        conversion.report.as_deref(),
-        conversion.overwrite_report,
+        conversion.report.as_ref(),
         "convert",
         CommandReportBody::Ok {
             decode_report: decode_report.as_ref(),
@@ -497,14 +550,13 @@ pub fn convert(
 }
 
 /// Compare two CAD files.
-pub fn diff(
+pub(crate) fn diff(
     inputs: &InputCatalog,
     a: DiffInput<'_>,
     b: DiffInput<'_>,
     args: &DecodeArgs,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
 ) -> CommandResult<ExitCode> {
     let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
     print_load_notice(&left);
@@ -512,16 +564,14 @@ pub fn diff(
     print_load_notice(&right);
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
-    let different = !result.is_empty() || fidelity_differs(&fidelity);
     let payload = DiffReportPayload {
-        different,
         diff: &result,
         source_fidelity: &fidelity,
     };
-    write_json_report(a.path, report_path, force, "diff", &payload)?;
+    write_json_report(a.path, report_path, "diff", &payload)?;
     if json {
         println!("{}", command_report_json("diff", &payload)?);
-        return Ok(if different {
+        return Ok(if payload.different() {
             ExitCode::from(1)
         } else {
             ExitCode::SUCCESS
@@ -531,7 +581,7 @@ pub fn diff(
     if let Some((before, after)) = &result.tolerance_change {
         println!("  tolerances: {before:?} → {after:?}");
     }
-    print_source_diff(&result.source);
+    print_source_diff(&result.source)?;
     for arena in &result.per_arena {
         if arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty() {
             continue;
@@ -553,7 +603,7 @@ pub fn diff(
         print_id_delta("modified", &modified);
     }
     print_fidelity_summary(&fidelity);
-    if different {
+    if payload.different() {
         Ok(ExitCode::from(1))
     } else {
         println!("  identical");
@@ -563,8 +613,11 @@ pub fn diff(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{inspect, inspect_io_error};
     use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_registry::InputCatalog;
+    use std::io;
+    use std::path::Path;
 
     #[test]
     fn inspect_open_errors_name_the_path() {
@@ -575,7 +628,6 @@ mod tests {
             None,
             false,
             None,
-            false,
             ResourceLimits::desktop(),
         )
         .unwrap_err();

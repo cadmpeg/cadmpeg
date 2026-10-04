@@ -1,0 +1,351 @@
+use cadmpeg_test_support::edit;
+
+use crate::families::b2::records::tests::b2_spatial_circle_stream;
+use crate::test_support::test_a5a8::a5_surface_stream;
+use crate::test_support::test_b2::{
+    b2_edge_node_stream, b2_embedded_cylinder_stream, inner_no_directory_b2_catpart,
+};
+use crate::variant::Variant;
+use crate::CatiaCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use std::io::Cursor;
+
+#[test]
+fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
+    let circles = crate::families::b2::records::b2_spatial_circles(&b2_spatial_circle_stream());
+    let [circle] = circles.as_slice() else {
+        panic!("one spatial circle");
+    };
+    assert_eq!(
+        circle.center.get(),
+        cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
+    );
+    assert!((circle.frame.axis().as_raw().z - 1.0).abs() < 1.0e-12);
+    assert_eq!(circle.radius.get(), 7.0);
+    assert_eq!(circle.range.endpoints(), [0.0, 11.2]);
+    assert_eq!(
+        circle.chart_shift,
+        crate::test_support::test_b5::finite(-16.391_148_575_128_55)
+    );
+}
+
+#[test]
+fn b2_spatial_circle_parser_rejects_nonorthonormal_invalid_charts_and_nonfinite_payload() {
+    for scalar in [3usize, 6, 9, 11, 12] {
+        let mut broken = b2_spatial_circle_stream();
+        let offset = 5 + scalar * 8;
+        broken[offset..offset + 8].copy_from_slice(&0.0f64.to_le_bytes());
+        assert!(
+            crate::families::b2::records::b2_spatial_circles(&broken).is_empty(),
+            "scalar {scalar}"
+        );
+    }
+
+    for scalar in [0usize, 3, 9, 10, 13] {
+        let mut broken = b2_spatial_circle_stream();
+        let offset = 5 + scalar * 8;
+        broken[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(
+            crate::families::b2::records::b2_spatial_circles(&broken).is_empty(),
+            "nonfinite scalar {scalar}"
+        );
+    }
+}
+
+#[test]
+fn b2_composite_parser_reads_embedded_cylinder_frame() {
+    let bytes = b2_embedded_cylinder_stream();
+    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].object_id, 0x5678);
+    assert_eq!(cylinders[0].wrapper_pos, 0);
+    assert_eq!(
+        cylinders[0].cylinder.u_range.endpoints(),
+        [0.0, 4.0 * std::f64::consts::PI]
+    );
+    assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());
+}
+
+#[test]
+fn b2_composite_parser_reads_the_complete_type_three_group() {
+    let one = b2_embedded_cylinder_stream();
+    let frame = one[7..].to_vec();
+    let mut bytes = one;
+    for _ in 0..30 {
+        bytes.extend_from_slice(&frame);
+    }
+
+    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+    assert_eq!(cylinders.len(), 31);
+    assert!(cylinders.iter().all(|cylinder| cylinder.wrapper_pos == 0));
+}
+
+#[test]
+fn decode_inner_no_directory_transfers_b2_cylinder() {
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            inner_no_directory_b2_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
+        Variant::InnerNoDirectory
+    );
+    let mut cur = Cursor::new(inner_no_directory_b2_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.0 })
+    );
+}
+
+#[test]
+fn offset_support_binds_by_native_domain_knot_limits() {
+    let mut carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
+    let mut decoy = carriers[0].clone();
+    edit::replace(&mut decoy.geometry, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
+            for knot in knots {
+                *knot += 10.0;
+            }
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
+    carriers.push(decoy);
+    let surface = &carriers[0].geometry;
+    let offset = crate::families::b2::records::B2OffsetSupport {
+        pos: 0,
+        support_id: 7,
+        distance: cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite distance"),
+        u_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([
+            surface.u_knots()[0],
+            *surface.u_knots().last().unwrap(),
+        ])
+        .expect("increasing u knots"),
+        v_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([
+            surface.v_knots()[0],
+            *surface.v_knots().last().unwrap(),
+        ])
+        .expect("increasing v knots"),
+    };
+
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::offset_support_carriers(ctx, &[offset], &carriers)
+                .expect("service decode")
+        }),
+        [Some(0)]
+    );
+}
+
+#[test]
+fn offset_support_binding_scales_each_nurbs_parameter_domain() {
+    let tiny = 1e-200_f64;
+    let mut carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
+    let surface = &mut carriers[0].geometry;
+    edit::replace(surface, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
+    edit::replace(surface, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
+    let interval = |range: [f64; 2]| {
+        cadmpeg_ir::topology::IncreasingParameterInterval::new(range)
+            .expect("fixture interval is finite and increasing")
+    };
+    let exact = crate::families::b2::records::B2OffsetSupport {
+        pos: 0,
+        support_id: 1,
+        distance: cadmpeg_ir::scalar::FiniteReal::new(tiny).expect("finite distance"),
+        u_range: interval([0.0, tiny]),
+        v_range: interval([0.0, tiny]),
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::offset_support_carriers(
+                ctx,
+                std::slice::from_ref(&exact),
+                &carriers,
+            )
+            .expect("service decode")
+        }),
+        [Some(0)]
+    );
+
+    let mut outside_u = exact.clone();
+    outside_u.u_range = interval([0.0, 2.0 * tiny]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::offset_support_carriers(ctx, &[outside_u], &carriers)
+                .expect("service decode")
+        }),
+        [None]
+    );
+    let mut outside_v = exact;
+    outside_v.v_range = interval([0.0, 2.0 * tiny]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::offset_support_carriers(ctx, &[outside_v], &carriers)
+                .expect("service decode")
+        }),
+        [None]
+    );
+}
+
+#[test]
+fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
+    let bytes = b2_edge_node_stream();
+    assert_eq!(crate::families::b2::records::b2_edge_nodes(&bytes).len(), 1);
+
+    let mut noncanonical_header = bytes.clone();
+    noncanonical_header[0] = 0xb3;
+    noncanonical_header[4] = 0x04;
+    noncanonical_header.insert(5, 1);
+    assert!(crate::families::b2::records::b2_edge_nodes(&noncanonical_header).is_empty());
+
+    let mut wide_header = bytes.clone();
+    wide_header[0] = 0xb3;
+    wide_header[4] = 0x04;
+    wide_header.insert(5, 0x40);
+    let wide_nodes = crate::families::b2::records::b2_edge_nodes(&wide_header);
+    let [wide_node] = wide_nodes.as_slice() else {
+        panic!("canonical wide-header edge node")
+    };
+    assert_eq!(wide_node.header_token, 0x4004);
+
+    let mut invalid_terminal = bytes;
+    *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
+    assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
+}
+
+#[test]
+fn consolidated_edge_nodes_accept_width_coded_terminal_two() {
+    let mut bytes = b2_edge_node_stream();
+    *bytes.last_mut().expect("edge terminal") = 0x02;
+
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("width-coded terminal-two edge node")
+    };
+    assert_eq!(node.tail, 0x02);
+
+    let mut object_stream_only_terminal = bytes;
+    *object_stream_only_terminal
+        .last_mut()
+        .expect("edge terminal") = 0x26;
+    assert!(crate::families::b2::records::b2_edge_nodes(&object_stream_only_terminal).is_empty());
+}
+
+#[test]
+fn consolidated_edge_nodes_decode_terminal_allocation_reference_forms() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
+    for (tail, value, encoding) in [
+        (0x01, 0, AllocationReferenceEncoding::BackwardDistance),
+        (0x02, 0, AllocationReferenceEncoding::Selector2),
+        (0x21, 8, AllocationReferenceEncoding::BackwardDistance),
+        (0x22, 8, AllocationReferenceEncoding::Selector2),
+        (0x25, 9, AllocationReferenceEncoding::BackwardDistance),
+        (0x29, 10, AllocationReferenceEncoding::BackwardDistance),
+        (0x2a, 10, AllocationReferenceEncoding::Selector2),
+    ] {
+        let mut bytes = b2_edge_node_stream();
+        *bytes.last_mut().expect("edge terminal") = tail;
+        let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+        let [node] = nodes.as_slice() else {
+            panic!("one terminal allocation-reference edge node")
+        };
+        assert_eq!(node.terminal_value, value);
+        assert_eq!(node.terminal_encoding, encoding);
+        assert_eq!(node.tail, tail);
+    }
+}

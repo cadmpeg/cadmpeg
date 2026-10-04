@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
+
 use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{CurveId, ProceduralCurveId};
 
@@ -10,15 +13,21 @@ fn helix_fixture() -> (CadIr, CurveId) {
     let construction_id =
         ProceduralCurveId::mint("test:model:entity#helix-evaluation-construction")
             .expect("valid identity");
-    let definition = ProceduralCurveDefinition::Helix {
-        angle_range: [0.25, 2.0],
-        center: Point3::new(1.0, -2.0, 3.0),
-        major: Vector3::new(2.0, 0.0, 0.0),
-        minor: Vector3::new(0.0, 2.0, 0.0),
-        pitch: Vector3::new(0.0, 0.0, 3.0),
-        apex_factor: 0.4,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-    };
+    let definition = ProceduralCurveDefinition::Helix(
+        crate::geometry::HelixCurveConstruction::try_new(
+            [0.25, 2.0],
+            crate::geometry::HelixFrame {
+                center: Point3::new(1.0, -2.0, 3.0),
+                major: Vector3::new(2.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 2.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.4,
+            None,
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -96,49 +105,231 @@ fn assert_vector_close(actual: Vector3, expected: Vector3) {
 #[test]
 fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
 
     for parameter in [0.25, 0.75, 1.7, 2.0] {
         let (expected_point, expected_tangent, expected_acceleration) = expected_helix(parameter);
-        let actual_point =
-            super::model_curve_point_by_id(&index, &curve_id, parameter).expect("helix point");
-        let actual = super::model_curve_differential_by_id(&index, &curve_id, parameter)
-            .expect("helix differential");
-        assert_point_close(actual_point, expected_point);
-        assert_point_close(actual.point, expected_point);
-        assert_vector_close(actual.tangent, expected_tangent);
-        assert_vector_close(actual.acceleration, expected_acceleration);
+        let actual_point = super::model_curve_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &curve_id,
+            parameter,
+        )
+        .expect("helix point");
+        let actual = super::model_curve_differential_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &curve_id,
+            parameter,
+        )
+        .expect("helix differential");
+        assert_point_close(actual_point.get(), expected_point);
+        assert_point_close(actual.point.get(), expected_point);
+        assert_vector_close(actual.tangent.unwrap().get(), expected_tangent);
+        assert_vector_close(actual.acceleration.unwrap().get(), expected_acceleration);
     }
+}
+
+#[test]
+fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
+    let (ir, _) = helix_fixture();
+    let ProceduralCurveDefinition::Helix(mut helix) =
+        ir.model.procedural_curves[0].definition().clone()
+    else {
+        panic!("helix construction expected");
+    };
+    let original = ProceduralCurveDefinition::Helix(helix);
+    helix
+        .try_reverse_parameterization()
+        .expect("finite reversal");
+    let reversed = ProceduralCurveDefinition::Helix(helix);
+    for parameter in [0.25, 0.75, 1.7, 2.0] {
+        let before = super::super::helix_differential(&original, parameter).unwrap();
+        let after = super::super::helix_differential(&reversed, -parameter).unwrap();
+        assert_point_close(after.point.get(), before.point.get());
+        assert_vector_close(
+            after.tangent.unwrap().get(),
+            before.tangent.unwrap().get().scale(-1.0),
+        );
+        assert_vector_close(
+            after.acceleration.unwrap().get(),
+            before.acceleration.unwrap().get(),
+        );
+    }
+}
+
+#[test]
+fn helix_angle_range_can_span_both_large_finite_signs() {
+    let parameter = 1e308;
+    let definition = ProceduralCurveDefinition::Helix(
+        crate::geometry::HelixCurveConstruction::try_new(
+            [-parameter, parameter],
+            crate::geometry::HelixFrame {
+                center: Point3::new(0.0, 0.0, 0.0),
+                major: Vector3::new(1.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 1.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+            None,
+        )
+        .unwrap(),
+    );
+    let result = super::super::helix_differential(&definition, parameter).unwrap();
+    assert_eq!(
+        result.point,
+        Point3::new(parameter.cos(), parameter.sin(), 0.0)
+    );
+    assert_eq!(
+        result.tangent.unwrap().get(),
+        Vector3::new(-parameter.sin(), parameter.cos(), 0.0)
+    );
+    assert_eq!(
+        result.acceleration.unwrap().get(),
+        Vector3::new(-parameter.cos(), -parameter.sin(), 0.0)
+    );
 }
 
 #[test]
 fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
 
-    assert!(super::model_curve_point_by_id(&index, &curve_id, 0.24).is_none());
-    assert!(super::model_curve_differential_by_id(&index, &curve_id, 2.01).is_none());
+    assert_eq!(
+        super::model_curve_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &curve_id,
+            0.24
+        ),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+    assert!(matches!(
+        super::model_curve_differential_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &curve_id,
+            2.01
+        ),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    ));
 }
 
 #[test]
 fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let target_parameter = 1.7;
-    let target =
-        super::model_curve_point_by_id(&index, &curve_id, target_parameter).expect("helix target");
+    let target = super::model_curve_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &curve_id,
+        target_parameter,
+    )
+    .expect("helix target");
 
-    let inverse = super::model_curve_parameter_near_point(&ir, &curve_id, target, 1.5)
-        .expect("helix inverse");
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &curve_id,
+        target.get(),
+        1.5,
+    )
+    .expect("resource allocation did not fail")
+    .expect("helix inverse")
+    .get();
     assert!((0.25..=2.0).contains(&inverse));
-    let resolved = super::model_curve_point_by_id(&index, &curve_id, inverse)
-        .expect("forward-validated helix inverse");
+    let resolved = super::model_curve_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &curve_id,
+        inverse,
+    )
+    .expect("forward-validated helix inverse");
     let residual = Vector3::new(
         resolved.x - target.x,
         resolved.y - target.y,
         resolved.z - target.z,
     )
     .norm();
-    assert!(residual <= ir.tolerances.linear, "residual={residual}");
-    assert!(super::model_curve_parameter_near_point(&ir, &curve_id, target, 0.24).is_none());
+    assert!(
+        residual <= ir.tolerances.linear.get(),
+        "residual={residual}"
+    );
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &curve_id,
+        target.get(),
+        0.24
+    )
+    .expect("resource allocation did not fail")
+    .is_none());
+}
+
+#[test]
+fn helix_inverse_preserves_iteration_and_depth_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (ir, _) = helix_fixture();
+    let definition = ir.model.procedural_curves[0].definition();
+    let target = expected_helix(1.7).0;
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("helix inverse dimensions"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let cadmpeg_core::CodecError::ResourceLimit(first) =
+            super::super::helix_parameter_near_point(
+                &ctx,
+                target,
+                1.5,
+                ir.tolerances.linear.into(),
+                definition,
+            )
+            .unwrap_err()
+        else {
+            panic!("helix inversion must refuse");
+        };
+        assert_eq!(first.dimension, dimension);
+        if dimension == ResourceDimension::WorkUnits {
+            assert_eq!(first.operation, "IR helix inverse iteration");
+            assert_eq!(first.used, 1);
+            assert_eq!(first.additional, 1);
+        }
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+        );
+    }
+}
+
+#[test]
+fn helix_inverse_uses_borrowed_definition_without_temporary_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (ir, curve_id) = helix_fixture();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let target = expected_helix(1.7).0;
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &ctx, &index, &curve_id, target, 1.5,
+    )
+    .unwrap()
+    .unwrap();
+    let evaluated =
+        super::super::helix_differential(ir.model.procedural_curves[0].definition(), inverse.get())
+            .unwrap();
+    assert!(evaluated.point.distance(target) <= ir.tolerances.linear.get());
+    ctx.finish_session().unwrap();
 }

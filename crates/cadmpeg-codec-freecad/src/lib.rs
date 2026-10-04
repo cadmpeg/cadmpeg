@@ -25,13 +25,14 @@ mod element_map;
 mod gui;
 mod joint;
 /// Byte-offset constants generated from `docs/layouts/freecad.toml`.
-pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
+mod layout;
 mod loss;
 mod mutation;
 mod native;
 mod persistence;
+mod placement;
 mod product;
+mod resource;
 mod topology_transfer;
 mod writer;
 
@@ -40,14 +41,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::{
+    check::{Check, Finding},
+    Severity as FindingSeverity,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::ContainerSummary;
-use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;
 
@@ -76,101 +83,83 @@ impl FcstdCodec {
     }
 }
 
-pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
+fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let objects = match namespace.arena_as::<native::ObjectRecord>("objects") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let properties = match namespace.arena_as::<native::PropertyRecord>("properties") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let extensions = match namespace.arena_as::<native::ExtensionRecord>("extensions") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let entries = match namespace.arena_as::<native::EntryRecord>("entries") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let physical = match namespace.arena_as::<native::ArchiveSpan>("physical_ledger") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let logical = match namespace.arena_as::<native::LogicalSpan>("logical_ledger") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let coverage_records = match namespace.arena_as::<native::ByteCoverageRecord>("byte_coverage") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let string_tables = match namespace.arena_as::<native::StringTableRecord>("string_tables") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let element_maps = match namespace.arena_as::<native::ElementMapRecord>("element_maps") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let gui_providers =
-        match namespace.arena_as::<native::GuiViewProviderRecord>("gui_view_providers") {
-            Ok(records) => records,
-            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    let mut reader_storage = ctx.reserve_scoped(0, "FreeCAD native validation records")?;
+    macro_rules! arena {
+        ($read:expr) => {
+            match reader_storage.with_storage(|| $read) {
+                Ok(records) => records,
+                Err(cadmpeg_ir::native::NativeConvertError::Resource(error))
+                    if matches!(error, CodecError::ResourceLimit(_)) =>
+                {
+                    return Err(error)
+                }
+                Err(error) => {
+                    return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]);
+                }
+            }
         };
-    let gui_documents = match namespace.arena_as::<native::GuiDocumentRecord>("gui_documents") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let gui_properties = match namespace.arena_as::<native::GuiPropertyRecord>("gui_properties") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let product_nodes = match namespace.arena_as::<native::ProductNodeRecord>("product_nodes") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let joints = match namespace.arena_as::<native::joint::JointRecord>("joints") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let drawings = match namespace.arena_as::<native::DrawingRecord>("drawings") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let annotations = match namespace.arena_as::<native::SemanticAnnotationRecord>("annotations") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let attachments = match namespace.arena_as::<native::AttachmentRecord>("attachments") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let shape_payloads = match namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let carrier_census = match namespace.arena_as::<native::CarrierCensusRecord>("carrier_census") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let design_census = match namespace.arena_as::<native::DesignCensusRecord>("design_census") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
+    }
+    let objects = arena!(namespace.arena_as_for_decode::<native::ObjectRecord>(ctx, "objects"));
+    let properties =
+        arena!(namespace.arena_as_for_decode::<native::PropertyRecord>(ctx, "properties"));
+    let extensions =
+        arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
+    let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
+    let physical =
+        arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
+    let logical =
+        arena!(namespace.arena_as_for_decode::<native::LogicalSpan>(ctx, "logical_ledger"));
+    let coverage_records =
+        arena!(namespace.arena_as_for_decode::<native::ByteCoverageRecord>(ctx, "byte_coverage"));
+    let mut string_table_records =
+        arena!(namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables"));
+    ctx.stable_sort_by(
+        &mut string_table_records,
+        |left, right| left.index.cmp(&right.index),
+        |_| 0,
+        "FreeCAD native string tables sort",
+    )?;
+    let string_tables = arena!(native::StringTables::try_from(string_table_records));
+    let string_tables = string_tables.as_slice();
+    let element_maps =
+        arena!(namespace
+            .arena_as_for_decode::<native::element_map::ElementMapRecord>(ctx, "element_maps"));
+    let gui_providers =
+        arena!(namespace
+            .arena_as_for_decode::<native::GuiViewProviderRecord>(ctx, "gui_view_providers"));
+    let gui_documents =
+        arena!(namespace.arena_as_for_decode::<native::GuiDocumentRecord>(ctx, "gui_documents"));
+    let gui_properties =
+        arena!(namespace.arena_as_for_decode::<native::GuiPropertyRecord>(ctx, "gui_properties"));
+    let product_nodes =
+        arena!(namespace.arena_as_for_decode::<native::ProductNodeRecord>(ctx, "product_nodes"));
+    let joints = arena!(namespace.arena_as_for_decode::<native::joint::JointRecord>(ctx, "joints"));
+    let drawings = arena!(namespace.arena_as_for_decode::<native::DrawingRecord>(ctx, "drawings"));
+    let annotations = arena!(
+        namespace.arena_as_for_decode::<native::SemanticAnnotationRecord>(ctx, "annotations")
+    );
+    let attachments =
+        arena!(namespace.arena_as_for_decode::<native::AttachmentRecord>(ctx, "attachments"));
+    let shape_payloads =
+        arena!(namespace.arena_as_for_decode::<brep::ShapePayloadRecord>(ctx, "shape_payloads"));
+    let carrier_census =
+        arena!(namespace.arena_as_for_decode::<native::CarrierCensusRecord>(ctx, "carrier_census"));
+    let design_census =
+        arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
-    if carrier_census != brep::carrier_census(&shape_payloads) {
+    if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
             "FCStd carrier census does not match parsed shape payloads",
             None,
         ));
     }
-    match design::census(&objects, &ir.model.features) {
+    match design::census(ctx, &objects, &ir.model.features) {
         Ok(expected) if design_census == expected => {}
         Ok(expected) => {
             let detail = design_census
@@ -193,6 +182,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 None,
             ));
         }
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
@@ -201,11 +191,11 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let object_ids = objects
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id().as_str())
         .collect::<HashSet<_>>();
     let entry_names = entries
         .iter()
-        .map(|entry| entry.name.as_str())
+        .map(crate::native::EntryRecord::name)
         .collect::<HashSet<_>>();
     let property_ids = properties
         .iter()
@@ -226,48 +216,29 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
-        let valid_object_bytes = match &object.data {
-            Some(data) => {
-                data.byte_start < data.byte_end
-                    && data.byte_end - data.byte_start == data.raw_xml.len() as u64
-            }
-            None => true,
-        };
-        if !valid_object_bytes {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} has inconsistent retained object bytes", object.id),
-                Some(object.id.clone()),
-            ));
-        }
-        if object
-            .dependency_allow_partial
-            .is_some_and(|value| value <= 0)
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!("{} has invalid partial-load capability", object.id),
-                Some(object.id.clone()),
-            ));
-        }
         for dependency in &object.dependencies {
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing dependency {dependency}", object.id),
-                    Some(object.id.clone()),
+                    format!("{} has missing dependency {dependency}", object.id()),
+                    Some(object.id().clone()),
                 ));
             }
         }
     }
     let object_by_id = objects
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|object| (object.id().as_str(), object))
         .collect::<HashMap<_, _>>();
     let applications_match =
-        match application::matches_native(namespace, &objects, &properties, &entries) {
+        match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
             Ok(matches) => matches,
-            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                return Err(CodecError::ResourceLimit(limit));
+            }
+            Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
         };
     if !applications_match {
         findings.push(finding(
@@ -277,19 +248,13 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for attachment in &attachments {
-        let missing_support = attachment.supports.iter().any(|support| {
-            support.document.is_none()
+        let missing_support = attachment.supports.iter().flatten().any(|support| {
+            support.document().is_none()
                 && support
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
         });
-        let non_finite = attachment
-            .placement
-            .iter()
-            .chain(attachment.offset.iter())
-            .flat_map(|matrix| matrix.iter().flatten())
-            .any(|value| !value.is_finite());
-        if !object_ids.contains(attachment.object.as_str()) || missing_support || non_finite {
+        if !object_ids.contains(attachment.object.as_str()) || missing_support {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -300,12 +265,13 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ));
         }
     }
-    match attachment::transfer(&objects, &properties) {
+    match attachment::transfer(ctx, &objects, &properties) {
         Ok(expected) if attachments != expected => findings.push(finding(
             Check::NativeLinks,
             "FCStd attachment graph does not match the application property graph",
             None,
         )),
+        Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => findings.push(finding(
             Check::NativeLinks,
             format!("FCStd attachment properties are malformed: {error}"),
@@ -326,20 +292,15 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for document in &gui_documents {
-        if document.states.iter().enumerate().any(|(order, state)| {
-            state.order != order
-                || state.byte_start >= state.byte_end
-                || state
-                    .side_entries
-                    .iter()
-                    .any(|entry| !entry_names.contains(entry.as_str()))
+        if document.states.iter().any(|state| {
+            state
+                .side_entries
+                .iter()
+                .any(|entry| !entry_names.contains(entry.as_str()))
         }) {
             findings.push(finding(
                 Check::NativeLinks,
-                format!(
-                    "{} has invalid GUI state order, span, or asset",
-                    document.id
-                ),
+                format!("{} has a missing GUI state asset", document.id),
                 Some(document.id.clone()),
             ));
         }
@@ -348,7 +309,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         if provider
             .object
             .as_ref()
-            .is_some_and(|object| !object.is_empty() && !object_ids.contains(object.as_str()))
+            .is_some_and(|object| !object_ids.contains(object.as_str()))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -371,11 +332,22 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ));
         }
     }
-    let product_by_object = product_nodes
-        .iter()
-        .map(|node| (node.object.as_str(), node))
-        .collect::<HashMap<_, _>>();
-    let cyclic_products = product::product_cycle_nodes(&product_by_object);
+    let mut product_storage = ctx.reserve_scoped(0, "fcstd product validation index")?;
+    let mut product_by_object = HashMap::new();
+    product_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut product_by_object,
+            product_nodes.len(),
+            "fcstd product validation index",
+        )
+    })?;
+    for node in &product_nodes {
+        product_by_object.insert(node.object.as_str(), node);
+    }
+    let (cyclic_products, _cycle_storage) = ctx
+        .with_scoped_storage("fcstd product cycle lookup", || {
+            product::product_cycle_nodes(ctx, &product_by_object)
+        })?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
@@ -391,6 +363,8 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             || [node.copy_on_change_source(), node.copy_on_change_group()]
                 .into_iter()
                 .flatten()
+                .filter(|target| target.document().is_none())
+                .filter_map(|target| target.object())
                 .chain(node.element_objects().iter().map(String::as_str))
                 .any(|object| !object_ids.contains(object))
         {
@@ -407,61 +381,30 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let invalid_array_count = node.element_count().is_some_and(|count| {
-            count < 0
-                || [
-                    node.element_transforms().len(),
-                    node.element_scales().len(),
-                    node.element_objects().len(),
-                ]
-                .into_iter()
-                .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
-        });
-        let non_finite_array = node
-            .element_transforms()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(node.element_scales().iter().flatten())
-            .any(|value| !value.is_finite());
-        if invalid_array_count || non_finite_array {
-            findings.push(finding(
-                Check::Counts,
-                format!("{} has invalid link-array count or values", node.id),
-                Some(node.id.clone()),
-            ));
-        }
     }
     for joint in &joints {
-        let missing_link = !object_ids.contains(joint.object.as_str())
-            || joint.references().iter().any(|reference| {
-                reference.document.is_none()
+        let missing_link = !object_ids.contains(joint.object())
+            || joint.references().any(|reference| {
+                reference.document().is_none()
                     && reference
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
             });
-        let invalid_frames = joint
-            .placements()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(joint.offsets().iter().flatten().flatten())
-            .any(|value| !value.is_finite());
-        if missing_link || invalid_frames {
+        if missing_link {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
                     "{} has missing operands or invalid connector frames",
-                    joint.id
+                    joint.id()
                 ),
-                Some(joint.id.clone()),
+                Some(joint.id().to_owned()),
             ));
         }
     }
     for drawing in &drawings {
         let missing_object = !object_ids.contains(drawing.object.as_str())
-            || drawing.sources.iter().any(|source| {
-                source.document.is_none()
+            || drawing.sources.iter().flatten().any(|source| {
+                source.document().is_none()
                     && source
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
@@ -470,12 +413,17 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        let missing_relationship = drawing.relationships.values().flatten().any(|link| {
-            link.document.is_none()
-                && link
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
+        let missing_relationship = drawing
+            .relationships
+            .values()
+            .flatten()
+            .flatten()
+            .any(|link| {
+                link.document().is_none()
+                    && link
+                        .object()
+                        .is_some_and(|object| !object_ids.contains(object))
+            });
         if missing_object || missing_entry || missing_relationship {
             findings.push(finding(
                 Check::NativeLinks,
@@ -486,12 +434,18 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for annotation in &annotations {
         let object = object_by_id.get(annotation.object.as_str());
-        let missing_reference = annotation.references.values().flatten().any(|reference| {
-            reference.document.is_none()
-                && reference
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
+        let missing_reference =
+            annotation
+                .references
+                .values()
+                .flatten()
+                .flatten()
+                .any(|reference| {
+                    reference.document().is_none()
+                        && reference
+                            .object()
+                            .is_some_and(|object| !object_ids.contains(object))
+                });
         let missing_entry = annotation
             .side_entries
             .iter()
@@ -513,7 +467,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let expected_annotation_objects = objects
         .iter()
         .filter(|object| annotation::is_annotation_type(&object.type_name))
-        .map(|object| object.id.as_str())
+        .map(|object| object.id().as_str())
         .collect::<HashSet<_>>();
     let annotation_objects = annotations
         .iter()
@@ -570,7 +524,12 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(property.id.clone()),
             ));
         }
-        for target in property.links().iter().filter_map(|link| link.object()) {
+        for target in property
+            .links()
+            .iter()
+            .flatten()
+            .filter_map(crate::native::LinkTarget::object)
+        {
             if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
@@ -580,14 +539,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             }
         }
     }
-    for (expected_table_index, table) in string_tables.iter().enumerate() {
-        if table.index != expected_table_index {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!("{} has invalid index or entry count", table.id),
-                Some(table.id.clone()),
-            ));
-        }
+    for table in string_tables {
         if table
             .owner_property
             .as_ref()
@@ -597,26 +549,12 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .as_ref()
                 .is_some_and(|entry| !entry_names.contains(entry.as_str()))
         {
+            let table_id = table.id();
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!("{} has a missing property or side-entry link", table.id),
-                Some(table.id.clone()),
+                format!("{table_id} has a missing property or side-entry link"),
+                Some(table_id),
             ));
-        }
-        let mut known_string_ids = HashSet::new();
-        for entry in &table.entries {
-            if !known_string_ids.insert(entry.string_id)
-                || entry
-                    .components
-                    .iter()
-                    .any(|id| !known_string_ids.contains(id))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} has duplicate or forward string-id references", table.id),
-                    Some(table.id.clone()),
-                ));
-            }
         }
     }
     let topology_ids = ir
@@ -651,15 +589,15 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
         for name in map
             .maps
-            .last()
-            .into_iter()
-            .flat_map(|node| &node.groups)
+            .root()
+            .groups
+            .iter()
             .flat_map(|group| &group.names)
             .flatten()
         {
             if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
                 let known_ids = table
-                    .entries
+                    .entries()
                     .iter()
                     .map(|entry| entry.string_id)
                     .collect::<HashSet<_>>();
@@ -723,29 +661,29 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for entry in &entries {
-        entry_lengths.insert(entry.name.as_str(), entry.byte_len());
-        for owner in &entry.referenced_by {
+        entry_lengths.insert(entry.name(), entry.byte_len());
+        for owner in entry.referenced_by() {
             if !asset_owner_ids.contains(owner.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing referencing record {owner}", entry.id),
-                    Some(entry.id.clone()),
+                    format!("{} has missing referencing record {owner}", entry.id()),
+                    Some(entry.id().to_owned()),
                 ));
             }
         }
         let expected = expected_references
-            .get(entry.name.as_str())
+            .get(entry.name())
             .map_or(&[][..], Vec::as_slice);
         if !entry
-            .referenced_by
+            .referenced_by()
             .iter()
             .map(String::as_str)
             .eq(expected.iter().map(String::as_str))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!("{} has a stale side-entry reference relation", entry.id),
-                Some(entry.id.clone()),
+                format!("{} has a stale side-entry reference relation", entry.id()),
+                Some(entry.id().to_owned()),
             ));
         }
     }
@@ -754,7 +692,17 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .as_ref()
         .and_then(|source| source.attributes.get("physical_archive_bytes"))
         .and_then(|value| value.parse().ok());
-    validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    validate_span_chain(
+        ctx,
+        "physical archive",
+        &physical,
+        physical_end,
+        &mut findings,
+    )?;
+    let string_table_ids = string_tables
+        .iter()
+        .map(native::StringTableRecord::id)
+        .collect::<Vec<_>>();
     let logical_owner_ids = property_ids
         .iter()
         .copied()
@@ -765,9 +713,9 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .flat_map(|document| document.states.iter().map(|record| record.id.as_str())),
         )
         .chain(shape_payloads.iter().map(|record| record.id.as_str()))
-        .chain(string_tables.iter().map(|record| record.id.as_str()))
+        .chain(string_table_ids.iter().map(String::as_str))
         .chain(element_maps.iter().map(|record| record.id.as_str()))
-        .chain(entries.iter().map(|record| record.id.as_str()))
+        .chain(entries.iter().map(crate::native::EntryRecord::id))
         .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
@@ -789,25 +737,31 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
     for entry in &entries {
-        if entry.byte_len() > 0 && !covered_entries.contains(entry.name.as_str()) {
+        if entry.byte_len() > 0 && !covered_entries.contains(entry.name()) {
             findings.push(finding(
                 Check::PayloadIntegrity,
-                format!("logical ledger omits nonempty entry {}", entry.name),
-                Some(entry.id.clone()),
+                format!("logical ledger omits nonempty entry {}", entry.name()),
+                Some(entry.id().to_owned()),
             ));
         }
     }
     for (name, mut spans) in logical_by_entry {
-        spans.sort_by_key(|span| span.start);
+        ctx.stable_sort_by(
+            &mut spans,
+            |left, right| left.span.start().cmp(&right.span.start()),
+            |_| 0,
+            "fcstd logical spans sort",
+        )?;
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
     let expected_coverage = container::byte_coverage(
+        ctx,
         &physical,
         &entries,
         &logical,
         physical_end.unwrap_or_default(),
-    );
+    )?;
     if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -815,7 +769,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             None,
         ));
     }
-    findings
+    Ok(findings)
 }
 
 fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
@@ -828,17 +782,24 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
 }
 
 fn validate_span_chain(
+    ctx: &DecodeContext<'_>,
     label: &str,
     spans: &[native::ArchiveSpan],
     expected_end: Option<u64>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|span| span.start);
-    let valid = ordered.first().is_some_and(|span| span.start == 0)
-        && ordered.iter().all(|span| span.start < span.end)
-        && ordered.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.end == end));
+    ctx.stable_sort_by(
+        &mut ordered,
+        |left, right| left.span.start().cmp(&right.span.start()),
+        |_| 0,
+        "FreeCAD archive span chain sort",
+    )?;
+    let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
+        && ordered
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -846,6 +807,7 @@ fn validate_span_chain(
             None,
         ));
     }
+    Ok(())
 }
 
 fn validate_logical_chain(
@@ -855,10 +817,11 @@ fn validate_logical_chain(
     findings: &mut Vec<Finding>,
 ) {
     let valid = expected_end.is_some()
-        && spans.first().is_some_and(|span| span.start == 0)
-        && spans.iter().all(|span| span.start < span.end)
-        && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.end == end));
+        && spans.first().is_some_and(|span| span.span.start() == 0)
+        && spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -871,20 +834,29 @@ fn validate_logical_chain(
 impl CodecBackend for FcstdCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        crate::validate_native(ir)
+    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        crate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         if !prefix.starts_with(b"PK\x03\x04") {
-            return Confidence::No;
+            return Ok(Confidence::No);
         }
-        if container::has_document_markers(prefix) {
-            Confidence::High
+        if container::has_document_markers(ctx, prefix)? {
+            Ok(Confidence::High)
         } else if contains(prefix, b"Document.xml") {
-            Confidence::Medium
+            Ok(Confidence::Medium)
         } else {
-            Confidence::Low
+            Ok(Confidence::Low)
         }
     }
 
@@ -893,42 +865,14 @@ impl CodecBackend for FcstdCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::scan(ctx, root).map(|scan| container::summarize(&scan))
+        let scan = container::scan(ctx, root)?;
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let scan = container::scan(ctx, root)?;
-        // Charge document object cardinality before persistence/geometry work.
-        ctx.charge_entities(
-            scan.document.object_count as u64,
-            "admit FCStd document objects",
-        )?;
         let mut admitted_entities = 0_u64;
-        let mut attributes = BTreeMap::new();
-        attributes.insert("document_root".into(), scan.document.root_name.clone());
-        attributes.insert(
-            "object_count".into(),
-            scan.document.object_count.to_string(),
-        );
-        attributes.insert(
-            "document_kind".into(),
-            scan.document.document_kind.as_str().to_owned(),
-        );
-        attributes.insert(
-            "application_domains".into(),
-            scan.document.domains.join(","),
-        );
-        attributes.insert("archive_entry_count".into(), scan.entries.len().to_string());
-        attributes.insert(
-            "physical_ledger_spans".into(),
-            scan.ledger.len().to_string(),
-        );
-        if let Some(last) = scan.ledger.last() {
-            attributes.insert("physical_archive_bytes".into(), last.end.to_string());
-        }
-        if let Some(value) = &scan.document.program_version {
-            attributes.insert("program_version".into(), value.clone());
-        }
+        let mut attributes = container::source_attributes(ctx, &scan)?;
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
@@ -939,35 +883,45 @@ impl CodecBackend for FcstdCodec {
                     .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
+                thumbnail.len().to_string(),
+            );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
-        let primary = dialect::FcstdDialect::classify(&scan.document);
+        let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
+        let mut ir = CadIr::decoded(SourceMeta::classified(
+            dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?,
+            attributes,
+        ));
         if let Some((name, bytes)) = thumbnail {
-            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
                 [UnknownRecord::retained(
-                    UnknownId::mint(native::native_id("thumbnail", name))
-                        .expect("identity grammar"),
+                    UnknownId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+                        cadmpeg_ir::ids::IdentityKey::encode_segment(name),
+                    ),
                     0,
-                    bytes.to_vec(),
+                    ctx.copy_retained(bytes, "retain FCStd thumbnail")?,
                     vec![native::native_id("document", "0")],
-                )],
+                )]
+                .into(),
+                ctx,
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
-        namespace.set_arena("physical_ledger", &scan.ledger)?;
-        #[allow(clippy::if_not_else)]
-        if !ctx.container_only() {
+        namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
+        namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
+        let decode_document = !ctx.container_only();
+        if decode_document {
             let document_bytes = scan
                 .data
                 .get("Document.xml")
@@ -975,106 +929,103 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
+            let graph = persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::malformed(format_args!(
-                            "property {} references missing side entry {side_entry}",
-                            property.id
-                        )));
+                        return Err(CodecError::Malformed(ctx.format_retained(
+                            format_args!(
+                                "property {} references missing side entry {side_entry}",
+                                property.id
+                            ),
+                            "FCStd missing side entry diagnostic",
+                        )?));
                     }
                 }
             }
-            let mut entry_records = scan
-                .entries
-                .iter()
-                .map(|entry| {
-                    let bytes = scan
-                        .data
-                        .get(&entry.name)
-                        .map(|view| view.window())
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "entry {} disappeared after scan",
-                                entry.name
-                            ))
-                        })?;
-                    let referenced_by = graph
-                        .properties
-                        .iter()
-                        .filter(|property| property.side_entries().contains(&entry.name))
-                        .map(|property| property.id.clone())
-                        .collect();
-                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
-                    Ok(native::EntryRecord {
-                        id: native::native_id("entry", &entry.name),
-                        name: entry.name.clone(),
-                        role: entry.role,
-                        referenced_by,
-                        data: bytes.to_vec(),
-                    })
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
-            let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
+            let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
+            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
+                ctx,
                 document_bytes,
-                scan.document.file_version.parse::<usize>().map_err(|_| {
-                    CodecError::Malformed("Document.xml FileVersion is invalid".into())
-                })?,
+                scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
             )?;
-            namespace.set_arena("objects", &graph.objects)?;
-            namespace.set_arena("extensions", &graph.extensions)?;
-            namespace.set_arena("properties", &graph.properties)?;
-            namespace.set_arena("entries", &entry_records)?;
-            namespace.set_arena("shape_payloads", &shape_payloads)?;
-            namespace.set_arena("carrier_census", &brep::carrier_census(&shape_payloads))?;
-            namespace.set_arena("string_tables", &string_tables)?;
-            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
-            namespace.set_arena("product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(&graph.objects, &graph.properties)?;
-            namespace.set_arena("joints", &joint_records)?;
-            let drawings = drawing::transfer(&graph.objects, &graph.properties)?;
-            drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties)?;
-            namespace.set_arena("drawings", &drawings)?;
-            let annotations = annotation::transfer(&graph.objects, &graph.properties);
+            namespace.set_arena(ctx, "objects", &graph.objects)?;
+            namespace.set_arena(ctx, "extensions", &graph.extensions)?;
+            namespace.set_arena(ctx, "properties", &graph.properties)?;
+            namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
+            namespace.set_arena(
+                ctx,
+                "carrier_census",
+                &brep::carrier_census(ctx, &shape_payloads)?,
+            )?;
+            namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
+            let product_nodes =
+                product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)?;
+            namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
+            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            namespace.set_arena(ctx, "joints", &joint_records)?;
+            let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
+            drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
+            namespace.set_arena(ctx, "drawings", &drawings)?;
+            let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
             annotation::transfer_neutral(
+                ctx,
                 &mut ir.model,
                 &annotations,
                 &graph.properties,
                 &drawings,
             )?;
-            namespace.set_arena("annotations", &annotations)?;
-            application::install(namespace, &graph.objects, &graph.properties, &entry_records)?;
-            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
-            namespace.set_arena("attachments", &attachments)?;
-            let mut curve_transfer = brep::transfer_text_curves(&shape_payloads, &graph.properties);
+            namespace.set_arena(ctx, "annotations", &annotations)?;
+            application::install(
+                ctx,
+                namespace,
+                &graph.objects,
+                &graph.properties,
+                &entry_records,
+            )?;
+            let attachments = attachment::transfer(ctx, &graph.objects, &graph.properties)?;
+            namespace.set_arena(ctx, "attachments", &attachments)?;
+            let mut curve_transfer =
+                brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
             let surface_transfer = brep::transfer_text_surfaces(
+                ctx,
                 &shape_payloads,
                 &graph.properties,
                 &mut curve_transfer,
-            );
+            )?;
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
-            ir.model.curves.extend(curve_transfer.curves);
+            ir.model.curves = curve_transfer.curves;
             for (owner, procedural) in curve_transfer.procedural {
                 ir.model
-                    .add_procedural_curve(owner, procedural)
+                    .add_procedural_curve(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
-            ir.model.surfaces.extend(surface_transfer.surfaces);
+            ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in surface_transfer.procedural {
                 ir.model
-                    .add_procedural_surface(owner, procedural)
+                    .add_procedural_surface(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
-            geometry_transferred |=
-                application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            let topology_occurrences =
-                topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
+            geometry_transferred |= application_geometry::transfer(
+                ctx,
+                &mut ir,
+                &graph.properties,
+                &entry_records,
+                &mut admitted_entities,
+            )?;
+            let topology_occurrences = topology_transfer::transfer(
+                ctx,
+                &mut ir,
+                &shape_payloads,
+                &graph.properties,
+                &mut topology_losses,
+            )?;
             cycle_affected_design_objects = design::transfer(
+                ctx,
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
@@ -1094,34 +1045,39 @@ impl CodecBackend for FcstdCodec {
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
-                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
+                joint::transfer_neutral(ctx, &joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
-                ir.model.entity_count() as u64,
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let design_census = design::census(&graph.objects, &ir.model.features)?;
+            let design_census = design::census(ctx, &graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("design_census", &design_census)?;
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
-            let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
+                .set_arena(ctx, "design_census", &design_census)?;
+            element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences)?;
+            let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
+                    ctx,
                     &mut ir,
                     gui_view.window(),
-                    &scan.data,
-                    &graph.objects,
-                    &graph.properties,
-                    &shape_payloads,
-                    &element_maps,
-                    gui::requires_alpha_conversion(scan.document.program_version.as_deref()),
+                    &gui::GuiSources {
+                        entries: &scan.data,
+                        objects: &graph.objects,
+                        properties: &graph.properties,
+                        payloads: &shape_payloads,
+                        element_maps: &element_maps,
+                        requires_alpha_conversion: gui::requires_alpha_conversion(
+                            scan.document.program_version.as_deref(),
+                        ),
+                    },
                 )?
             } else {
                 gui::Graph::default()
             };
-            gui_losses.clone_from(&gui_graph.losses);
+            gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
-                ir.model.entity_count() as u64,
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
@@ -1145,83 +1101,106 @@ impl CodecBackend for FcstdCodec {
             {
                 if let Some(entry) = entry_records
                     .iter_mut()
-                    .find(|entry| entry.name == entry_name)
+                    .find(|entry| entry.name() == entry_name)
                 {
-                    if !entry
-                        .referenced_by
-                        .iter()
-                        .any(|candidate| candidate == owner)
-                    {
-                        entry.referenced_by.push(owner.to_owned());
-                    }
+                    entry.add_reference(ctx, owner)?;
                 }
             }
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("entries", &entry_records)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_documents", &gui_graph.documents)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_view_providers", &gui_graph.providers)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_properties", &gui_graph.properties)?;
+                .set_arena(ctx, "entries", &entry_records)?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_documents",
+                &gui_graph.documents,
+            )?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_view_providers",
+                &gui_graph.providers,
+            )?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_properties",
+                &gui_graph.properties,
+            )?;
             let logical_ledger = container::logical_ledger(
+                ctx,
                 &entry_records,
                 &graph.properties,
                 &gui_graph,
                 &shape_payloads,
-                &string_tables,
+                string_tables.as_slice(),
                 &element_maps,
             )?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("logical_ledger", &logical_ledger)?;
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+                .set_arena(ctx, "logical_ledger", &logical_ledger)?;
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
+                ctx,
                 &scan.ledger,
                 &entry_records,
                 &logical_ledger,
                 physical_byte_len,
-            );
+            )?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "byte_coverage",
+                std::slice::from_ref(&coverage),
+            )?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("element_maps", &element_maps)?;
+                .set_arena(ctx, "element_maps", &element_maps)?;
         } else {
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
-            let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
+            let coverage =
+                container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "byte_coverage",
+                std::slice::from_ref(&coverage),
+            )?;
         }
         let mut losses = if ctx.container_only() {
             Vec::new()
         } else {
-            semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)
+            semantic_losses(ctx, &ir, &cycle_affected_design_objects, gui_losses)?
         };
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
+        ctx.reserve_vec(
+            &mut losses,
+            topology_losses.len(),
+            "FCStd topology loss output",
+        )?;
+        losses.extend(topology_losses);
+        let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
+        ctx.reserve_vec(
+            &mut losses,
+            usize::from(dialect_losses.is_some()),
+            "FCStd dialect loss output",
+        )?;
+        losses.extend(dialect_losses);
         ctx.admit_entities(
-            ir.model.entity_count() as u64,
+            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        let summary_notes = container::summary_notes(&scan);
+        let summary_notes = container::summary_notes(ctx, &scan)?;
         Ok(Decoded {
             ir,
             body: DecodeBody {
-                geometry_transferred,
-                coverage: cadmpeg_ir::Coverage::default(),
+                transfer: if ctx.container_only() {
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
+                } else {
+                    cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
+                },
+                coverage: cadmpeg_ir::report::decode::Coverage::default(),
                 losses,
                 notes: summary_notes,
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
             },
             source_fidelity,
         })
@@ -1243,98 +1222,109 @@ impl EncoderBackend for FcstdCodec {
 }
 
 fn semantic_losses(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     cycle_affected_design_objects: &BTreeSet<String>,
-    gui_losses: &[LossNote],
-) -> Vec<LossNote> {
-    let mut losses = gui_losses.to_vec();
-    losses.extend(ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let definition = match &feature.definition {
-                cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
-                    operation.as_ref()
-                }
-                definition => definition,
-            };
-            let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } = definition
-            else {
-                return None;
-            };
-            let cycle_affected = feature
-                .native_ref
-                .as_ref()
-                .is_some_and(|id| cycle_affected_design_objects.contains(id));
-            let (code, message) = if cycle_affected {
-                (
-                    FreecadLossCode::FeatureCyclicHistory,
-                    format!(
-                        "FCStd design operation {kind} is retained natively because neutral dependency ordering is cycle-affected"
-                    ),
-                )
-            } else {
-                (
-                    FreecadLossCode::FeatureNativeKindRetained,
-                    format!(
-                        "FCStd design operation {kind} is retained natively but has no neutral semantics"
-                    ),
-                )
-            };
-            Some(
-                    code.note(message).with_provenance(
-                        cadmpeg_ir::SourceProvenance::in_stream(
-                            "fcstd",
-                            "Document.xml",
-                            0,
-                        )
-                        .with_optional_tag(feature.native_ref.clone()),
-                    ),
+    gui_losses: Vec<LossNote>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = gui_losses;
+    for feature in &ir.model.features {
+        let definition = match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. }
+            | cadmpeg_ir::features::FeatureDefinition::Operation(operation) => operation,
+        };
+        let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
+            continue;
+        };
+        let cycle_affected = feature
+            .native_ref
+            .as_ref()
+            .is_some_and(|id| cycle_affected_design_objects.contains(id));
+        let (code, suffix) = if cycle_affected {
+            (
+                FreecadLossCode::FeatureCyclicHistory,
+                " is retained natively because neutral dependency ordering is cycle-affected",
             )
-        })
-        .collect::<Vec<_>>());
-    losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
-        let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
-            return None;
+        } else {
+            (
+                FreecadLossCode::FeatureNativeKindRetained,
+                " is retained natively but has no neutral semantics",
+            )
         };
-        Some(
-            FreecadLossCode::SketchNativeGeometry
-                .note(format!(
-                    "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
-                ))
-                    .with_provenance(
-                        cadmpeg_ir::SourceProvenance::in_stream(
-                            "fcstd",
-                            "Document.xml",
-                            0,
-                        )
-                        .with_optional_tag(entity.native_ref.clone()),
-                    ),
-        )
-    }));
-    losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
-        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
-            &constraint.definition
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            code,
+            &["FCStd design operation ", kind.as_str(), suffix],
+            feature.native_ref.as_deref(),
+            "FCStd feature semantic loss",
+        )?;
+    }
+    for entity in &ir.model.sketch_entities {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } =
+            entity.geometry.definition()
         else {
-            return None;
+            continue;
         };
-        Some(
-            FreecadLossCode::SketchNativeConstraint
-                .note(format!(
-                    "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
-                ))
-                    .with_provenance(
-                        cadmpeg_ir::SourceProvenance::in_stream(
-                            "fcstd",
-                            "Document.xml",
-                            0,
-                        )
-                        .with_optional_tag(constraint.native_ref.clone()),
-                    ),
-        )
-    }));
-    losses
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            FreecadLossCode::SketchNativeGeometry,
+            &[
+                "FCStd sketch geometry ",
+                native_kind.as_str(),
+                " is retained natively but is not neutralized",
+            ],
+            entity.native_ref.as_deref(),
+            "FCStd sketch geometry semantic loss",
+        )?;
+    }
+    for constraint in &ir.model.sketch_constraints {
+        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
+            constraint.definition.kind()
+        else {
+            continue;
+        };
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            FreecadLossCode::SketchNativeConstraint,
+            &[
+                "FCStd sketch constraint ",
+                native_kind.as_str(),
+                " is retained natively but is not neutralized",
+            ],
+            constraint.native_ref.as_deref(),
+            "FCStd sketch constraint semantic loss",
+        )?;
+    }
+    Ok(losses)
+}
+
+fn push_semantic_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    code: FreecadLossCode,
+    message_parts: &[&str],
+    tag: Option<&str>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let message = ctx.join_retained(message_parts, "", operation)?;
+    let tag = tag
+        .map(|tag| ctx.copy_retained_text(tag, operation))
+        .transpose()?;
+    ctx.reserve_vec(losses, 1, "FCStd semantic loss output")?;
+    losses.push(
+        code.note(message).with_provenance(
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("Document.xml"),
+                0,
+            )
+            .with_optional_tag(tag),
+        ),
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1342,4 +1332,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

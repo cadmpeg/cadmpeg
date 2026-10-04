@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner resolved-sketch and related unit tests.
 
-use crate::decode::sketch::{
-    saved_section_missing_line_geometry, section_axis_line_carrier_with_points,
-    section_segment_geometry, section_segment_intersection_carrier_with_missing_line,
+use crate::decode::sketch::geometry::{
+    saved_section_missing_line_geometry, section_segment_geometry,
+};
+use crate::decode::sketch::radii::{
+    section_axis_line_carrier_with_points, section_segment_intersection_carrier_with_missing_line,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
-use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};
+use crate::decode::sweep::nurbs::extruded_geometry_surface;
+use crate::decode::sweep::surfaces::placed_section_geometry_curve;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchConstraint, SketchGeometry, SketchId};
@@ -15,12 +18,11 @@ use std::collections::BTreeMap;
 mod admission;
 mod blind_circular;
 mod carrier_solver;
-mod chamfer;
+mod circular_profile;
+mod coaxial_cones;
 mod equation_constraints;
-mod equation_scalar_propagation;
 mod generated_nurbs;
 mod generated_nurbs_extent;
-mod generated_rectilinear_extent;
 mod generated_source;
 mod interpolation_spline;
 mod numbered_intersect;
@@ -30,16 +32,19 @@ mod saved_line;
 mod schema;
 mod section_solver_constraints_require_complete_unique_semantics;
 mod sketch_curve;
+mod transfer_coverage;
 mod zero_orientation;
 
-pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
         .expect("test decode context");
     run(&ctx)
 }
 
-pub(super) fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
+pub(super) fn synchronize_skamp_count(
+    definition: &mut crate::feature::definitions::FeatureDefinition,
+) {
     let relations = definition.relations.as_mut().expect("relations");
     let count = u32::try_from(relations.skamps().len()).expect("skamp count");
     relations
@@ -60,13 +65,13 @@ pub(super) fn declared_solver_rows<T>(
     }
 }
 
-pub(super) fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {
+fn synchronize_segment_count(definition: &mut crate::feature::definitions::FeatureDefinition) {
     let segments = definition.segments.as_mut().expect("segments");
     segments.declared_count =
         u32::try_from(segments.rows.ordinary().count()).expect("segment count");
 }
 
-pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
+fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
     crate::surface::SurfaceParameterScalar {
         value: Some(value),
         raw: vec![0],
@@ -74,9 +79,9 @@ pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScal
     }
 }
 
-pub(super) fn class_911_surface_row(
-    feature_id: u32,
+pub(super) fn surface_row(
     id: u32,
+    feature_id: u32,
     kind: crate::surface::SurfaceKind,
 ) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
@@ -90,17 +95,16 @@ pub(super) fn class_911_surface_row(
     }
 }
 
-pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::entity::FeatureEntityTable {
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(21, 204, None),
         entry(22, 203, None),
@@ -122,80 +126,121 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(35, 200, Some(3)),
         entry(36, 200, Some(4)),
     ];
-    crate::feature::FeatureEntityTable {
+    crate::feature::entity::FeatureEntityTable::new(
         feature_id,
-        table_class_id: 29,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([11, 12, 13, 14])
 }
 
-pub(super) fn simple_drilled_recipe_surface_rows(
-    feature_id: u32,
-) -> Vec<crate::surface::SurfaceRow> {
+fn simple_drilled_recipe_surface_rows(feature_id: u32) -> Vec<crate::surface::SurfaceRow> {
     vec![
-        class_911_surface_row(feature_id, 11, crate::surface::SurfaceKind::Cone),
-        class_911_surface_row(feature_id, 12, crate::surface::SurfaceKind::Cone),
-        class_911_surface_row(feature_id, 13, crate::surface::SurfaceKind::Cylinder),
-        class_911_surface_row(feature_id, 14, crate::surface::SurfaceKind::Cylinder),
+        surface_row(11, feature_id, crate::surface::SurfaceKind::Cone),
+        surface_row(12, feature_id, crate::surface::SurfaceKind::Cone),
+        surface_row(13, feature_id, crate::surface::SurfaceKind::Cylinder),
+        surface_row(14, feature_id, crate::surface::SurfaceKind::Cylinder),
     ]
 }
 
 #[cfg(test)]
-pub(super) fn section_axis_line_carrier(
-    definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
+fn section_axis_line_carrier(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let variable_points = definition.variables.as_ref()?.reconciled_points().0;
+    let variable_points = crate::decode::with_test_decode_ctx(|ctx| {
+        definition
+            .variables
+            .as_ref()?
+            .reconciled_points(ctx)
+            .map(|result| (result.points, result.ambiguous))
+            .ok()
+            .map(|points| points.0)
+    })?;
     section_axis_line_carrier_with_points(&variable_points, segment)
 }
 
 #[cfg(test)]
-pub(super) fn section_segment_intersection_carrier(
-    definition: &crate::feature::FeatureDefinition,
+fn section_segment_intersection_carrier(
+    definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
+    let missing_line = crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_missing_line_geometry(ctx, definition)
+    })
+    .expect("test missing-line geometry admitted");
     let variable_points = definition
         .variables
         .as_ref()
-        .map(|variables| variables.reconciled_points().0)
+        .map(|variables| {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                variables
+                    .reconciled_points(ctx)
+                    .map(|result| (result.points, result.ambiguous))
+                    .expect("test point reconciliation")
+                    .0
+            })
+        })
         .unwrap_or_default();
-    section_segment_intersection_carrier_with_missing_line(
-        definition,
-        radii,
-        points,
-        segment,
-        missing_line.as_ref(),
-        &variable_points,
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_intersection_carrier_with_missing_line(
+            ctx,
+            definition,
+            radii,
+            points,
+            segment,
+            missing_line.as_ref(),
+            &variable_points,
+        )
+    })
+    .expect("test section carrier")
 }
 
 #[cfg(test)]
-pub(super) fn extruded_segment_surface(
+fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
     extruded_geometry_surface(transform, &section_segment_geometry(points, segment)?)
 }
 
 #[cfg(test)]
-pub(super) fn placed_section_curve_geometry(
+fn placed_section_curve_geometry(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<CurveGeometry> {
     placed_section_geometry_curve(transform, &section_segment_geometry(points, segment)?)
 }
 
 #[cfg(test)]
-pub(super) fn section_skamp_constraints(
-    definition: &crate::feature::FeatureDefinition,
+fn section_skamp_constraints(
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    section_skamp_constraints_for_geometry(definition, sketch, None)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_skamp_constraints_for_geometry(ctx, definition, sketch, None)
+    })
+    .expect("test section solve")
+}
+
+pub(super) fn opaque(external_id: u32) -> crate::feature::definitions::FeatureOpaqueSegment {
+    crate::feature::definitions::FeatureOpaqueSegment {
+        kind: 25,
+        directions: [None; 3],
+        point_ids: [None; 2],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
+    }
 }

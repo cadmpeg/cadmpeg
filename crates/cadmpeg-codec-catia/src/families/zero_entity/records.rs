@@ -3,76 +3,84 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
-use cadmpeg_core::decode::View;
-use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, SurfaceGeometry,
+    nurbs::NurbsCurve,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::units::FinitePoint2;
 
+use crate::analytic::signed_reference_frame;
 use crate::layout::a9_03_frame as a9_03;
 use crate::layout::zero_entity_edge_stride_5e1a as edge_5e1a;
 use crate::layout::zero_entity_pcurve_2171 as pcurve_2171;
 use crate::layout::zero_entity_vertex_owner_5d06 as vertex_5d06;
-use crate::nurbs::expand_knots;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector};
 
 /// A directly decoded analytic carrier in the zero-entity `a9 03` stream.
 #[derive(Debug, Clone)]
-pub struct ZeroEntitySurface {
+pub(in crate::families::zero_entity) struct ZeroEntitySurface {
     /// Offset of the framed record in the file.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// The decoded surface carrier.
-    pub geometry: SurfaceGeometry,
+    pub(super) geometry: SurfaceGeometry,
 }
 
 /// One face-local support occurrence owned by a zero-entity surface carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntitySupportOccurrence {
+pub(crate) struct ZeroEntitySupportOccurrence {
     /// Offset of the framed `21xx` record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// Face-local support slot stored by the framed token at record offset 12.
-    pub face_local_slot: u32,
+    pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when this support family carries them inline.
-    pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    pub(crate) uv_endpoints: Option<[[FiniteReal; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
-    pub pcurve: Option<PcurveGeometry>,
+    pub(crate) pcurve: Option<PcurveGeometry>,
     /// Exact model-space carrier derived from the pcurve and owning surface.
-    pub model_curve: Option<CurveGeometry>,
+    pub(crate) model_curve: Option<CurveGeometry>,
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
-    pub model_curve_construction: Option<ProceduralCurveDefinition>,
+    pub(crate) model_curve_construction: Option<ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
-    pub model_parameters: Option<[f64; 2]>,
+    pub(crate) model_parameters: Option<[FiniteReal; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
-    pub model_midpoint: Option<Point3>,
+    pub(crate) model_midpoint: Option<FinitePoint3>,
     /// UV endpoints lifted through the owning surface carrier.
-    pub model_endpoints: Option<[Point3; 2]>,
+    pub(crate) model_endpoints: Option<[FinitePoint3; 2]>,
 }
 
 /// One surface carrier and its maximal following `21xx` support run.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntitySupportRun {
+pub(crate) struct ZeroEntitySupportRun {
     /// Offset of the owning surface-carrier record.
-    pub carrier_pos: usize,
+    pub(crate) carrier_pos: usize,
     /// One-based global record ordinal of the owning surface carrier.
-    pub carrier_record_ordinal: u32,
+    pub(crate) carrier_record_ordinal: u32,
     /// Positionally aligned face record when the complete rosters agree.
-    pub face: Option<ZeroEntityFace>,
+    pub(crate) face: Option<ZeroEntityFace>,
     /// Face-local support occurrences in storage order.
-    pub supports: Vec<ZeroEntitySupportOccurrence>,
+    pub(crate) supports: Vec<ZeroEntitySupportOccurrence>,
 }
 
 /// Terminal control byte following a zero-entity face allocation lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ZeroEntityFaceControl {
+pub(crate) enum ZeroEntityFaceControl {
     /// Control byte `0x03`.
     Control03,
     /// Control byte `0x05`.
@@ -80,7 +88,7 @@ pub enum ZeroEntityFaceControl {
 }
 
 impl ZeroEntityFaceControl {
-    pub fn from_byte(value: u8) -> Option<Self> {
+    fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x03 => Some(Self::Control03),
             0x05 => Some(Self::Control05),
@@ -88,7 +96,7 @@ impl ZeroEntityFaceControl {
         }
     }
 
-    pub fn as_byte(self) -> u8 {
+    pub(crate) fn as_byte(self) -> u8 {
         match self {
             Self::Control03 => 0x03,
             Self::Control05 => 0x05,
@@ -98,23 +106,24 @@ impl ZeroEntityFaceControl {
 
 /// One counted zero-entity `5fxx` face record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntityFace {
+pub(crate) struct ZeroEntityFace {
     /// Offset of the framed face record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// Counted allocation values in storage order.
-    pub allocations: Vec<u32>,
+    pub(crate) allocations: Vec<u32>,
     /// Positionally aligned loop records when the complete flattened roster agrees.
-    pub loops: Option<Vec<ZeroEntityLoop>>,
+    pub(crate) loops: Option<Vec<ZeroEntityLoop>>,
     /// Terminal control byte following the allocation lane.
-    pub terminal_control: ZeroEntityFaceControl,
+    pub(crate) terminal_control: ZeroEntityFaceControl,
 }
 
+#[cfg(test)]
 impl ZeroEntityFace {
-    pub fn loop_terminals(&self) -> Vec<u32> {
+    pub(crate) fn loop_terminals(&self) -> Vec<u32> {
         let Some(first) = self.allocations.first().copied() else {
             return Vec::new();
         };
@@ -125,79 +134,191 @@ impl ZeroEntityFace {
     }
 }
 
+/// A nonempty descending run of logical loop members below its terminal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ZeroEntityLoopMembers {
+    terminal_id: u32,
+    gap: u32,
+    member_count: NonZeroUsize,
+}
+
+impl ZeroEntityLoopMembers {
+    /// Admit a nonempty run with a positive gap and no identifier underflow.
+    pub(super) fn try_new(terminal_id: u32, gap: u32, member_count: NonZeroUsize) -> Option<Self> {
+        if gap == 0 {
+            return None;
+        }
+        terminal_id
+            .checked_sub(gap)?
+            .checked_sub(u32::try_from(member_count.get() - 1).ok()?)?;
+        Some(Self {
+            terminal_id,
+            gap,
+            member_count,
+        })
+    }
+
+    /// Terminal even-lane logical identifier.
+    pub(crate) const fn terminal_id(&self) -> u32 {
+        self.terminal_id
+    }
+
+    /// Difference between the terminal and first member identifiers.
+    pub(crate) const fn gap(&self) -> u32 {
+        self.gap
+    }
+
+    /// Nonterminal identifiers in source order.
+    pub(crate) fn member_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        std::iter::successors(Some(self.terminal_id - self.gap), |id| id.checked_sub(1))
+            .take(self.member_count.get())
+    }
+
+    /// Face-local support slots in member order.
+    fn support_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        (self.gap..=self.terminal_id).take(self.member_count.get())
+    }
+}
+
+/// Admitted zero-entity loop classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum ZeroEntityLoopClass {
+    /// Outer loop with forward face sense.
+    Outer41 = 0x41,
+    /// Inner bound loop.
+    Bound50 = 0x50,
+    /// Outer loop with reversed face sense.
+    ReversedC1 = 0xc1,
+}
+
+impl ZeroEntityLoopClass {
+    /// Admit a declared loop-class byte.
+    const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x41 => Some(Self::Outer41),
+            0x50 => Some(Self::Bound50),
+            0xc1 => Some(Self::ReversedC1),
+            _ => None,
+        }
+    }
+
+    /// Native loop-class byte.
+    pub(crate) const fn as_byte(self) -> u8 {
+        match self {
+            Self::Outer41 => 0x41,
+            Self::Bound50 => 0x50,
+            Self::ReversedC1 => 0xc1,
+        }
+    }
+}
+
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntityLoop {
+pub(crate) struct ZeroEntityLoop {
     /// Offset of the framed loop record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
-    /// Nonterminal even-lane logical member identifiers.
-    pub member_ids: Vec<u32>,
+    pub(crate) tag: [u8; 2],
+    /// Nonterminal even-lane arithmetic run.
+    pub(crate) members: ZeroEntityLoopMembers,
     /// Odd-lane typed references in member order.
-    pub typed_references: Vec<u32>,
+    pub(crate) typed_references: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
-    pub support_record_ordinals: Vec<u32>,
-    /// Terminal even-lane logical identifier.
-    pub terminal_id: u32,
-    /// Difference between the terminal and first member identifiers.
-    pub gap: u32,
+    pub(crate) support_record_ordinals: Vec<u32>,
     /// Stored loop-class byte.
-    pub loop_class: u8,
+    pub(crate) loop_class: ZeroEntityLoopClass,
     /// Absolute coedge senses in member order; `true` is forward.
-    pub forward_senses: Vec<bool>,
+    pub(crate) forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
-    pub oriented_model_endpoints: Vec<[Point3; 2]>,
+    pub(crate) oriented_model_endpoints: Vec<[FinitePoint3; 2]>,
 }
 
 /// One `5e1a` allocation tuple.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityEdgeStride {
+pub(crate) struct ZeroEntityEdgeStride {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
-    pub allocations: [u32; 5],
-    /// The three allocations in the `0638`/`2569` topology namespace, in
-    /// source order `[T, T-1, T-2]`.
-    pub topology_refs: [u32; 3],
-    /// The two allocations selecting the adjacent surface-support slots, in
-    /// source order `[X, Y]`.
-    pub surface_support_refs: [u32; 2],
+    pub(crate) allocations: [u32; 5],
+}
+
+impl ZeroEntityEdgeStride {
+    /// Topology allocations in source order.
+    pub(crate) const fn topology_refs(&self) -> [u32; 3] {
+        [
+            self.allocations[0],
+            self.allocations[3],
+            self.allocations[4],
+        ]
+    }
+
+    /// Adjacent surface-support allocations in source order.
+    pub(crate) const fn surface_support_refs(&self) -> [u32; 2] {
+        [self.allocations[1], self.allocations[2]]
+    }
 }
 
 /// One positional `0638` oriented use.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOrientedUse {
+pub(crate) struct ZeroEntityOrientedUse {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
-    /// Positional side number, either one or two.
-    pub side: u32,
-    /// Two stored allocation values.
-    pub allocations: [u32; 2],
+    pub(crate) record_ordinal: u32,
+}
+
+/// Position within an oriented-use pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ZeroEntityUseSlot {
+    /// First use in source order.
+    First,
+    /// Second use in source order.
+    Second,
+}
+
+impl ZeroEntityUseSlot {
+    /// One-based positional side number.
+    pub(crate) const fn side(self) -> u32 {
+        match self {
+            Self::First => 1,
+            Self::Second => 2,
+        }
+    }
 }
 
 /// One `2569` header and its two immediately following positional uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOrientedUsePair {
+pub(crate) struct ZeroEntityOrientedUsePair {
     /// Offset of the `2569` header.
-    pub header_pos: usize,
+    pub(crate) header_pos: usize,
     /// One-based global record ordinal of the `2569` header.
-    pub header_record_ordinal: u32,
-    /// Stored base columns.
-    pub base_columns: [u32; 2],
+    pub(crate) header_record_ordinal: u32,
+    base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
-    pub uses: [ZeroEntityOrientedUse; 2],
+    pub(crate) uses: [ZeroEntityOrientedUse; 2],
+}
+
+impl ZeroEntityOrientedUsePair {
+    /// Stored base columns.
+    pub(crate) const fn base_columns(&self) -> [u32; 2] {
+        self.base_columns
+    }
+
+    /// Allocation columns for the selected use slot.
+    pub(crate) const fn allocations(&self, slot: ZeroEntityUseSlot) -> [u32; 2] {
+        let side = slot.side();
+        [self.base_columns[0] + side, self.base_columns[1] + side]
+    }
 }
 
 /// Counted allocation vector of a zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ZeroEntityVertexAllocations {
+pub(crate) enum ZeroEntityVertexAllocations {
     /// Tag `050b`: two allocations.
     Two([u32; 2]),
     /// Tag `0510`: three allocations.
@@ -208,7 +329,7 @@ pub enum ZeroEntityVertexAllocations {
 
 impl ZeroEntityVertexAllocations {
     /// Complete two-byte record tag for this allocation arity.
-    pub fn tag(&self) -> [u8; 2] {
+    fn tag(&self) -> [u8; 2] {
         match self {
             Self::Two(_) => [0x05, 0x0b],
             Self::Three(_) => [0x05, 0x10],
@@ -216,7 +337,7 @@ impl ZeroEntityVertexAllocations {
         }
     }
 
-    pub fn as_slice(&self) -> &[u32] {
+    pub(crate) fn as_slice(&self) -> &[u32] {
         match self {
             Self::Two(allocations) => allocations,
             Self::Three(allocations) => allocations,
@@ -227,60 +348,64 @@ impl ZeroEntityVertexAllocations {
 
 /// One counted zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityVertexIncidence {
+pub(crate) struct ZeroEntityVertexIncidence {
     /// Offset of the framed `05xx` record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Stored allocation values whose length selects the record tag.
-    pub allocations: ZeroEntityVertexAllocations,
+    pub(crate) allocations: ZeroEntityVertexAllocations,
 }
 
 impl ZeroEntityVertexIncidence {
     /// Complete two-byte record tag selected by allocation arity.
-    pub fn tag(&self) -> [u8; 2] {
+    pub(crate) fn tag(&self) -> [u8; 2] {
         self.allocations.tag()
     }
 }
 
 /// The terminal zero-entity body hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOwnershipRoot {
+pub(crate) struct ZeroEntityOwnershipRoot {
     /// Offset of the counted `6142` face-roster record.
-    pub face_roster_pos: usize,
+    pub(crate) face_roster_pos: usize,
     /// One-based global record ordinal of the face-roster record.
-    pub face_roster_record_ordinal: u32,
+    pub(crate) face_roster_record_ordinal: u32,
     /// Descending one-based face-allocation slots.
-    pub face_slots: Vec<u32>,
+    pub(crate) face_slots: Vec<u32>,
     /// Offset of the immediately following `6006` shell root.
-    pub shell_pos: usize,
+    pub(crate) shell_pos: usize,
     /// Offset of the immediately following `6508` body root.
-    pub body_pos: usize,
+    pub(crate) body_pos: usize,
 }
 
 impl ZeroEntityOwnershipRoot {
     /// One-based ordinal of the immediately following `6006` shell root.
-    pub fn shell_record_ordinal(&self) -> u32 {
-        self.face_roster_record_ordinal.saturating_add(1)
+    pub(crate) fn shell_record_ordinal(&self) -> Result<u32, CodecError> {
+        self.face_roster_record_ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("CATIA zero-entity shell ordinal overflows"))
     }
 
     /// One-based ordinal of the immediately following `6508` body root.
-    pub fn body_record_ordinal(&self) -> u32 {
-        self.face_roster_record_ordinal.saturating_add(2)
+    pub(crate) fn body_record_ordinal(&self) -> Result<u32, CodecError> {
+        self.face_roster_record_ordinal
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("CATIA zero-entity body ordinal overflows"))
     }
 }
 
 /// One framed record in the zero-entity global identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityRecordIdentity {
+pub(crate) struct ZeroEntityRecordIdentity {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Exclusive logical end, including any inline continuation.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -292,16 +417,23 @@ struct ZeroEntityRecord {
 }
 
 struct ZeroEntityNurbsLayout {
-    u_distinct: Vec<f64>,
+    u_distinct: Vec<FiniteReal>,
     u_mults: Vec<u32>,
     u_degree: u32,
     u_count: u32,
-    v_distinct: Vec<f64>,
+    v_distinct: Vec<FiniteReal>,
     v_mults: Vec<u32>,
     v_degree: u32,
     v_count: u32,
     grid: usize,
     end: usize,
+}
+
+struct ZeroEntityNurbsKnotLane {
+    distinct: Vec<FiniteReal>,
+    multiplicities: Vec<u32>,
+    degree: u32,
+    control_count: u32,
 }
 
 fn zero_entity_fixed_logical_length(tag: [u8; 2]) -> Option<usize> {
@@ -319,12 +451,11 @@ fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
         return None;
     }
     let knots = [67usize, 75, 83, 91, 99].map(|offset| f64_le(data, record.checked_add(offset)?));
-    let knots = knots.into_iter().collect::<Option<Vec<_>>>()?;
-    if !knots
-        .windows(2)
-        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
-        || !knots.last().is_some_and(|knot| knot.is_finite())
-    {
+    let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth)] = knots else {
+        return None;
+    };
+    let knots = [first, second, third, fourth, fifth];
+    if !knots.windows(2).all(|pair| pair[0] < pair[1]) {
         return None;
     }
     for (index, multiplicity) in [4u32, 2, 2, 2, 4].into_iter().enumerate() {
@@ -338,7 +469,7 @@ fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
     }
     for index in 0usize..10 {
         let pole = record.checked_add(132usize.checked_add(index.checked_mul(16)?)?)?;
-        if !f64_le(data, pole)?.is_finite() || !f64_le(data, pole.checked_add(8)?)?.is_finite() {
+        if f64_le(data, pole).is_none() || f64_le(data, pole.checked_add(8)?).is_none() {
             return None;
         }
     }
@@ -367,9 +498,13 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
         .then_some(end)
 }
 
-fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEntityRecord> {
+fn zero_entity_records_in_range(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+) -> Result<Vec<ZeroEntityRecord>, CodecError> {
     if data.get(range.clone()).is_none() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut records = Vec::new();
     let mut position = range.start;
@@ -395,7 +530,7 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
             };
             end
         } else if matches!(tag, [0x34, 0xc8 | 0x5e]) {
-            let Some(end) = zero_entity_nurbs_logical_end(data, position) else {
+            let Some(end) = zero_entity_nurbs_logical_end(ctx, data, position)? else {
                 break;
             };
             end
@@ -416,191 +551,252 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
         let Ok(ordinal) = u32::try_from(one_based_ordinal) else {
             break;
         };
-        records.push(ZeroEntityRecord {
-            pos: position,
-            end,
-            tag,
-            ordinal,
-        });
+        ctx.push_vec(
+            &mut records,
+            ZeroEntityRecord {
+                pos: position,
+                end,
+                tag,
+                ordinal,
+            },
+            "catia_zero_records",
+        )?;
         position = end;
     }
-    records
+    Ok(records)
 }
 
 #[cfg(test)]
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
-    zero_entity_records_in_range(data, 0..data.len())
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_records_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test zero-entity records fit the service profile")
 }
 
-fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
-    Some(zero_entity_nurbs_layout(data, record)?.end)
+fn zero_entity_nurbs_logical_end(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: usize,
+) -> Result<Option<usize>, CodecError> {
+    Ok(zero_entity_nurbs_layout(ctx, data, record)?.map(|layout| layout.end))
 }
 
-fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
-    let tag = [
-        *data.get(record.checked_add(a9_03::TAG_HI)?)?,
-        *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
-    ];
-    let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
-    let knot_start = record.checked_add(23)?;
-    let grid = record.checked_add(grid_offset)?;
-    let pole_count = crate::nurbs_surface_control_count(expected_u_count, expected_v_count)?;
-    let pole_bytes = pole_count.checked_mul(24)?;
-    let end = grid.checked_add(pole_bytes)?;
-    data.get(grid..end)?;
+fn zero_entity_nurbs_layout(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: usize,
+) -> Result<Option<ZeroEntityNurbsLayout>, CodecError> {
+    (|| -> Option<Result<ZeroEntityNurbsLayout, CodecError>> {
+        let tag = [
+            *data.get(record.checked_add(a9_03::TAG_HI)?)?,
+            *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
+        ];
+        let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
+        let knot_start = record.checked_add(23)?;
+        let grid = record.checked_add(grid_offset)?;
+        let pole_count = crate::nurbs_surface_control_count(expected_u_count, expected_v_count)?;
+        let pole_bytes = pole_count.checked_mul(24)?;
+        let end = grid.checked_add(pole_bytes)?;
+        data.get(grid..end)?;
 
-    // The carrier has no count word for either distinct-knot lane. Its fixed
-    // pole boundary makes the two lanes a bounded parse: U knots, two tagged
-    // V-dimension words, one V marker, V knots, V multiplicities, and the
-    // three-byte pole marker. Enumerate the possible U lane widths and retain
-    // exactly one structural interpretation. A value range or a first
-    // terminator would turn ordinary model parameters into framing bytes.
-    let pole_marker_start = grid.checked_sub(3)?;
-    let available = pole_marker_start.checked_sub(knot_start)?;
-    let minimum_after_u = 2usize.checked_mul(5)?.checked_add(1)?.checked_add(2 * 13)?;
-    let max_u_distinct = available.checked_sub(minimum_after_u)?.checked_div(13)?;
-    if max_u_distinct < 2 {
-        return None;
-    }
-    let mut candidate = None;
-    for u_distinct_count in 2..=max_u_distinct {
-        let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
-        let Some((u_distinct, u_mults, u_degree, u_count)) =
-            zero_entity_nurbs_knot_lane(data, knot_start, u_distinct_count, expected_u_count)
-        else {
-            continue;
-        };
-        let Some((_, after_dimensions)) = u32_tokens(data, u_after, 2) else {
-            continue;
-        };
-        let v_start = after_dimensions.checked_add(1)?;
-        if v_start > pole_marker_start {
-            continue;
-        }
-        let v_bytes = pole_marker_start.checked_sub(v_start)?;
-        if v_bytes % 13 != 0 {
-            continue;
-        }
-        let v_distinct_count = v_bytes / 13;
-        if v_distinct_count < 2 {
-            continue;
-        }
-        let Some((v_distinct, v_mults, v_degree, v_count)) =
-            zero_entity_nurbs_knot_lane(data, v_start, v_distinct_count, expected_v_count)
-        else {
-            continue;
-        };
-        if candidate.is_some() {
+        // The carrier has no count word for either distinct-knot lane. Its fixed
+        // pole boundary makes the two lanes a bounded parse: U knots, two tagged
+        // V-dimension words, one V marker, V knots, V multiplicities, and the
+        // three-byte pole marker. Enumerate the possible U lane widths and retain
+        // exactly one structural interpretation. A value range or a first
+        // terminator would turn ordinary model parameters into framing bytes.
+        let pole_marker_start = grid.checked_sub(3)?;
+        let available = pole_marker_start.checked_sub(knot_start)?;
+        let minimum_after_u = 2usize.checked_mul(5)?.checked_add(1)?.checked_add(2 * 13)?;
+        let max_u_distinct = available.checked_sub(minimum_after_u)?.checked_div(13)?;
+        if max_u_distinct < 2 {
             return None;
         }
-        candidate = Some((
-            u_distinct, u_mults, u_degree, u_count, v_distinct, v_mults, v_degree, v_count,
-        ));
-    }
-    let (u_distinct, u_mults, u_degree, u_count, v_distinct, v_mults, v_degree, v_count) =
-        candidate?;
-    Some(ZeroEntityNurbsLayout {
-        u_distinct,
-        u_mults,
-        u_degree,
-        u_count,
-        v_distinct,
-        v_mults,
-        v_degree,
-        v_count,
-        grid,
-        end,
-    })
+        let mut candidate = None;
+        for u_distinct_count in 2..=max_u_distinct {
+            let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
+            let u_lane = match zero_entity_nurbs_knot_lane(
+                ctx,
+                data,
+                knot_start,
+                u_distinct_count,
+                expected_u_count,
+            ) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            let after_dimensions = match u32_tokens(ctx, data, u_after, 2) {
+                Ok(Some((_, end))) => end,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            let v_start = after_dimensions.checked_add(1)?;
+            if v_start > pole_marker_start {
+                continue;
+            }
+            let v_bytes = pole_marker_start.checked_sub(v_start)?;
+            if v_bytes % 13 != 0 {
+                continue;
+            }
+            let v_distinct_count = v_bytes / 13;
+            if v_distinct_count < 2 {
+                continue;
+            }
+            let v_lane = match zero_entity_nurbs_knot_lane(
+                ctx,
+                data,
+                v_start,
+                v_distinct_count,
+                expected_v_count,
+            ) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((u_lane, v_lane));
+        }
+        let (u_lane, v_lane) = candidate?;
+        Some(Ok(ZeroEntityNurbsLayout {
+            u_distinct: u_lane.distinct,
+            u_mults: u_lane.multiplicities,
+            u_degree: u_lane.degree,
+            u_count: u_lane.control_count,
+            v_distinct: v_lane.distinct,
+            v_mults: v_lane.multiplicities,
+            v_degree: v_lane.degree,
+            v_count: v_lane.control_count,
+            grid,
+            end,
+        }))
+    })()
+    .transpose()
 }
 
 fn zero_entity_nurbs_knot_lane(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     distinct_count: usize,
     expected_control_count: usize,
-) -> Option<(Vec<f64>, Vec<u32>, u32, u32)> {
-    let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
-    let mut distinct = Vec::with_capacity(distinct_count);
-    for index in 0..distinct_count {
-        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
-        if !value.is_finite() || distinct.last().is_some_and(|last| value <= *last) {
+) -> Result<Option<ZeroEntityNurbsKnotLane>, CodecError> {
+    (|| -> Option<Result<ZeroEntityNurbsKnotLane, CodecError>> {
+        let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
+        let mut distinct = Vec::new();
+        if let Err(error) = ctx.reserve_vec(
+            &mut distinct,
+            distinct_count,
+            "catia_zero_nurbs_distinct_knots",
+        ) {
+            return Some(Err(error));
+        }
+        for index in 0..distinct_count {
+            let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
+            if distinct.last().is_some_and(|last| value <= *last) {
+                return None;
+            }
+            distinct.push(value);
+        }
+        let (mults, end) = match u32_tokens(ctx, data, distinct_end, distinct_count) {
+            Ok(Some(tokens)) => tokens,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let degree = mults.first().copied()?.checked_sub(1)?;
+        let control_count = mults
+            .iter()
+            .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+            .checked_sub(degree + 1)?;
+        if !(1..=9).contains(&degree)
+            || usize::try_from(control_count).ok()? != expected_control_count
+            || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
+        {
             return None;
         }
-        distinct.push(value);
-    }
-    let (mults, end) = u32_tokens(data, distinct_end, distinct_count)?;
-    let degree = mults.first().copied()?.checked_sub(1)?;
-    let control_count = mults
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)?;
-    if !(1..=9).contains(&degree)
-        || usize::try_from(control_count).ok()? != expected_control_count
-        || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
-    {
-        return None;
-    }
-    Some((distinct, mults, degree, control_count))
+        Some(Ok(ZeroEntityNurbsKnotLane {
+            distinct,
+            multiplicities: mults,
+            degree,
+            control_count,
+        }))
+    })()
+    .transpose()
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
-#[must_use]
-pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
-    zero_entity_record_inventory_in_range(data, 0..data.len())
+pub(crate) fn zero_entity_record_inventory(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
+    zero_entity_record_inventory_in_range(ctx, data, 0..data.len())
 }
 
 /// Inventory complete framed records whose extents stay inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_record_inventory_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntityRecordIdentity> {
-    zero_entity_records_in_range(data, range)
-        .into_iter()
-        .map(|record| ZeroEntityRecordIdentity {
+) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut output = Vec::new();
+    ctx.reserve_vec(&mut output, records.len(), "catia_zero_record_inventory")?;
+    for record in records {
+        output.push(ZeroEntityRecordIdentity {
             pos: record.pos,
             end: record.end,
             tag: record.tag,
             record_ordinal: record.ordinal,
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
 /// Decode the terminal face-roster, shell, and body ownership roots.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
-    zero_entity_ownership_root_in_range(data, 0..data.len())
+fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_ownership_root_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test ownership root fits the service profile")
 }
 
 /// Decode every complete ownership hierarchy in the zero-entity stream.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
-    zero_entity_ownership_roots_in_range(data, 0..data.len())
+fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_ownership_roots_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test ownership roots fit the service profile")
 }
 
 /// Decode ownership roots whose records stay inside `range`.
-#[must_use]
-pub(crate) fn zero_entity_ownership_root_in_range(
+pub(super) fn zero_entity_ownership_root_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Option<ZeroEntityOwnershipRoot> {
-    let roots = zero_entity_ownership_roots_in_range(data, range);
-    (roots.len() == 1)
+) -> Result<Option<ZeroEntityOwnershipRoot>, CodecError> {
+    let roots = zero_entity_ownership_roots_in_range(ctx, data, range)?;
+    Ok((roots.len() == 1)
         .then(|| roots.into_iter().next())
-        .flatten()
+        .flatten())
 }
 
 /// Decode every ownership root whose records stay inside `range`.
 pub(crate) fn zero_entity_ownership_roots_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntityOwnershipRoot> {
-    let records = zero_entity_records_in_range(data, range);
-    records
-        .windows(3)
-        .filter_map(|window| {
+) -> Result<Vec<ZeroEntityOwnershipRoot>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut roots = Vec::new();
+    for window in records.windows(3) {
+        let candidate = (|| {
             let [face_roster, shell, body] = window else {
                 return None;
             };
@@ -620,65 +816,120 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             {
                 return None;
             }
-            let count = usize::from(data[face_roster.pos + 12] - 0x80);
-            let face_slots = (0..count)
-                .map(|index| tagged_u32(data, face_roster.pos + 13 + index * 5))
-                .collect::<Option<Vec<_>>>()?;
-            Some(ZeroEntityOwnershipRoot {
+            let count = usize::from(
+                data.get(face_roster.pos.checked_add(12)?)?
+                    .checked_sub(0x80)?,
+            );
+            Some((*face_roster, *shell, *body, count))
+        })();
+        let Some((face_roster, shell, body, count)) = candidate else {
+            continue;
+        };
+        let mut face_slots = Vec::new();
+        ctx.reserve_vec(&mut face_slots, count, "catia_zero_owner_face_slots")?;
+        let mut valid = true;
+        for index in 0..count {
+            let Some(offset) = index
+                .checked_mul(5)
+                .and_then(|at| face_roster.pos.checked_add(13 + at))
+            else {
+                valid = false;
+                break;
+            };
+            let Some(value) = tagged_u32(data, offset) else {
+                valid = false;
+                break;
+            };
+            face_slots.push(value);
+        }
+        if !valid {
+            continue;
+        }
+        ctx.push_vec(
+            &mut roots,
+            ZeroEntityOwnershipRoot {
                 face_roster_pos: face_roster.pos,
                 face_roster_record_ordinal: face_roster.ordinal,
                 face_slots,
                 shell_pos: shell.pos,
                 body_pos: body.pos,
-            })
-        })
-        .collect()
+            },
+            "catia_zero_ownership_roots",
+        )?;
+    }
+    Ok(roots)
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
 /// record's second tag byte is also its length code (`length = tag + 12`), so
 /// the decoder walks framed records.
 #[cfg(test)]
-pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
-    zero_entity_surfaces_in_range(data, 0..data.len())
+fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_surfaces_in_range(
+            ctx,
+            data,
+            0..data.len(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("test zero-entity surfaces fit the service profile")
 }
 
 /// Decode surface carriers whose records stay inside `range`.
-#[must_use]
-pub(crate) fn zero_entity_surfaces_in_range(
+pub(super) fn zero_entity_surfaces_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntitySurface> {
-    zero_entity_records_in_range(data, range)
-        .into_iter()
-        .filter_map(|record| {
-            zero_entity_surface_at(data, record.pos).map(|geometry| ZeroEntitySurface {
-                pos: record.pos,
-                geometry,
-            })
-        })
-        .collect()
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<ZeroEntitySurface>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut surfaces = Vec::new();
+    for record in records {
+        if let Some(geometry) = zero_entity_surface_at(ctx, data, record.pos, refusal)? {
+            ctx.push_vec(
+                &mut surfaces,
+                ZeroEntitySurface {
+                    pos: record.pos,
+                    geometry,
+                },
+                "catia_zero_surfaces",
+            )?;
+        }
+    }
+    Ok(surfaces)
 }
 
 /// Decode surface-carrier ownership and exact face-local support occurrences.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
-    zero_entity_support_runs_in_range(data, 0..data.len())
+fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_support_runs_in_range(
+            ctx,
+            data,
+            0..data.len(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("test zero-entity support runs fit the service profile")
 }
 
 /// Decode support runs whose complete record population stays inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_support_runs_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntitySupportRun> {
-    let records = zero_entity_records_in_range(data, range);
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<ZeroEntitySupportRun>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
         let carrier_record = records[index];
-        let Some(carrier_geometry) = zero_entity_surface_at(data, carrier_record.pos) else {
+        let Some(carrier_geometry) =
+            zero_entity_surface_at(ctx, data, carrier_record.pos, refusal)?
+        else {
             index += 1;
             continue;
         };
@@ -693,11 +944,23 @@ pub(crate) fn zero_entity_support_runs_in_range(
             .is_some_and(|record| record.tag[0] == 0x21)
         {
             let record = records[next];
-            if let Some(support) = zero_entity_support_occurrence(data, record) {
+            if let Some(support) = zero_entity_support_occurrence(ctx, data, record, refusal)? {
                 let mut support = support;
-                if let Some((curve, parameters)) = support.pcurve.as_ref().and_then(|pcurve| {
-                    zero_entity_model_curve(&carrier_geometry, pcurve, support.uv_endpoints?)
-                }) {
+                let model_curve = if let (Some(pcurve), Some(uv_endpoints)) =
+                    (support.pcurve.as_ref(), support.uv_endpoints)
+                {
+                    zero_entity_model_curve(
+                        ctx,
+                        &carrier_geometry,
+                        pcurve,
+                        uv_endpoints.map(|uv| uv.map(FiniteReal::get)),
+                        &format_args!("zero-entity support record at byte {}", record.pos),
+                        refusal,
+                    )?
+                } else {
+                    None
+                };
+                if let Some((curve, parameters)) = model_curve {
                     support.model_curve = Some(curve);
                     support.model_parameters = Some(parameters);
                 }
@@ -709,24 +972,35 @@ pub(crate) fn zero_entity_support_runs_in_range(
                         .uv_endpoints
                         .map(|endpoints| endpoints.map(|uv| uv[0]));
                 }
-                support.model_midpoint = support.pcurve.as_ref().and_then(|pcurve| {
+                let midpoint_input = support.pcurve.as_ref().and_then(|pcurve| {
                     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
                         return None;
                     };
                     let start = *nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
-                    let end = *nurbs.knots().get(nurbs.control_points().len())?;
-                    if !start.is_finite() || !end.is_finite() || start >= end {
+                    let end = *nurbs.knots().get(nurbs.pole_rows().count())?;
+                    if start >= end {
                         return None;
                     }
-                    let uv = pcurve_uv(pcurve, start + (end - start) * 0.5)?;
-                    zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
+                    Some((pcurve, start.midpoint(end)))
                 });
-                support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
-                    let [first, second] =
-                        endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
-                    Some([first?, second?])
-                });
-                supports.push(support);
+                if let Some((pcurve, parameter)) = midpoint_input {
+                    if let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+                        cadmpeg_ir::eval::decode::outer_refusal(
+                            cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+                        )?,
+                    )? {
+                        support.model_midpoint =
+                            zero_entity_surface_point(ctx, &carrier_geometry, [uv.u, uv.v])?;
+                    }
+                }
+                if let Some(endpoints) = support.uv_endpoints {
+                    let [first, second] = endpoints.map(|uv| {
+                        zero_entity_surface_point(ctx, &carrier_geometry, uv.map(FiniteReal::get))
+                    });
+                    support.model_endpoints =
+                        first?.zip(second?).map(|(first, second)| [first, second]);
+                }
+                ctx.push_vec(&mut supports, support, "catia_zero_support_occurrences")?;
             } else {
                 supports.clear();
                 break;
@@ -734,45 +1008,84 @@ pub(crate) fn zero_entity_support_runs_in_range(
             next += 1;
         }
         if !supports.is_empty() {
-            runs.push(ZeroEntitySupportRun {
-                carrier_pos: carrier_record.pos,
-                carrier_record_ordinal: carrier_record.ordinal,
-                face: None,
-                supports,
-            });
+            ctx.push_vec(
+                &mut runs,
+                ZeroEntitySupportRun {
+                    carrier_pos: carrier_record.pos,
+                    carrier_record_ordinal: carrier_record.ordinal,
+                    face: None,
+                    supports,
+                },
+                "catia_zero_support_runs",
+            )?;
         }
         index = next.max(index + 1);
     }
-    let mut faces = zero_entity_faces_from_records(data, &records);
-    let loops = zero_entity_loops_from_records(data, &records);
-    let flattened_terminals = faces
-        .iter()
-        .flat_map(ZeroEntityFace::loop_terminals)
-        .collect::<Vec<_>>();
-    let loop_terminals = loops
-        .iter()
-        .map(|loop_record| loop_record.terminal_id)
-        .collect::<Vec<_>>();
-    let loop_roster_is_valid = flattened_terminals == loop_terminals && {
+    let mut faces = zero_entity_faces_from_records(ctx, data, &records)?;
+    let loops = zero_entity_loops_from_records(ctx, data, &records)?;
+    let mut flattened_terminals = Vec::new();
+    let mut face_terminals = Vec::new();
+    ctx.reserve_vec(
+        &mut face_terminals,
+        faces.len(),
+        "catia_zero_face_terminal_rows",
+    )?;
+    for face in &faces {
+        let mut terminals = Vec::new();
+        if let Some(&first) = face.allocations.first() {
+            for allocation in &face.allocations[1..] {
+                if let Some(terminal) = first.checked_sub(*allocation) {
+                    ctx.push_vec(&mut terminals, terminal, "catia_zero_face_terminals")?;
+                    ctx.push_vec(
+                        &mut flattened_terminals,
+                        terminal,
+                        "catia_zero_flattened_terminals",
+                    )?;
+                }
+            }
+        }
+        face_terminals.push(terminals);
+    }
+    let mut loop_terminals = Vec::new();
+    ctx.reserve_vec(
+        &mut loop_terminals,
+        loops.len(),
+        "catia_zero_loop_terminals",
+    )?;
+    for loop_record in &loops {
+        loop_terminals.push(loop_record.members.terminal_id());
+    }
+    let mut loop_roster_is_valid = flattened_terminals == loop_terminals;
+    if loop_roster_is_valid {
         let mut loop_index = 0;
-        faces.iter().all(|face| {
-            let terminals = face.loop_terminals();
+        for terminals in &face_terminals {
             let loop_end = loop_index + terminals.len();
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
-            face_loops.first().is_some_and(|outer| {
-                matches!(outer.loop_class, 0x41 | 0xc1)
-                    && face_loops[1..].iter().all(|inner| inner.loop_class == 0x50)
-            })
-        })
-    };
+            if !face_loops.first().is_some_and(|outer| {
+                matches!(
+                    outer.loop_class,
+                    ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+                ) && face_loops[1..]
+                    .iter()
+                    .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
+            }) {
+                loop_roster_is_valid = false;
+                break;
+            }
+        }
+    }
     if loop_roster_is_valid {
-        let mut loop_index = 0;
-        for face in &mut faces {
-            let terminals = face.loop_terminals();
-            let loop_end = loop_index + terminals.len();
-            face.loops = Some(loops[loop_index..loop_end].to_vec());
-            loop_index = loop_end;
+        let mut remaining_loops = loops.into_iter();
+        for (face, terminals) in faces.iter_mut().zip(&face_terminals) {
+            let mut face_loops = Vec::new();
+            ctx.reserve_vec(
+                &mut face_loops,
+                terminals.len(),
+                "catia_zero_bound_face_loops",
+            )?;
+            face_loops.extend(remaining_loops.by_ref().take(terminals.len()));
+            face.loops = Some(face_loops);
         }
     }
     let face_population = records
@@ -790,736 +1103,1030 @@ pub(crate) fn zero_entity_support_runs_in_range(
         && faces.len() == runs.len();
     if rosters_are_complete {
         for (run, mut face) in runs.iter_mut().zip(faces) {
-            bind_face_support_occurrences(&mut face, &run.supports);
+            bind_face_support_occurrences(ctx, &mut face, &run.supports)?;
             run.face = Some(face);
         }
     }
-    runs
+    Ok(runs)
 }
 
 fn bind_face_support_occurrences(
+    ctx: &DecodeContext<'_>,
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
-) {
+) -> Result<(), CodecError> {
     let Some(face_loops) = face.loops.as_mut() else {
-        return;
+        return Ok(());
     };
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
     for support in supports {
-        supports_by_slot
-            .entry(support.face_local_slot)
-            .and_modify(|record| *record = None)
-            .or_insert(Some(support.record_ordinal));
+        if let Some(record) = supports_by_slot.get_mut(&support.face_local_slot) {
+            *record = None;
+        } else {
+            ctx.insert_hash_map(
+                &mut supports_by_slot,
+                support.face_local_slot,
+                Some(support.record_ordinal),
+                "catia_zero_supports_by_slot",
+            )?;
+        }
     }
-    let bindings = face_loops
-        .iter()
-        .map(|loop_record| {
-            loop_record
-                .member_ids
-                .iter()
-                .map(|member| {
-                    let slot = loop_record.terminal_id.checked_sub(*member)?;
-                    supports_by_slot.get(&slot).copied().flatten()
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(bindings) = bindings else {
-        return;
-    };
+    let mut bindings = Vec::new();
+    ctx.reserve_vec(&mut bindings, face_loops.len(), "catia_zero_binding_rows")?;
+    for loop_record in face_loops.iter() {
+        let mut row = Vec::new();
+        let count = loop_record.members.support_slots().count();
+        ctx.reserve_vec(&mut row, count, "catia_zero_binding_values")?;
+        for slot in loop_record.members.support_slots() {
+            let Some(ordinal) = supports_by_slot.get(&slot).copied().flatten() else {
+                return Ok(());
+            };
+            row.push(ordinal);
+        }
+        bindings.push(row);
+    }
     if bindings.iter().map(Vec::len).sum::<usize>() != supports.len() {
-        return;
+        return Ok(());
     }
-    let bound = bindings.iter().flatten().copied().collect::<HashSet<_>>();
+    let mut bound = HashSet::new();
+    for ordinal in bindings.iter().flatten().copied() {
+        ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")?;
+    }
     if bound.len() != supports.len() {
-        return;
+        return Ok(());
     }
     for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
-    let supports_by_ordinal = supports
-        .iter()
-        .map(|support| (support.record_ordinal, support))
-        .collect::<HashMap<_, _>>();
+    let mut supports_by_ordinal = HashMap::new();
+    ctx.reserve_map(
+        &mut supports_by_ordinal,
+        supports.len(),
+        "catia_zero_supports_by_ordinal",
+    )?;
+    for support in supports {
+        supports_by_ordinal.insert(support.record_ordinal, support);
+    }
     for loop_record in face_loops {
-        let endpoints = loop_record
-            .support_record_ordinals
-            .iter()
-            .map(|ordinal| {
+        let mut endpoints = Vec::new();
+        ctx.reserve_vec(
+            &mut endpoints,
+            loop_record.support_record_ordinals.len(),
+            "catia_zero_support_endpoints",
+        )?;
+        for ordinal in &loop_record.support_record_ordinals {
+            endpoints.push(
                 supports_by_ordinal
                     .get(ordinal)
-                    .and_then(|support| support.model_endpoints)
-            })
-            .collect::<Vec<_>>();
+                    .and_then(|support| support.model_endpoints),
+            );
+        }
         if let Some(oriented) =
-            oriented_closed_model_endpoints(&endpoints, &loop_record.forward_senses)
+            oriented_closed_model_endpoints(ctx, &endpoints, &loop_record.forward_senses)?
         {
             loop_record.oriented_model_endpoints = oriented;
         }
     }
+    Ok(())
 }
 
 pub(crate) fn oriented_closed_model_endpoints(
-    endpoints: &[Option<[Point3; 2]>],
+    ctx: &DecodeContext<'_>,
+    endpoints: &[Option<[FinitePoint3; 2]>],
     forward_senses: &[bool],
-) -> Option<Vec<[Point3; 2]>> {
+) -> Result<Option<Vec<[FinitePoint3; 2]>>, CodecError> {
     const CLOSURE_TOLERANCE: f64 = 2e-3;
 
     if endpoints.is_empty() || endpoints.len() != forward_senses.len() {
-        return None;
+        return Ok(None);
     }
-    let mut oriented = endpoints
-        .iter()
-        .zip(forward_senses)
-        .map(|(endpoints, forward)| {
-            endpoints.map(
-                |[start, end]| {
-                    if *forward {
-                        [start, end]
-                    } else {
-                        [end, start]
-                    }
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let missing = oriented
-        .iter()
-        .enumerate()
-        .filter_map(|(index, endpoints)| endpoints.is_none().then_some(index))
-        .collect::<Vec<_>>();
-    match missing.as_slice() {
-        [] => {}
-        [index] if oriented.len() > 1 => {
-            let previous = (*index + oriented.len() - 1) % oriented.len();
-            let next = (*index + 1) % oriented.len();
-            oriented[*index] = Some([oriented[previous]?[1], oriented[next]?[0]]);
+    let mut oriented = Vec::new();
+    ctx.reserve_vec(
+        &mut oriented,
+        endpoints.len(),
+        "catia_zero_oriented_endpoint_options",
+    )?;
+    let mut missing = None;
+    for (index, (endpoints, forward)) in endpoints.iter().zip(forward_senses).enumerate() {
+        let pair = endpoints.map(|[start, end]| if *forward { [start, end] } else { [end, start] });
+        if pair.is_none() && missing.replace(index).is_some() {
+            return Ok(None);
         }
-        _ => return None,
+        oriented.push(pair);
     }
-    let oriented = oriented.into_iter().collect::<Option<Vec<_>>>()?;
-    oriented
+    if let Some(index) = missing {
+        if oriented.len() <= 1 {
+            return Ok(None);
+        }
+        let previous = (index + oriented.len() - 1) % oriented.len();
+        let next = (index + 1) % oriented.len();
+        let (Some(previous), Some(next)) = (oriented[previous], oriented[next]) else {
+            return Ok(None);
+        };
+        oriented[index] = Some([previous[1], next[0]]);
+    }
+    let mut complete = Vec::new();
+    ctx.reserve_vec(
+        &mut complete,
+        oriented.len(),
+        "catia_zero_oriented_endpoints",
+    )?;
+    for pair in oriented {
+        let Some(pair) = pair else {
+            return Ok(None);
+        };
+        complete.push(pair);
+    }
+    Ok(complete
         .iter()
         .enumerate()
         .all(|(index, endpoints)| {
-            endpoints[1].distance(oriented[(index + 1) % oriented.len()][0]) <= CLOSURE_TOLERANCE
+            endpoints[1].distance(complete[(index + 1) % complete.len()][0].get())
+                <= CLOSURE_TOLERANCE
         })
-        .then_some(oriented)
+        .then_some(complete))
 }
 
 fn zero_entity_faces_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Vec<ZeroEntityFace> {
-    records
-        .iter()
-        .filter_map(|record| {
+) -> Result<Vec<ZeroEntityFace>, CodecError> {
+    let mut faces = Vec::new();
+    for record in records {
+        let face = (|| -> Result<Option<ZeroEntityFace>, CodecError> {
             if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
-                return None;
+                return Ok(None);
             }
-            let count = usize::from(data.get(record.pos + 12)?.checked_sub(0x80)?);
-            if count < 2 || record.pos.checked_add(14 + count.checked_mul(5)?)? != record.end {
-                return None;
+            let Some(count) = data
+                .get(record.pos + 12)
+                .and_then(|value| value.checked_sub(0x80))
+            else {
+                return Ok(None);
+            };
+            let count = usize::from(count);
+            if count < 2 || record.pos.checked_add(14 + count * 5) != Some(record.end) {
+                return Ok(None);
             }
-            let allocations = (0..count)
-                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
-                .collect::<Option<Vec<_>>>()?;
+            let mut allocations = Vec::new();
+            ctx.reserve_vec(&mut allocations, count, "catia_zero_face_allocations")?;
+            for index in 0..count {
+                let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
+                    return Ok(None);
+                };
+                allocations.push(value);
+            }
             if allocations.contains(&0) {
-                return None;
+                return Ok(None);
             }
-            let first = *allocations.first()?;
-            let loop_terminals = allocations[1..]
-                .iter()
-                .map(|allocation| first.checked_sub(*allocation))
-                .collect::<Option<Vec<_>>>()?;
+            let first = allocations[0];
+            let mut loop_terminals = Vec::new();
+            ctx.reserve_vec(
+                &mut loop_terminals,
+                count - 1,
+                "catia_zero_face_loop_terminals",
+            )?;
+            for allocation in &allocations[1..] {
+                let Some(terminal) = first.checked_sub(*allocation) else {
+                    return Ok(None);
+                };
+                loop_terminals.push(terminal);
+            }
             if loop_terminals.contains(&0)
                 || !loop_terminals[1..].windows(2).all(|pair| pair[0] < pair[1])
             {
-                return None;
+                return Ok(None);
             }
-            let terminal_control = ZeroEntityFaceControl::from_byte(*data.get(record.end - 1)?)?;
-            Some(ZeroEntityFace {
+            let Some(terminal_control) = data
+                .get(record.end - 1)
+                .and_then(|value| ZeroEntityFaceControl::from_byte(*value))
+            else {
+                return Ok(None);
+            };
+            Ok(Some(ZeroEntityFace {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 allocations,
                 loops: None,
                 terminal_control,
-            })
-        })
-        .collect()
+            }))
+        })()?;
+        if let Some(face) = face {
+            ctx.push_vec(&mut faces, face, "catia_zero_faces")?;
+        }
+    }
+    Ok(faces)
 }
 
 fn zero_entity_loops_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Vec<ZeroEntityLoop> {
-    records
-        .iter()
-        .filter_map(|record| {
+) -> Result<Vec<ZeroEntityLoop>, CodecError> {
+    let mut loops = Vec::new();
+    for record in records {
+        let loop_record = (|| -> Result<Option<ZeroEntityLoop>, CodecError> {
             if record.tag[0] != 0x62 {
-                return None;
+                return Ok(None);
             }
-            let reference_count = usize::from(data.get(record.pos + 12)?.checked_sub(0x80)?);
+            let Some(reference_count) = data
+                .get(record.pos + 12)
+                .and_then(|value| value.checked_sub(0x80))
+            else {
+                return Ok(None);
+            };
+            let reference_count = usize::from(reference_count);
             if reference_count < 3 || reference_count % 2 == 0 {
-                return None;
+                return Ok(None);
             }
             let edge_count = (reference_count - 1) / 2;
-            let references = (0..reference_count)
-                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
-                .collect::<Option<Vec<_>>>()?;
-            let member_ids = references[..reference_count - 1]
-                .iter()
-                .step_by(2)
-                .copied()
-                .collect::<Vec<_>>();
-            let typed_references = references[1..reference_count - 1]
-                .iter()
-                .step_by(2)
-                .copied()
-                .collect::<Vec<_>>();
+            let mut references = Vec::new();
+            ctx.reserve_vec(
+                &mut references,
+                reference_count,
+                "catia_zero_loop_references",
+            )?;
+            for index in 0..reference_count {
+                let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
+                    return Ok(None);
+                };
+                references.push(value);
+            }
+            let mut typed_references = Vec::new();
+            ctx.reserve_vec(
+                &mut typed_references,
+                edge_count,
+                "catia_zero_loop_typed_references",
+            )?;
+            typed_references.extend(
+                references[1..reference_count - 1]
+                    .iter()
+                    .step_by(2)
+                    .copied(),
+            );
             if typed_references.contains(&0) {
-                return None;
+                return Ok(None);
             }
-            let terminal_id = *references.last()?;
-            let gap = terminal_id.checked_sub(*member_ids.first()?)?;
-            if gap == 0
-                || !member_ids.iter().enumerate().all(|(index, member)| {
-                    u32::try_from(index)
-                        .ok()
-                        .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
-                        == Some(*member)
-                })
+            let terminal_id = references[reference_count - 1];
+            let Some(gap) = terminal_id.checked_sub(references[0]) else {
+                return Ok(None);
+            };
+            let Some(member_count) = NonZeroUsize::new(edge_count) else {
+                return Ok(None);
+            };
+            let Some(members) = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
+            else {
+                return Ok(None);
+            };
+            if !members
+                .member_ids()
+                .eq(references[..reference_count - 1].iter().step_by(2).copied())
             {
-                return None;
+                return Ok(None);
             }
-            let trailer = record
-                .pos
-                .checked_add(13 + reference_count.checked_mul(5)?)?;
-            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?))
-                || !matches!(data.get(trailer + 1), Some(0x41 | 0x50 | 0xc1))
-            {
-                return None;
+            let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
+                return Ok(None);
+            };
+            let Some(loop_class) = data
+                .get(trailer + 1)
+                .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
+            else {
+                return Ok(None);
+            };
+            let Ok(edge_count_byte) = u8::try_from(edge_count) else {
+                return Ok(None);
+            };
+            if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
+                return Ok(None);
             }
-            let packed_length = edge_count.checked_mul(3)?.checked_add(7)? / 8;
-            if trailer.checked_add(3 + packed_length)? != record.end
+            let packed_length = (edge_count * 3).div_ceil(8);
+            if trailer.checked_add(3 + packed_length) != Some(record.end)
                 || data.get(trailer + 2 + packed_length) != Some(&0x01)
             {
-                return None;
+                return Ok(None);
             }
-            let packed = data.get(trailer + 2..trailer + 2 + packed_length)?;
-            let forward_senses = (0..edge_count)
-                .map(|index| {
-                    let bit = index * 3;
-                    let code = (0..3).fold(0, |code, offset| {
-                        code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1)
-                            << offset)
-                    });
-                    match code {
-                        2 => Some(false),
-                        7 => Some(true),
-                        _ => None,
-                    }
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(ZeroEntityLoop {
+            let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
+                return Ok(None);
+            };
+            let mut forward_senses = Vec::new();
+            ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
+            for index in 0..edge_count {
+                let bit = index * 3;
+                let code = (0..3).fold(0, |code, offset| {
+                    code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1) << offset)
+                });
+                match code {
+                    2 => forward_senses.push(false),
+                    7 => forward_senses.push(true),
+                    _ => return Ok(None),
+                }
+            }
+            Ok(Some(ZeroEntityLoop {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
-                member_ids,
+                members,
                 typed_references,
                 support_record_ordinals: Vec::new(),
-                terminal_id,
-                gap,
-                loop_class: data[trailer + 1],
+                loop_class,
                 forward_senses,
                 oriented_model_endpoints: Vec::new(),
-            })
-        })
-        .collect()
+            }))
+        })()?;
+        if let Some(loop_record) = loop_record {
+            ctx.push_vec(&mut loops, loop_record, "catia_zero_loops")?;
+        }
+    }
+    Ok(loops)
 }
 
 fn zero_entity_support_occurrence(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: ZeroEntityRecord,
-) -> Option<ZeroEntitySupportOccurrence> {
-    if data.get(record.pos + 12) != Some(&0x10) {
-        return None;
-    }
-    let face_local_slot = View::u32_le_at(data, record.pos + 13)?;
-    if face_local_slot == 0 {
-        return None;
-    }
-    let uv_offsets = match record.tag {
-        [0x21, 0x18] => Some([132, 276]),
-        [0x21, 0x45] => Some([145, 321]),
-        [0x21, 0x71] => Some([pcurve_2171::POLES, pcurve_2171::POLES + 16]),
-        [0x21, 0x72] => Some([158, 366]),
-        [0x21, 0x91] => Some([93, 141]),
-        [0x21, 0x99] => Some([93, 125]),
-        [0x21, 0x9f] => Some([171, 411]),
-        [0x21, 0xd6] => Some([106, 170]),
-        [0x21, 0xe8] => Some([132, 228]),
-        _ => None,
-    };
-    let uv_endpoints = if let Some(offsets) = uv_offsets {
-        let mut values = [[0.0; 2]; 2];
-        for (index, offset) in offsets.into_iter().enumerate() {
-            let absolute = record.pos.checked_add(offset)?;
-            if absolute.checked_add(16)? > record.end {
-                return None;
-            }
-            values[index] = [
-                f64_le(data, absolute)?,
-                f64_le(data, absolute.checked_add(8)?)?,
-            ];
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<ZeroEntitySupportOccurrence>, CodecError> {
+    (|| -> Option<Result<ZeroEntitySupportOccurrence, CodecError>> {
+        if data.get(record.pos + 12) != Some(&0x10) {
+            return None;
         }
-        Some(values)
-    } else {
-        None
-    };
-    let pcurve = zero_entity_support_pcurve(data, record);
-    if matches!(
-        record.tag,
-        [
-            0x21,
-            0x18 | 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8
-        ]
-    ) && pcurve.is_none()
-    {
-        return None;
-    }
-    Some(ZeroEntitySupportOccurrence {
-        pos: record.pos,
-        record_ordinal: record.ordinal,
-        tag: record.tag,
-        face_local_slot,
-        uv_endpoints,
-        pcurve,
-        model_curve: None,
-        model_curve_construction: None,
-        model_parameters: None,
-        model_midpoint: None,
-        model_endpoints: None,
-    })
+        let face_local_slot = View::u32_le_at(data, record.pos + 13)?;
+        if face_local_slot == 0 {
+            return None;
+        }
+        let uv_offsets = match record.tag {
+            [0x21, 0x18] => Some([132, 276]),
+            [0x21, 0x45] => Some([145, 321]),
+            [0x21, 0x71] => Some([pcurve_2171::POLES, pcurve_2171::POLES + 16]),
+            [0x21, 0x72] => Some([158, 366]),
+            [0x21, 0x91] => Some([93, 141]),
+            [0x21, 0x99] => Some([93, 125]),
+            [0x21, 0x9f] => Some([171, 411]),
+            [0x21, 0xd6] => Some([106, 170]),
+            [0x21, 0xe8] => Some([132, 228]),
+            _ => None,
+        };
+        let uv_endpoints = if let Some(offsets) = uv_offsets {
+            let mut values = [[FiniteReal::ZERO; 2]; 2];
+            for (index, offset) in offsets.into_iter().enumerate() {
+                let absolute = record.pos.checked_add(offset)?;
+                if absolute.checked_add(16)? > record.end {
+                    return None;
+                }
+                values[index] = [
+                    f64_le(data, absolute)?,
+                    f64_le(data, absolute.checked_add(8)?)?,
+                ];
+            }
+            Some(values)
+        } else {
+            None
+        };
+        let pcurve = match zero_entity_support_pcurve(ctx, data, record, refusal) {
+            Ok(pcurve) => pcurve,
+            Err(error) => return Some(Err(error)),
+        };
+        if matches!(
+            record.tag,
+            [
+                0x21,
+                0x18 | 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8
+            ]
+        ) && pcurve.is_none()
+        {
+            return None;
+        }
+        Some(Ok(ZeroEntitySupportOccurrence {
+            pos: record.pos,
+            record_ordinal: record.ordinal,
+            tag: record.tag,
+            face_local_slot,
+            uv_endpoints,
+            pcurve,
+            model_curve: None,
+            model_curve_construction: None,
+            model_parameters: None,
+            model_midpoint: None,
+            model_endpoints: None,
+        }))
+    })()
+    .transpose()
 }
 
-fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<PcurveGeometry> {
-    let (
-        knot_offsets,
-        multiplicity_start,
-        expected_multiplicities,
-        pole_start,
-        control_count,
-        weight_start,
-        required_end,
-    ) = match record.tag {
-        [0x21, 0x18] => (
-            &[67, 75, 83, 91, 99][..],
-            107,
-            &[4, 2, 2, 2, 4][..],
-            132,
-            10,
-            None,
-            292,
-        ),
-        [0x21, 0x45] => (
-            &[67, 75, 83, 91, 99, 107][..],
-            115,
-            &[4, 2, 2, 2, 2, 4][..],
-            145,
-            12,
-            None,
-            337,
-        ),
-        [0x21, 0x71] => (
-            &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..],
-            pcurve_2171::MULTIPLICITIES,
-            &[2, 2][..],
-            pcurve_2171::POLES,
-            2,
-            None,
-            pcurve_2171::LEN,
-        ),
-        [0x21, 0x72] => (
-            &[67, 75, 83, 91, 99, 107, 115][..],
-            123,
-            &[4, 2, 2, 2, 2, 2, 4][..],
-            158,
-            14,
-            None,
-            382,
-        ),
-        [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
-        [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
-        [0x21, 0x9f] => (
-            &[67, 75, 83, 91, 99, 107, 115, 123][..],
-            131,
-            &[4, 2, 2, 2, 2, 2, 2, 4][..],
-            171,
-            16,
-            None,
-            427,
-        ),
-        [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
-        [0x21, 0xe8] => (
-            &[67, 75, 83, 91, 99][..],
-            107,
-            &[4, 1, 1, 1, 4][..],
-            132,
-            7,
-            None,
-            244,
-        ),
-        _ => return None,
-    };
-    if record.pos.checked_add(required_end)? > record.end {
-        return None;
-    }
-    let distinct_knots = knot_offsets
-        .iter()
-        .map(|offset| f64_le(data, record.pos.checked_add(*offset)?))
-        .collect::<Option<Vec<_>>>()?;
-    if !distinct_knots
-        .windows(2)
-        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
-        || !distinct_knots.last().is_some_and(|knot| knot.is_finite())
-    {
-        return None;
-    }
-    let multiplicities = (0..distinct_knots.len())
-        .map(|index| {
-            tagged_u32(
+fn zero_entity_support_pcurve(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: ZeroEntityRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    (|| -> Option<Result<PcurveGeometry, CodecError>> {
+        let (
+            knot_offsets,
+            multiplicity_start,
+            expected_multiplicities,
+            pole_start,
+            control_count,
+            weight_start,
+            required_end,
+        ) = match record.tag {
+            [0x21, 0x18] => (
+                &[67, 75, 83, 91, 99][..],
+                107,
+                &[4, 2, 2, 2, 4][..],
+                132,
+                10,
+                None,
+                292,
+            ),
+            [0x21, 0x45] => (
+                &[67, 75, 83, 91, 99, 107][..],
+                115,
+                &[4, 2, 2, 2, 2, 4][..],
+                145,
+                12,
+                None,
+                337,
+            ),
+            [0x21, 0x71] => (
+                &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..],
+                pcurve_2171::MULTIPLICITIES,
+                &[2, 2][..],
+                pcurve_2171::POLES,
+                2,
+                None,
+                pcurve_2171::LEN,
+            ),
+            [0x21, 0x72] => (
+                &[67, 75, 83, 91, 99, 107, 115][..],
+                123,
+                &[4, 2, 2, 2, 2, 2, 4][..],
+                158,
+                14,
+                None,
+                382,
+            ),
+            [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
+            [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
+            [0x21, 0x9f] => (
+                &[67, 75, 83, 91, 99, 107, 115, 123][..],
+                131,
+                &[4, 2, 2, 2, 2, 2, 2, 4][..],
+                171,
+                16,
+                None,
+                427,
+            ),
+            [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
+            [0x21, 0xe8] => (
+                &[67, 75, 83, 91, 99][..],
+                107,
+                &[4, 1, 1, 1, 4][..],
+                132,
+                7,
+                None,
+                244,
+            ),
+            _ => return None,
+        };
+        if record.pos.checked_add(required_end)? > record.end {
+            return None;
+        }
+        let mut distinct_knots = Vec::new();
+        if let Err(error) = ctx.reserve_vec(
+            &mut distinct_knots,
+            knot_offsets.len(),
+            "catia_zero_support_distinct_knots",
+        ) {
+            return Some(Err(error));
+        }
+        for offset in knot_offsets {
+            distinct_knots.push(f64_le(data, record.pos.checked_add(*offset)?)?.get());
+        }
+        if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
+            return None;
+        }
+        let mut multiplicities = Vec::new();
+        if let Err(error) = ctx.reserve_vec(
+            &mut multiplicities,
+            distinct_knots.len(),
+            "catia_zero_support_multiplicities",
+        ) {
+            return Some(Err(error));
+        }
+        for index in 0..distinct_knots.len() {
+            multiplicities.push(tagged_u32(
                 data,
                 record
                     .pos
                     .checked_add(multiplicity_start + index.checked_mul(5)?)?,
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if multiplicities != expected_multiplicities {
-        return None;
-    }
-    let degree = multiplicities.first().copied()?.checked_sub(1)?;
-    let derived_control_count = multiplicities
-        .iter()
-        .try_fold(0u32, |sum, multiplicity| sum.checked_add(*multiplicity))?
-        .checked_sub(degree.checked_add(1)?)?;
-    if derived_control_count != u32::try_from(control_count).ok()? {
-        return None;
-    }
-    let knots = expand_knots(&distinct_knots, &multiplicities)?;
-    let control_points = (0usize..control_count)
-        .map(|index| {
+            )?);
+        }
+        if multiplicities != expected_multiplicities {
+            return None;
+        }
+        let degree = multiplicities.first().copied()?.checked_sub(1)?;
+        let derived_control_count = multiplicities
+            .iter()
+            .try_fold(0u32, |sum, multiplicity| sum.checked_add(*multiplicity))?
+            .checked_sub(degree.checked_add(1)?)?;
+        if derived_control_count != u32::try_from(control_count).ok()? {
+            return None;
+        }
+        let knots =
+            match zero_entity_expand_knots(ctx, distinct_knots.iter().copied(), &multiplicities) {
+                Ok(knots) => knots,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut control_points = Vec::new();
+        if let Err(error) = ctx.reserve_vec(
+            &mut control_points,
+            control_count,
+            "catia_zero_support_poles",
+        ) {
+            return Some(Err(error));
+        }
+        for index in 0usize..control_count {
             let at = record
                 .pos
                 .checked_add(pole_start + index.checked_mul(16)?)?;
-            let point = Point2::new(f64_le(data, at)?, f64_le(data, at.checked_add(8)?)?);
-            (point.u.is_finite() && point.v.is_finite()).then_some(point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let weights = if let Some(weight_start) = weight_start {
-        Some(
-            (0usize..control_count)
-                .map(|index| {
-                    let weight = f64_le(
-                        data,
-                        record
-                            .pos
-                            .checked_add(weight_start + index.checked_mul(8)?)?,
-                    )?;
-                    (weight.is_finite() && weight > 0.0).then_some(weight)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        )
-    } else {
-        None
-    };
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(degree, knots, control_points, weights, false).ok()?,
-    })
+            control_points.push(FinitePoint2::from_coordinates(
+                f64_le(data, at)?,
+                f64_le(data, at.checked_add(8)?)?,
+            ));
+        }
+        let weights = if let Some(weight_start) = weight_start {
+            let mut weights = Vec::new();
+            if let Err(error) =
+                ctx.reserve_vec(&mut weights, control_count, "catia_zero_support_weights")
+            {
+                return Some(Err(error));
+            }
+            for index in 0usize..control_count {
+                let weight = f64_le(
+                    data,
+                    record
+                        .pos
+                        .checked_add(weight_start + index.checked_mul(8)?)?,
+                )?;
+                weights.push(PositiveReal::new(weight.get()).map(NonZeroReal::from)?);
+            }
+            Some(weights)
+        } else {
+            None
+        };
+        let nurbs = match crate::nurbs::note_refusal(
+            ctx,
+            match PcurveNurbs::from_checked_lanes(
+                ctx,
+                degree,
+                knots,
+                control_points,
+                weights,
+                false,
+            ) {
+                Ok(result) => result,
+                Err(error) => return Some(Err(error)),
+            },
+            refusal,
+            format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
+        ) {
+            Ok(Some(nurbs)) => nurbs,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(Ok(PcurveGeometry::Nurbs { nurbs }))
+    })()
+    .transpose()
 }
 
 /// Convert a zero-entity support pcurve from the carrier's native chart into
 /// the neutral IR chart.  The support records store cylindrical and toroidal
 /// coordinates as arc lengths and conical latitude as slant length; IR
 /// analytic surfaces use angles and axial distance respectively.
-pub(crate) fn zero_entity_neutral_pcurve(
+pub(super) fn zero_entity_neutral_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
-) -> Option<PcurveGeometry> {
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<PcurveGeometry>, CodecError> {
     let (u_scale, v_scale) = match surface {
-        SurfaceGeometry::Cylinder { radius, .. } => (radius.recip(), 1.0),
-        SurfaceGeometry::Cone { half_angle, .. } => (1.0, half_angle.cos()),
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } => (major_radius.recip(), minor_radius.recip()),
-        SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => (1.0, 1.0),
-        _ => return None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+            let radius = cylinder_surface.radius().get();
+            (radius.recip(), 1.0)
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
+            let half_angle = cone_surface.half_angle().get();
+            (1.0, half_angle.cos())
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            (major_radius.recip(), minor_radius.recip())
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => (1.0, 1.0),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => (1.0, 1.0),
+        _ => return Ok(None),
     };
     if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
-        return None;
+        return Ok(None);
     }
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
-        return None;
+        return Ok(None);
     };
-    let control_points = nurbs
-        .control_points()
-        .iter()
-        .map(|point| {
-            let point = Point2::new(point.u * u_scale, point.v * v_scale);
-            ([point.u, point.v].into_iter().all(f64::is_finite)).then_some(point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+    let mut control_points = Vec::new();
+    ctx.reserve_vec(
+        &mut control_points,
+        nurbs.pole_rows().count(),
+        "catia_zero_neutral_pcurve_poles",
+    )?;
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+            for point in points {
+                let point = point.get();
+                let Some(scaled) =
+                    FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale))
+                else {
+                    return Ok(None);
+                };
+                control_points.push(scaled);
+            }
+        }
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+            for pole in points {
+                let point = pole.point.get();
+                let Some(scaled) =
+                    FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale))
+                else {
+                    return Ok(None);
+                };
+                control_points.push(scaled);
+            }
+        }
+    }
+    let weights = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+            let mut weights = Vec::new();
+            ctx.reserve_vec(
+                &mut weights,
+                points.len(),
+                "catia_zero_neutral_pcurve_weights",
+            )?;
+            weights.extend(points.iter().map(|pole| pole.weight));
+            Some(weights)
+        }
+    };
+    let knots = nurbs
+        .knots()
+        .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
+    crate::nurbs::note_refusal(
+        ctx,
+        PcurveNurbs::from_checked_lanes(
+            ctx,
             nurbs.degree(),
-            nurbs.knots().to_vec(),
+            knots,
             control_points,
-            nurbs.weights().map(<[f64]>::to_vec),
+            weights,
             nurbs.periodic(),
-        )
-        .ok()?,
-    })
+        )?,
+        refusal,
+        format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
+    )
+    .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
 }
 
 fn zero_entity_model_curve(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     uv_endpoints: [[f64; 2]; 2],
-) -> Option<(CurveGeometry, [f64; 2])> {
-    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
-        return None;
-    };
-    if nurbs.periodic() {
-        return None;
-    }
-    let constant_coordinate = |dimension: usize| {
-        let value = if dimension == 0 {
-            nurbs.control_points().first()?.u
-        } else {
-            nurbs.control_points().first()?.v
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<(CurveGeometry, [FiniteReal; 2])>, CodecError> {
+    (|| -> Option<Result<(CurveGeometry, [FiniteReal; 2]), CodecError>> {
+        let PcurveGeometry::Nurbs { nurbs } = pcurve else {
+            return None;
         };
-        nurbs
-            .control_points()
-            .iter()
-            .all(|point| {
-                if dimension == 0 {
-                    point.u == value
-                } else {
-                    point.v == value
-                }
-            })
-            .then_some(value)
+        if nurbs.periodic() {
+            return None;
+        }
+        let pole_point = |index: usize| match nurbs.pole_rows() {
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+                points.get(index).copied()
+            }
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+                points.get(index).map(|pole| pole.point)
+            }
+        };
+        let constant_coordinate = |dimension: usize| {
+            let point = pole_point(0)?;
+            let value = if dimension == 0 { point.u } else { point.v };
+            (0..nurbs.pole_rows().count())
+                .all(|index| {
+                    pole_point(index).is_some_and(|point| {
+                        if dimension == 0 {
+                            point.u == value
+                        } else {
+                            point.v == value
+                        }
+                    })
+                })
+                .then_some(value)
+        };
+        let (curve, parameters) = match surface {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+                let origin = plane_surface.origin().get();
+                let normal = plane_surface.frame().axis().as_raw();
+                let u_axis = plane_surface.frame().reference().as_raw();
+                let v_axis = normal.cross(*u_axis);
+                let degree_index = usize::try_from(nurbs.degree()).ok()?;
+                let parameters = [
+                    *nurbs.knots().get(degree_index)?,
+                    *nurbs
+                        .knots()
+                        .get(nurbs.knots().len().checked_sub(degree_index + 1)?)?,
+                ];
+                let lifted = match zero_entity_lift_pcurve(
+                    ctx,
+                    nurbs,
+                    |point| {
+                        Point3::new(
+                            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                            origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                        )
+                    },
+                    refusal,
+                    record,
+                ) {
+                    Ok(Some(curve)) => curve,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(lifted)),
+                    parameters,
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if { constant_coordinate(0).is_some() } =>
+            {
+                let point =
+                    match zero_entity_surface_point(ctx, surface, [constant_coordinate(0)?, 0.0]) {
+                        Ok(Some(point)) => point,
+                        Ok(None) => return None,
+                        Err(limit) => return Some(Err(limit.into())),
+                    };
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::new(
+                            point,
+                            *cylinder_surface.frame().axis(),
+                        ),
+                    )),
+                    uv_endpoints.map(|uv| uv[1]),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if { constant_coordinate(1).is_some() } =>
+            {
+                let origin = cylinder_surface.origin().get();
+                let axis = cylinder_surface.frame().axis().as_raw();
+                let radius = cylinder_surface.radius().get();
+                let height = constant_coordinate(1)?;
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                origin.x + height * axis.x,
+                                origin.y + height * axis.y,
+                                origin.z + height * axis.z,
+                            ))?,
+                            *cylinder_surface.frame(),
+                            cylinder_surface.radius(),
+                        ),
+                    )),
+                    uv_endpoints.map(|uv| uv[0] / radius),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    (cone_surface.ratio().get() == 1.0) && (constant_coordinate(0).is_some())
+                } =>
+            {
+                let axis = cone_surface.frame().axis().as_raw();
+                let ref_direction = cone_surface.frame().reference().as_raw();
+                let half_angle = cone_surface.half_angle().get();
+                let angle = constant_coordinate(0)?;
+                let transverse = axis.cross(*ref_direction);
+                let radial = cadmpeg_ir::math::Vector3::new(
+                    angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                    angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                    angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+                );
+                let point = match zero_entity_surface_point(ctx, surface, [angle, 0.0]) {
+                    Ok(Some(point)) => point,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit.into())),
+                };
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            point.get(),
+                            cadmpeg_ir::math::Vector3::new(
+                                half_angle.cos() * axis.x + half_angle.sin() * radial.x,
+                                half_angle.cos() * axis.y + half_angle.sin() * radial.y,
+                                half_angle.cos() * axis.z + half_angle.sin() * radial.z,
+                            ),
+                        )
+                        .ok()?,
+                    )),
+                    uv_endpoints.map(|uv| uv[1]),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    (cone_surface.ratio().get() == 1.0) && (constant_coordinate(1).is_some())
+                } =>
+            {
+                let origin = cone_surface.origin().get();
+                let axis = cone_surface.frame().axis().as_raw();
+                let radius = cone_surface.radius().get();
+                let half_angle = cone_surface.half_angle().get();
+                let slant = constant_coordinate(1)?;
+                let circle_radius = radius + slant * half_angle.sin();
+                (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                origin.x + slant * half_angle.cos() * axis.x,
+                                origin.y + slant * half_angle.cos() * axis.y,
+                                origin.z + slant * half_angle.cos() * axis.z,
+                            ))?,
+                            signed_reference_frame(*cone_surface.frame(), circle_radius),
+                            cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                        ),
+                    )),
+                    uv_endpoints.map(|uv| uv[0]),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if { constant_coordinate(0).is_some() } =>
+            {
+                let center = torus_surface.center().get();
+                let axis = torus_surface.frame().axis().as_raw();
+                let ref_direction = torus_surface.frame().reference().as_raw();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
+                let angle = constant_coordinate(0)? / major_radius;
+                let transverse = axis.cross(*ref_direction);
+                let radial = cadmpeg_ir::math::Vector3::new(
+                    angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                    angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                    angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+                );
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            Point3::new(
+                                center.x + major_radius * radial.x,
+                                center.y + major_radius * radial.y,
+                                center.z + major_radius * radial.z,
+                            ),
+                            radial.cross(*axis),
+                            radial,
+                            minor_radius,
+                        )
+                        .ok()?,
+                    )),
+                    uv_endpoints.map(|uv| uv[1] / minor_radius),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if { constant_coordinate(1).is_some() } =>
+            {
+                let center = torus_surface.center().get();
+                let axis = torus_surface.frame().axis().as_raw();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
+                let angle = constant_coordinate(1)? / minor_radius;
+                let circle_radius = major_radius + minor_radius * angle.cos();
+                (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                center.x + minor_radius * angle.sin() * axis.x,
+                                center.y + minor_radius * angle.sin() * axis.y,
+                                center.z + minor_radius * angle.sin() * axis.z,
+                            ))?,
+                            signed_reference_frame(*torus_surface.frame(), circle_radius),
+                            cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                        ),
+                    )),
+                    uv_endpoints.map(|uv| uv[0] / major_radius),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
+                if constant_coordinate(0).is_some() =>
+            {
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
+                            ctx,
+                            surface,
+                            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+                            constant_coordinate(0)?,
+                        ) {
+                            Ok(Some(curve)) => curve,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error.into())),
+                        },
+                    )),
+                    uv_endpoints.map(|uv| uv[1]),
+                ))
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
+                if constant_coordinate(1).is_some() =>
+            {
+                Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
+                            ctx,
+                            surface,
+                            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+                            constant_coordinate(1)?,
+                        ) {
+                            Ok(Some(curve)) => curve,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error.into())),
+                        },
+                    )),
+                    uv_endpoints.map(|uv| uv[0]),
+                ))
+            }
+            _ => None,
+        }?;
+        Some(Ok((
+            curve,
+            [
+                FiniteReal::new(parameters[0])?,
+                FiniteReal::new(parameters[1])?,
+            ],
+        )))
+    })()
+    .transpose()
+}
+
+fn zero_entity_lift_pcurve(
+    ctx: &DecodeContext<'_>,
+    nurbs: &PcurveNurbs,
+    mut lift: impl FnMut(Point2) -> Point3,
+    refusal: &mut crate::nurbs::LaneRefusals,
+    record: &dyn std::fmt::Display,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let mut points = Vec::new();
+    ctx.reserve_vec(
+        &mut points,
+        nurbs.pole_rows().count(),
+        "catia_zero_lifted_pcurve_poles",
+    )?;
+    let weights = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: source } => {
+            points.extend(source.iter().map(|point| lift(point.get())));
+            None
+        }
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: source } => {
+            points.extend(source.iter().map(|pole| lift(pole.point.get())));
+            let mut weights = Vec::new();
+            ctx.reserve_vec(
+                &mut weights,
+                source.len(),
+                "catia_zero_lifted_pcurve_weights",
+            )?;
+            weights.extend(source.iter().map(|pole| pole.weight));
+            Some(weights)
+        }
     };
-    match surface {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            let v_axis = normal.cross(*u_axis);
-            let degree_index = usize::try_from(nurbs.degree()).ok()?;
-            let parameters = [
-                *nurbs.knots().get(degree_index)?,
-                *nurbs
-                    .knots()
-                    .get(nurbs.knots().len().checked_sub(degree_index + 1)?)?,
-            ];
-            Some((
-                CurveGeometry::Nurbs(
-                    NurbsCurve::new(
-                        nurbs.degree(),
-                        nurbs.knots().to_vec(),
-                        nurbs
-                            .control_points()
-                            .iter()
-                            .map(|point| {
-                                Point3::new(
-                                    origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                                    origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                                    origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                                )
-                            })
-                            .collect(),
-                        nurbs.weights().map(<[f64]>::to_vec),
-                        false,
-                    )
-                    .ok()?,
-                ),
-                parameters,
-            ))
-        }
-        SurfaceGeometry::Cylinder { axis, .. } if constant_coordinate(0).is_some() => {
-            let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
-            Some((
-                CurveGeometry::Line {
-                    origin: point,
-                    direction: *axis,
-                },
-                uv_endpoints.map(|uv| uv[1]),
-            ))
-        }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } if constant_coordinate(1).is_some() => {
-            let height = constant_coordinate(1)?;
-            Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        origin.x + height * axis.x,
-                        origin.y + height * axis.y,
-                        origin.z + height * axis.z,
-                    ),
-                    axis: *axis,
-                    ref_direction: *ref_direction,
-                    radius: *radius,
-                },
-                uv_endpoints.map(|uv| uv[0] / radius),
-            ))
-        }
-        SurfaceGeometry::Cone {
-            axis,
-            ref_direction,
-            ratio: 1.0,
-            half_angle,
-            ..
-        } if constant_coordinate(0).is_some() => {
-            let angle = constant_coordinate(0)?;
-            let transverse = axis.cross(*ref_direction);
-            let radial = cadmpeg_ir::math::Vector3::new(
-                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
-                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
-                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
-            );
-            Some((
-                CurveGeometry::Line {
-                    origin: zero_entity_surface_point(surface, [angle, 0.0])?,
-                    direction: cadmpeg_ir::math::Vector3::new(
-                        half_angle.cos() * axis.x + half_angle.sin() * radial.x,
-                        half_angle.cos() * axis.y + half_angle.sin() * radial.y,
-                        half_angle.cos() * axis.z + half_angle.sin() * radial.z,
-                    ),
-                },
-                uv_endpoints.map(|uv| uv[1]),
-            ))
-        }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio: 1.0,
-            half_angle,
-        } if constant_coordinate(1).is_some() => {
-            let slant = constant_coordinate(1)?;
-            let circle_radius = radius + slant * half_angle.sin();
-            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        origin.x + slant * half_angle.cos() * axis.x,
-                        origin.y + slant * half_angle.cos() * axis.y,
-                        origin.z + slant * half_angle.cos() * axis.z,
-                    ),
-                    axis: *axis,
-                    ref_direction: if circle_radius > 0.0 {
-                        *ref_direction
-                    } else {
-                        cadmpeg_ir::math::Vector3::new(
-                            -ref_direction.x,
-                            -ref_direction.y,
-                            -ref_direction.z,
-                        )
-                    },
-                    radius: circle_radius.abs(),
-                },
-                uv_endpoints.map(|uv| uv[0]),
-            ))
-        }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if constant_coordinate(0).is_some() => {
-            let angle = constant_coordinate(0)? / major_radius;
-            let transverse = axis.cross(*ref_direction);
-            let radial = cadmpeg_ir::math::Vector3::new(
-                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
-                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
-                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
-            );
-            Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        center.x + major_radius * radial.x,
-                        center.y + major_radius * radial.y,
-                        center.z + major_radius * radial.z,
-                    ),
-                    axis: radial.cross(*axis),
-                    ref_direction: radial,
-                    radius: *minor_radius,
-                },
-                uv_endpoints.map(|uv| uv[1] / minor_radius),
-            ))
-        }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if constant_coordinate(1).is_some() => {
-            let angle = constant_coordinate(1)? / minor_radius;
-            let circle_radius = major_radius + minor_radius * angle.cos();
-            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        center.x + minor_radius * angle.sin() * axis.x,
-                        center.y + minor_radius * angle.sin() * axis.y,
-                        center.z + minor_radius * angle.sin() * axis.z,
-                    ),
-                    axis: *axis,
-                    ref_direction: if circle_radius > 0.0 {
-                        *ref_direction
-                    } else {
-                        cadmpeg_ir::math::Vector3::new(
-                            -ref_direction.x,
-                            -ref_direction.y,
-                            -ref_direction.z,
-                        )
-                    },
-                    radius: circle_radius.abs(),
-                },
-                uv_endpoints.map(|uv| uv[0] / major_radius),
-            ))
-        }
-        SurfaceGeometry::Nurbs(surface) if constant_coordinate(0).is_some() => Some((
-            CurveGeometry::Nurbs(crate::nurbs::nurbs_surface_isocurve(
-                surface,
-                constant_coordinate(0)?,
-                true,
-            )?),
-            uv_endpoints.map(|uv| uv[1]),
-        )),
-        SurfaceGeometry::Nurbs(surface) if constant_coordinate(1).is_some() => Some((
-            CurveGeometry::Nurbs(crate::nurbs::nurbs_surface_isocurve(
-                surface,
-                constant_coordinate(1)?,
-                false,
-            )?),
-            uv_endpoints.map(|uv| uv[0]),
-        )),
-        _ => None,
-    }
+    let knots = nurbs
+        .knots()
+        .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
+    crate::nurbs::note_refusal(
+        ctx,
+        NurbsCurve::from_checked_lanes(
+            ctx,
+            nurbs.degree(),
+            knots,
+            points,
+            weights,
+            nurbs.periodic(),
+        )?,
+        refusal,
+        format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
+    )
 }
 
 fn zero_entity_model_curve_construction(
@@ -1527,23 +2134,28 @@ fn zero_entity_model_curve_construction(
     pcurve: &PcurveGeometry,
 ) -> Option<ProceduralCurveDefinition> {
     let (
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio: 1.0,
-            half_angle,
-        },
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, pcurve)
     else {
         return None;
     };
-    if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
+    if !(cone_surface.ratio().get() == 1.0) {
         return None;
     }
-    let [first, second] = nurbs.control_points() else {
+    let origin = cone_surface.origin().get();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
+    let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
+    if nurbs.degree() != 1 || nurbs.periodic() {
+        return None;
+    }
+    let cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } = nurbs.pole_rows()
+    else {
+        return None;
+    };
+    let [first, second] = points.as_slice() else {
         return None;
     };
     if first.u == second.u || first.v == second.v {
@@ -1570,32 +2182,41 @@ fn zero_entity_model_curve_construction(
         start_radius * transverse.y,
         start_radius * transverse.z,
     );
-    Some(ProceduralCurveDefinition::Helix {
-        angle_range: [start.u, end.u],
-        center: Point3::new(
-            origin.x + start.v * half_angle.cos() * axis.x,
-            origin.y + start.v * half_angle.cos() * axis.y,
-            origin.z + start.v * half_angle.cos() * axis.z,
-        ),
-        major,
-        minor,
-        pitch: cadmpeg_ir::math::Vector3::new(
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
-        ),
-        apex_factor: std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
-        axis: *axis,
-    })
+    Some(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [start.u, end.u],
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(
+                    origin.x + start.v * half_angle.cos() * axis.x,
+                    origin.y + start.v * half_angle.cos() * axis.y,
+                    origin.z + start.v * half_angle.cos() * axis.z,
+                ),
+                major,
+                minor,
+                pitch: cadmpeg_ir::math::Vector3::new(
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
+                ),
+                axis: *axis,
+            },
+            std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
+            None,
+        )
+        .ok()?,
+    ))
 }
 
-fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
+fn zero_entity_surface_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &SurfaceGeometry,
+    [u, v]: [f64; 2],
+) -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
     let point = match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            let origin = plane_surface.origin().get();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let v_axis = normal.cross(*u_axis);
             Point3::new(
                 origin.x + u * u_axis.x + v * v_axis.x,
@@ -1603,12 +2224,11 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
                 origin.z + u * u_axis.z + v * v_axis.z,
             )
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+            let origin = cylinder_surface.origin().get();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
+            let radius = cylinder_surface.radius().get();
             let angle = u / radius;
             let transverse = axis.cross(*ref_direction);
             Point3::new(
@@ -1623,14 +2243,17 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
                     + v * axis.z,
             )
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } if *ratio == 1.0 => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            if {
+                let ratio = cone_surface.ratio().get();
+                ratio == 1.0
+            } =>
+        {
+            let origin = cone_surface.origin().get();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let transverse = axis.cross(*ref_direction);
             let axial = v * half_angle.cos();
             let radial = radius + v * half_angle.sin();
@@ -1646,13 +2269,12 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
                     + axial * axis.z,
             )
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+            let center = torus_surface.center().get();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let major_angle = u / major_radius;
             let minor_angle = v / minor_radius;
             let transverse = axis.cross(*ref_direction);
@@ -1672,32 +2294,36 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
                     + minor_radius * minor_angle.sin() * axis.z,
             )
         }
-        SurfaceGeometry::Nurbs(surface) => nurbs_surface_point(surface, u, v)?,
-        _ => return None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
+            return cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v),
+            )?);
+        }
+        _ => return Ok(None),
     };
-    [point.x, point.y, point.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(point)
+    Ok(FinitePoint3::new(point))
 }
 
 /// Decode complete `5e1a` allocation tuples.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
-    zero_entity_edge_strides_in_range(data, 0..data.len())
+fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_edge_strides_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test edge strides fit the service profile")
 }
 
 /// Decode edge strides whose records stay inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_edge_strides_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntityEdgeStride> {
-    let records = zero_entity_records_in_range(data, range);
-    records
-        .into_iter()
-        .filter_map(|record| {
+) -> Result<Vec<ZeroEntityEdgeStride>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut output = Vec::new();
+    for record in records {
+        let parsed = (|| {
             if record.tag != [0x5e, 0x1a]
                 || tagged_u32(data, record.pos + edge_5e1a::TAGGED_ONE_PREFIX) != Some(1)
                 || data.get(record.pos + edge_5e1a::TERMINAL) != Some(&0x21)
@@ -1722,31 +2348,36 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                topology_refs: [allocations[0], allocations[3], allocations[4]],
-                surface_support_refs: [allocations[1], allocations[2]],
                 allocations,
             })
-        })
-        .collect()
+        })();
+        if let Some(record) = parsed {
+            ctx.push_vec(&mut output, record, "catia_zero_edge_strides")?;
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete `2569` headers with their adjacent `(1, 2)` oriented uses.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
-    zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
+fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_oriented_use_pairs_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test oriented uses fit the service profile")
 }
 
 /// Decode oriented-use pairs whose records stay inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_oriented_use_pairs_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntityOrientedUsePair> {
-    let records = zero_entity_records_in_range(data, range);
-    records
-        .windows(3)
-        .filter_map(|records| {
+) -> Result<Vec<ZeroEntityOrientedUsePair>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut output = Vec::new();
+    for records in records.windows(3) {
+        let parsed = (|| {
             let [header, side_one, side_two] = records else {
                 return None;
             };
@@ -1783,8 +2414,6 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
                 Some(ZeroEntityOrientedUse {
                     pos: record.pos,
                     record_ordinal: record.ordinal,
-                    side: expected_side,
-                    allocations,
                 })
             };
             Some(ZeroEntityOrientedUsePair {
@@ -1793,38 +2422,45 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
                 base_columns,
                 uses: [parse_use(*side_one, 1)?, parse_use(*side_two, 2)?],
             })
-        })
-        .collect()
+        })();
+        if let Some(pair) = parsed {
+            ctx.push_vec(&mut output, pair, "catia_zero_oriented_use_pairs")?;
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete counted `050b`, `0510`, and `0515` incidence records.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
-    zero_entity_vertex_incidences_in_range(data, 0..data.len())
+fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
+    crate::test_support::with_service_context(|ctx| {
+        zero_entity_vertex_incidences_in_range(ctx, data, 0..data.len())
+    })
+    .expect("test vertex incidences fit the service profile")
 }
 
 /// Decode vertex incidences whose records stay inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_vertex_incidences_in_range(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-) -> Vec<ZeroEntityVertexIncidence> {
-    let records = zero_entity_records_in_range(data, range);
-    records
-        .windows(2)
-        .filter_map(|records| {
+) -> Result<Vec<ZeroEntityVertexIncidence>, CodecError> {
+    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let mut output = Vec::new();
+    for records in records.windows(2) {
+        let parsed = (|| {
             let [record, owner] = records else {
                 return None;
             };
-            let count = match record.tag {
+            let count: u8 = match record.tag {
                 [0x05, 0x0b] => 2,
                 [0x05, 0x10] => 3,
                 [0x05, 0x15] => 4,
                 _ => return None,
             };
             if tagged_u32(data, record.pos + 7) != Some(1)
-                || data.get(record.pos + 12) != Some(&(0x80 + count as u8))
+                || data.get(record.pos + 12) != Some(&(0x80 + count))
                 || record.end != owner.pos
                 || !zero_entity_vertex_owner(data, *owner)
             {
@@ -1847,8 +2483,12 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
                 record_ordinal: record.ordinal,
                 allocations,
             })
-        })
-        .collect()
+        })();
+        if let Some(incidence) = parsed {
+            ctx.push_vec(&mut output, incidence, "catia_zero_vertex_incidences")?;
+        }
+    }
+    Ok(output)
 }
 
 fn zero_entity_vertex_owner(data: &[u8], record: ZeroEntityRecord) -> bool {
@@ -1875,25 +2515,37 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
     (data.get(at) == Some(&0x10)).then(|| View::u32_le_at(data, at + 1))?
 }
 
-pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
-    let tag = [
-        *data.get(record + a9_03::TAG_HI)?,
-        *data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?,
-    ];
-    if !zero_entity_surface_carrier_tag(tag) {
-        return None;
+fn zero_entity_surface_at(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: usize,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<SurfaceGeometry>, CodecError> {
+    let Some((tag, payload)) = (|| {
+        let tag = [
+            *data.get(record + a9_03::TAG_HI)?,
+            *data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?,
+        ];
+        if !zero_entity_surface_carrier_tag(tag) {
+            return None;
+        }
+        let payload_end = record
+            .checked_add(usize::from(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?) + 12)?;
+        let payload = data.get(record + a9_03::LEN..payload_end)?;
+        Some((tag, payload))
+    })() else {
+        return Ok(None);
+    };
+    if matches!(tag, [0x34, 0xc8 | 0x5e]) {
+        return zero_entity_nurbs_surface(ctx, data, record, refusal);
     }
-    let payload_end =
-        record.checked_add(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)? as usize + 12)?;
-    let payload = data.get(record + a9_03::LEN..payload_end)?;
-    match tag {
+    Ok(match tag {
         [0x27, 0x6a] => zero_entity_plane(payload),
         [0x28, 0x8a] => zero_entity_cylinder(payload),
         [0x29, 0xb8] => zero_entity_cone(payload),
         [0x2b, 0xc8] => zero_entity_torus(payload),
-        [0x34, 0xc8 | 0x5e] => zero_entity_nurbs_surface(data, record),
         _ => None,
-    }
+    })
 }
 
 fn zero_entity_surface_carrier_tag(tag: [u8; 2]) -> bool {
@@ -1913,107 +2565,329 @@ fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
 
 /// Decode the inline zero-entity non-rational NURBS carrier. Its pole grid
 /// extends past the nominal framed record at a tag-specific fixed offset.
-fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
-    let layout = zero_entity_nurbs_layout(data, record)?;
-    let pole_count =
-        crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)?;
-    let mut control_points = Vec::with_capacity(pole_count);
+fn zero_entity_nurbs_surface(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: usize,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<SurfaceGeometry>, CodecError> {
+    let Some(layout) = zero_entity_nurbs_layout(ctx, data, record)? else {
+        return Ok(None);
+    };
+    let Some(pole_count) = crate::nurbs_surface_control_count(
+        index_from_u32(layout.u_count),
+        index_from_u32(layout.v_count),
+    ) else {
+        return Ok(None);
+    };
+    let mut control_points = Vec::new();
+    ctx.reserve_vec(&mut control_points, pole_count, "catia_zero_nurbs_poles")?;
     for pole in 0..pole_count {
-        control_points.push(f64_point(
-            data,
-            layout.grid.checked_add(pole.checked_mul(24)?)?,
-        )?);
+        let Some(at) = pole
+            .checked_mul(24)
+            .and_then(|offset| layout.grid.checked_add(offset))
+        else {
+            return Ok(None);
+        };
+        let Some(point) = f64_point(data, at) else {
+            return Ok(None);
+        };
+        control_points.push(point);
     }
-    Some(SurfaceGeometry::Nurbs(
-        NurbsSurface::new(
-            layout.u_degree,
-            layout.v_degree,
-            expand_knots(&layout.u_distinct, &layout.u_mults)?,
-            expand_knots(&layout.v_distinct, &layout.v_mults)?,
-            layout.u_count,
-            layout.v_count,
-            control_points,
-            None,
+    let u_knots = zero_entity_expand_knots(
+        ctx,
+        layout.u_distinct.iter().map(|knot| knot.get()),
+        &layout.u_mults,
+    )?;
+    let v_knots = zero_entity_expand_knots(
+        ctx,
+        layout.v_distinct.iter().map(|knot| knot.get()),
+        &layout.v_mults,
+    )?;
+    let mut rows = Vec::new();
+    let row_count = pole_count / index_from_u32(layout.v_count);
+    ctx.reserve_vec(&mut rows, row_count, "catia_zero_nurbs_pole_rows")?;
+    for row in control_points.chunks(index_from_u32(layout.v_count)) {
+        rows.push(ctx.copy_slice(row, "catia_zero_nurbs_pole_row_points")?);
+    }
+    crate::nurbs::note_refusal(
+        ctx,
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None),
             false,
-            false,
-            false,
-        )
-        .ok()?,
-    ))
+        )?,
+        refusal,
+        format_args!("zero-entity NURBS surface record at byte {record}"),
+    )
+    .map(|surface| {
+        surface.map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
+    })
+}
+
+fn zero_entity_expand_knots(
+    ctx: &DecodeContext<'_>,
+    distinct: impl Iterator<Item = f64>,
+    multiplicities: &[u32],
+) -> Result<Vec<f64>, CodecError> {
+    ctx.charge_work(
+        u64_from_index(multiplicities.len()),
+        "catia_zero_knot_expansion_scan",
+    )?;
+    let mut total = 0usize;
+    for &multiplicity in multiplicities {
+        let Ok(count) = usize::try_from(multiplicity) else {
+            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
+        };
+        let Some(next) = total.checked_add(count) else {
+            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
+        };
+        total = next;
+    }
+    ctx.charge_work(u64_from_index(total), "catia_zero_knot_expansion_emit")?;
+    let mut knots = Vec::new();
+    ctx.reserve_vec(&mut knots, total, "catia_zero_expanded_knots")?;
+    for (knot, &multiplicity) in distinct.zip(multiplicities) {
+        let count = usize::try_from(multiplicity)
+            .map_err(|_| ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX))?;
+        knots.extend(std::iter::repeat_with(|| knot).take(count));
+    }
+    Ok(knots)
 }
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = f64_point(payload, 10)?;
-    let row0 = f64_vector(payload, 34)?;
-    let row1 = f64_vector(payload, 58)?;
-    Some(SurfaceGeometry::Plane {
-        origin,
-        normal: row0.cross(row1).unit()?,
-        u_axis: row0.unit()?,
-    })
+    let row0 = f64_vector(payload, 34)?.get();
+    let row1 = f64_vector(payload, 58)?.get();
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+            origin,
+            cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                cadmpeg_ir::units::UnitVector3::normalized(row0.cross(row1))?,
+                cadmpeg_ir::units::UnitVector3::normalized(row0)?,
+            )?,
+        ),
+    )))
 }
 
 fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     // The origin sits at offset 8; a one-byte gap separates it from the
     // contiguous frame-row block at offset 33.
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let origin = c.point3()?;
     c.skip(1)?;
-    let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    if !(radius.is_finite() && radius > 0.0) {
-        return None;
-    }
-    Some(geometry)
+    crate::analytic::cylinder_uvr(&mut c, origin).map(|(geometry, _)| geometry)
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
-    let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
-    if !(radius.is_finite()
-        && radius > 0.0
-        && half_angle.is_finite()
-        && half_angle > 0.0
-        && half_angle < std::f64::consts::FRAC_PI_2)
-    {
-        return None;
-    }
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
+    let (geometry, _, _) = crate::analytic::cone_ozra(&mut c)?;
     Some(geometry)
 }
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
-    let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    if !(major_radius.is_finite()
-        && major_radius > 0.0
-        && minor_radius.is_finite()
-        && minor_radius > 0.0)
-    {
-        return None;
-    }
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
+    let (geometry, _, _) = crate::analytic::torus_ozrr(&mut c)?;
     Some(geometry)
 }
 
-fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
+fn u32_tokens(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    count: usize,
+) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
     let mut view = View::over_retained(bytes);
-    view.seek(at)?;
-    let mut values = Vec::with_capacity(count);
+    if view.seek(at).is_none() {
+        return Ok(None);
+    }
+    let mut values = Vec::new();
+    ctx.reserve_vec(&mut values, count, "catia_zero_u32_tokens")?;
     for _ in 0..count {
-        if view.u8()? != 0x10 {
-            return None;
+        if view.u8() != Some(0x10) {
+            return Ok(None);
         }
-        let value = view.u32_le()?;
+        let Some(value) = view.u32_le() else {
+            return Ok(None);
+        };
         if value == 0 {
-            return None;
+            return Ok(None);
         }
         values.push(value);
     }
-    Some((values, view.position()))
+    Ok(Some((values, view.position())))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_support::{
+    use super::{
+        oriented_closed_model_endpoints as oriented_endpoints_with_context, zero_entity_cone,
+        zero_entity_cylinder, zero_entity_edge_strides, zero_entity_fixed_logical_length,
+        zero_entity_loops_from_records as loops_with_context,
+        zero_entity_model_curve as model_curve_with_context, zero_entity_model_curve_construction,
+        zero_entity_neutral_pcurve as neutral_pcurve_with_context,
+        zero_entity_nurbs_layout as nurbs_layout_with_context, zero_entity_nurbs_shape,
+        zero_entity_oriented_use_pairs, zero_entity_ownership_root, zero_entity_ownership_roots,
+        zero_entity_record_inventory as inventory_with_context, zero_entity_records,
+        zero_entity_support_occurrence as support_occurrence_with_context,
+        zero_entity_support_runs, zero_entity_surface_at as surface_at_with_context,
+        zero_entity_surface_point, zero_entity_surfaces, zero_entity_torus,
+        zero_entity_vertex_incidences, ZeroEntityFaceControl, ZeroEntityLoopMembers,
+        ZeroEntityUseSlot,
+    };
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::FiniteReal;
+    use std::num::NonZeroUsize;
+
+    fn zero_entity_record_inventory(data: &[u8]) -> Vec<super::ZeroEntityRecordIdentity> {
+        crate::test_support::with_service_context(|ctx| inventory_with_context(ctx, data))
+            .expect("test record inventory fits the service profile")
+    }
+
+    fn zero_entity_nurbs_layout(
+        data: &[u8],
+        record: usize,
+    ) -> Option<super::ZeroEntityNurbsLayout> {
+        crate::test_support::with_service_context(|ctx| {
+            nurbs_layout_with_context(ctx, data, record)
+        })
+        .expect("test NURBS layout fits the service profile")
+    }
+
+    fn zero_entity_surface_at(
+        data: &[u8],
+        record: usize,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<SurfaceGeometry> {
+        crate::test_support::with_service_context(|ctx| {
+            surface_at_with_context(ctx, data, record, refusal)
+        })
+        .expect("test surface fits the service profile")
+    }
+
+    fn zero_entity_support_occurrence(
+        data: &[u8],
+        record: super::ZeroEntityRecord,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<super::ZeroEntitySupportOccurrence> {
+        crate::test_support::with_service_context(|ctx| {
+            support_occurrence_with_context(ctx, data, record, refusal)
+        })
+        .expect("test support occurrence fits the service profile")
+    }
+
+    fn zero_entity_neutral_pcurve(
+        surface: &SurfaceGeometry,
+        pcurve: &PcurveGeometry,
+        record: &dyn std::fmt::Display,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<PcurveGeometry> {
+        crate::test_support::with_service_context(|ctx| {
+            neutral_pcurve_with_context(ctx, surface, pcurve, record, refusal)
+        })
+        .expect("test neutral pcurve fits the service profile")
+    }
+
+    fn zero_entity_model_curve(
+        surface: &SurfaceGeometry,
+        pcurve: &PcurveGeometry,
+        uv_endpoints: [[f64; 2]; 2],
+        record: &dyn std::fmt::Display,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<(CurveGeometry, [FiniteReal; 2])> {
+        crate::test_support::with_service_context(|ctx| {
+            model_curve_with_context(ctx, surface, pcurve, uv_endpoints, record, refusal)
+        })
+        .expect("test model curve fits the service profile")
+    }
+
+    fn zero_entity_loops_from_records(
+        data: &[u8],
+        records: &[super::ZeroEntityRecord],
+    ) -> Vec<super::ZeroEntityLoop> {
+        crate::test_support::with_service_context(|ctx| loops_with_context(ctx, data, records))
+            .expect("test loops fit the service profile")
+    }
+
+    fn oriented_closed_model_endpoints(
+        endpoints: &[Option<[FinitePoint3; 2]>],
+        forward_senses: &[bool],
+    ) -> Option<Vec<[FinitePoint3; 2]>> {
+        crate::test_support::with_service_context(|ctx| {
+            oriented_endpoints_with_context(ctx, endpoints, forward_senses)
+        })
+        .expect("test oriented endpoints fit the service profile")
+    }
+
+    #[test]
+    fn zero_entity_record_inventory_refuses_before_record_growth() {
+        let stream = zero_entity_ownership_stream(3);
+        assert_eq!(zero_entity_record_inventory(&stream).len(), 3);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            inventory_with_context(ctx, &stream)
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn zero_entity_ownership_root_refuses_before_face_slot_growth() {
+        let stream = zero_entity_ownership_stream(3);
+        assert!(zero_entity_ownership_root(&stream).is_some());
+        let limited = crate::test_support::with_collection_limit(5, |ctx| {
+            super::zero_entity_ownership_root_in_range(ctx, &stream, 0..stream.len())
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn oriented_closed_model_endpoints_refuses_before_endpoint_growth() {
+        let finite = |point| FinitePoint3::new(point).expect("finite test endpoint");
+        let first = finite(Point3::new(1.0, 0.0, 0.0));
+        let second = finite(Point3::new(0.0, 1.0, 0.0));
+        let endpoints = [Some([first, second]), Some([second, first])];
+        assert!(oriented_closed_model_endpoints(&endpoints, &[true, true]).is_some());
+        let limited = crate::test_support::with_collection_limit(1, |ctx| {
+            oriented_endpoints_with_context(ctx, &endpoints, &[true, true])
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {
+        let count = NonZeroUsize::new(3).expect("nonzero loop member count");
+        let members =
+            ZeroEntityLoopMembers::try_new(4, 2, count).expect("admitted loop member run");
+        assert_eq!(members.member_ids().collect::<Vec<_>>(), [2, 1, 0]);
+        assert_eq!(members.support_slots().collect::<Vec<_>>(), [2, 3, 4]);
+        assert!(ZeroEntityLoopMembers::try_new(4, 0, count).is_none());
+        assert!(ZeroEntityLoopMembers::try_new(4, 3, count).is_none());
+        let singleton = ZeroEntityLoopMembers::try_new(u32::MAX, u32::MAX, NonZeroUsize::MIN)
+            .expect("admitted loop member run");
+        assert_eq!(singleton.member_ids().collect::<Vec<_>>(), [0]);
+        assert_eq!(singleton.support_slots().collect::<Vec<_>>(), [u32::MAX]);
+    }
+
+    use crate::test_support::test_zero_entity::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };
@@ -2022,7 +2896,16 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap(),
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                points,
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
         }
     }
 
@@ -2071,14 +2954,59 @@ mod tests {
         at += 3;
         assert_eq!(at, grid_offset);
         for pole in 0..pole_count {
-            let value = pole as f64;
+            let value = cadmpeg_core::convert::f64_from_index(pole)
+                .expect("fixture index is exactly representable");
             for coordinate in 0..3 {
                 let offset = at + pole * 24 + coordinate * 8;
-                bytes[offset..offset + 8]
-                    .copy_from_slice(&(value + coordinate as f64).to_le_bytes());
+                bytes[offset..offset + 8].copy_from_slice(
+                    &(value
+                        + cadmpeg_core::convert::f64_from_index(coordinate)
+                            .expect("fixture index is exactly representable"))
+                    .to_le_bytes(),
+                );
             }
         }
         bytes
+    }
+
+    #[test]
+    fn zero_entity_nurbs_layout_refuses_before_knot_lane_growth() {
+        let bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &[10.0, 20.0, 30.0, 40.0, 50.0],
+            &[4, 1, 1, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        assert!(zero_entity_nurbs_layout(&bytes, 0).is_some());
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            nurbs_layout_with_context(ctx, &bytes, 0)
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("NURBS knot lane must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "catia_zero_nurbs_distinct_knots");
+    }
+
+    #[test]
+    fn zero_entity_nurbs_surface_refuses_before_pole_growth() {
+        let bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &[10.0, 20.0, 30.0, 40.0, 50.0],
+            &[4, 1, 1, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        assert!(
+            zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()).is_some()
+        );
+        let limited = crate::test_support::with_collection_limit(100, |ctx| {
+            surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("NURBS pole grid must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "catia_zero_nurbs_poles");
     }
 
     #[test]
@@ -2105,11 +3033,11 @@ mod tests {
             let bytes = nurbs_carrier(tag, &u_knots, &u_mults, &v_knots, &v_mults);
             let layout = zero_entity_nurbs_layout(&bytes, 0).expect("bounded NURBS layout");
             assert_eq!(layout.end, expected_end);
-            assert_eq!(layout.u_distinct, u_knots);
-            assert_eq!(layout.v_distinct, v_knots);
+            assert_eq!(FiniteReal::raw_lane(&layout.u_distinct), u_knots);
+            assert_eq!(FiniteReal::raw_lane(&layout.v_distinct), v_knots);
             assert!(matches!(
-                zero_entity_surface_at(&bytes, 0),
-                Some(SurfaceGeometry::Nurbs(_))
+                zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()),
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
             ));
         }
     }
@@ -2224,7 +3152,10 @@ mod tests {
         let pole_start = multiplicity_start + multiplicities.len() * 5;
         let points = (0..control_count)
             .map(|index| {
-                let parameter = index as f64 / (control_count - 1) as f64;
+                let parameter = cadmpeg_core::convert::f64_from_index(index)
+                    .expect("fixture index is exactly representable")
+                    / cadmpeg_core::convert::f64_from_index(control_count - 1)
+                        .expect("fixture index is exactly representable");
                 [parameter, parameter * (1.0 - parameter)]
             })
             .collect::<Vec<_>>();
@@ -2258,7 +3189,10 @@ mod tests {
         };
         assert_eq!(support.tag, [0x21, 0x71]);
         assert_eq!(support.face_local_slot, 42);
-        assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+        assert_eq!(
+            support.uv_endpoints,
+            Some([[-2.0, 4.0], [6.0, 8.0]].map(crate::test_support::test_b5::finite_pair))
+        );
         assert_eq!(
             support.pcurve,
             Some(test_pcurve(vec![
@@ -2268,18 +3202,41 @@ mod tests {
         );
         assert!(matches!(
             support.model_curve,
-            Some(CurveGeometry::Nurbs(ref curve))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)))
                 if curve.degree() == 1
                     && curve.weights().is_none()
                     && !curve.periodic()
                     && curve.control_points()
                 == [Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
-        assert_eq!(support.model_parameters, Some([0.0, 1.0]));
-        assert_eq!(support.model_midpoint, Some(Point3::new(3.0, 8.0, 3.0)));
         assert_eq!(
-            support.model_endpoints,
+            support.model_parameters,
+            Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
+        );
+        assert_eq!(
+            support.model_midpoint.map(FinitePoint3::get),
+            Some(Point3::new(3.0, 8.0, 3.0))
+        );
+        assert_eq!(
+            support
+                .model_endpoints
+                .map(|pair| pair.map(FinitePoint3::get)),
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
+        );
+    }
+
+    #[test]
+    fn support_run_lifts_midpoint_across_a_wide_finite_pcurve_domain() {
+        let mut stream = zero_entity_support_stream();
+        let support_start = 0x6a + 12;
+        stream[support_start + 67..support_start + 75].copy_from_slice(&(-f64::MAX).to_le_bytes());
+        stream[support_start + 75..support_start + 83].copy_from_slice(&f64::MAX.to_le_bytes());
+        let runs = zero_entity_support_runs(&stream);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].supports.len(), 1);
+        assert_eq!(
+            runs[0].supports[0].model_midpoint.map(FinitePoint3::get),
+            Some(Point3::new(3.0, 8.0, 3.0))
         );
     }
 
@@ -2301,9 +3258,16 @@ mod tests {
             let [record] = records.as_slice() else {
                 panic!("one support record")
             };
-            let support =
-                zero_entity_support_occurrence(&bytes, *record).expect("complete support pcurve");
-            assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
+            let support = zero_entity_support_occurrence(
+                &bytes,
+                *record,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("complete support pcurve");
+            assert_eq!(
+                support.uv_endpoints,
+                Some([[0.0, 0.0], [1.0, 0.0]].map(crate::test_support::test_b5::finite_pair))
+            );
             let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve else {
                 panic!("NURBS support pcurve")
             };
@@ -2327,8 +3291,40 @@ mod tests {
             let [record] = malformed_records.as_slice() else {
                 panic!("one malformed support record")
             };
-            assert!(zero_entity_support_occurrence(&malformed, *record).is_none());
+            assert!(zero_entity_support_occurrence(
+                &malformed,
+                *record,
+                &mut crate::nurbs::LaneRefusals::new()
+            )
+            .is_none());
         }
+    }
+
+    #[test]
+    fn zero_entity_support_pcurve_refuses_before_knot_growth() {
+        let bytes = support_pcurve_record(0x71);
+        let records = zero_entity_records(&bytes);
+        let [record] = records.as_slice() else {
+            panic!("one support record")
+        };
+        assert!(zero_entity_support_occurrence(
+            &bytes,
+            *record,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            support_occurrence_with_context(
+                ctx,
+                &bytes,
+                *record,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("support knot lane must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "catia_zero_support_distinct_knots");
     }
 
     #[test]
@@ -2339,7 +3335,12 @@ mod tests {
         let [record] = records.as_slice() else {
             panic!("one support record")
         };
-        assert!(zero_entity_support_occurrence(&bytes, *record).is_none());
+        assert!(zero_entity_support_occurrence(
+            &bytes,
+            *record,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_none());
     }
 
     #[test]
@@ -2347,30 +3348,34 @@ mod tests {
         use cadmpeg_ir::math::Vector3;
 
         let half_angle = 0.25;
-        let surface = SurfaceGeometry::Cone {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-            ratio: 1.0,
-            half_angle,
-        };
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                1.0,
+                half_angle,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
         let pcurve = test_pcurve(vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)]);
-        let Some(ProceduralCurveDefinition::Helix {
-            angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        }) = zero_entity_model_curve_construction(&surface, &pcurve)
+        let Some(ProceduralCurveDefinition::Helix(helix_payload)) =
+            zero_entity_model_curve_construction(&surface, &pcurve)
         else {
             panic!("conical helix")
         };
+        let angle_range = *helix_payload.angle_range();
+        let center = *helix_payload.center().as_raw();
+        let major = *helix_payload.major();
+        let minor = *helix_payload.minor();
+        let pitch = *helix_payload.pitch();
+        let apex_factor = helix_payload.apex_factor();
+        let axis = *helix_payload.axis();
+
         let slope = 2.0;
         let start_radius = 2.0 + half_angle.sin();
-        assert_eq!(angle_range, [0.0, 0.5]);
+        assert_eq!(angle_range.get(), [0.0, 0.5]);
         assert_eq!(center, Point3::new(1.0, 2.0, 3.0 + half_angle.cos()));
         assert_eq!(major, Vector3::new(start_radius, 0.0, 0.0));
         assert_eq!(minor, Vector3::new(0.0, start_radius, 0.0));
@@ -2379,13 +3384,13 @@ mod tests {
             Vector3::new(0.0, 0.0, std::f64::consts::TAU * slope * half_angle.cos())
         );
         assert_eq!(
-            apex_factor,
+            apex_factor.get(),
             std::f64::consts::TAU * slope * half_angle.sin() / start_radius
         );
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
 
         let revolution_fraction = angle_range[1] / std::f64::consts::TAU;
-        let end_radius = start_radius * (1.0 + apex_factor * revolution_fraction);
+        let end_radius = start_radius * (1.0 + apex_factor.get() * revolution_fraction);
         assert!((end_radius - (2.0 + 2.0 * half_angle.sin())).abs() < 1.0e-12);
         assert!(
             (center.z + pitch.z * revolution_fraction - (3.0 + 2.0 * half_angle.cos())).abs()
@@ -2394,7 +3399,7 @@ mod tests {
         for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let angle = angle_range[0] + fraction * (angle_range[1] - angle_range[0]);
             let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-            let radial_scale = 1.0 + apex_factor * revolution_fraction;
+            let radial_scale = 1.0 + apex_factor.get() * revolution_fraction;
             let construction_point = Point3::new(
                 center.x
                     + radial_scale * (major.x * angle.cos() + minor.x * angle.sin())
@@ -2406,8 +3411,11 @@ mod tests {
                     + radial_scale * (major.z * angle.cos() + minor.z * angle.sin())
                     + pitch.z * revolution_fraction,
             );
-            let surface_point = zero_entity_surface_point(&surface, [angle, 1.0 + fraction])
-                .expect("finite cone point");
+            let surface_point = crate::test_support::with_service_context(|ctx| {
+                zero_entity_surface_point(ctx, &surface, [angle, 1.0 + fraction])
+            })
+            .expect("evaluator allocation succeeds")
+            .expect("finite cone point");
             assert!((construction_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((construction_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((construction_point.z - surface_point.z).abs() < 1.0e-12);
@@ -2416,17 +3424,19 @@ mod tests {
 
     #[test]
     fn negative_cone_latitude_radius_flips_the_circle_reference_direction() {
-        use cadmpeg_ir::eval::curve_point;
         use cadmpeg_ir::math::Vector3;
 
-        let surface = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.0,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
-        };
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                1.0,
+                std::f64::consts::FRAC_PI_4,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
         let endpoints = [[0.0, -2.0], [1.0, -2.0]];
         let pcurve = test_pcurve(
             endpoints
@@ -2434,16 +3444,124 @@ mod tests {
                 .into_iter()
                 .collect(),
         );
-        let (curve, parameters) =
-            zero_entity_model_curve(&surface, &pcurve, endpoints).expect("cone latitude");
+        let (curve, parameters) = zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("cone latitude");
         for index in 0..2 {
-            let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
-            let surface_point =
-                zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
+            let curve_point = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                parameters[index].get(),
+            )
+            .expect("circle point");
+            let surface_point = crate::test_support::with_service_context(|ctx| {
+                zero_entity_surface_point(ctx, &surface, endpoints[index])
+            })
+            .expect("evaluator allocation succeeds")
+            .expect("cone point");
             assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
         }
+    }
+
+    #[test]
+    fn zero_entity_planar_model_curve_refuses_before_lifted_pole_growth() {
+        let mut payload = [0u8; 82];
+        payload[34..42].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&1.0f64.to_le_bytes());
+        let surface = super::zero_entity_plane(&payload).expect("valid planar surface");
+        let pcurve = test_pcurve(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]);
+        let endpoints = [[0.0, 0.0], [1.0, 1.0]];
+        assert!(zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
+        let limited = crate::test_support::with_collection_limit(1, |ctx| {
+            model_curve_with_context(
+                ctx,
+                &surface,
+                &pcurve,
+                endpoints,
+                &"test support",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("lifted curve poles must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "catia_zero_lifted_pcurve_poles");
+    }
+
+    #[test]
+    fn zero_entity_isocurve_refuses_before_basis_growth() {
+        let bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &[10.0, 20.0, 30.0, 40.0, 50.0],
+            &[4, 1, 1, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        let surface = zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+            .expect("valid NURBS surface");
+        let pcurve = test_pcurve(vec![Point2::new(30.0, 0.0), Point2::new(30.0, 200.0)]);
+        let endpoints = [[30.0, 0.0], [30.0, 200.0]];
+        assert!(zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            model_curve_with_context(
+                ctx,
+                &surface,
+                &pcurve,
+                endpoints,
+                &"test support",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("isocurve basis must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "IR B-spline basis");
+    }
+
+    #[test]
+    fn zero_entity_model_curve_refuses_unrepresentable_circle_parameters() {
+        use cadmpeg_ir::math::Vector3;
+
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                f64::from_bits(1),
+            )
+            .expect("finite positive radius"),
+        ));
+        let endpoints = [[0.0, 0.0], [1.0, 0.0]];
+        let pcurve = test_pcurve(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]);
+        assert!(zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_none());
     }
 
     #[test]
@@ -2453,35 +3571,45 @@ mod tests {
         let origin = Point3::new(0.0, 0.0, 0.0);
         let x = Vector3::new(1.0, 0.0, 0.0);
         let z = Vector3::new(0.0, 0.0, 1.0);
-        let cylinder = SurfaceGeometry::Cylinder {
-            origin,
-            axis: z,
-            ref_direction: x,
-            radius: 2.0,
-        };
-        let cone = SurfaceGeometry::Cone {
-            origin,
-            axis: z,
-            ref_direction: x,
-            radius: 2.0,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
-        };
-        let torus = SurfaceGeometry::Torus {
-            center: origin,
-            axis: z,
-            ref_direction: x,
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        };
+        let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(origin, z, x, 2.0)
+                .expect("valid CylinderSurface fixture"),
+        ));
+        let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                origin,
+                z,
+                x,
+                2.0,
+                1.0,
+                std::f64::consts::FRAC_PI_4,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
+        let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(origin, z, x, 4.0, 2.0)
+                .expect("valid TorusSurface fixture"),
+        ));
 
-        let cylinder_point =
-            zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0]).expect("cylinder");
-        let cone_point =
-            zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0]).expect("cone");
-        let torus_point =
-            zero_entity_surface_point(&torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI])
-                .expect("torus");
+        let cylinder_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(ctx, &cylinder, [std::f64::consts::PI, 3.0])
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("cylinder");
+        let cone_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(ctx, &cone, [std::f64::consts::FRAC_PI_2, 3.0])
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("cone");
+        let torus_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(
+                ctx,
+                &torus,
+                [2.0 * std::f64::consts::PI, std::f64::consts::PI],
+            )
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("torus");
 
         assert!(cylinder_point.x.abs() < 1.0e-12);
         assert!((cylinder_point.y - 2.0).abs() < 1.0e-12);
@@ -2499,47 +3627,105 @@ mod tests {
         use cadmpeg_ir::math::Vector3;
 
         let pcurve = test_pcurve(vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)]);
-        let cylinder = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        };
+        let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        ));
         assert_eq!(
-            zero_entity_neutral_pcurve(&cylinder, &pcurve),
+            zero_entity_neutral_pcurve(
+                &cylinder,
+                &pcurve,
+                &"test support record",
+                &mut crate::nurbs::LaneRefusals::new()
+            ),
             Some(test_pcurve(vec![
                 Point2::new(1.0, 3.0),
                 Point2::new(2.0, 5.0),
             ]))
         );
 
-        let cone = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-            ratio: 1.0,
-            half_angle: 0.25,
-        };
-        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&cone, &pcurve)
-        else {
+        let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                1.0,
+                0.25,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(
+            &cone,
+            &pcurve,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) else {
             panic!("neutral cone pcurve")
         };
         assert_eq!(nurbs.control_points()[0].u, 2.0);
         assert_eq!(nurbs.control_points()[0].v, 3.0 * 0.25_f64.cos());
 
-        let torus = SurfaceGeometry::Torus {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        };
-        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&torus, &pcurve)
-        else {
+        let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+                2.0,
+            )
+            .expect("valid TorusSurface fixture"),
+        ));
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(
+            &torus,
+            &pcurve,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) else {
             panic!("neutral torus pcurve")
         };
         assert_eq!(nurbs.control_points()[1], Point2::new(1.0, 2.5));
+    }
+
+    #[test]
+    fn zero_entity_neutral_pcurve_refuses_before_scaled_pole_growth() {
+        use cadmpeg_ir::math::Vector3;
+
+        let pcurve = test_pcurve(vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)]);
+        let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid cylinder fixture"),
+        ));
+        assert!(zero_entity_neutral_pcurve(
+            &cylinder,
+            &pcurve,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
+        let limited = crate::test_support::with_collection_limit(1, |ctx| {
+            neutral_pcurve_with_context(
+                ctx,
+                &cylinder,
+                &pcurve,
+                &"test support record",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
+            panic!("scaled pcurve poles must refuse the collection limit");
+        };
+        assert_eq!(error.operation, "catia_zero_neutral_pcurve_poles");
     }
 
     #[test]
@@ -2548,47 +3734,41 @@ mod tests {
         cylinder[33..41].copy_from_slice(&1.0_f64.to_le_bytes());
         cylinder[65..73].copy_from_slice(&1.0_f64.to_le_bytes());
         cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
-        assert!(matches!(
-            zero_entity_cylinder(&cylinder),
-            Some(SurfaceGeometry::Cylinder {
-                radius: 2_000_000.0,
-                ..
-            })
-        ));
+        assert!(
+            matches!(zero_entity_cylinder(&cylinder), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+                if { cylinder_surface.radius().get() == 2_000_000.0 })
+        );
 
         let mut cone = vec![0_u8; 120];
         cone[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
         cone[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
         cone[104..112].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
         cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
-        assert!(matches!(
-            zero_entity_cone(&cone),
-            Some(SurfaceGeometry::Cone {
-                radius: 2_000_000.0,
-                ..
-            })
-        ));
+        assert!(
+            matches!(zero_entity_cone(&cone), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+                if { cone_surface.radius().get() == 2_000_000.0 })
+        );
 
         let mut torus = vec![0_u8; 120];
         torus[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
         torus[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
         torus[104..112].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         torus[112..120].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-        assert!(matches!(
-            zero_entity_torus(&torus),
-            Some(SurfaceGeometry::Torus {
-                major_radius: 2_000_000.0,
-                minor_radius: 1_500_000.0,
-                ..
+        assert!(
+            matches!(zero_entity_torus(&torus), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+            if {
+                (torus_surface.major_radius().get() == 2_000_000.0)
+                    && (torus_surface.minor_radius().get() == 1_500_000.0)
             })
-        ));
+        );
     }
 
     #[test]
     fn oriented_endpoint_tape_closes_one_missing_occurrence() {
-        let first = Point3::new(1.0, 0.0, 0.0);
-        let second = Point3::new(0.0, 1.0, 0.0);
-        let third = Point3::new(0.0, 0.0, 1.0);
+        let finite = |point| FinitePoint3::new(point).expect("finite test endpoint");
+        let first = finite(Point3::new(1.0, 0.0, 0.0));
+        let second = finite(Point3::new(0.0, 1.0, 0.0));
+        let third = finite(Point3::new(0.0, 0.0, 1.0));
         let endpoints = [Some([first, second]), Some([third, second]), None];
 
         assert_eq!(
@@ -2599,7 +3779,7 @@ mod tests {
         assert!(oriented_closed_model_endpoints(
             &[
                 Some([first, second]),
-                Some([Point3::new(1.0, 1.0, 0.0), first]),
+                Some([finite(Point3::new(1.0, 1.0, 0.0)), first]),
             ],
             &[true; 2],
         )
@@ -2659,8 +3839,18 @@ mod tests {
         let root = zero_entity_ownership_root(&stream).expect("complete ownership root");
         assert_eq!(root.face_roster_record_ordinal, 1);
         assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
-        assert_eq!(root.shell_record_ordinal(), 2);
-        assert_eq!(root.body_record_ordinal(), 3);
+        assert_eq!(root.shell_record_ordinal().expect("shell ordinal fits"), 2);
+        assert_eq!(root.body_record_ordinal().expect("body ordinal fits"), 3);
+    }
+
+    #[test]
+    fn ownership_root_refuses_overflowed_shell_and_body_ordinals() {
+        let mut root = zero_entity_ownership_root(&zero_entity_ownership_stream(1))
+            .expect("complete ownership root");
+        root.face_roster_record_ordinal = u32::MAX - 1;
+        assert!(format!("{:?}", root.body_record_ordinal()).starts_with("Err("));
+        root.face_roster_record_ordinal = u32::MAX;
+        assert!(format!("{:?}", root.shell_record_ordinal()).starts_with("Err("));
     }
 
     #[test]
@@ -2693,8 +3883,8 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-        assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
-        assert_eq!(edge_stride.surface_support_refs, [7, 8]);
+        assert_eq!(edge_stride.topology_refs(), [5, 4, 3]);
+        assert_eq!(edge_stride.surface_support_refs(), [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -2702,10 +3892,12 @@ mod tests {
         };
         assert_eq!(pair.header_record_ordinal, 2);
         assert_eq!(pair.base_columns, [100, 200]);
+        assert_eq!(ZeroEntityUseSlot::First.side(), 1);
+        assert_eq!(ZeroEntityUseSlot::Second.side(), 2);
         assert_eq!(pair.uses[0].record_ordinal, 3);
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
         assert_eq!(pair.uses[1].record_ordinal, 4);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
 
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
@@ -2760,8 +3952,8 @@ mod tests {
         let [pair] = pairs.as_slice() else {
             panic!("one oriented-use pair")
         };
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")
@@ -2890,11 +4082,11 @@ mod tests {
         };
         assert_eq!(loop_record.record_ordinal, 4);
         assert_eq!(loop_record.tag, [0x62, 0x14]);
-        assert_eq!(loop_record.member_ids, [6]);
+        assert_eq!(loop_record.members.member_ids().collect::<Vec<_>>(), [6]);
         assert_eq!(loop_record.typed_references, [1]);
-        assert_eq!(loop_record.terminal_id, 7);
-        assert_eq!(loop_record.gap, 1);
-        assert_eq!(loop_record.loop_class, 0x41);
+        assert_eq!(loop_record.members.terminal_id(), 7);
+        assert_eq!(loop_record.members.gap(), 1);
+        assert_eq!(loop_record.loop_class.as_byte(), 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
     }
@@ -2957,7 +4149,12 @@ mod tests {
         let mut stream = zero_entity_face_support_stream();
         let support = zero_entity_records(&stream)[1];
         stream[support.pos + 13..support.pos + 17].copy_from_slice(&0u32.to_le_bytes());
-        assert!(zero_entity_support_occurrence(&stream, support).is_none());
+        assert!(zero_entity_support_occurrence(
+            &stream,
+            support,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_none());
     }
 
     #[test]
@@ -3003,5 +4200,32 @@ mod tests {
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
         assert!(face.loops.is_none());
+    }
+}
+
+#[cfg(test)]
+mod knot_work_tests {
+    #[test]
+    fn zero_entity_knot_expansion_refuses_scan_and_emission_work() {
+        for (cap, operation) in [
+            (0, "catia_zero_knot_expansion_scan"),
+            (5, "catia_zero_knot_expansion_emit"),
+        ] {
+            let result = crate::test_support::with_work_limit(cap, |ctx| {
+                super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
+            });
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == operation)
+            );
+        }
+        assert_eq!(
+            crate::test_support::with_work_limit(6, |ctx| {
+                super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
+            })
+            .expect("scan and emission work"),
+            vec![0.0, 0.0, 1.0, 1.0]
+        );
     }
 }

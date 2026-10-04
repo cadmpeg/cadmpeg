@@ -13,13 +13,14 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, LinearTermination};
-use cadmpeg_ir::WritePath;
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
+use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
+    MutationOutcome, SemanticOutcome,
 };
 
 use super::SldprtCodec;
@@ -288,9 +289,8 @@ fn fixtures_survive_the_semantic_write_path() {
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
-                assert_eq!(
-                    report.write_path(),
-                    WritePath::Patched,
+                assert!(
+                    matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
@@ -317,12 +317,15 @@ fn fixtures_survive_the_semantic_write_path() {
 const MUTATION_MM: f64 = 3.0;
 
 /// Every statement of a one-sided blind extrusion depth in `ir`.
-fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
-    fn depth(definition: &mut FeatureDefinition) -> Option<&mut Length> {
-        let FeatureDefinition::Extrude {
+fn visit_blind_extrude_lengths(
+    ir: &mut cadmpeg_ir::CadIr,
+    mut visit: impl FnMut(&mut cadmpeg_ir::scalar::NonZeroLength),
+) -> usize {
+    fn depth(definition: &mut FeatureDefinition) -> Option<&mut cadmpeg_ir::scalar::NonZeroLength> {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
-        } = definition
+        }) = definition
         else {
             return None;
         };
@@ -331,39 +334,44 @@ fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
             _ => None,
         }
     }
-    let features = ir
-        .model
-        .features
-        .iter_mut()
-        .filter_map(|feature| depth(&mut feature.definition));
-    let states = ir
+    let mut count = 0;
+    for feature in &mut ir.model.features {
+        feature.evaluation.edit(|definition, _| {
+            if let Some(length) = depth(definition) {
+                count += 1;
+                visit(length);
+            }
+        });
+    }
+    for state in ir
         .model
         .configurations
         .iter_mut()
         .flat_map(|configuration| configuration.feature_states.values_mut())
-        .filter_map(|state| depth(&mut state.definition));
-    features.chain(states).collect()
+    {
+        if let Some(length) = depth(&mut state.definition) {
+            count += 1;
+            visit(length);
+        }
+    }
+    count
 }
 
-/// An edited extrusion depth survives the semantic write path.
+/// A blind-depth edit without a regenerated B-rep is refused.
 #[test]
-fn an_edited_depth_survives_the_semantic_write_path() {
+fn edited_blind_depth_without_regenerated_brep_is_refused() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         let ran = mutation_roundtrip(
             &SldprtCodec,
             &name,
             &bytes,
-            WritePath::Patched,
+            ExpectedWritePath::Patched,
             |ir| {
-                let depths = blind_extrude_lengths(ir);
-                if depths.is_empty() {
-                    return false;
-                }
-                for depth in depths {
-                    depth.0 += MUTATION_MM;
-                }
-                true
+                visit_blind_extrude_lengths(ir, |depth| {
+                    *depth =
+                        cadmpeg_ir::scalar::NonZeroLength::new(depth.get() + MUTATION_MM).unwrap();
+                }) != 0
             },
             |outcome| match outcome {
                 MutationOutcome::Written { edited, bytes, .. } => {
@@ -397,9 +405,11 @@ fn an_edited_depth_survives_the_semantic_write_path() {
                         "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
                          written; entities were lost or invented"
                     );
+                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
                 }
-                MutationOutcome::Refused { error } => panic!(
-                    "fixture `{name}`: the writer declined to move an extrusion depth: {error}"
+                MutationOutcome::Refused { error } => assert!(
+                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+                    "fixture `{name}`: {error}"
                 ),
             },
         );
@@ -416,10 +426,9 @@ fn an_edited_depth_survives_the_semantic_write_path() {
 
 /// Every blind depth in `ir`, by value.
 fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
-    blind_extrude_lengths(ir)
-        .into_iter()
-        .map(|length| length.0)
-        .collect()
+    let mut values = Vec::new();
+    visit_blind_extrude_lengths(ir, |length| values.push(length.get()));
+    values
 }
 
 /// The size of each topological arena, so a rewrite that loses one fails.

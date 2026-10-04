@@ -3,13 +3,14 @@
 //!
 //! Prototype rows identify curves and their generating features. Topology rows
 //! add the two face sides and successor curve for each native half-edge. Curve
-//! parameter bodies are not interpreted here.
+//! parameter records decode scalar bodies. Relation evaluation resolves
+//! assignments and recognizes exact cylindrical helix programs.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{alloc_filled, bounded_len};
+use cadmpeg_core::decode::{bounded_len, index_from_u32};
 
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
@@ -28,134 +29,145 @@ const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 /// `type_byte` remains raw because the namespace grammar does not define its
 /// geometric interpretation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurvePrototype {
+pub(crate) struct CurvePrototype {
     /// The row's `crv_id`: the curve's identifier in the `crv_array`
     /// namespace, referenced by `srf_array` and topology row `E0`/`E1`
     /// fields.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The row's raw `type` byte. Its geometric meaning is not identified by
     /// the namespace grammar alone ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)); the curve-body evaluator
     /// determines the interpretation.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// The `feat_id` compact integer, when the labeled row has one: the
     /// feature that generated this curve.
-    pub feature_id: Option<u32>,
+    pub(crate) feature_id: Option<u32>,
     /// The two named-prototype `crv_pnt_dir` orientation flags, when the
     /// prototype carries a complete direction array.
-    pub directions: Option<[u8; 2]>,
+    directions: Option<[u8; 2]>,
     /// Byte offset of this prototype's `crv_array` label in the original
     /// stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
+}
+
+#[cfg(test)]
+pub(crate) fn dummy_curve_prototype() -> CurvePrototype {
+    CurvePrototype {
+        id: 8,
+        type_byte: 1,
+        feature_id: Some(2),
+        directions: None,
+        offset: 11,
+    }
 }
 
 /// One source line in a curve-equation expression program.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveExpressionLine {
+pub(crate) struct CurveExpressionLine {
     /// UTF-8 source text without its NUL terminator.
-    pub text: String,
+    pub(crate) text: String,
     /// Byte offset of the first source byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Expression program stored by a curve-from-equation entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionRecord {
+pub(crate) struct CurveExpressionRecord {
     /// Entity identifier from the enclosing record.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Whether the enclosing record is `backup_ents(crv_fr_eqn)`.
-    pub backup: bool,
+    pub(crate) backup: bool,
     /// Bounded native placement frame carried by the equation entity.
-    pub local_system: Option<CurveExpressionLocalSystem>,
+    pub(crate) local_system: Option<CurveExpressionLocalSystem>,
     /// Ordered source lines declared by the `f8` array.
-    pub lines: Vec<CurveExpressionLine>,
+    pub(crate) lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
-    pub assignments: Vec<CurveExpressionAssignment>,
+    pub(crate) assignments: Vec<CurveExpressionAssignment>,
     /// Complete simultaneous-equation blocks in source order.
-    pub solve_blocks: Vec<CurveExpressionSolveBlock>,
+    pub(crate) solve_blocks: Vec<CurveExpressionSolveBlock>,
     /// Whether a `SOLVE`/`FOR` control sequence is malformed or incomplete.
-    pub unresolved_solve_control: bool,
+    pub(crate) unresolved_solve_control: bool,
     /// Curve-equation constructs prohibited by the Creo expression grammar.
-    pub prohibited_constructs: Vec<String>,
+    pub(crate) prohibited_constructs: Vec<String>,
     /// Byte offset of the enclosing entity label.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the `expression` field.
-    pub expression_offset: usize,
+    pub(crate) expression_offset: usize,
 }
 
 /// Count-bounded `local_sys` payload carried by a curve-equation entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionLocalSystem {
+pub(crate) struct CurveExpressionLocalSystem {
     /// Tuple dimensionality from the `f9` wrapper.
-    pub dimensions: u32,
+    pub(crate) dimensions: u32,
     /// Stored tuple count from the `f9` wrapper.
-    pub count: u32,
+    pub(crate) count: u32,
     /// Exact stateful scalar body through the next named field.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Twelve explicit scalar slots, absent when the body uses inheritance or
     /// contains a scalar form that is not decoded.
-    pub explicit_slots: Option<[f64; 12]>,
+    pub(crate) explicit_slots: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Byte offset of the `local_sys` named-record header.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One executable assignment in a curve expression program.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionAssignment {
+pub(crate) struct CurveExpressionAssignment {
     /// Typed relation target receiving the right-hand value.
-    pub target: CurveExpressionTarget,
+    pub(crate) target: CurveExpressionTarget,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
-    pub expression: String,
+    pub(crate) expression: String,
     /// Referenced identifiers in first-appearance order.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Sequentially evaluated value when every dependency is resolved.
-    pub value: Option<CurveExpressionValue>,
+    pub(crate) value: Option<CurveExpressionValue>,
     /// Whether the source-ordered conditional program executes this assignment.
-    pub activation: CurveExpressionActivation,
+    pub(crate) activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One `SOLVE`/`FOR` simultaneous-equation block.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionSolveBlock {
+pub(crate) struct CurveExpressionSolveBlock {
     /// Ordered equations between the `SOLVE` and `FOR` lines.
-    pub equations: Vec<CurveExpressionEquation>,
+    pub(crate) equations: Vec<CurveExpressionEquation>,
     /// Ordered one-way relations in the block that do not involve an unknown.
-    pub assignments: Vec<CurveExpressionAssignment>,
+    pub(crate) assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
-    pub unknowns: Vec<SolveUnknown>,
+    pub(crate) unknowns: Vec<SolveUnknown>,
     /// Byte offset of the `SOLVE` line.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the terminating `FOR` line.
-    pub for_offset: usize,
+    pub(crate) for_offset: usize,
 }
 
 /// One declared solve unknown and its optional solution.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SolveUnknown {
+pub(crate) struct SolveUnknown {
     /// Declared variable name.
-    pub name: String,
+    pub(crate) name: String,
     /// Solved value, absent when the unknown remains unresolved.
-    pub solution: Option<CurveExpressionValue>,
+    pub(crate) solution: Option<CurveExpressionValue>,
 }
 
 /// One equation in a simultaneous-equation block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveExpressionEquation {
+pub(crate) struct CurveExpressionEquation {
     /// Exact left-hand expression after surrounding ASCII whitespace removal.
-    pub left: String,
+    pub(crate) left: String,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
-    pub right: String,
+    pub(crate) right: String,
     /// Referenced identifiers in first-appearance order across both sides.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Byte offset of the equation source line.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Target of one curve-expression assignment.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CurveExpressionTarget {
+pub(crate) enum CurveExpressionTarget {
     /// Scalar parameter target.
     Parameter {
         /// Assigned identifier.
@@ -196,7 +208,7 @@ pub enum CurveExpressionTarget {
 /// Namespace family of an unscoped Creo relation system symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CurveExpressionSystemSymbolFamily {
+pub(crate) enum CurveExpressionSystemSymbolFamily {
     /// Parent-model or assembly dimension (`d#`).
     Dimension,
     /// Section dimension (`sd#`).
@@ -246,13 +258,13 @@ impl CurveExpressionAssignment {
 /// A deterministic value produced by a curve relation expression.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(untagged)]
-pub enum CurveExpressionValue {
+pub(crate) enum CurveExpressionValue {
     /// Dimensionless numeric value.
-    Number(f64),
+    Number(cadmpeg_ir::scalar::FiniteReal),
     /// Length in canonical millimeters.
-    Length(f64),
+    Length(cadmpeg_ir::scalar::FiniteReal),
     /// Angle in relation degrees.
-    Angle(f64),
+    Angle(cadmpeg_ir::scalar::FiniteReal),
     /// Quantity whose physical dimension has no dedicated neutral value type.
     Quantity(CurveExpressionQuantity),
     /// UTF-8 string value.
@@ -262,7 +274,7 @@ pub enum CurveExpressionValue {
 impl CurveExpressionValue {
     fn truth(&self) -> Option<bool> {
         match self {
-            Self::Number(value) => Some(*value != 0.0),
+            Self::Number(value) => Some(value.get() != 0.0),
             Self::Length(_) | Self::Angle(_) | Self::Quantity(_) | Self::String(_) => None,
         }
     }
@@ -270,36 +282,93 @@ impl CurveExpressionValue {
 
 /// Canonically scaled relation quantity represented by physical base powers.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
-pub struct CurveExpressionQuantity {
-    /// Numeric value in canonical millimeter-kilogram-second-degree-kelvin units.
-    pub value: f64,
-    /// Power of length.
-    pub length_power: i8,
-    /// Power of mass.
-    pub mass_power: i8,
-    /// Power of time.
-    pub time_power: i8,
-    /// Power of plane angle.
-    pub angle_power: i8,
-    /// Power of temperature.
-    pub temperature_power: i8,
+pub(crate) struct CurveExpressionQuantity {
+    value: cadmpeg_ir::scalar::FiniteReal,
+    #[serde(flatten)]
+    dimension: ResidualRelationDimension,
+}
+
+/// Physical powers that have no dedicated relation value variant.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+struct ResidualRelationDimension {
+    #[serde(rename = "length_power")]
+    length: i8,
+    #[serde(rename = "mass_power")]
+    mass: i8,
+    #[serde(rename = "time_power")]
+    time: i8,
+    #[serde(rename = "angle_power")]
+    angle: i8,
+    #[serde(rename = "temperature_power")]
+    temperature: i8,
+}
+
+impl ResidualRelationDimension {
+    fn new(dimension: RelationDimension) -> Option<Self> {
+        if [
+            RelationDimension::default(),
+            RelationDimension::LENGTH,
+            RelationDimension::ANGLE,
+        ]
+        .contains(&dimension)
+        {
+            return None;
+        }
+        Some(Self {
+            length: dimension.length,
+            mass: dimension.mass,
+            time: dimension.time,
+            angle: dimension.angle,
+            temperature: dimension.temperature,
+        })
+    }
 }
 
 impl CurveExpressionQuantity {
+    pub(crate) fn new(value: f64, powers: [i8; 5]) -> Option<Self> {
+        let [length, mass, time, angle, temperature] = powers;
+        Some(Self {
+            value: cadmpeg_ir::scalar::FiniteReal::new(value)?,
+            dimension: ResidualRelationDimension::new(RelationDimension {
+                length,
+                mass,
+                time,
+                angle,
+                temperature,
+            })?,
+        })
+    }
+
+    pub(crate) fn value(self) -> f64 {
+        self.value.get()
+    }
+
+    pub(crate) fn powers(self) -> [i8; 5] {
+        let dimension = self.dimension;
+        [
+            dimension.length,
+            dimension.mass,
+            dimension.time,
+            dimension.angle,
+            dimension.temperature,
+        ]
+    }
+
     fn dimension(self) -> RelationDimension {
+        let [length, mass, time, angle, temperature] = self.powers();
         RelationDimension {
-            length: self.length_power,
-            mass: self.mass_power,
-            time: self.time_power,
-            angle: self.angle_power,
-            temperature: self.temperature_power,
+            length,
+            mass,
+            time,
+            angle,
+            temperature,
         }
     }
 }
 
 /// Evaluation state of an assignment inside relation conditionals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveExpressionActivation {
+pub(crate) enum CurveExpressionActivation {
     /// The assignment executes in the current source-ordered evaluation.
     Active,
     /// A resolved enclosing condition excludes the assignment.
@@ -320,64 +389,84 @@ impl CurveExpressionActivation {
 
 /// Exact cylindrical helix parameters from a `crv_fr_eqn` program.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CurveExpressionHelix {
+pub(crate) struct CurveExpressionHelix {
     /// Constant cylindrical radius in model millimeters.
-    pub radius: f64,
+    pub(crate) radius: cadmpeg_ir::scalar::PositiveLength,
     /// Signed axial rise from `t = 0` through `t = 1`.
-    pub height: f64,
+    pub(crate) height: cadmpeg_ir::scalar::FiniteReal,
     /// Native axial coordinate at `t = 0`.
-    pub z_start: f64,
+    pub(crate) z_start: cadmpeg_ir::scalar::FiniteReal,
     /// Positive angular travel in revolutions.
-    pub revolutions: f64,
+    pub(crate) revolutions: cadmpeg_ir::scalar::PositiveReal,
     /// Angular position at `t = 0`, in radians.
-    pub start_angle: f64,
+    pub(crate) start_angle: cadmpeg_ir::scalar::Angle,
     /// Whether angular travel decreases as `t` increases.
-    pub clockwise: bool,
+    pub(crate) clockwise: bool,
+}
+
+impl CurveExpressionHelix {
+    fn new(
+        radius: f64,
+        height: f64,
+        z_start: f64,
+        revolutions: f64,
+        start_angle: f64,
+        clockwise: bool,
+    ) -> Option<Self> {
+        Some(Self {
+            radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+            height: cadmpeg_ir::scalar::FiniteReal::new(height)?,
+            z_start: cadmpeg_ir::scalar::FiniteReal::new(z_start)?,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+            start_angle: cadmpeg_ir::scalar::Angle::new(start_angle)?,
+            clockwise,
+        })
+    }
 }
 
 /// A curve row with a uniquely delimited topology suffix.
 ///
 /// `faces` and `next_edges` preserve the two native sides in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveTopologyRow {
+pub(crate) struct CurveTopologyRow {
     /// The row's `crv_id`, matching a [`CurvePrototype::id`] in the same
     /// `crv_array` namespace.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The row's raw `type` byte; see [`CurvePrototype::type_byte`].
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// The `feat_id` compact integer: the feature that generated this
     /// curve.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// The two `crv_pnt_dir` orientation-flag bytes, one per half-edge side.
     /// These are per-side orientation flags, not a tangent vector
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
-    pub directions: [u8; 2],
+    pub(crate) directions: [u8; 2],
     /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
     /// bounding the curve's two half-edge sides, absent where the side is
     /// unbounded.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
     /// edge for each of the two half-edge sides, used to walk loops
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
-    pub next_edges: [u32; 2],
+    pub(crate) next_edges: [u32; 2],
     /// Byte offset of the row's `crv_id` field in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl CurveTopologyRow {
     /// The face identifiers bounding the two half-edge sides, in side order,
     /// skipping sides that bound no face.
-    pub fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.faces.iter().flatten().map(|face| face.get())
     }
 
     /// Whether either half-edge side bounds `face_id`.
-    pub fn bounds_face(&self, face_id: u32) -> bool {
+    pub(crate) fn bounds_face(&self, face_id: u32) -> bool {
         self.bounded_face_ids().any(|bounded| bounded == face_id)
     }
 
     /// The stored `F0`/`F1` fields, with `0` for a side that bounds no face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
@@ -385,16 +474,21 @@ impl CurveTopologyRow {
 impl CurvePrototypeTopology {
     /// The stored `crv_hdr_geom_ptr[0/1]` fields, with `0` for a side that
     /// names no surface.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
 
 /// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DepdbCurveSuffix {
-    pub x1: u32,
-    pub face_id: u32,
+pub(crate) struct DepdbCurveSuffix {
+    x1: u32,
+    face_id: u32,
+}
+
+#[cfg(test)]
+pub(crate) fn dummy_depdb_curve_suffix() -> DepdbCurveSuffix {
+    DepdbCurveSuffix { x1: 0, face_id: 7 }
 }
 
 impl serde::Serialize for DepdbCurveSuffix {
@@ -405,63 +499,64 @@ impl serde::Serialize for DepdbCurveSuffix {
 
 /// One DEPDB cross-section curve row with its one-sided topology suffix.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DepdbCurveRow {
+pub(crate) struct DepdbCurveRow {
     /// Curve identifier in the cross-section `crv_array` namespace.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Raw curve-family discriminator.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Stored per-side direction flags.
-    pub directions: [u8; 2],
+    pub(crate) directions: [u8; 2],
     /// The `[0, X1, F1, 0]` one-sided suffix.
-    pub suffix: DepdbCurveSuffix,
+    pub(crate) suffix: DepdbCurveSuffix,
     /// Exact bytes between the fixed prefix and one-sided suffix.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Decoded scalar tokens with exact body-relative spans.
-    pub scalar_tokens: Vec<CurveParameterScalar>,
+    pub(crate) scalar_tokens: Vec<CurveParameterScalar>,
     /// Canonical entity references with exact body-relative spans.
-    pub references: Vec<CurveParameterReference>,
+    pub(crate) references: Vec<CurveParameterReference>,
     /// Maximal body spans not claimed by a scalar or reference token.
-    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Byte offset of the row identifier.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Bounded analytic parameter body from one positional `crv_array` row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveParameterRecord {
+pub(crate) struct CurveParameterRecord {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Raw curve-family discriminator.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// Exact bytes between direction flags and the selected suffix boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Scalar tokens with exact body-relative spans.
-    pub scalar_tokens: Vec<CurveParameterScalar>,
+    pub(crate) scalar_tokens: Vec<CurveParameterScalar>,
     /// Canonical entity references with exact body-relative spans.
-    pub references: Vec<CurveParameterReference>,
+    pub(crate) references: Vec<CurveParameterReference>,
     /// Maximal byte spans not claimed by scalar or reference tokens.
-    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Positional `ref_geom[0]` and `ref_geom[1]` values following the four
     /// topology references.
-    pub reference_geometry: [u32; 2],
+    pub(crate) reference_geometry: [u32; 2],
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
-    pub suffix_offset: usize,
+    pub(crate) suffix_offset: usize,
 }
 
+#[cfg(test)]
 impl CurveParameterRecord {
     /// Decoded scalar values in byte order.
-    pub fn scalar_values(&self) -> Vec<f64> {
+    pub(crate) fn scalar_values(&self) -> Vec<f64> {
         self.scalar_tokens.iter().map(|token| token.value).collect()
     }
 
     /// Canonical entity references skipped while walking the scalar lane.
-    pub fn skipped_references(&self) -> Vec<u32> {
+    pub(crate) fn skipped_references(&self) -> Vec<u32> {
         self.references
             .iter()
             .map(|reference| reference.entity_id)
@@ -471,119 +566,118 @@ impl CurveParameterRecord {
 
 /// One decoded scalar token in a positional curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveParameterScalar {
+pub(crate) struct CurveParameterScalar {
     /// Decoded scalar value.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Exact token bytes.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Body-relative token offset.
-    pub offset: usize,
-    /// Token length in bytes.
-    pub length: usize,
+    pub(crate) offset: usize,
 }
 
 /// One canonical entity reference in a positional curve body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveParameterReference {
+pub(crate) struct CurveParameterReference {
     /// Referenced entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Body-relative reference-token offset, including `f7`.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Reference-token length in bytes, including `f7`.
-    pub length: usize,
+    pub(crate) length: usize,
 }
 
 /// One maximal unclaimed byte span in a positional curve body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveParameterOpaqueSpan {
+pub(crate) struct CurveParameterOpaqueSpan {
     /// Exact unclaimed bytes.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Body-relative span offset.
-    pub offset: usize,
-    /// Span length in bytes.
-    pub length: usize,
+    pub(crate) offset: usize,
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
+/// Both reader routes admit finite coordinates before constructing this record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PcurveEndpoints {
+pub(crate) struct PcurveEndpoints {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers corresponding to face frames zero and one.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's local UV frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's local UV frame.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl PcurveEndpoints {
     /// Stored face identifiers, with zero for an absent face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
 
 /// Ordered samples of one curve represented in both incident-face charts.
+/// Every stored sample coordinate is finite at reader admission.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TwoChartPcurveSamples {
+pub(crate) struct TwoChartPcurveSamples {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers in sample-chart order.
-    pub faces: [u32; 2],
+    pub(crate) faces: [u32; 2],
     /// Pointwise-corresponding `[F0(u, v), F1(u, v)]` chart samples.
-    pub samples: Vec<[[f64; 2]; 2]>,
+    pub(crate) samples: Vec<[[f64; 2]; 2]>,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One-sided endpoint path from the complete short fc 02 curve body.
+/// Every stored endpoint coordinate is finite at reader admission.
 ///
 /// The body carries one path in the first topology face's parameter chart;
 /// the second face remains a carrier-only join. The retained terminal operand
 /// is deliberately not interpreted by this record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc02ShortPcurveEndpoints {
+pub(crate) struct Fc02ShortPcurveEndpoints {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent surface identifiers from the topology row.
-    pub faces: [u32; 2],
+    pub(crate) faces: [u32; 2],
     /// Endpoint A then B in the first face's parameter frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Ordered world-coordinate lane from an `fc <subtype>` dense curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FcCurveCoordinates {
+pub(crate) struct FcCurveCoordinates {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Byte following the `fc` body prefix.
-    pub subtype: u8,
+    pub(crate) subtype: u8,
     /// Exact complete curve parameter body, including the `fc` prefix.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Ordered exact world-coordinate values, in mm.
-    pub values_mm: Vec<f64>,
+    pub(crate) values_mm: Vec<f64>,
     /// World-coordinate tokens with exact body-relative spans.
-    pub tokens: Vec<FcCurveCoordinateToken>,
+    pub(crate) tokens: Vec<FcCurveCoordinateToken>,
     /// Maximal body spans not owned by a recognized coordinate token.
-    pub opaque_spans: Vec<FcCurveOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<FcCurveOpaqueSpan>,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One recognized world-coordinate token in an `fc <subtype>` body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FcCurveCoordinateToken {
+pub(crate) struct FcCurveCoordinateToken {
     /// Decoded model length in millimeters.
-    pub value_mm: f64,
+    pub(crate) value_mm: f64,
     /// Exact source bytes occupied by the token.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Token offset relative to the complete curve parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl serde::Serialize for FcCurveCoordinateToken {
@@ -600,11 +694,11 @@ impl serde::Serialize for FcCurveCoordinateToken {
 
 /// One maximal unclaimed span in an `fc <subtype>` body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FcCurveOpaqueSpan {
+pub(crate) struct FcCurveOpaqueSpan {
     /// Exact source bytes in the span.
-    pub raw: Vec<u8>,
+    raw: Vec<u8>,
     /// Span offset relative to the complete curve parameter body.
-    pub offset: usize,
+    offset: usize,
 }
 
 impl serde::Serialize for FcCurveOpaqueSpan {
@@ -620,7 +714,7 @@ impl serde::Serialize for FcCurveOpaqueSpan {
 
 /// Direction of stored parameters relative to row-frame polar angles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParameterSense {
+pub(crate) enum ParameterSense {
     /// Parameters increase with polar angle.
     Increasing,
     /// Parameters decrease with polar angle.
@@ -629,7 +723,7 @@ pub enum ParameterSense {
 
 impl ParameterSense {
     /// Signed parameter multiplier.
-    pub fn as_i8(self) -> i8 {
+    pub(crate) fn as_i8(self) -> i8 {
         match self {
             Self::Increasing => 1,
             Self::Decreasing => -1,
@@ -639,7 +733,7 @@ impl ParameterSense {
 
 /// Relation between stored circle parameters and row-frame polar angles.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Fc05AngleParameterRelation {
+pub(crate) enum Fc05AngleParameterRelation {
     /// Neither unique parameter sense establishes a reference direction.
     Inconsistent,
     /// A unique parameter sense establishes a reference direction.
@@ -653,105 +747,107 @@ pub enum Fc05AngleParameterRelation {
 
 /// Circle proven by the decoded points of an `fc 05` curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05Circle {
+pub(crate) struct Fc05Circle {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Circle center in the FC row's in-plane coordinate frame.
-    pub center_row_frame: [f64; 2],
+    pub(crate) center_row_frame: [f64; 2],
     /// Exact radius in mm.
-    pub radius_mm: f64,
-    /// Unit radial direction from the fitted center to the first stored sample.
-    pub sample_direction_row_frame: [f64; 2],
+    pub(crate) radius_mm: f64,
+    /// Finite radial quotient from the fitted center to the first stored sample.
+    pub(crate) sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2,
     /// Stored parameter relation and its reference direction.
-    pub angle_parameter: Fc05AngleParameterRelation,
+    pub(crate) angle_parameter: Fc05AngleParameterRelation,
     /// Constant cap-plane ordinate when present in every point.
-    pub cap_ordinate_row_frame: Option<f64>,
+    pub(crate) cap_ordinate_row_frame: Option<f64>,
     /// Number of points participating in validation.
-    pub point_count: usize,
+    pub(crate) point_count: usize,
     /// Maximum absolute radial residual.
-    pub max_residual: f64,
+    pub(crate) max_residual: f64,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One circle edge joining a cylinder to a cap plane.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05CapEdge {
+pub(crate) struct Fc05CapEdge {
     /// Circle curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Opposite cap plane identifier.
-    pub cap_plane_id: u32,
+    pub(crate) cap_plane_id: u32,
     /// Cap ordinate in the owning feature's row frame.
-    pub cap_ordinate_row_frame: f64,
+    pub(crate) cap_ordinate_row_frame: f64,
 }
 
 /// Two or more topology-bound `fc 05` cap circles that establish one native
 /// cylinder's radius and row-frame axis line, but not its model-space frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05CylinderCapPair {
+pub(crate) struct Fc05CylinderCapPair {
     /// Cylinder surface identifier shared by every cap edge.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Agreeing cap edges in source order.
-    pub cap_edges: Vec<Fc05CapEdge>,
+    pub(crate) cap_edges: Vec<Fc05CapEdge>,
     /// Shared center in the owning feature's row frame.
-    pub center_row_frame: [f64; 2],
+    pub(crate) center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
-    pub radius_mm: f64,
+    pub(crate) radius_mm: f64,
     /// Unit radial direction at parameter zero in the row's `(x, z)` frame.
-    pub reference_direction_row_frame: [f64; 2],
+    pub(crate) reference_direction_row_frame: [f64; 2],
     /// Shared signed parameter-to-polar-angle relation.
-    pub parameter_sense: ParameterSense,
+    pub(crate) parameter_sense: ParameterSense,
     /// At least two distinct cap ordinates in the owning feature's row frame.
-    pub cap_ordinates_row_frame: Vec<f64>,
+    pub(crate) cap_ordinates_row_frame: Vec<f64>,
     /// Byte offset of the first participating curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Complete eight-slot pcurve endpoints from a labeled curve prototype.
+/// Every stored endpoint coordinate is finite at reader admission.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrototypePcurveEndpoints {
+pub(crate) struct PrototypePcurveEndpoints {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Endpoint A then B in schema face frame zero.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in schema face frame one.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the `crv_pnt_arr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Four labeled topology references of a curve prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurvePrototypeTopology {
+pub(crate) struct CurvePrototypeTopology {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`, absent
     /// where the side names no surface.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Per-face successor curve identifiers from `next_crv_hdr_ptr[0/1]`.
-    pub next_edges: [u32; 2],
+    pub(crate) next_edges: [u32; 2],
     /// Byte offset of the prototype namespace.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Prototype pcurve endpoints bound to their two labeled adjacent faces.
+/// Binding preserves the reader's finite endpoint admission.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BoundPrototypePcurve {
+pub(crate) struct BoundPrototypePcurve {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers corresponding to UV frames zero and one.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's UV frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's UV frame.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source prototype pcurve.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl BoundPrototypePcurve {
     /// Stored face identifiers, with zero for an absent face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
@@ -759,7 +855,10 @@ impl BoundPrototypePcurve {
 /// Discover every labeled `crv_array` prototype. A label range ends at the
 /// following `crv_array` label, so DEPDB-concatenated namespaces remain
 /// independent.
-pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
+pub(crate) fn prototypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<CurvePrototype>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut start = 0;
     while let Some(relative) = find(payload, b"crv_array\0", start) {
@@ -797,6 +896,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
                     .all(|direction| matches!(direction, 0x01 | 0xf6))
                     .then_some(directions)
             });
+        ctx.reserve_vec(&mut result, 1, "creo curve prototypes")?;
         result.push(CurvePrototype {
             id,
             type_byte,
@@ -805,7 +905,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
             offset: section_start,
         });
     }
-    result
+    Ok(result)
 }
 
 /// Promote a uniquely referenced named-prototype topology record to a native
@@ -815,30 +915,58 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
 /// the byte-backed evidence that the prototype also supplies an edge identity
 /// in the enclosing topology graph. The promotion remains withheld when the
 /// prototype, topology record, or face namespace is ambiguous.
-pub fn prototype_topology_rows(
+pub(crate) fn prototype_topology_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prototypes: &[CurvePrototype],
     prototype_topology: &[CurvePrototypeTopology],
     positional_rows: &[CurveTopologyRow],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveTopologyRow> {
+) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut prototype_counts = BTreeMap::<u32, usize>::new();
     for prototype in prototypes {
-        *prototype_counts.entry(prototype.id).or_default() += 1;
+        ctx.admit_btree_entry(
+            &prototype_counts,
+            &prototype.id,
+            "creo prototype ID count nodes",
+        )?;
+        match prototype_counts.entry(prototype.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+        }
     }
     let mut topology_counts = BTreeMap::<u32, usize>::new();
     for topology in prototype_topology {
-        *topology_counts.entry(topology.curve_id).or_default() += 1;
+        ctx.admit_btree_entry(
+            &topology_counts,
+            &topology.curve_id,
+            "creo prototype topology count nodes",
+        )?;
+        match topology_counts.entry(topology.curve_id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+        }
     }
-    let positional_ids = positional_rows
-        .iter()
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
-    let referenced_ids = positional_rows
+    let mut positional_ids = BTreeSet::new();
+    for row in positional_rows {
+        ctx.insert_btree_set(
+            &mut positional_ids,
+            row.id,
+            "creo positional topology ID nodes",
+        )?;
+    }
+    let mut referenced_ids = BTreeSet::new();
+    for id in positional_rows
         .iter()
         .flat_map(|row| row.next_edges)
         .chain(prototype_topology.iter().flat_map(|row| row.next_edges))
         .filter(|id| *id != 0)
-        .collect::<BTreeSet<_>>();
+    {
+        ctx.insert_btree_set(&mut referenced_ids, id, "creo referenced topology ID nodes")?;
+    }
     let mut rows = Vec::new();
     for topology in prototype_topology {
         if positional_ids.contains(&topology.curve_id)
@@ -861,6 +989,7 @@ pub fn prototype_topology_rows(
         let Some(directions) = prototype.directions else {
             continue;
         };
+        ctx.reserve_vec(&mut rows, 1, "creo promoted prototype topology rows")?;
         rows.push(CurveTopologyRow {
             id: topology.curve_id,
             type_byte: prototype.type_byte,
@@ -871,20 +1000,30 @@ pub fn prototype_topology_rows(
             offset: topology.offset,
         });
     }
-    rows.sort_by_key(|row| row.offset);
-    rows
+    ctx.stable_sort_by(
+        rows.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo prototype topology rows rows ordering",
+    )?;
+    Ok(rows)
 }
 
 /// Decode bounded curve-from-equation expression programs.
-pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
-    expression_records_with_model_name(payload, None)
+#[cfg(test)]
+pub(crate) fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        expression_records_with_model_name(ctx, payload, None)
+    })
+    .expect("test curve expression records")
 }
 
 /// Decode curve-expression programs with an unambiguous current-model name.
 pub(crate) fn expression_records_with_model_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     model_name: Option<&str>,
-) -> Vec<CurveExpressionRecord> {
+) -> Result<Vec<CurveExpressionRecord>, cadmpeg_core::CodecError> {
     const PRIMARY: &[u8] = b"entity(crv_fr_eqn)\0";
     const BACKUP: &[u8] = b"backup_ents(crv_fr_eqn)\0";
     const ID: &[u8] = b"\xe0\x01id\0";
@@ -895,13 +1034,19 @@ pub(crate) fn expression_records_with_model_name(
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
         let mut start = 0;
         while let Some(offset) = find(payload, label, start) {
+            ctx.reserve_vec(&mut labels, 1, "creo expression record labels")?;
             labels.push((offset, label.len(), backup));
             start = offset + label.len();
         }
     }
-    labels.sort_unstable_by_key(|(offset, _, _)| *offset);
+    ctx.sort_unstable_by(
+        &mut labels,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "creo expression record labels sort",
+    )?;
 
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
     for (index, &(offset, label_len, backup)) in labels.iter().enumerate() {
         let end = labels
@@ -915,27 +1060,38 @@ pub(crate) fn expression_records_with_model_name(
         if after_id == id_start {
             continue;
         }
-        let local_system = find_in(payload, LOCAL_SYSTEM, after_id, end).and_then(|offset| {
-            let extents_start = offset + LOCAL_SYSTEM.len();
-            let (dimensions, dimensions_end) = compact_int(payload, extents_start);
-            let (count, body_start) = compact_int(payload, dimensions_end);
-            (dimensions_end > extents_start && body_start > dimensions_end && body_start <= end)
-                .then_some(())?;
-            let body_end = payload[body_start..end]
-                .windows(1)
-                .position(|window| window[0] == psb::token::NAMED_RECORD)
-                .map_or(end, |relative| body_start + relative);
-            let body = payload[body_start..body_end].to_vec();
-            Some(CurveExpressionLocalSystem {
-                dimensions,
-                count,
-                explicit_slots: ((dimensions, count) == (4, 3))
-                    .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
-                    .flatten(),
-                body,
-                offset,
-            })
-        });
+        let local_system =
+            (|| -> Result<Option<CurveExpressionLocalSystem>, cadmpeg_core::CodecError> {
+                let Some(offset) = find_in(payload, LOCAL_SYSTEM, after_id, end) else {
+                    return Ok(None);
+                };
+                let extents_start = offset + LOCAL_SYSTEM.len();
+                let (dimensions, dimensions_end) = compact_int(payload, extents_start);
+                let (count, body_start) = compact_int(payload, dimensions_end);
+                if dimensions_end <= extents_start
+                    || body_start <= dimensions_end
+                    || body_start > end
+                {
+                    return Ok(None);
+                }
+                let body_end = payload[body_start..end]
+                    .windows(1)
+                    .position(|window| window[0] == psb::token::NAMED_RECORD)
+                    .map_or(end, |relative| body_start + relative);
+                let body = ctx.copy_retained(
+                    &payload[body_start..body_end],
+                    "creo expression local-system body",
+                )?;
+                Ok(Some(CurveExpressionLocalSystem {
+                    dimensions,
+                    count,
+                    explicit_slots: ((dimensions, count) == (4, 3))
+                        .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
+                        .flatten(),
+                    body,
+                    offset,
+                }))
+            })()?;
         let Some(expression_offset) = find_in(payload, EXPRESSION, after_id, end) else {
             continue;
         };
@@ -958,20 +1114,22 @@ pub(crate) fn expression_records_with_model_name(
                 lines.clear();
                 break;
             };
+            ctx.reserve_vec(&mut lines, 1, "creo expression record lines")?;
             lines.push(CurveExpressionLine {
-                text: text.to_owned(),
+                text: ctx.copy_retained_text(text, "creo expression record line text")?,
                 offset: cursor,
             });
             cursor = line_end + 1;
         }
-        if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
-            let mut solve_program = curve_expression_solve_program(&lines);
+        if lines.len() == index_from_u32(count) {
+            let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
+            let mut solve_program = curve_expression_solve_program(ctx, &lines)?;
             let mut evaluation = evaluate_expression_program_details(
+                ctx,
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
-            );
+            )?;
             if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
                 for assignment in &mut evaluation.assignments {
                     assignment.value = None;
@@ -979,10 +1137,12 @@ pub(crate) fn expression_records_with_model_name(
                 evaluation.solve_solutions.clear();
             }
             synchronize_solve_blocks(
+                ctx,
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
-            );
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo expression records")?;
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -997,17 +1157,18 @@ pub(crate) fn expression_records_with_model_name(
             });
         }
     }
-    records
+    Ok(records)
 }
 
 pub(crate) fn reevaluate_expression_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &mut [CurveExpressionRecord],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
         let mut evaluation =
-            evaluate_expression_program_details(&record.lines, model_name, external_symbols);
+            evaluate_expression_program_details(ctx, &record.lines, model_name, external_symbols)?;
         if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
             for assignment in &mut evaluation.assignments {
                 assignment.value = None;
@@ -1015,36 +1176,53 @@ pub(crate) fn reevaluate_expression_records(
             evaluation.solve_solutions.clear();
         }
         synchronize_solve_blocks(
+            ctx,
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
-        );
+        )?;
         record.assignments = evaluation.assignments;
     }
+    Ok(())
 }
 
 fn synchronize_solve_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for block in blocks {
         for assignment in &mut block.assignments {
             if let Some(evaluated) = assignments
                 .iter()
                 .find(|evaluated| evaluated.offset == assignment.offset)
             {
-                *assignment = evaluated.clone();
+                assignment.value = evaluated
+                    .value
+                    .as_ref()
+                    .map(|value| {
+                        copy_expression_value(ctx, value, "creo synchronized assignment values")
+                    })
+                    .transpose()?;
+                assignment.activation = evaluated.activation;
             }
         }
         let values = solutions.get(&block.offset);
         for (index, unknown) in block.unknowns.iter_mut().enumerate() {
-            unknown.solution = values.and_then(|values| values.get(index)).cloned();
+            unknown.solution = values
+                .and_then(|values| values.get(index))
+                .map(|value| copy_expression_value(ctx, value, "creo synchronized solve values"))
+                .transpose()?;
         }
     }
+    Ok(())
 }
 
-fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
+fn curve_equation_prohibited_constructs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     const PROHIBITED_FUNCTIONS: &[&str] =
         &["abs", "ceil", "floor", "extract", "if", "itos", "search"];
     let mut prohibited = BTreeSet::new();
@@ -1054,8 +1232,12 @@ fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<St
             continue;
         }
         for keyword in ["if", "else", "endif"] {
-            if starts_relation_keyword(source, keyword) {
-                prohibited.insert(keyword.to_string());
+            if starts_relation_keyword(source, keyword) && !prohibited.contains(keyword) {
+                ctx.insert_btree_set(
+                    &mut prohibited,
+                    ctx.copy_retained_text(keyword, "creo prohibited construct names")?,
+                    "creo prohibited construct nodes",
+                )?;
             }
         }
         let bytes = source.as_bytes();
@@ -1086,15 +1268,28 @@ fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<St
                     && PROHIBITED_FUNCTIONS
                         .iter()
                         .any(|candidate| name.eq_ignore_ascii_case(candidate))
+                    && !prohibited
+                        .iter()
+                        .any(|known: &String| known.eq_ignore_ascii_case(name))
                 {
-                    prohibited.insert(name.to_ascii_lowercase());
+                    let mut name =
+                        ctx.copy_retained_text(name, "creo prohibited construct names")?;
+                    name.make_ascii_lowercase();
+                    ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes")?;
                 }
                 continue;
             }
             cursor += 1;
         }
     }
-    prohibited.into_iter().collect()
+    let mut ordered = Vec::new();
+    ctx.reserve_vec(
+        &mut ordered,
+        prohibited.len(),
+        "creo prohibited construct records",
+    )?;
+    ordered.extend(prohibited);
+    Ok(ordered)
 }
 
 #[derive(Default)]
@@ -1103,11 +1298,22 @@ pub(crate) struct ExternalRelationSymbols {
 }
 
 impl ExternalRelationSymbols {
-    pub(crate) fn observe(&mut self, name: &str, value: Option<CurveExpressionValue>) {
+    pub(crate) fn observe(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut name: String,
+        value: Option<CurveExpressionValue>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         use std::collections::btree_map::Entry;
 
-        match self.values.entry(expression_identifier_key(name)) {
+        name.make_ascii_lowercase();
+        ctx.admit_btree_entry(&self.values, &name, "creo external relation symbol nodes")?;
+        match self.values.entry(name) {
             Entry::Vacant(entry) => {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(entry.key().len()),
+                    "creo external relation symbol names",
+                )?;
                 entry.insert(value);
             }
             Entry::Occupied(mut entry) if entry.get() != &value => {
@@ -1115,19 +1321,27 @@ impl ExternalRelationSymbols {
             }
             Entry::Occupied(_) => {}
         }
+        Ok(())
     }
 }
 
-fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {
+fn expression_assignment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    line: &CurveExpressionLine,
+) -> Result<Option<CurveExpressionAssignment>, cadmpeg_core::CodecError> {
     let source = line.text.trim();
     if source.starts_with("/*") {
-        return None;
+        return Ok(None);
     }
-    let (name, expression) = split_expression_assignment(source)?;
-    let target = expression_assignment_target(name.trim())?;
+    let Some((name, expression)) = split_expression_assignment(source) else {
+        return Ok(None);
+    };
+    let Some(target) = expression_assignment_target(ctx, name.trim())? else {
+        return Ok(None);
+    };
     let expression = expression.trim();
     if expression.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut dependencies = Vec::<String>::new();
     if let CurveExpressionTarget::TableCell {
@@ -1136,28 +1350,41 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         column,
     } = &target
     {
-        dependencies.push(parameter.clone());
-        extend_expression_dependencies(&mut dependencies, row)?;
+        ctx.reserve_vec(&mut dependencies, 1, "creo expression dependency names")?;
+        dependencies.push(ctx.copy_retained_text(parameter, "creo expression dependency text")?);
+        if extend_expression_dependencies(ctx, &mut dependencies, row)?.is_none() {
+            return Ok(None);
+        }
         if let Some(column) = column {
-            extend_expression_dependencies(&mut dependencies, column)?;
+            if extend_expression_dependencies(ctx, &mut dependencies, column)?.is_none() {
+                return Ok(None);
+            }
         }
     } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
         for argument in arguments {
-            extend_expression_dependencies(&mut dependencies, argument)?;
+            if extend_expression_dependencies(ctx, &mut dependencies, argument)?.is_none() {
+                return Ok(None);
+            }
         }
     }
-    extend_expression_dependencies(&mut dependencies, expression)?;
-    Some(CurveExpressionAssignment {
+    if extend_expression_dependencies(ctx, &mut dependencies, expression)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(CurveExpressionAssignment {
         target,
-        expression: expression.to_owned(),
+        expression: ctx.copy_retained_text(expression, "creo expression assignment text")?,
         dependencies,
         value: None,
         activation: CurveExpressionActivation::Active,
         offset: line.offset,
-    })
+    }))
 }
 
-fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
+fn extend_expression_dependencies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    dependencies: &mut Vec<String>,
+    expression: &str,
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -1207,7 +1434,10 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
             }
         } else if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
-            cursor = expression_identifier_end(bytes, start)?;
+            let Some(end) = expression_identifier_end(bytes, start) else {
+                return Ok(None);
+            };
+            cursor = end;
             let dependency = &expression[start..cursor];
             let mut following = cursor;
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
@@ -1222,13 +1452,15 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
                     .iter()
                     .any(|existing| existing.eq_ignore_ascii_case(dependency))
             {
-                dependencies.push(dependency.to_owned());
+                ctx.reserve_vec(dependencies, 1, "creo expression dependency names")?;
+                dependencies
+                    .push(ctx.copy_retained_text(dependency, "creo expression dependency text")?);
             }
         } else {
             cursor += 1;
         }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
@@ -1284,49 +1516,72 @@ struct PendingCurveExpressionSolveStatement {
     line_index: usize,
 }
 
-fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
+fn curve_expression_solve_program(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<CurveExpressionSolveProgram, cadmpeg_core::CodecError> {
     let mut program = CurveExpressionSolveProgram::default();
     let mut pending = None::<PendingCurveExpressionSolveBlock>;
     for (index, line) in lines.iter().enumerate() {
         let source = line.text.trim();
-        if pending.is_none() {
+        let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(source, "solve") {
-                program.line_indices.insert(index);
+                ctx.insert_btree_set(
+                    &mut program.line_indices,
+                    index,
+                    "creo solve line index nodes",
+                )?;
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
                     offset: line.offset,
                     valid: source.eq_ignore_ascii_case("solve"),
                 });
             } else if starts_relation_keyword(source, "for") {
-                program.line_indices.insert(index);
+                ctx.insert_btree_set(
+                    &mut program.line_indices,
+                    index,
+                    "creo solve line index nodes",
+                )?;
                 program.unresolved_control = true;
             }
             continue;
-        }
+        };
 
-        program.line_indices.insert(index);
+        ctx.insert_btree_set(
+            &mut program.line_indices,
+            index,
+            "creo solve line index nodes",
+        )?;
         if starts_relation_keyword(source, "solve") {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         if starts_relation_keyword(source, "for") {
-            let unknowns = conditional_keyword_expression(source, "for")
-                .and_then(curve_expression_solve_unknowns);
-            let mut block = pending.take().expect("pending solve block");
+            let unknowns = match conditional_keyword_expression(source, "for") {
+                Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns)?,
+                None => None,
+            };
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
             if let Some(unknowns) = &unknowns {
-                for statement in block.statements {
+                for statement in std::mem::take(&mut block.statements) {
                     if statement.equation.dependencies.iter().any(|dependency| {
                         unknowns
                             .iter()
                             .any(|unknown| unknown.name.eq_ignore_ascii_case(dependency))
                     }) {
+                        ctx.reserve_vec(&mut equations, 1, "creo solve equations")?;
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
+                        ctx.reserve_vec(
+                            &mut assignment_line_indices,
+                            1,
+                            "creo solve assignment indices",
+                        )?;
                         assignment_line_indices.push(statement.line_index);
+                        ctx.reserve_vec(&mut assignments, 1, "creo solve assignments")?;
                         assignments.push(assignment);
                     } else {
                         block.valid = false;
@@ -1334,9 +1589,14 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 }
             }
             if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
-                program
-                    .executable_line_indices
-                    .extend(assignment_line_indices);
+                for index in assignment_line_indices {
+                    ctx.insert_btree_set(
+                        &mut program.executable_line_indices,
+                        index,
+                        "creo executable solve line index nodes",
+                    )?;
+                }
+                ctx.reserve_vec(&mut program.blocks, 1, "creo solve blocks")?;
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
@@ -1347,6 +1607,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             } else {
                 program.unresolved_control = true;
             }
+            pending = None;
             continue;
         }
         if source.is_empty() || source.starts_with("/*") {
@@ -1354,127 +1615,190 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
         }
         let Some((left, right)) = split_expression_assignment(source) else {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         };
         let (left, right) = (left.trim(), right.trim());
         if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         let mut dependencies = Vec::new();
-        if extend_expression_dependencies(&mut dependencies, left).is_none()
-            || extend_expression_dependencies(&mut dependencies, right).is_none()
+        if extend_expression_dependencies(ctx, &mut dependencies, left)?.is_none()
+            || extend_expression_dependencies(ctx, &mut dependencies, right)?.is_none()
         {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
-        pending
-            .as_mut()
-            .expect("pending solve block")
-            .statements
-            .push(PendingCurveExpressionSolveStatement {
-                equation: CurveExpressionEquation {
-                    left: left.to_owned(),
-                    right: right.to_owned(),
-                    dependencies,
-                    offset: line.offset,
-                },
-                assignment: expression_assignment(line),
-                line_index: index,
-            });
+        ctx.reserve_vec(&mut block.statements, 1, "creo pending solve statements")?;
+        block.statements.push(PendingCurveExpressionSolveStatement {
+            equation: CurveExpressionEquation {
+                left: ctx.copy_retained_text(left, "creo solve equation left")?,
+                right: ctx.copy_retained_text(right, "creo solve equation right")?,
+                dependencies,
+                offset: line.offset,
+            },
+            assignment: expression_assignment(ctx, line)?,
+            line_index: index,
+        });
     }
     if pending.is_some() {
         program.unresolved_control = true;
     }
-    program
+    Ok(program)
 }
 
-fn curve_expression_solve_unknowns(source: &str) -> Option<Vec<SolveUnknown>> {
-    let unknowns = source
+fn curve_expression_solve_unknowns(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<Option<Vec<SolveUnknown>>, cadmpeg_core::CodecError> {
+    let mut unknowns = Vec::<SolveUnknown>::new();
+    for name in source
         .split(|character: char| character == ',' || character.is_ascii_whitespace())
         .filter(|variable| !variable.is_empty())
-        .map(|name| SolveUnknown {
-            name: name.to_owned(),
-            solution: None,
-        })
-        .collect::<Vec<_>>();
-    let keys = unknowns
-        .iter()
-        .map(|variable| expression_identifier_key(&variable.name))
-        .collect::<BTreeSet<_>>();
-    (!unknowns.is_empty()
-        && keys.len() == unknowns.len()
-        && unknowns
+    {
+        if !valid_scoped_expression_identifier(name) {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(unknowns.len()),
+            "creo solve unknown duplicate checks",
+        )?;
+        if unknowns
             .iter()
-            .all(|variable| valid_scoped_expression_identifier(&variable.name)))
-    .then_some(unknowns)
+            .any(|known| known.name.eq_ignore_ascii_case(name))
+        {
+            return Ok(None);
+        }
+        ctx.reserve_vec(&mut unknowns, 1, "creo solve unknowns")?;
+        unknowns.push(SolveUnknown {
+            name: ctx.copy_retained_text(name, "creo solve unknown names")?,
+            solution: None,
+        });
+    }
+    Ok((!unknowns.is_empty()).then_some(unknowns))
 }
 
-fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
-    if let Some((name, arguments)) = expression_target_function_call(source) {
+fn expression_assignment_target(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<Option<CurveExpressionTarget>, cadmpeg_core::CodecError> {
+    let mut target_storage = ctx.reserve_scoped(0, "Creo parsed target arguments")?;
+    if let Some((name, arguments)) =
+        target_storage.with_storage(|| expression_target_function_call(ctx, source))?
+    {
         if name.eq_ignore_ascii_case("value") {
             let [parameter, row, rest @ ..] = arguments.as_slice() else {
-                return None;
+                return Ok(None);
             };
             let column = match rest {
                 [] => None,
-                [column] => Some((*column).to_owned()),
-                _ => return None,
+                [column] => Some(ctx.copy_retained_text(column, "creo expression table column")?),
+                _ => return Ok(None),
             };
-            valid_expression_identifier(parameter).then_some(())?;
-            return Some(CurveExpressionTarget::TableCell {
-                parameter: (*parameter).to_owned(),
-                row: (*row).to_owned(),
+            if !valid_expression_identifier(parameter) {
+                return Ok(None);
+            }
+            return Ok(Some(CurveExpressionTarget::TableCell {
+                parameter: ctx.copy_retained_text(parameter, "creo expression table parameter")?,
+                row: ctx.copy_retained_text(row, "creo expression table row")?,
                 column,
-            });
+            }));
         }
-        return Some(CurveExpressionTarget::FunctionWrite {
-            name: name.to_owned(),
-            arguments: arguments.into_iter().map(str::to_owned).collect(),
-        });
+        let mut retained_arguments = Vec::new();
+        for argument in arguments {
+            ctx.reserve_vec(
+                &mut retained_arguments,
+                1,
+                "creo expression target arguments",
+            )?;
+            retained_arguments
+                .push(ctx.copy_retained_text(argument, "creo expression target argument text")?);
+        }
+        return Ok(Some(CurveExpressionTarget::FunctionWrite {
+            name: ctx.copy_retained_text(name, "creo expression function target")?,
+            arguments: retained_arguments,
+        }));
     }
     let (name, declared_unit) = if source.ends_with(']') {
-        let unit_start = source.rfind('[')?;
-        let unit = source.get(unit_start + 1..source.len() - 1)?.trim();
-        (!unit.is_empty()).then_some(())?;
-        (source.get(..unit_start)?.trim_end(), Some(unit))
+        let Some(unit_start) = source.rfind('[') else {
+            return Ok(None);
+        };
+        let Some(unit) = source.get(unit_start + 1..source.len() - 1) else {
+            return Ok(None);
+        };
+        let unit = unit.trim();
+        if unit.is_empty() {
+            return Ok(None);
+        }
+        let Some(name) = source.get(..unit_start) else {
+            return Ok(None);
+        };
+        (name.trim_end(), Some(unit))
     } else {
         (source, None)
     };
     if name.contains(':') {
-        declared_unit.is_none().then_some(())?;
-        valid_scoped_expression_identifier(name).then(|| CurveExpressionTarget::ScopedSymbol {
-            name: name.to_owned(),
-        })
+        if declared_unit.is_some() || !valid_scoped_expression_identifier(name) {
+            return Ok(None);
+        }
+        Ok(Some(CurveExpressionTarget::ScopedSymbol {
+            name: ctx.copy_retained_text(name, "creo expression scoped target")?,
+        }))
     } else if let Some(family) = expression_system_symbol_family(name) {
-        declared_unit.is_none().then_some(())?;
-        Some(CurveExpressionTarget::SystemSymbol {
-            name: name.to_owned(),
+        if declared_unit.is_some() {
+            return Ok(None);
+        }
+        Ok(Some(CurveExpressionTarget::SystemSymbol {
+            name: ctx.copy_retained_text(name, "creo expression system target")?,
             family,
-        })
+        }))
     } else {
-        valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
-            name: name.to_owned(),
-            declared_unit: declared_unit.map(str::to_owned),
-        })
+        if !valid_expression_identifier(name) {
+            return Ok(None);
+        }
+        let declared_unit = match declared_unit {
+            Some(unit) => Some(ctx.copy_retained_text(unit, "creo expression declared unit")?),
+            None => None,
+        };
+        Ok(Some(CurveExpressionTarget::Parameter {
+            name: ctx.copy_retained_text(name, "creo expression parameter target")?,
+            declared_unit,
+        }))
     }
 }
 
-fn expression_target_function_call(source: &str) -> Option<(&str, Vec<&str>)> {
-    let argument_start = source.find('(')?;
-    source.ends_with(')').then_some(())?;
-    let name = source.get(..argument_start)?.trim_end();
-    valid_expression_identifier(name).then_some(())?;
-    let body = source.get(argument_start + 1..source.len().checked_sub(1)?)?;
+fn expression_target_function_call<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+) -> Result<Option<(&'a str, Vec<&'a str>)>, cadmpeg_core::CodecError> {
+    let Some(argument_start) = source.find('(') else {
+        return Ok(None);
+    };
+    if !source.ends_with(')') {
+        return Ok(None);
+    }
+    let Some(name) = source.get(..argument_start) else {
+        return Ok(None);
+    };
+    let name = name.trim_end();
+    if !valid_expression_identifier(name) {
+        return Ok(None);
+    }
+    let Some(body) = source.get(argument_start + 1..source.len() - 1) else {
+        return Ok(None);
+    };
     let arguments = if body.trim().is_empty() {
         Vec::new()
     } else {
-        split_assignment_target_arguments(body)?
+        let Some(arguments) = split_assignment_target_arguments(ctx, body)? else {
+            return Ok(None);
+        };
+        arguments
     };
-    Some((name, arguments))
+    Ok(Some((name, arguments)))
 }
 
 fn valid_expression_identifier(name: &str) -> bool {
@@ -1497,20 +1821,35 @@ fn expression_system_symbol_family(name: &str) -> Option<CurveExpressionSystemSy
         .bytes()
         .all(|byte| byte.is_ascii_digit())
         .then_some(())?;
-    match name.get(..digit_start)?.to_ascii_lowercase().as_str() {
-        "d" => Some(CurveExpressionSystemSymbolFamily::Dimension),
-        "sd" => Some(CurveExpressionSystemSymbolFamily::SectionDimension),
-        "rd" => Some(CurveExpressionSystemSymbolFamily::ReferenceDimension),
-        "rsd" => Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension),
-        "kd" => Some(CurveExpressionSystemSymbolFamily::KnownDimension),
-        "ad" => Some(CurveExpressionSystemSymbolFamily::DrivenDimension),
-        "p" => Some(CurveExpressionSystemSymbolFamily::PatternCount),
-        "tpm" | "tp" | "tm" => Some(CurveExpressionSystemSymbolFamily::Tolerance),
-        _ => None,
+    let prefix = name.get(..digit_start)?;
+    if prefix.eq_ignore_ascii_case("d") {
+        Some(CurveExpressionSystemSymbolFamily::Dimension)
+    } else if prefix.eq_ignore_ascii_case("sd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionDimension)
+    } else if prefix.eq_ignore_ascii_case("rd") {
+        Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("rsd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("kd") {
+        Some(CurveExpressionSystemSymbolFamily::KnownDimension)
+    } else if prefix.eq_ignore_ascii_case("ad") {
+        Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
+    } else if prefix.eq_ignore_ascii_case("p") {
+        Some(CurveExpressionSystemSymbolFamily::PatternCount)
+    } else if ["tpm", "tp", "tm"]
+        .into_iter()
+        .any(|family| prefix.eq_ignore_ascii_case(family))
+    {
+        Some(CurveExpressionSystemSymbolFamily::Tolerance)
+    } else {
+        None
     }
 }
 
-fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
+fn split_assignment_target_arguments<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+) -> Result<Option<Vec<&'a str>>, cadmpeg_core::CodecError> {
     let mut arguments = Vec::new();
     let mut start = 0;
     let mut nesting = 0usize;
@@ -1524,26 +1863,46 @@ fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
         }
         match byte {
             b'\'' | b'"' => delimiter = Some(byte),
-            b'(' => nesting = nesting.checked_add(1)?,
-            b')' => nesting = nesting.checked_sub(1)?,
+            b'(' => {
+                let Some(next) = nesting.checked_add(1) else {
+                    return Ok(None);
+                };
+                nesting = next;
+            }
+            b')' => {
+                let Some(next) = nesting.checked_sub(1) else {
+                    return Ok(None);
+                };
+                nesting = next;
+            }
             b',' if nesting == 0 => {
-                let argument = source.get(start..offset)?.trim();
-                (!argument.is_empty()).then_some(())?;
+                let Some(argument) = source.get(start..offset) else {
+                    return Ok(None);
+                };
+                let argument = argument.trim();
+                if argument.is_empty() {
+                    return Ok(None);
+                }
+                ctx.reserve_vec(&mut arguments, 1, "creo expression parsed arguments")?;
                 arguments.push(argument);
                 start = offset + 1;
             }
             _ => {}
         }
     }
-    (delimiter.is_none() && nesting == 0).then_some(())?;
-    let argument = source.get(start..)?.trim();
-    (!argument.is_empty()).then_some(())?;
+    if delimiter.is_some() || nesting != 0 {
+        return Ok(None);
+    }
+    let Some(argument) = source.get(start..) else {
+        return Ok(None);
+    };
+    let argument = argument.trim();
+    if argument.is_empty() {
+        return Ok(None);
+    }
+    ctx.reserve_vec(&mut arguments, 1, "creo expression parsed arguments")?;
     arguments.push(argument);
-    Some(arguments)
-}
-
-pub(crate) fn expression_identifier_key(name: &str) -> String {
-    name.to_ascii_lowercase()
+    Ok(Some(arguments))
 }
 
 fn reserved_relation_scalar(name: &str) -> Option<f64> {
@@ -1593,6 +1952,63 @@ struct ConditionalFrame {
     condition: Option<bool>,
 }
 
+#[derive(Default)]
+enum ConditionalStack {
+    #[default]
+    Empty,
+    Open {
+        frame: ConditionalFrame,
+        parents: Vec<ConditionalFrame>,
+    },
+}
+
+impl ConditionalStack {
+    fn push(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        frame: ConditionalFrame,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        match self {
+            Self::Empty => {
+                *self = Self::Open {
+                    frame,
+                    parents: Vec::new(),
+                };
+            }
+            Self::Open {
+                frame: parent,
+                parents,
+            } => {
+                ctx.reserve_vec(parents, 1, "creo expression conditional parents")?;
+                parents.push(std::mem::replace(parent, frame));
+            }
+        }
+        Ok(())
+    }
+
+    fn alternative(&self) -> CurveExpressionActivation {
+        match self {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, .. } => branch_activation(frame.parent, frame.condition, true),
+        }
+    }
+
+    fn end(&mut self) -> CurveExpressionActivation {
+        match std::mem::take(self) {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, mut parents } => {
+                if let Some(parent) = parents.pop() {
+                    *self = Self::Open {
+                        frame: parent,
+                        parents,
+                    };
+                }
+                frame.parent
+            }
+        }
+    }
+}
+
 fn conditional_keyword_expression<'a>(source: &'a str, keyword: &str) -> Option<&'a str> {
     let source = source.trim();
     let prefix = source.get(..keyword.len())?;
@@ -1617,33 +2033,37 @@ fn starts_relation_keyword(source: &str, keyword: &str) -> bool {
             .is_none_or(u8::is_ascii_whitespace)
 }
 
-fn expression_program_control_is_valid(lines: &[CurveExpressionLine]) -> bool {
+fn expression_program_control_is_valid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut else_seen = Vec::new();
     for line in lines {
         let source = line.text.trim();
         if starts_relation_keyword(source, "if") {
             if conditional_keyword_expression(source, "if").is_none() {
-                return false;
+                return Ok(false);
             }
+            ctx.reserve_vec(&mut else_seen, 1, "creo expression conditional validation")?;
             else_seen.push(false);
         } else if starts_relation_keyword(source, "else") {
             if !source.eq_ignore_ascii_case("else") {
-                return false;
+                return Ok(false);
             }
             let Some(seen) = else_seen.last_mut() else {
-                return false;
+                return Ok(false);
             };
             if *seen {
-                return false;
+                return Ok(false);
             }
             *seen = true;
         } else if starts_relation_keyword(source, "endif")
             && (!source.eq_ignore_ascii_case("endif") || else_seen.pop().is_none())
         {
-            return false;
+            return Ok(false);
         }
     }
-    else_seen.is_empty()
+    Ok(else_seen.is_empty())
 }
 
 fn branch_activation(
@@ -1667,72 +2087,112 @@ struct CurveExpressionEvaluation {
     solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
 }
 
+fn copy_expression_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &CurveExpressionValue,
+    operation: &'static str,
+) -> Result<CurveExpressionValue, cadmpeg_core::CodecError> {
+    match value {
+        CurveExpressionValue::String(text) => Ok(CurveExpressionValue::String(
+            ctx.copy_retained_text(text, operation)?,
+        )),
+        value => Ok(value.clone()),
+    }
+}
+
 fn evaluate_expression_program_details(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
-) -> CurveExpressionEvaluation {
-    let solve_program = curve_expression_solve_program(lines);
+) -> Result<CurveExpressionEvaluation, cadmpeg_core::CodecError> {
+    let solve_program = curve_expression_solve_program(ctx, lines)?;
     let solve_line_is_executable = |index: &usize| {
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
-    if !expression_program_control_is_valid(lines) {
-        return CurveExpressionEvaluation {
-            assignments: lines
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| solve_line_is_executable(index))
-                .map(|(_, line)| line)
-                .filter_map(expression_assignment)
-                .map(|mut assignment| {
-                    assignment.activation = CurveExpressionActivation::Conditional;
-                    assignment
-                })
-                .collect(),
+    let control_is_valid = expression_program_control_is_valid(ctx, lines)?;
+    let mut parsed_assignments = ctx.alloc_filled(
+        lines.len(),
+        None::<CurveExpressionAssignment>,
+        "creo parsed expression assignment slots",
+    )?;
+    for (index, line) in lines.iter().enumerate() {
+        if solve_line_is_executable(&index) {
+            parsed_assignments[index] = expression_assignment(ctx, line)?;
+        }
+    }
+    if !control_is_valid {
+        let mut assignments = Vec::new();
+        for mut assignment in parsed_assignments.into_iter().flatten() {
+            assignment.activation = CurveExpressionActivation::Conditional;
+            ctx.reserve_vec(
+                &mut assignments,
+                1,
+                "creo conditional expression assignments",
+            )?;
+            assignments.push(assignment);
+        }
+        return Ok(CurveExpressionEvaluation {
+            assignments,
             solve_solutions: BTreeMap::new(),
-        };
+        });
     }
 
-    let mut existing_symbols = external_symbols
-        .values
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    existing_symbols.extend(
-        lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| solve_line_is_executable(index))
-            .filter_map(|(_, line)| expression_assignment(line))
-            .filter_map(|assignment| {
-                assignment
-                    .scalar_target()
-                    .map(|(name, _)| expression_identifier_key(name))
-            }),
-    );
-    existing_symbols.extend(
-        solve_program
-            .blocks
-            .iter()
-            .flat_map(|block| &block.unknowns)
-            .map(|unknown| expression_identifier_key(&unknown.name)),
-    );
+    let mut existing_symbols = BTreeSet::new();
+    for name in external_symbols.values.keys() {
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            ctx.copy_retained_text(name, "creo existing external symbol names")?,
+            "creo existing external symbol nodes",
+        )?;
+    }
+    for assignment in parsed_assignments.iter().flatten() {
+        if let Some((name, _)) = assignment.scalar_target() {
+            let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
+            key.make_ascii_lowercase();
+            ctx.insert_btree_set(
+                &mut existing_symbols,
+                key,
+                "creo existing assignment symbol nodes",
+            )?;
+        }
+    }
+    for unknown in solve_program
+        .blocks
+        .iter()
+        .flat_map(|block| &block.unknowns)
+    {
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
+        key.make_ascii_lowercase();
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            key,
+            "creo existing solve symbol nodes",
+        )?;
+    }
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
     };
-    let mut values = external_symbols
-        .values
-        .iter()
-        .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
-        .collect::<BTreeMap<_, _>>();
-    let mut defined_symbols = external_symbols
-        .values
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut stack = Vec::<ConditionalFrame>::new();
+    let mut values = BTreeMap::new();
+    let mut defined_symbols = BTreeSet::new();
+    for (name, value) in &external_symbols.values {
+        ctx.insert_btree_set(
+            &mut defined_symbols,
+            ctx.copy_retained_text(name, "creo defined external symbol names")?,
+            "creo defined external symbol nodes",
+        )?;
+        if let Some(value) = value {
+            ctx.insert_btree_map(
+                &mut values,
+                ctx.copy_retained_text(name, "creo external value names")?,
+                copy_expression_value(ctx, value, "creo external string values")?,
+                "creo external value nodes",
+            )?;
+        }
+    }
+    let mut stack = ConditionalStack::default();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
@@ -1744,84 +2204,134 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.offset == line.offset)
         {
-            let dimensions = block
-                .unknowns
-                .iter()
-                .map(|unknown| &unknown.name)
-                .map(|variable| {
-                    values
-                        .get(&expression_identifier_key(variable))
-                        .and_then(quantity_parts_ref)
-                        .map(|(_, dimension)| dimension)
-                })
-                .collect::<Vec<_>>();
-            solve_block_dimensions.insert(block.offset, dimensions);
-            solve_block_initial_values.insert(
-                block.offset,
-                block
-                    .unknowns
-                    .iter()
-                    .map(|unknown| &unknown.name)
-                    .map(|variable| values.get(&expression_identifier_key(variable)).cloned())
-                    .collect::<Vec<_>>(),
-            );
-            for unknown in &block.unknowns {
-                let key = expression_identifier_key(&unknown.name);
+            let mut dimensions =
+                ctx.alloc_filled(block.unknowns.len(), None, "creo solve dimension snapshots")?;
+            let mut initial_values = ctx.alloc_filled(
+                block.unknowns.len(),
+                None,
+                "creo solve initial value snapshots",
+            )?;
+            for ((dimension, initial), unknown) in dimensions
+                .iter_mut()
+                .zip(&mut initial_values)
+                .zip(&block.unknowns)
+            {
+                let (mut key, _key_guard) = ctx.format_scoped(
+                    format_args!("{}", unknown.name),
+                    "creo solve snapshot lookup",
+                )?;
+                key.make_ascii_lowercase();
+                let value = values.get(&key);
+                *dimension = value
+                    .and_then(quantity_parts_ref)
+                    .map(|(_, dimension)| dimension);
+                *initial = value
+                    .map(|value| {
+                        copy_expression_value(ctx, value, "creo solve initial string values")
+                    })
+                    .transpose()?;
                 values.remove(&key);
-                defined_symbols.insert(key.clone());
+                if !defined_symbols.contains(&key) {
+                    ctx.insert_btree_set(
+                        &mut defined_symbols,
+                        ctx.copy_retained_text(&key, "creo defined solve symbol names")?,
+                        "creo defined solve symbol nodes",
+                    )?;
+                }
                 for assignment in &mut assignments {
                     if assignment
                         .scalar_target()
-                        .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                        .is_some_and(|(name, _)| name.eq_ignore_ascii_case(&key))
                     {
                         assignment.value = None;
                     }
                 }
             }
+            ctx.insert_btree_map(
+                &mut solve_block_dimensions,
+                block.offset,
+                dimensions,
+                "creo solve dimension snapshot nodes",
+            )?;
+            ctx.insert_btree_map(
+                &mut solve_block_initial_values,
+                block.offset,
+                initial_values,
+                "creo solve initial snapshot nodes",
+            )?;
         }
         if let Some(block) = solve_program
             .blocks
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
-            if let Some(solution) = solve_block_dimensions
-                .get(&block.offset)
-                .and_then(|dimensions| {
-                    infer_solve_variable_dimensions(block, &values, dimensions, context)
-                })
-                .and_then(|dimensions| {
-                    solve_affine_expression_block(block, &values, &dimensions, context)
-                })
-                .or_else(|| {
-                    let dimensions = solve_block_dimensions.get(&block.offset)?;
-                    let initial_values = solve_block_initial_values.get(&block.offset)?;
-                    solve_nonlinear_expression_block(
+            let affine_solution = match solve_block_dimensions.get(&block.offset) {
+                Some(dimensions) => {
+                    match infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)?
+                    {
+                        Some(dimensions) => solve_affine_expression_block(
+                            ctx,
+                            block,
+                            &values,
+                            &dimensions,
+                            context,
+                        )?,
+                        None => None,
+                    }
+                }
+                None => None,
+            };
+            let solution = match affine_solution {
+                Some(solution) => Some(solution),
+                None => match (
+                    solve_block_dimensions.get(&block.offset),
+                    solve_block_initial_values.get(&block.offset),
+                ) {
+                    (Some(dimensions), Some(initial_values)) => solve_nonlinear_expression_block(
+                        ctx,
                         block,
                         &values,
                         dimensions,
                         initial_values,
                         context,
-                    )
-                })
-            {
+                    )?,
+                    _ => None,
+                },
+            };
+            if let Some(solution) = solution {
                 for (variable, value) in block
                     .unknowns
                     .iter()
                     .map(|unknown| &unknown.name)
                     .zip(&solution)
                 {
-                    let key = expression_identifier_key(variable);
-                    values.insert(key.clone(), value.clone());
+                    let mut key = ctx.copy_retained_text(variable, "creo solved value names")?;
+                    key.make_ascii_lowercase();
                     for assignment in &mut assignments {
                         if assignment
                             .scalar_target()
-                            .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                            .is_some_and(|(name, _)| name.eq_ignore_ascii_case(&key))
                         {
-                            assignment.value = Some(value.clone());
+                            assignment.value = Some(copy_expression_value(
+                                ctx,
+                                value,
+                                "creo assigned solve string values",
+                            )?);
                         }
                     }
+                    ctx.insert_btree_map(
+                        &mut values,
+                        key,
+                        copy_expression_value(ctx, value, "creo solved string values")?,
+                        "creo solved value nodes",
+                    )?;
                 }
-                solve_solutions.insert(block.offset, solution);
+                ctx.insert_btree_map(
+                    &mut solve_solutions,
+                    block.offset,
+                    solution,
+                    "creo solve solution nodes",
+                )?;
             }
         }
         if !solve_line_is_executable(&index) {
@@ -1829,49 +2339,67 @@ fn evaluate_expression_program_details(
         }
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
-            let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| evaluate_relation_expression(condition_source, &values, context))
-                .flatten()
-                .and_then(|value| value.truth());
+            let condition = if activity == CurveExpressionActivation::Active {
+                parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    condition_source,
+                    &values,
+                    context,
+                )?
+                .and_then(|value| value.truth())
+            } else {
+                None
+            };
             let parent = activity;
             activity = branch_activation(parent, condition, false);
-            stack.push(ConditionalFrame { parent, condition });
+            stack.push(ctx, ConditionalFrame { parent, condition })?;
             continue;
         }
         if source.eq_ignore_ascii_case("else") {
-            let frame = stack.last().expect("validated conditional stack");
-            activity = branch_activation(frame.parent, frame.condition, true);
+            activity = stack.alternative();
             continue;
         }
         if source.eq_ignore_ascii_case("endif") {
-            let frame = stack.pop().expect("validated conditional stack");
-            activity = frame.parent;
+            activity = stack.end();
             continue;
         }
-        let Some(mut assignment) = expression_assignment(line) else {
+        let Some(mut assignment) = parsed_assignments.get_mut(index).and_then(Option::take) else {
             continue;
         };
         assignment.activation = activity;
-        let Some((name, declared_unit)) = assignment
-            .scalar_target()
-            .map(|(name, unit)| (name.to_owned(), unit.map(str::to_owned)))
-        else {
+        let Some((name, declared_unit)) = assignment.scalar_target() else {
+            ctx.reserve_vec(&mut assignments, 1, "creo evaluated assignments")?;
             assignments.push(assignment);
             continue;
         };
-        let key = expression_identifier_key(&name);
+        let mut key = ctx.copy_retained_text(name, "creo evaluated symbol names")?;
+        key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
-        defined_symbols.insert(key.clone());
+        if !defined_symbols.contains(&key) {
+            ctx.insert_btree_set(
+                &mut defined_symbols,
+                ctx.copy_retained_text(&key, "creo defined assignment symbol names")?,
+                "creo defined assignment symbol nodes",
+            )?;
+        }
         match activity {
             CurveExpressionActivation::Active => {
-                assignment.value = declaration_is_valid
-                    .then(|| evaluate_relation_expression(&assignment.expression, &values, context))
+                assignment.value = if declaration_is_valid {
+                    parse_relation_expression::<CurveExpressionValue>(
+                        ctx,
+                        &assignment.expression,
+                        &values,
+                        context,
+                    )?
+                    .map(|value| apply_declared_relation_unit(ctx, value, declared_unit))
+                    .transpose()?
                     .flatten()
-                    .and_then(|value| {
-                        apply_declared_relation_unit(value, declared_unit.as_deref())
-                    });
-                if let Some(value) = assignment.value.clone() {
-                    values.insert(key, value);
+                } else {
+                    None
+                };
+                if let Some(value) = assignment.value.as_ref() {
+                    let value = copy_expression_value(ctx, value, "creo evaluated string values")?;
+                    ctx.insert_btree_map(&mut values, key, value, "creo evaluated value nodes")?;
                 } else {
                     values.remove(&key);
                 }
@@ -1881,12 +2409,13 @@ fn evaluate_expression_program_details(
                 values.remove(&key);
             }
         }
+        ctx.reserve_vec(&mut assignments, 1, "creo evaluated assignments")?;
         assignments.push(assignment);
     }
-    CurveExpressionEvaluation {
+    Ok(CurveExpressionEvaluation {
         assignments,
         solve_solutions,
-    }
+    })
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2028,24 +2557,48 @@ impl RelationUnit {
     }
 }
 
-fn relation_unit(source: &str) -> Option<RelationUnit> {
+fn relation_unit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source.len()),
+        "creo relation unit source scan",
+    )?;
     let mut parser = RelationUnitParser {
         source: source.as_bytes(),
         cursor: 0,
         nesting: 0,
+        ctx,
+        resource_error: None,
     };
-    let unit = parser.expression()?;
+    let unit = parser.expression();
+    if let Some(error) = parser.resource_error {
+        return Err(error);
+    }
     parser.whitespace();
-    (parser.cursor == parser.source.len()).then_some(unit)
+    Ok(unit.filter(|_| parser.cursor == parser.source.len()))
 }
 
 struct RelationUnitParser<'a> {
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+    resource_error: Option<cadmpeg_core::CodecError>,
     source: &'a [u8],
     cursor: usize,
     nesting: usize,
 }
 
 impl RelationUnitParser<'_> {
+    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.resource_error = Some(error);
+                None
+            }
+        }
+    }
+
     fn expression(&mut self) -> Option<RelationUnit> {
         let mut unit = self.power()?;
         loop {
@@ -2056,6 +2609,7 @@ impl RelationUnitParser<'_> {
                 _ => return Some(unit),
             };
             self.cursor += 1;
+            self.admit(self.ctx.charge_work(1, "creo relation unit multiplication"))?;
             unit = unit.combine(self.power()?, divide)?;
         }
     }
@@ -2081,13 +2635,22 @@ impl RelationUnitParser<'_> {
             .parse::<i16>()
             .ok()?;
         let exponent = if negative { -magnitude } else { magnitude };
+        self.admit(self.ctx.charge_work(1, "creo relation unit power"))?;
         unit.power(i8::try_from(exponent).ok()?)
     }
 
     fn primary(&mut self) -> Option<RelationUnit> {
         self.whitespace();
         if self.source.get(self.cursor) == Some(&b'(') {
-            (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+            if self.nesting >= MAX_EXPRESSION_NESTING {
+                let error = self.ctx.refuse_codec_limit(
+                    "creo relation unit depth",
+                    cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
+                    cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
+                );
+                self.admit::<()>(Err(error))?;
+            }
+            let _depth = self.admit(self.ctx.enter_nested("creo relation unit depth"))?;
             self.cursor += 1;
             self.nesting += 1;
             let unit = self.expression()?;
@@ -2121,16 +2684,15 @@ impl RelationUnitParser<'_> {
 }
 
 fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
-    let normalized = symbol.to_ascii_lowercase();
-    let (scale, offset, dimension) = match normalized.as_str() {
-        "k" => (1.0, 0.0, RelationDimension::TEMPERATURE),
-        "c" => (1.0, 273.15, RelationDimension::TEMPERATURE),
-        "f" => (
+    let (scale, offset, dimension) = match symbol {
+        _ if symbol.eq_ignore_ascii_case("k") => (1.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("c") => (1.0, 273.15, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("f") => (
             5.0 / 9.0,
             459.67 * 5.0 / 9.0,
             RelationDimension::TEMPERATURE,
         ),
-        "r" => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("r") => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
         symbol => {
             let (scale, dimension) = multiplicative_relation_unit_symbol(symbol)?;
             (scale, 0.0, dimension)
@@ -2145,77 +2707,108 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
 
 fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDimension)> {
     Some(match symbol {
-        "mm" => (1.0, RelationDimension::LENGTH),
-        "cm" => (10.0, RelationDimension::LENGTH),
-        "m" => (1_000.0, RelationDimension::LENGTH),
-        "in" | "inch" => (25.4, RelationDimension::LENGTH),
-        "ft" | "foot" => (304.8, RelationDimension::LENGTH),
-        "micron" => (0.001, RelationDimension::LENGTH),
-        "sq_mm" => (1.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_cm" => (100.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_m" => (1_000_000.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_in" => (645.16, RelationDimension::LENGTH.scale(2)?),
-        "sq_ft" => (92_903.04, RelationDimension::LENGTH.scale(2)?),
-        "cu_mm" => (1.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_cm" => (1_000.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_m" => (1_000_000_000.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_in" => (16_387.064, RelationDimension::LENGTH.scale(3)?),
-        "cu_ft" => (28_316_846.592, RelationDimension::LENGTH.scale(3)?),
-        "kg" => (1.0, RelationDimension::MASS),
-        "g" => (0.001, RelationDimension::MASS),
-        "mg" => (0.000_001, RelationDimension::MASS),
-        "lb" | "lbm" => (0.453_592_37, RelationDimension::MASS),
-        "slug" => (14.593_902_937_206_4, RelationDimension::MASS),
-        "tonne" => (1_000.0, RelationDimension::MASS),
-        "s" | "sec" | "second" => (1.0, RelationDimension::TIME),
-        "msec" => (0.001, RelationDimension::TIME),
-        "min" | "minute" => (60.0, RelationDimension::TIME),
-        "hr" | "hour" => (3_600.0, RelationDimension::TIME),
-        "day" => (86_400.0, RelationDimension::TIME),
-        "deg" | "degree" => (1.0, RelationDimension::ANGLE),
-        "rad" | "radian" => (180.0 / std::f64::consts::PI, RelationDimension::ANGLE),
-        "n" | "newton" => (1_000.0, RelationDimension::FORCE),
-        "kn" => (1_000_000.0, RelationDimension::FORCE),
-        "dyne" => (0.01, RelationDimension::FORCE),
-        "lbf" => (4_448.221_615_260_5, RelationDimension::FORCE),
-        "ton" => (9_806_650.0, RelationDimension::FORCE),
-        "erg" => (
+        _ if symbol.eq_ignore_ascii_case("mm") => (1.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("cm") => (10.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("m") => (1_000.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("in") || symbol.eq_ignore_ascii_case("inch") => {
+            (25.4, RelationDimension::LENGTH)
+        }
+        _ if symbol.eq_ignore_ascii_case("ft") || symbol.eq_ignore_ascii_case("foot") => {
+            (304.8, RelationDimension::LENGTH)
+        }
+        _ if symbol.eq_ignore_ascii_case("micron") => (0.001, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("sq_mm") => (1.0, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_cm") => (100.0, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_m") => {
+            (1_000_000.0, RelationDimension::LENGTH.scale(2)?)
+        }
+        _ if symbol.eq_ignore_ascii_case("sq_in") => (645.16, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_ft") => {
+            (92_903.04, RelationDimension::LENGTH.scale(2)?)
+        }
+        _ if symbol.eq_ignore_ascii_case("cu_mm") => (1.0, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_cm") => (1_000.0, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_m") => {
+            (1_000_000_000.0, RelationDimension::LENGTH.scale(3)?)
+        }
+        _ if symbol.eq_ignore_ascii_case("cu_in") => {
+            (16_387.064, RelationDimension::LENGTH.scale(3)?)
+        }
+        _ if symbol.eq_ignore_ascii_case("cu_ft") => {
+            (28_316_846.592, RelationDimension::LENGTH.scale(3)?)
+        }
+        _ if symbol.eq_ignore_ascii_case("kg") => (1.0, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("g") => (0.001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("mg") => (0.000_001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("lb") || symbol.eq_ignore_ascii_case("lbm") => {
+            (0.453_592_37, RelationDimension::MASS)
+        }
+        _ if symbol.eq_ignore_ascii_case("slug") => (14.593_902_937_206_4, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("tonne") => (1_000.0, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("s")
+            || symbol.eq_ignore_ascii_case("sec")
+            || symbol.eq_ignore_ascii_case("second") =>
+        {
+            (1.0, RelationDimension::TIME)
+        }
+        _ if symbol.eq_ignore_ascii_case("msec") => (0.001, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("min") || symbol.eq_ignore_ascii_case("minute") => {
+            (60.0, RelationDimension::TIME)
+        }
+        _ if symbol.eq_ignore_ascii_case("hr") || symbol.eq_ignore_ascii_case("hour") => {
+            (3_600.0, RelationDimension::TIME)
+        }
+        _ if symbol.eq_ignore_ascii_case("day") => (86_400.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("deg") || symbol.eq_ignore_ascii_case("degree") => {
+            (1.0, RelationDimension::ANGLE)
+        }
+        _ if symbol.eq_ignore_ascii_case("rad") || symbol.eq_ignore_ascii_case("radian") => {
+            (180.0 / std::f64::consts::PI, RelationDimension::ANGLE)
+        }
+        _ if symbol.eq_ignore_ascii_case("n") || symbol.eq_ignore_ascii_case("newton") => {
+            (1_000.0, RelationDimension::FORCE)
+        }
+        _ if symbol.eq_ignore_ascii_case("kn") => (1_000_000.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("dyne") => (0.01, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("lbf") => (4_448.221_615_260_5, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("ton") => (9_806_650.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("erg") => (
             0.1,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
         ),
-        "joule" => (
+        _ if symbol.eq_ignore_ascii_case("joule") => (
             1_000_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
         ),
-        "kw" => (
+        _ if symbol.eq_ignore_ascii_case("kw") => (
             1_000_000_000.0,
             RelationDimension::FORCE
                 .combine(RelationDimension::LENGTH, false)?
                 .combine(RelationDimension::TIME, true)?,
         ),
-        "mw" => (
+        _ if symbol.eq_ignore_ascii_case("mw") => (
             1_000_000_000_000.0,
             RelationDimension::FORCE
                 .combine(RelationDimension::LENGTH, false)?
                 .combine(RelationDimension::TIME, true)?,
         ),
-        "pa" => (
+        _ if symbol.eq_ignore_ascii_case("pa") => (
             0.001,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "mpa" => (
+        _ if symbol.eq_ignore_ascii_case("mpa") => (
             1_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "gpa" => (
+        _ if symbol.eq_ignore_ascii_case("gpa") => (
             1_000_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "psi" => (
+        _ if symbol.eq_ignore_ascii_case("psi") => (
             6.894_757_293_168_361,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "ksi" => (
+        _ if symbol.eq_ignore_ascii_case("ksi") => (
             6_894.757_293_168_361,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
@@ -2223,91 +2816,205 @@ fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDim
     })
 }
 
-trait ExpressionValue: Clone {
-    fn number(value: f64) -> Self;
+trait ExpressionValue: Sized {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError>;
+    fn number(value: f64) -> Option<Self>;
     fn reserved(name: &str) -> Option<Self> {
-        reserved_relation_scalar(name).map(Self::number)
+        reserved_relation_scalar(name).and_then(Self::number)
     }
     fn string(_value: String) -> Option<Self> {
         None
     }
-    fn with_unit(self, unit: RelationUnit) -> Option<Self>;
-    fn add(self, right: Self) -> Option<Self>;
-    fn subtract(self, right: Self) -> Option<Self>;
-    fn multiply(self, right: Self) -> Option<Self>;
-    fn divide(self, right: Self) -> Option<Self>;
-    fn power(self, right: Self) -> Option<Self>;
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self>;
-    fn logical_and(self, right: Self) -> Option<Self>;
-    fn logical_or(self, right: Self) -> Option<Self>;
-    fn logical_not(self) -> Option<Self>;
-    fn function(
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn function_checked(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
-    ) -> Option<Self>;
-    fn negate(self) -> Option<Self>;
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
     fn finite(&self) -> bool;
 }
 
 impl ExpressionValue for f64 {
-    fn number(value: f64) -> Self {
-        value
+    fn clone_admitted(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(*self)
     }
 
-    fn add(self, right: Self) -> Option<Self> {
-        Some(self + right)
+    fn number(value: f64) -> Option<Self> {
+        Some(value)
     }
 
-    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        Some(self * unit.scale + unit.offset)
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self + right))
     }
 
-    fn subtract(self, right: Self) -> Option<Self> {
-        Some(self - right)
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self * unit.scale + unit.offset))
     }
 
-    fn multiply(self, right: Self) -> Option<Self> {
-        Some(self * right)
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self - right))
     }
 
-    fn divide(self, right: Self) -> Option<Self> {
-        Some(self / right)
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self * right))
     }
 
-    fn power(self, right: Self) -> Option<Self> {
-        Some(self.powf(right))
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self / right))
     }
 
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        Some(f64::from(operator.evaluate(self, right)))
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(self.powf(right)))
     }
 
-    fn logical_and(self, right: Self) -> Option<Self> {
-        Some(f64::from(self != 0.0 && right != 0.0))
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(f64::from(operator.evaluate(self, right))))
     }
 
-    fn logical_or(self, right: Self) -> Option<Self> {
-        Some(f64::from(self != 0.0 || right != 0.0))
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(f64::from(self != 0.0 && right != 0.0)))
     }
 
-    fn logical_not(self) -> Option<Self> {
-        Some(f64::from(self == 0.0))
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(f64::from(self != 0.0 || right != 0.0)))
     }
 
-    fn function(
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(f64::from(self == 0.0)))
+    }
+
+    fn function_checked(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
-    ) -> Option<Self> {
-        scope.is_none().then_some(())?;
-        evaluate_creo_math_function(name, arguments)
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            scope.is_none().then_some(())?;
+            evaluate_creo_math_function(name, arguments)
+        };
+        Ok(arithmetic())
     }
 
-    fn negate(self) -> Option<Self> {
-        Some(-self)
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(Some(-self))
     }
 
     fn finite(&self) -> bool {
@@ -2322,99 +3029,179 @@ struct AffineValue {
 }
 
 impl ExpressionValue for AffineValue {
-    fn number(value: f64) -> Self {
-        Self {
+    fn clone_admitted(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(*self)
+    }
+
+    fn number(value: f64) -> Option<Self> {
+        Some(Self {
             constant: value,
             linear: 0.0,
-        }
+        })
     }
 
-    fn add(self, right: Self) -> Option<Self> {
-        Some(Self {
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(Self {
             constant: self.constant + right.constant,
             linear: self.linear + right.linear,
-        })
+        }))
     }
 
-    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        Some(Self {
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(Self {
             constant: self.constant * unit.scale + unit.offset,
             linear: self.linear * unit.scale,
-        })
+        }))
     }
 
-    fn subtract(self, right: Self) -> Option<Self> {
-        Some(Self {
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(Some(Self {
             constant: self.constant - right.constant,
             linear: self.linear - right.linear,
-        })
+        }))
     }
 
-    fn multiply(self, right: Self) -> Option<Self> {
-        (self.linear == 0.0 || right.linear == 0.0).then_some(Self {
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok((self.linear == 0.0 || right.linear == 0.0).then_some(Self {
             constant: self.constant * right.constant,
             linear: self.constant * right.linear + self.linear * right.constant,
-        })
+        }))
     }
 
-    fn divide(self, right: Self) -> Option<Self> {
-        (right.linear == 0.0 && right.constant != 0.0).then_some(Self {
-            constant: self.constant / right.constant,
-            linear: self.linear / right.constant,
-        })
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(
+            (right.linear == 0.0 && right.constant != 0.0).then_some(Self {
+                constant: self.constant / right.constant,
+                linear: self.linear / right.constant,
+            }),
+        )
     }
 
-    fn power(self, right: Self) -> Option<Self> {
-        if right.linear == 0.0 && right.constant == 1.0 {
-            return Some(self);
-        }
-        if right.linear == 0.0 && right.constant == 0.0 {
-            return Some(Self::number(1.0));
-        }
-        (self.linear == 0.0 && right.linear == 0.0)
-            .then(|| self.constant.powf(right.constant))
-            .filter(|value| value.is_finite())
-            .map(Self::number)
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            if right.linear == 0.0 && right.constant == 1.0 {
+                return Some(self);
+            }
+            if right.linear == 0.0 && right.constant == 0.0 {
+                return Self::number(1.0);
+            }
+            (self.linear == 0.0 && right.linear == 0.0)
+                .then(|| self.constant.powf(right.constant))
+                .filter(|value| value.is_finite())
+                .and_then(Self::number)
+        };
+        Ok(arithmetic())
     }
 
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        (self.linear == 0.0 && right.linear == 0.0)
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok((self.linear == 0.0 && right.linear == 0.0)
             .then(|| Self::number(f64::from(operator.evaluate(self.constant, right.constant))))
+            .flatten())
     }
 
-    fn logical_and(self, right: Self) -> Option<Self> {
-        (self.linear == 0.0 && right.linear == 0.0)
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok((self.linear == 0.0 && right.linear == 0.0)
             .then(|| Self::number(f64::from(self.constant != 0.0 && right.constant != 0.0)))
+            .flatten())
     }
 
-    fn logical_or(self, right: Self) -> Option<Self> {
-        (self.linear == 0.0 && right.linear == 0.0)
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok((self.linear == 0.0 && right.linear == 0.0)
             .then(|| Self::number(f64::from(self.constant != 0.0 || right.constant != 0.0)))
+            .flatten())
     }
 
-    fn logical_not(self) -> Option<Self> {
-        (self.linear == 0.0).then(|| Self::number(f64::from(self.constant == 0.0)))
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok((self.linear == 0.0)
+            .then(|| Self::number(f64::from(self.constant == 0.0)))
+            .flatten())
     }
 
-    fn function(
+    fn function_checked(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
-    ) -> Option<Self> {
-        scope.is_none().then_some(())?;
-        let constants = arguments
-            .iter()
-            .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
-            .collect::<Option<Vec<_>>>()?;
-        evaluate_creo_math_function(name, &constants).map(Self::number)
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            scope.is_none().then_some(())?;
+            let mut constants = [0.0; 3];
+            if arguments.len() > constants.len() {
+                return None;
+            }
+            for (slot, argument) in constants.iter_mut().zip(arguments) {
+                (argument.linear == 0.0).then_some(())?;
+                *slot = argument.constant;
+            }
+            evaluate_creo_math_function(name, &constants[..arguments.len()]).and_then(Self::number)
+        };
+        Ok(arithmetic())
     }
 
-    fn negate(self) -> Option<Self> {
-        Some(Self {
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(Some(Self {
             constant: -self.constant,
             linear: -self.linear,
-        })
+        }))
     }
 
     fn finite(&self) -> bool {
@@ -2446,37 +3233,75 @@ impl SimultaneousAffineValue {
         self
     }
 
-    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
-        (self.dimension == right.dimension).then_some(())?;
+    fn combine_admitted(
+        mut self,
+        right: Self,
+        subtract: bool,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if self.dimension != right.dimension {
+            return Ok(None);
+        }
         let sign = if subtract { -1.0 } else { 1.0 };
         self.constant += sign * right.constant;
         for (variable, coefficient) in right.coefficients {
-            let remove = {
-                let value = self.coefficients.entry(variable.clone()).or_default();
-                *value += sign * coefficient;
-                *value == 0.0
-            };
-            if remove {
-                self.coefficients.remove(&variable);
+            ctx.charge_work(1, "creo affine coefficient combination work")?;
+            match self.coefficients.entry(variable) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let value = entry.get_mut();
+                    *value += sign * coefficient;
+                    if *value == 0.0 {
+                        entry.remove();
+                    }
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let value = sign * coefficient;
+                    if value != 0.0 {
+                        ctx.charge_collection_items(1, "creo affine combined coefficient nodes")?;
+                        entry.insert(value);
+                    }
+                }
             }
         }
-        Some(self)
+        Ok(Some(self))
     }
 
     fn as_curve_value(&self) -> Option<CurveExpressionValue> {
         self.coefficients
             .is_empty()
             .then(|| quantity_value(self.constant, self.dimension))
+            .flatten()
     }
 
-    fn constant_difference(&self, right: &Self) -> Option<f64> {
-        let difference = self.clone().combine(right.clone(), true)?;
-        difference
+    fn constant_difference_admitted(
+        &self,
+        right: &Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+        if self.dimension != right.dimension {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo affine coefficient comparison work",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(right.coefficients.len()),
+            "creo affine coefficient comparison work",
+        )?;
+        if self
             .coefficients
-            .values()
-            .all(|coefficient| *coefficient == 0.0)
-            .then_some(difference.constant)
-            .filter(|constant| constant.is_finite())
+            .iter()
+            .any(|(name, value)| *value != right.coefficients.get(name).map_or(0.0, |value| *value))
+            || right.coefficients.iter().any(|(name, value)| {
+                *value != self.coefficients.get(name).map_or(0.0, |value| *value)
+            })
+        {
+            return Ok(None);
+        }
+        Ok((self.constant - right.constant)
+            .is_finite()
+            .then_some(self.constant - right.constant))
     }
 
     fn constant_truth(&self) -> Option<bool> {
@@ -2486,8 +3311,28 @@ impl SimultaneousAffineValue {
 }
 
 impl ExpressionValue for SimultaneousAffineValue {
-    fn number(value: f64) -> Self {
-        Self::constant(value, RelationDimension::default())
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut coefficients = BTreeMap::new();
+        for (name, value) in &self.coefficients {
+            ctx.insert_btree_map(
+                &mut coefficients,
+                ctx.copy_retained_text(name, "creo relation affine clone coefficient names")?,
+                *value,
+                "creo relation affine clone coefficient nodes",
+            )?;
+        }
+        Ok(Self {
+            dimension: self.dimension,
+            constant: self.constant,
+            coefficients,
+        })
+    }
+
+    fn number(value: f64) -> Option<Self> {
+        Some(Self::constant(value, RelationDimension::default()))
     }
 
     fn reserved(name: &str) -> Option<Self> {
@@ -2496,179 +3341,361 @@ impl ExpressionValue for SimultaneousAffineValue {
         Some(Self::constant(value, dimension))
     }
 
-    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        (self.dimension == RelationDimension::default()).then_some(())?;
-        let mut value = self.scale(unit.scale);
-        value.dimension = unit.dimension;
-        value.constant += unit.offset;
-        Some(value)
-    }
-
-    fn add(self, right: Self) -> Option<Self> {
-        self.combine(right, false)
-    }
-
-    fn subtract(self, right: Self) -> Option<Self> {
-        self.combine(right, true)
-    }
-
-    fn multiply(self, right: Self) -> Option<Self> {
-        if self.coefficients.is_empty() {
-            let dimension = self.dimension.combine(right.dimension, false)?;
-            let mut result = right.scale(self.constant);
-            result.dimension = dimension;
-            Some(result)
-        } else if right.coefficients.is_empty() {
-            let dimension = self.dimension.combine(right.dimension, false)?;
-            let mut result = self.scale(right.constant);
-            result.dimension = dimension;
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    fn divide(self, right: Self) -> Option<Self> {
-        (right.coefficients.is_empty() && right.constant != 0.0).then_some(())?;
-        let dimension = self.dimension.combine(right.dimension, true)?;
-        let mut result = self.scale(1.0 / right.constant);
-        result.dimension = dimension;
-        Some(result)
-    }
-
-    fn power(self, right: Self) -> Option<Self> {
-        if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() {
-            return None;
-        }
-        if right.constant == 1.0 {
-            return Some(self);
-        }
-        if right.constant == 0.0 {
-            return Some(Self::number(1.0));
-        }
-        let value = self.as_curve_value()?;
-        let exponent = CurveExpressionValue::Number(right.constant);
-        let result = value.power(exponent)?;
-        let (value, dimension) = quantity_parts_ref(&result)?;
-        value.is_finite().then(|| Self::constant(value, dimension))
-    }
-
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        let difference = self.constant_difference(&right)?;
-        Some(Self::number(f64::from(operator.evaluate(difference, 0.0))))
-    }
-
-    fn logical_and(self, right: Self) -> Option<Self> {
-        if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
-            return Some(Self::number(0.0));
-        }
-        let left = self.as_curve_value()?;
-        let right = right.as_curve_value()?;
-        let CurveExpressionValue::Number(value) = left.logical_and(right)? else {
-            return None;
-        };
-        Some(Self::number(value))
-    }
-
-    fn logical_or(self, right: Self) -> Option<Self> {
-        if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
-            return Some(Self::number(1.0));
-        }
-        let left = self.as_curve_value()?;
-        let right = right.as_curve_value()?;
-        let CurveExpressionValue::Number(value) = left.logical_or(right)? else {
-            return None;
-        };
-        Some(Self::number(value))
-    }
-
-    fn logical_not(self) -> Option<Self> {
-        let value = self.as_curve_value()?;
-        let CurveExpressionValue::Number(value) = value.logical_not()? else {
-            return None;
-        };
-        Some(Self::number(value))
-    }
-
-    fn function(
+    fn function_checked(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
-    ) -> Option<Self> {
-        scope.is_none().then_some(())?;
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if scope.is_some() {
+            return Ok(None);
+        }
         match (name, arguments) {
             (CreoMathFunction::If, [condition, when_true, when_false]) => {
-                if when_true.constant_difference(when_false) == Some(0.0) {
-                    return Some(when_true.clone());
+                if when_true.constant_difference_admitted(when_false, ctx)? == Some(0.0) {
+                    return Ok(Some(when_true.clone_admitted(ctx)?));
                 }
-                let condition = condition.as_curve_value()?;
-                let CurveExpressionValue::Number(condition) = condition else {
-                    return None;
+                let Some(CurveExpressionValue::Number(condition)) = condition.as_curve_value()
+                else {
+                    return Ok(None);
                 };
-                return Some(if condition == 0.0 {
-                    when_false.clone()
+                return Ok(Some(if condition.get() == 0.0 {
+                    when_false.clone_admitted(ctx)?
                 } else {
-                    when_true.clone()
-                });
+                    when_true.clone_admitted(ctx)?
+                }));
             }
             (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
-                let difference = left.constant_difference(right)?;
-                return Some(if extremum_selects_left(name, difference, 0.0)? {
-                    left.clone()
+                let Some(difference) = left.constant_difference_admitted(right, ctx)? else {
+                    return Ok(None);
+                };
+                let Some(selects_left) = extremum_selects_left(name, difference, 0.0) else {
+                    return Ok(None);
+                };
+                return Ok(Some(if selects_left {
+                    left.clone_admitted(ctx)?
                 } else {
-                    right.clone()
-                });
+                    right.clone_admitted(ctx)?
+                }));
             }
             (CreoMathFunction::Sign, [value, _])
                 if value.coefficients.is_empty() && value.constant == 0.0 =>
             {
-                return Some(value.clone());
+                return Ok(Some(value.clone_admitted(ctx)?));
             }
             (CreoMathFunction::Bound, [value, lower, upper]) => {
-                (lower.constant_difference(upper)? < 0.0).then_some(())?;
-                return Some(if value.constant_difference(lower)? < 0.0 {
-                    lower.clone()
-                } else if value.constant_difference(upper)? > 0.0 {
-                    upper.clone()
+                let Some(bounds_difference) = lower.constant_difference_admitted(upper, ctx)?
+                else {
+                    return Ok(None);
+                };
+                if bounds_difference >= 0.0 {
+                    return Ok(None);
+                }
+                let Some(lower_difference) = value.constant_difference_admitted(lower, ctx)? else {
+                    return Ok(None);
+                };
+                if lower_difference < 0.0 {
+                    return Ok(Some(lower.clone_admitted(ctx)?));
+                }
+                let Some(upper_difference) = value.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(if upper_difference > 0.0 {
+                    upper.clone_admitted(ctx)?
                 } else {
-                    value.clone()
-                });
+                    value.clone_admitted(ctx)?
+                }));
             }
             (CreoMathFunction::Dead, [value, lower, upper]) => {
-                (lower.constant_difference(upper)? <= 0.0).then_some(())?;
-                let result = if value.constant_difference(lower)? < 0.0 {
-                    value.clone().combine(lower.clone(), true)?
-                } else if value.constant_difference(upper)? > 0.0 {
-                    value.clone().combine(upper.clone(), true)?
-                } else {
-                    Self::constant(0.0, value.dimension)
+                let Some(bounds_difference) = lower.constant_difference_admitted(upper, ctx)?
+                else {
+                    return Ok(None);
                 };
-                return Some(result);
+                if bounds_difference > 0.0 {
+                    return Ok(None);
+                }
+                let Some(lower_difference) = value.constant_difference_admitted(lower, ctx)? else {
+                    return Ok(None);
+                };
+                if lower_difference < 0.0 {
+                    return value.clone_admitted(ctx)?.combine_admitted(
+                        lower.clone_admitted(ctx)?,
+                        true,
+                        ctx,
+                    );
+                }
+                let Some(upper_difference) = value.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                if upper_difference > 0.0 {
+                    return value.clone_admitted(ctx)?.combine_admitted(
+                        upper.clone_admitted(ctx)?,
+                        true,
+                        ctx,
+                    );
+                }
+                return Ok(Some(Self::constant(0.0, value.dimension)));
             }
             (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
-                let difference = left.constant_difference(right)?;
-                let tolerance = tolerance.as_curve_value()?;
-                let (tolerance, tolerance_dimension) = quantity_parts_ref(&tolerance)?;
-                (left.dimension == tolerance_dimension && tolerance >= 0.0).then_some(())?;
-                return Some(Self::number(f64::from(difference.abs() <= tolerance)));
+                let Some(difference) = left.constant_difference_admitted(right, ctx)? else {
+                    return Ok(None);
+                };
+                let Some(tolerance_value) = tolerance.as_curve_value() else {
+                    return Ok(None);
+                };
+                let Some((tolerance, tolerance_dimension)) = quantity_parts_ref(&tolerance_value)
+                else {
+                    return Ok(None);
+                };
+                if left.dimension != tolerance_dimension || tolerance < 0.0 {
+                    return Ok(None);
+                }
+                return Ok(Self::number(f64::from(difference.abs() <= tolerance)));
             }
             (CreoMathFunction::Pow, [base, exponent]) => {
-                return base.clone().power(exponent.clone());
+                return base
+                    .clone_admitted(ctx)?
+                    .power_checked(exponent.clone_admitted(ctx)?, ctx);
             }
             _ => {}
         }
-        let arguments = arguments
-            .iter()
-            .map(Self::as_curve_value)
-            .collect::<Option<Vec<_>>>()?;
-        let result = CurveExpressionValue::function(name, None, &arguments, context)?;
-        let (value, dimension) = quantity_parts_ref(&result)?;
-        Some(Self::constant(value, dimension))
+        let mut numeric_arguments = Vec::new();
+        for argument in arguments {
+            let Some(value) = argument.as_curve_value() else {
+                return Ok(None);
+            };
+            ctx.reserve_vec(
+                &mut numeric_arguments,
+                1,
+                "creo affine function numeric arguments",
+            )?;
+            numeric_arguments.push(value);
+        }
+        if matches!(
+            name,
+            CreoMathFunction::Itos
+                | CreoMathFunction::Rtos
+                | CreoMathFunction::RelModelName
+                | CreoMathFunction::RelModelType
+        ) {
+            return Ok(None);
+        }
+        let Some(result) =
+            CurveExpressionValue::function_checked(name, None, &numeric_arguments, context, ctx)?
+        else {
+            return Ok(None);
+        };
+        let Some((value, dimension)) = quantity_parts_ref(&result) else {
+            return Ok(None);
+        };
+        Ok(Some(Self::constant(value, dimension)))
     }
 
-    fn negate(self) -> Option<Self> {
-        Some(self.scale(-1.0))
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo affine arithmetic work",
+        )?;
+        let arithmetic = || {
+            (self.dimension == RelationDimension::default()).then_some(())?;
+            let mut value = self.scale(unit.scale);
+            value.dimension = unit.dimension;
+            value.constant += unit.offset;
+            Some(value)
+        };
+        Ok(arithmetic())
+    }
+
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.combine_admitted(right, false, ctx)
+    }
+
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.combine_admitted(right, true, ctx)
+    }
+
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo affine arithmetic work",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(right.coefficients.len()),
+            "creo affine arithmetic work",
+        )?;
+        let arithmetic = || {
+            if self.coefficients.is_empty() {
+                let dimension = self.dimension.combine(right.dimension, false)?;
+                let mut result = right.scale(self.constant);
+                result.dimension = dimension;
+                Some(result)
+            } else if right.coefficients.is_empty() {
+                let dimension = self.dimension.combine(right.dimension, false)?;
+                let mut result = self.scale(right.constant);
+                result.dimension = dimension;
+                Some(result)
+            } else {
+                None
+            }
+        };
+        Ok(arithmetic())
+    }
+
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo affine arithmetic work",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(right.coefficients.len()),
+            "creo affine arithmetic work",
+        )?;
+        let arithmetic = || {
+            (right.coefficients.is_empty() && right.constant != 0.0).then_some(())?;
+            let dimension = self.dimension.combine(right.dimension, true)?;
+            let mut result = self.scale(1.0 / right.constant);
+            result.dimension = dimension;
+            Some(result)
+        };
+        Ok(arithmetic())
+    }
+
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() {
+                return None;
+            }
+            if right.constant == 1.0 {
+                return Some(self);
+            }
+            if right.constant == 0.0 {
+                return Self::number(1.0);
+            }
+            let value = self.as_curve_value()?;
+            let exponent =
+                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(right.constant)?);
+            let result = quantity_power(&value, &exponent)?;
+            let (value, dimension) = quantity_parts_ref(&result)?;
+            value.is_finite().then(|| Self::constant(value, dimension))
+        };
+        Ok(arithmetic())
+    }
+
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(difference) = self.constant_difference_admitted(&right, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Self::number(f64::from(operator.evaluate(difference, 0.0))))
+    }
+
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
+                return Self::number(0.0);
+            }
+            let left = self.as_curve_value()?;
+            let right = right.as_curve_value()?;
+            let CurveExpressionValue::Number(value) =
+                numeric_binary(left, right, |left, right| {
+                    f64::from(left != 0.0 && right != 0.0)
+                })?
+            else {
+                return None;
+            };
+            Self::number(value.get())
+        };
+        Ok(arithmetic())
+    }
+
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
+                return Self::number(1.0);
+            }
+            let left = self.as_curve_value()?;
+            let right = right.as_curve_value()?;
+            let CurveExpressionValue::Number(value) =
+                numeric_binary(left, right, |left, right| {
+                    f64::from(left != 0.0 || right != 0.0)
+                })?
+            else {
+                return None;
+            };
+            Self::number(value.get())
+        };
+        Ok(arithmetic())
+    }
+
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let value = self.as_curve_value()?;
+            let CurveExpressionValue::Number(value) = numeric_binary(
+                value,
+                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO),
+                |left, _| f64::from(left == 0.0),
+            )?
+            else {
+                return None;
+            };
+            Self::number(value.get())
+        };
+        Ok(arithmetic())
+    }
+
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo relation negation work",
+        )?;
+        Ok(Some(self.scale(-1.0)))
     }
 
     fn finite(&self) -> bool {
@@ -2752,8 +3779,11 @@ impl DimensionRational {
         Self::new(self.numerator, self.denominator.checked_mul(divisor)?)
     }
 
-    fn as_f64(self) -> f64 {
-        self.numerator as f64 / self.denominator as f64
+    fn as_f64(self) -> Option<f64> {
+        Some(
+            cadmpeg_core::convert::f64_from_i64(self.numerator)?
+                / cadmpeg_core::convert::f64_from_i64(self.denominator)?,
+        )
     }
 
     fn is_zero(self) -> bool {
@@ -2768,6 +3798,63 @@ struct DimensionForm {
 }
 
 impl DimensionForm {
+    fn combine_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        right: Self,
+        subtract: bool,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.constant = match self.constant.combine(right.constant, subtract) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        for (name, coefficient) in right.variables {
+            ctx.charge_work(1, "creo dimension coefficient combination work")?;
+            if let Some(value) = self.variables.get_mut(&name) {
+                *value = match (*value).combine(coefficient, subtract) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                };
+                if value.is_zero() {
+                    self.variables.remove(&name);
+                }
+            } else {
+                let Some(value) = DimensionRational::default().combine(coefficient, subtract)
+                else {
+                    return Ok(None);
+                };
+                if !value.is_zero() {
+                    ctx.insert_btree_map(
+                        &mut self.variables,
+                        name,
+                        value,
+                        "creo dimension difference variable nodes",
+                    )?;
+                }
+            }
+        }
+        Ok(Some(self))
+    }
+
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut variables = BTreeMap::new();
+        for (name, value) in &self.variables {
+            ctx.insert_btree_map(
+                &mut variables,
+                ctx.copy_retained_text(name, "creo relation dimension clone variable names")?,
+                *value,
+                "creo relation dimension clone variable nodes",
+            )?;
+        }
+        Ok(Self {
+            constant: self.constant,
+            variables,
+        })
+    }
+
     fn constant(value: i8) -> Self {
         Self {
             constant: DimensionRational::integer(value),
@@ -2775,26 +3862,15 @@ impl DimensionForm {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: String,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_collection_items(1, "creo dimension variable nodes")?;
+        Ok(Self {
             constant: DimensionRational::default(),
-            variables: BTreeMap::from([(name.to_owned(), DimensionRational::one())]),
-        }
-    }
-
-    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
-        self.constant = self.constant.combine(right.constant, subtract)?;
-        for (name, coefficient) in right.variables {
-            let is_zero = {
-                let entry = self.variables.entry(name.clone()).or_default();
-                *entry = (*entry).combine(coefficient, subtract)?;
-                entry.is_zero()
-            };
-            if is_zero {
-                self.variables.remove(&name);
-            }
-        }
-        Some(self)
+            variables: BTreeMap::from([(name, DimensionRational::one())]),
+        })
     }
 
     fn scale(mut self, factor: i8) -> Option<Self> {
@@ -2828,6 +3904,21 @@ struct SymbolicRelationDimension {
 }
 
 impl SymbolicRelationDimension {
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            axes: [
+                self.axes[0].copy_admitted(ctx)?,
+                self.axes[1].copy_admitted(ctx)?,
+                self.axes[2].copy_admitted(ctx)?,
+                self.axes[3].copy_admitted(ctx)?,
+                self.axes[4].copy_admitted(ctx)?,
+            ],
+        })
+    }
+
     fn from_relation_dimension(dimension: RelationDimension) -> Self {
         Self {
             axes: [
@@ -2840,44 +3931,90 @@ impl SymbolicRelationDimension {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
-            axes: std::array::from_fn(|axis| {
-                DimensionForm::variable(&dimension_variable_key(name, axis))
-            }),
-        }
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            axes: [
+                DimensionForm::variable(
+                    ctx,
+                    dimension_variable_key(ctx, name, 0, "creo dimension variable names")?,
+                )?,
+                DimensionForm::variable(
+                    ctx,
+                    dimension_variable_key(ctx, name, 1, "creo dimension variable names")?,
+                )?,
+                DimensionForm::variable(
+                    ctx,
+                    dimension_variable_key(ctx, name, 2, "creo dimension variable names")?,
+                )?,
+                DimensionForm::variable(
+                    ctx,
+                    dimension_variable_key(ctx, name, 3, "creo dimension variable names")?,
+                )?,
+                DimensionForm::variable(
+                    ctx,
+                    dimension_variable_key(ctx, name, 4, "creo dimension variable names")?,
+                )?,
+            ],
+        })
     }
 
-    fn combine(self, right: Self, subtract: bool) -> Option<Self> {
-        let mut axes = std::array::from_fn(|_| DimensionForm::default());
-        for (axis, (left, right)) in self.axes.into_iter().zip(right.axes).enumerate() {
-            axes[axis] = left.combine(right, subtract)?;
-        }
-        Some(Self { axes })
+    fn combine_admitted(
+        self,
+        right: Self,
+        subtract: bool,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let [left_length, left_mass, left_time, left_angle, left_temperature] = self.axes;
+        let [right_length, right_mass, right_time, right_angle, right_temperature] = right.axes;
+        let Some(length) = left_length.combine_admitted(ctx, right_length, subtract)? else {
+            return Ok(None);
+        };
+        let Some(mass) = left_mass.combine_admitted(ctx, right_mass, subtract)? else {
+            return Ok(None);
+        };
+        let Some(time) = left_time.combine_admitted(ctx, right_time, subtract)? else {
+            return Ok(None);
+        };
+        let Some(angle) = left_angle.combine_admitted(ctx, right_angle, subtract)? else {
+            return Ok(None);
+        };
+        let Some(temperature) =
+            left_temperature.combine_admitted(ctx, right_temperature, subtract)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            axes: [length, mass, time, angle, temperature],
+        }))
     }
 
     fn scale(self, factor: i8) -> Option<Self> {
+        let [length, mass, time, angle, temperature] = self.axes;
         Some(Self {
-            axes: self
-                .axes
-                .into_iter()
-                .map(|axis| axis.scale(factor))
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?,
+            axes: [
+                length.scale(factor)?,
+                mass.scale(factor)?,
+                time.scale(factor)?,
+                angle.scale(factor)?,
+                temperature.scale(factor)?,
+            ],
         })
     }
 
     fn root(self, degree: i16) -> Option<Self> {
         (degree > 0).then_some(())?;
+        let [length, mass, time, angle, temperature] = self.axes;
         Some(Self {
-            axes: self
-                .axes
-                .into_iter()
-                .map(|axis| axis.divide_exact(degree))
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?,
+            axes: [
+                length.divide_exact(degree)?,
+                mass.divide_exact(degree)?,
+                time.divide_exact(degree)?,
+                angle.divide_exact(degree)?,
+                temperature.divide_exact(degree)?,
+            ],
         })
     }
 
@@ -2886,14 +4023,31 @@ impl SymbolicRelationDimension {
     }
 }
 
-fn dimension_variable_key(name: &str, axis: usize) -> String {
-    format!("{name}#{axis}")
+fn dimension_variable_key(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+    axis: usize,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.format_retained(format_args!("{name}#{axis}"), operation)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DimensionEquality {
     left: SymbolicRelationDimension,
     right: SymbolicRelationDimension,
+}
+
+impl DimensionEquality {
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            left: self.left.copy_admitted(ctx)?,
+            right: self.right.copy_admitted(ctx)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2940,17 +4094,20 @@ impl DimensionProbeValue {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
-            dimension: SymbolicRelationDimension::variable(name),
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            dimension: SymbolicRelationDimension::variable(ctx, name)?,
             kind: DimensionProbeKind::Numeric(None),
             constraints: Vec::new(),
-        }
+        })
     }
 
     fn from_relation_value(value: &CurveExpressionValue) -> Option<Self> {
         match value {
-            CurveExpressionValue::String(value) => Some(Self::text(Some(value.clone()))),
+            CurveExpressionValue::String(_) => None,
             value => {
                 let (value, dimension) = quantity_parts_ref(value)?;
                 Some(Self {
@@ -2976,33 +4133,63 @@ impl DimensionProbeValue {
         }
     }
 
-    fn with_constraint(
+    fn with_constraint_admitted(
         mut self,
         left: SymbolicRelationDimension,
         right: SymbolicRelationDimension,
-    ) -> Self {
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.reserve_vec(&mut self.constraints, 1, "creo dimension constraint growth")?;
         self.constraints.push(DimensionEquality { left, right });
-        self
+        Ok(self)
     }
 
-    fn constrain_to(self, dimension: SymbolicRelationDimension) -> Self {
-        let current = self.dimension.clone();
-        self.with_constraint(current, dimension)
+    fn constrain_to_admitted(
+        self,
+        dimension: SymbolicRelationDimension,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let current = self.dimension.copy_admitted(ctx)?;
+        self.with_constraint_admitted(current, dimension, ctx)
     }
 
-    fn merge_constraints(left: &Self, right: &Self) -> Vec<DimensionEquality> {
-        left.constraints
-            .iter()
-            .cloned()
-            .chain(right.constraints.iter().cloned())
-            .collect()
+    fn merge_constraints_admitted(
+        left: &Self,
+        right: &Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
+        let mut constraints = Vec::new();
+        for constraint in left.constraints.iter().chain(&right.constraints) {
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension merged constraints")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(constraints)
     }
 
-    fn argument_constraints(arguments: &[Self]) -> Vec<DimensionEquality> {
-        arguments
-            .iter()
-            .flat_map(|argument| argument.constraints.iter().cloned())
-            .collect()
+    fn argument_constraints_admitted(
+        arguments: &[Self],
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
+        let mut constraints = Vec::new();
+        for constraint in arguments.iter().flat_map(|argument| &argument.constraints) {
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension function constraints")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(constraints)
+    }
+
+    fn push_constraint_admitted(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        constraints: &mut Vec<DimensionEquality>,
+        left: &SymbolicRelationDimension,
+        right: &SymbolicRelationDimension,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_vec(constraints, 1, "creo dimension operation constraints")?;
+        constraints.push(DimensionEquality {
+            left: left.copy_admitted(ctx)?,
+            right: right.copy_admitted(ctx)?,
+        });
+        Ok(())
     }
 
     fn numeric_result(
@@ -3026,14 +4213,16 @@ impl DimensionProbeValue {
     }
 
     fn optional_math(name: CreoMathFunction, arguments: &[Self]) -> Option<DimensionProbeNumber> {
-        let Some(values) = arguments
-            .iter()
-            .map(Self::numeric_value)
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Some(DimensionProbeNumber::Unknown);
-        };
-        evaluate_creo_math_function(name, &values).map(DimensionProbeNumber::Known)
+        let mut values = [0.0; 3];
+        for (index, argument) in arguments.iter().enumerate() {
+            let slot = values.get_mut(index)?;
+            let Some(value) = argument.numeric_value() else {
+                return Some(DimensionProbeNumber::Unknown);
+            };
+            *slot = value;
+        }
+        evaluate_creo_math_function(name, &values[..arguments.len()])
+            .map(DimensionProbeNumber::Known)
     }
 
     fn optional_round(
@@ -3057,475 +4246,69 @@ impl DimensionProbeValue {
     }
 }
 
-impl ExpressionValue for DimensionProbeValue {
-    fn number(value: f64) -> Self {
-        Self::numeric(Some(value))
-    }
-
-    fn reserved(name: &str) -> Option<Self> {
-        Self::from_relation_value(&CurveExpressionValue::reserved(name)?)
-    }
-
-    fn string(value: String) -> Option<Self> {
-        Some(Self::text(Some(value)))
-    }
-
-    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        let Self {
-            dimension,
-            kind: DimensionProbeKind::Numeric(value),
-            mut constraints,
-        } = self
-        else {
-            return None;
-        };
-        constraints.push(DimensionEquality {
-            left: dimension,
-            right: SymbolicRelationDimension::default(),
-        });
-        let value = value
-            .map(|value| value * unit.scale + unit.offset)
-            .filter(|value| value.is_finite());
-        Some(Self::numeric_result(
-            SymbolicRelationDimension::from_relation_dimension(unit.dimension),
-            value,
-            constraints,
-        ))
-    }
-
-    fn add(self, right: Self) -> Option<Self> {
-        match (&self.kind, &right.kind) {
-            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
-                let value = left
-                    .as_ref()
-                    .zip(right_value.as_ref())
-                    .map(|(left, right)| {
-                        let mut value = left.clone();
-                        value.push_str(right);
-                        value
-                    });
-                Some(Self::text_result(
-                    value,
-                    Self::merge_constraints(&self, &right),
-                ))
-            }
-            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
-                let mut constraints = Self::merge_constraints(&self, &right);
-                constraints.push(DimensionEquality {
-                    left: self.dimension.clone(),
-                    right: right.dimension.clone(),
-                });
-                Some(Self::numeric_result(
-                    self.dimension.clone(),
-                    (*left).zip(*right_value).map(|(left, right)| left + right),
-                    constraints,
-                ))
-            }
-            _ => None,
-        }
-    }
-
-    fn subtract(self, right: Self) -> Option<Self> {
-        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
-            (&self.kind, &right.kind)
-        else {
-            return None;
-        };
-        let mut constraints = Self::merge_constraints(&self, &right);
-        constraints.push(DimensionEquality {
-            left: self.dimension.clone(),
-            right: right.dimension.clone(),
-        });
-        Some(Self::numeric_result(
-            self.dimension.clone(),
-            (*left).zip(*right_value).map(|(left, right)| left - right),
-            constraints,
-        ))
-    }
-
-    fn multiply(self, right: Self) -> Option<Self> {
-        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
-            (&self.kind, &right.kind)
-        else {
-            return None;
-        };
-        let constraints = Self::merge_constraints(&self, &right);
-        let dimension = self
-            .dimension
-            .clone()
-            .combine(right.dimension.clone(), false)?;
-        Some(Self::numeric_result(
-            dimension,
-            (*left).zip(*right_value).map(|(left, right)| left * right),
-            constraints,
-        ))
-    }
-
-    fn divide(self, right: Self) -> Option<Self> {
-        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
-            (&self.kind, &right.kind)
-        else {
-            return None;
-        };
-        if right_value.is_some_and(|value| value == 0.0) {
-            return None;
-        }
-        let constraints = Self::merge_constraints(&self, &right);
-        let dimension = self
-            .dimension
-            .clone()
-            .combine(right.dimension.clone(), true)?;
-        Some(Self::numeric_result(
-            dimension,
-            (*left).zip(*right_value).map(|(left, right)| left / right),
-            constraints,
-        ))
-    }
-
-    fn power(self, right: Self) -> Option<Self> {
-        let DimensionProbeKind::Numeric(exponent) = &right.kind else {
-            return None;
-        };
-        let mut constraints = Self::merge_constraints(&self, &right);
-        constraints.push(DimensionEquality {
-            left: right.dimension.clone(),
-            right: SymbolicRelationDimension::default(),
-        });
-        let base_dimension = self.dimension.clone();
-        let value = self
-            .numeric_value()
-            .zip(*exponent)
-            .map(|(value, exponent)| value.powf(exponent));
-        let dimension = match exponent {
-            Some(exponent) if exponent.fract() == 0.0 => {
-                base_dimension.scale(i8::try_from(*exponent as i16).ok()?)?
-            }
-            Some(_) => base_dimension
-                .is_zero()
-                .then_some(SymbolicRelationDimension::default())?,
-            None if base_dimension.is_zero() => SymbolicRelationDimension::default(),
-            None => return None,
-        };
-        Some(Self::numeric_result(dimension, value, constraints))
-    }
-
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        match (&self.kind, &right.kind) {
-            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
-                let value = match operator {
-                    ComparisonOperator::Equal => left
-                        .as_ref()
-                        .zip(right_value.as_ref())
-                        .map(|(left, right)| f64::from(left == right)),
-                    ComparisonOperator::NotEqual => left
-                        .as_ref()
-                        .zip(right_value.as_ref())
-                        .map(|(left, right)| f64::from(left != right)),
-                    _ => return None,
-                };
-                Some(Self::numeric_result(
-                    SymbolicRelationDimension::default(),
-                    value,
-                    Self::merge_constraints(&self, &right),
-                ))
-            }
-            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
-                let mut constraints = Self::merge_constraints(&self, &right);
-                constraints.push(DimensionEquality {
-                    left: self.dimension.clone(),
-                    right: right.dimension.clone(),
-                });
-                Some(Self::numeric_result(
-                    SymbolicRelationDimension::default(),
-                    (*left)
-                        .zip(*right_value)
-                        .map(|(left, right)| f64::from(operator.evaluate(left, right))),
-                    constraints,
-                ))
-            }
-            _ => None,
-        }
-    }
-
-    fn logical_and(self, right: Self) -> Option<Self> {
-        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
-            (&self.kind, &right.kind)
-        else {
-            return None;
-        };
-        let mut constraints = Self::merge_constraints(&self, &right);
-        constraints.extend([
-            DimensionEquality {
-                left: self.dimension.clone(),
-                right: SymbolicRelationDimension::default(),
-            },
-            DimensionEquality {
-                left: right.dimension.clone(),
-                right: SymbolicRelationDimension::default(),
-            },
-        ]);
-        Some(Self::numeric_result(
-            SymbolicRelationDimension::default(),
-            (*left)
-                .zip(*right_value)
-                .map(|(left, right)| f64::from(left != 0.0 && right != 0.0)),
-            constraints,
-        ))
-    }
-
-    fn logical_or(self, right: Self) -> Option<Self> {
-        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
-            (&self.kind, &right.kind)
-        else {
-            return None;
-        };
-        let mut constraints = Self::merge_constraints(&self, &right);
-        constraints.extend([
-            DimensionEquality {
-                left: self.dimension.clone(),
-                right: SymbolicRelationDimension::default(),
-            },
-            DimensionEquality {
-                left: right.dimension.clone(),
-                right: SymbolicRelationDimension::default(),
-            },
-        ]);
-        Some(Self::numeric_result(
-            SymbolicRelationDimension::default(),
-            (*left)
-                .zip(*right_value)
-                .map(|(left, right)| f64::from(left != 0.0 || right != 0.0)),
-            constraints,
-        ))
-    }
-
-    fn logical_not(self) -> Option<Self> {
-        let DimensionProbeKind::Numeric(value) = self.kind else {
-            return None;
-        };
-        let mut constraints = self.constraints;
-        constraints.push(DimensionEquality {
-            left: self.dimension,
-            right: SymbolicRelationDimension::default(),
-        });
-        Some(Self::numeric_result(
-            SymbolicRelationDimension::default(),
-            value.map(|value| f64::from(value == 0.0)),
-            constraints,
-        ))
-    }
-
-    fn function(
+impl DimensionProbeValue {
+    fn numeric_function_checked(
         name: CreoMathFunction,
-        scope: Option<&str>,
         arguments: &[Self],
-        context: RelationEvaluationContext<'_>,
-    ) -> Option<Self> {
-        scope.is_none().then_some(())?;
-        let constraints = Self::argument_constraints(arguments);
-        let numeric = |name| Self::optional_math(name, arguments);
-        let numeric_args = |arguments: &[Self]| {
-            arguments
-                .iter()
-                .map(Self::numeric_value)
-                .collect::<Option<Vec<_>>>()
-        };
+        mut constraints: Vec<DimensionEquality>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let numeric =
+            |name| Self::optional_math(name, arguments).map(DimensionProbeNumber::into_option);
         match (name, arguments) {
-            (CreoMathFunction::Itos, [argument]) => {
-                let value = argument.numeric_value().map(f64::round).map(|value| {
-                    if value == 0.0 {
-                        String::new()
-                    } else {
-                        format!("{value:.0}")
-                    }
-                });
-                Some(Self::text_result(value, constraints))
-            }
-            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
-                let mut constraints = constraints;
-                let controls = controls
-                    .iter()
-                    .map(|control| {
-                        let control = control
-                            .clone()
-                            .constrain_to(SymbolicRelationDimension::default());
-                        constraints.extend(control.constraints.iter().cloned());
-                        control.numeric_value()
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                let (decimals, scientific) = match controls.as_slice() {
-                    [] => (None, false),
-                    [decimals] => (Some(relation_precision(*decimals)?), false),
-                    [decimals, scientific] => {
-                        (Some(relation_precision(*decimals)?), *scientific != 0.0)
-                    }
-                    _ => return None,
-                };
-                let value = match argument.numeric_value() {
-                    Some(value) => Some(format_relation_real(value, decimals, scientific)?),
-                    None => None,
-                };
-                Some(Self::text_result(value, constraints))
-            }
-            (CreoMathFunction::RelModelName, []) => Some(Self::text_result(
-                context.model_name.map(str::to_owned),
-                constraints,
-            )),
-            (CreoMathFunction::RelModelType, []) => {
-                Some(Self::text_result(Some("part".to_owned()), constraints))
-            }
-            (CreoMathFunction::Exists, [argument]) => {
-                let value = argument.text_value().and_then(|value| {
-                    context
-                        .existing_symbols?
-                        .contains(&expression_identifier_key(value))
-                        .then_some(1.0)
-                });
-                Some(Self::numeric_result(
-                    SymbolicRelationDimension::default(),
-                    value,
-                    constraints,
-                ))
-            }
-            (CreoMathFunction::Search, [value, needle]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value
-                    .text_value()
-                    .zip(needle.text_value())
-                    .map(|(value, needle)| {
-                        value
-                            .find(needle)
-                            .map_or(0, |byte| value[..byte].chars().count() + 1)
-                            as f64
-                    }),
-                constraints,
-            )),
-            (CreoMathFunction::Extract, [value, position, length]) => {
-                let mut constraints = constraints;
-                let position = position
-                    .clone()
-                    .constrain_to(SymbolicRelationDimension::default());
-                constraints.extend(position.constraints.iter().cloned());
-                let position = position.numeric_value();
-                let length = length
-                    .clone()
-                    .constrain_to(SymbolicRelationDimension::default());
-                constraints.extend(length.constraints.iter().cloned());
-                let length = length.numeric_value();
-                let extracted = value.text_value().zip(position).zip(length).map(
-                    |((value, position), length)| {
-                        if !position.is_finite()
-                            || !length.is_finite()
-                            || position.fract() != 0.0
-                            || length.fract() != 0.0
-                            || position <= 0.0
-                            || length < 0.0
-                        {
-                            return None;
-                        }
-                        let character_count = value.chars().count();
-                        if position > character_count as f64 {
-                            Some(String::new())
-                        } else {
-                            let start = position as usize - 1;
-                            let remaining = character_count - start;
-                            let count = if length >= remaining as f64 {
-                                remaining
-                            } else {
-                                length as usize
-                            };
-                            Some(value.chars().skip(start).take(count).collect())
-                        }
-                    },
-                );
-                let value = match extracted {
-                    Some(Some(value)) => Some(value),
-                    Some(None) => return None,
-                    None => None,
-                };
-                Some(Self::text_result(value, constraints))
-            }
-            (CreoMathFunction::StringLength, [value]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value.text_value().map(|value| value.chars().count() as f64),
-                constraints,
-            )),
-            (CreoMathFunction::StringStarts, [value, prefix]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value
-                    .text_value()
-                    .zip(prefix.text_value())
-                    .map(|(value, prefix)| f64::from(value.starts_with(prefix))),
-                constraints,
-            )),
-            (CreoMathFunction::StringEnds, [value, suffix]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value
-                    .text_value()
-                    .zip(suffix.text_value())
-                    .map(|(value, suffix)| f64::from(value.ends_with(suffix))),
-                constraints,
-            )),
-            (CreoMathFunction::StringMatch, [value, expected]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value
-                    .text_value()
-                    .zip(expected.text_value())
-                    .map(|(value, expected)| f64::from(value == expected)),
-                constraints,
-            )),
-            (CreoMathFunction::StringPattern, [value, pattern]) => Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value
-                    .text_value()
-                    .zip(pattern.text_value())
-                    .and_then(|(value, pattern)| relation_string_pattern(value, pattern))
-                    .map(f64::from),
-                constraints,
-            )),
             (
                 name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
                 [argument],
             ) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: argument.dimension.clone(),
-                    right: SymbolicRelationDimension::from_relation_dimension(
-                        RelationDimension::ANGLE,
-                    ),
-                });
-                Some(Self::numeric_result(
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &argument.dimension,
+                    &SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
+                )?;
+                let Some(value) = numeric(name) else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::default(),
-                    numeric(name)?.into_option(),
+                    value,
                     constraints,
-                ))
+                )))
             }
             (
                 name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
                 [argument],
             ) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: argument.dimension.clone(),
-                    right: SymbolicRelationDimension::default(),
-                });
-                Some(Self::numeric_result(
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &argument.dimension,
+                    &SymbolicRelationDimension::default(),
+                )?;
+                let Some(value) = numeric(name) else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
-                    numeric(name)?.into_option(),
+                    value,
                     constraints,
-                ))
+                )))
             }
             (CreoMathFunction::Atan2, [left, right]) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: left.dimension.clone(),
-                    right: right.dimension.clone(),
-                });
-                Some(Self::numeric_result(
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &left.dimension,
+                    &right.dimension,
+                )?;
+                let Some(value) = numeric(CreoMathFunction::Atan2) else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
-                    numeric(CreoMathFunction::Atan2)?.into_option(),
+                    value,
                     constraints,
-                ))
+                )))
             }
             (
                 name @ (CreoMathFunction::Sinh
@@ -3536,16 +4319,20 @@ impl ExpressionValue for DimensionProbeValue {
                 | CreoMathFunction::Exp),
                 [argument],
             ) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: argument.dimension.clone(),
-                    right: SymbolicRelationDimension::default(),
-                });
-                Some(Self::numeric_result(
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &argument.dimension,
+                    &SymbolicRelationDimension::default(),
+                )?;
+                let Some(value) = numeric(name) else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::default(),
-                    numeric(name)?.into_option(),
+                    value,
                     constraints,
-                ))
+                )))
             }
             (CreoMathFunction::Sign, [value, sign]) => {
                 let numeric_value =
@@ -3559,53 +4346,63 @@ impl ExpressionValue for DimensionProbeValue {
                                 value.abs()
                             }
                         });
-                Some(Self::numeric_result(
-                    value.dimension.clone(),
+                Ok(Some(Self::numeric_result(
+                    value.dimension.copy_admitted(ctx)?,
                     numeric_value,
                     constraints,
-                ))
+                )))
             }
             (CreoMathFunction::Mod, [left, right]) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: left.dimension.clone(),
-                    right: right.dimension.clone(),
-                });
-                let value = left.numeric_value().zip(right.numeric_value());
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &left.dimension,
+                    &right.dimension,
+                )?;
                 if right.numeric_value().is_some_and(|value| value == 0.0) {
-                    return None;
+                    return Ok(None);
                 }
-                Some(Self::numeric_result(
-                    left.dimension.clone(),
-                    value.map(|(left, right)| left % right),
+                let value = left
+                    .numeric_value()
+                    .zip(right.numeric_value())
+                    .map(|(left, right)| left % right);
+                Ok(Some(Self::numeric_result(
+                    left.dimension.copy_admitted(ctx)?,
+                    value,
                     constraints,
-                ))
+                )))
             }
             (CreoMathFunction::If, [condition, when_true, when_false]) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: condition.dimension.clone(),
-                    right: SymbolicRelationDimension::default(),
-                });
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &condition.dimension,
+                    &SymbolicRelationDimension::default(),
+                )?;
                 match (&when_true.kind, &when_false.kind) {
                     (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right)) => {
-                        let value = condition
+                        let value = match condition
                             .numeric_value()
                             .zip(left.as_ref().zip(right.as_ref()))
-                            .map(|(condition, (left, right))| {
-                                if condition == 0.0 {
-                                    right.clone()
-                                } else {
-                                    left.clone()
-                                }
-                            });
-                        Some(Self::text_result(value, constraints))
+                        {
+                            Some((condition, (left, right))) => {
+                                let selected = if condition == 0.0 { right } else { left };
+                                Some(ctx.copy_retained_text(
+                                    selected,
+                                    "creo dimension conditional text",
+                                )?)
+                            }
+                            None => None,
+                        };
+                        Ok(Some(Self::text_result(value, constraints)))
                     }
                     (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right)) => {
-                        constraints.push(DimensionEquality {
-                            left: when_true.dimension.clone(),
-                            right: when_false.dimension.clone(),
-                        });
+                        Self::push_constraint_admitted(
+                            ctx,
+                            &mut constraints,
+                            &when_true.dimension,
+                            &when_false.dimension,
+                        )?;
                         let value = condition.numeric_value().zip(left.zip(*right)).map(
                             |(condition, (left, right))| {
                                 if condition == 0.0 {
@@ -3615,181 +4412,822 @@ impl ExpressionValue for DimensionProbeValue {
                                 }
                             },
                         );
-                        Some(Self::numeric_result(
-                            when_true.dimension.clone(),
+                        Ok(Some(Self::numeric_result(
+                            when_true.dimension.copy_admitted(ctx)?,
                             value,
                             constraints,
-                        ))
+                        )))
                     }
-                    _ => None,
+                    _ => Ok(None),
                 }
             }
-            (CreoMathFunction::Bound, [value, lower, upper]) => {
-                let mut constraints = constraints;
-                constraints.extend([
-                    DimensionEquality {
-                        left: value.dimension.clone(),
-                        right: lower.dimension.clone(),
-                    },
-                    DimensionEquality {
-                        left: value.dimension.clone(),
-                        right: upper.dimension.clone(),
-                    },
-                ]);
-                let numeric = numeric_args(arguments).map(|values| {
-                    let [value, lower, upper] = values.as_slice() else {
-                        return None;
-                    };
-                    (lower < upper).then(|| value.clamp(*lower, *upper))
-                });
-                Some(Self::numeric_result(
-                    arguments[0].dimension.clone(),
-                    numeric.flatten(),
-                    constraints,
-                ))
-            }
-            (CreoMathFunction::Dead, [value, lower, upper]) => {
-                let mut constraints = constraints;
-                constraints.extend([
-                    DimensionEquality {
-                        left: value.dimension.clone(),
-                        right: lower.dimension.clone(),
-                    },
-                    DimensionEquality {
-                        left: value.dimension.clone(),
-                        right: upper.dimension.clone(),
-                    },
-                ]);
-                let numeric = numeric_args(arguments).map(|values| {
-                    let [value, lower, upper] = values.as_slice() else {
-                        return None;
-                    };
-                    (lower <= upper).then(|| {
-                        if value < lower {
-                            value - lower
-                        } else if value > upper {
-                            value - upper
+            (CreoMathFunction::Bound | CreoMathFunction::Dead, [value, lower, upper]) => {
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &value.dimension,
+                    &lower.dimension,
+                )?;
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &value.dimension,
+                    &upper.dimension,
+                )?;
+                let numeric = value
+                    .numeric_value()
+                    .zip(lower.numeric_value())
+                    .zip(upper.numeric_value())
+                    .and_then(|((value, lower), upper)| {
+                        if name == CreoMathFunction::Bound {
+                            if lower >= upper {
+                                return None;
+                            }
+                            Some(if value < lower {
+                                lower
+                            } else if value > upper {
+                                upper
+                            } else {
+                                value
+                            })
                         } else {
-                            0.0
+                            if lower > upper {
+                                return None;
+                            }
+                            Some(if value < lower {
+                                value - lower
+                            } else if value > upper {
+                                value - upper
+                            } else {
+                                0.0
+                            })
                         }
-                    })
-                });
-                Some(Self::numeric_result(
-                    arguments[0].dimension.clone(),
-                    numeric.flatten(),
+                    });
+                Ok(Some(Self::numeric_result(
+                    value.dimension.copy_admitted(ctx)?,
+                    numeric,
                     constraints,
-                ))
+                )))
             }
             (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
-                let mut constraints = constraints;
-                constraints.extend([
-                    DimensionEquality {
-                        left: left.dimension.clone(),
-                        right: right.dimension.clone(),
-                    },
-                    DimensionEquality {
-                        left: left.dimension.clone(),
-                        right: tolerance.dimension.clone(),
-                    },
-                ]);
-                let numeric = numeric_args(arguments).map(|values| {
-                    let [left, right, tolerance] = values.as_slice() else {
-                        return None;
-                    };
-                    (*tolerance >= 0.0).then(|| f64::from((*left - *right).abs() <= *tolerance))
-                });
-                Some(Self::numeric_result(
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &left.dimension,
+                    &right.dimension,
+                )?;
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &left.dimension,
+                    &tolerance.dimension,
+                )?;
+                let numeric = left
+                    .numeric_value()
+                    .zip(right.numeric_value())
+                    .zip(tolerance.numeric_value())
+                    .and_then(|((left, right), tolerance)| {
+                        (tolerance >= 0.0).then_some(f64::from((left - right).abs() <= tolerance))
+                    });
+                Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::default(),
-                    numeric.flatten(),
+                    numeric,
                     constraints,
-                ))
+                )))
             }
             (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
-                let mut constraints = constraints;
-                constraints.push(DimensionEquality {
-                    left: left.dimension.clone(),
-                    right: right.dimension.clone(),
-                });
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &left.dimension,
+                    &right.dimension,
+                )?;
                 let numeric =
                     left.numeric_value()
                         .zip(right.numeric_value())
                         .map(|(left, right)| {
-                            if extremum_selects_left(name, left, right).unwrap_or(false) {
+                            if extremum_selects_left(name, left, right) == Some(true) {
                                 left
                             } else {
                                 right
                             }
                         });
-                Some(Self::numeric_result(
-                    left.dimension.clone(),
+                Ok(Some(Self::numeric_result(
+                    left.dimension.copy_admitted(ctx)?,
                     numeric,
                     constraints,
-                ))
+                )))
             }
-            (CreoMathFunction::Pow, [base, exponent]) => base.clone().power(exponent.clone()),
+            (CreoMathFunction::Pow, [base, exponent]) => base
+                .clone_admitted(ctx)?
+                .power_checked(exponent.clone_admitted(ctx)?, ctx),
             (CreoMathFunction::Sqrt, [argument]) => {
-                let value = argument.numeric_value().map(f64::sqrt);
-                Some(Self::numeric_result(
-                    argument.dimension.clone().root(2)?,
-                    value,
-                    constraints,
-                ))
-            }
-            (
-                name @ (CreoMathFunction::Abs | CreoMathFunction::Ceil | CreoMathFunction::Floor),
-                [argument],
-            ) => {
-                let value = match name {
-                    CreoMathFunction::Abs => argument.numeric_value().map(f64::abs),
-                    CreoMathFunction::Ceil => {
-                        Self::optional_round(argument, None, true)?.into_option()
-                    }
-                    CreoMathFunction::Floor => {
-                        Self::optional_round(argument, None, false)?.into_option()
-                    }
-                    _ => unreachable!(),
+                let Some(dimension) = argument.dimension.copy_admitted(ctx)?.root(2) else {
+                    return Ok(None);
                 };
-                Some(Self::numeric_result(
-                    argument.dimension.clone(),
-                    value,
+                Ok(Some(Self::numeric_result(
+                    dimension,
+                    argument.numeric_value().map(f64::sqrt),
                     constraints,
-                ))
+                )))
             }
-            (
-                name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
-                [argument, decimal_places],
-            ) => {
+            (CreoMathFunction::Abs, [argument]) => Ok(Some(Self::numeric_result(
+                argument.dimension.copy_admitted(ctx)?,
+                argument.numeric_value().map(f64::abs),
+                constraints,
+            ))),
+            (CreoMathFunction::Ceil | CreoMathFunction::Floor, [argument]) => {
+                let Some(value) =
+                    Self::optional_round(argument, None, name == CreoMathFunction::Ceil)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
+                    argument.dimension.copy_admitted(ctx)?,
+                    value.into_option(),
+                    constraints,
+                )))
+            }
+            (CreoMathFunction::Ceil | CreoMathFunction::Floor, [argument, decimal_places]) => {
                 let decimal_places = decimal_places
-                    .clone()
-                    .constrain_to(SymbolicRelationDimension::default());
-                let mut constraints = constraints;
-                constraints.extend(decimal_places.constraints.iter().cloned());
-                let value = Self::optional_round(
+                    .clone_admitted(ctx)?
+                    .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
+                for constraint in &decimal_places.constraints {
+                    ctx.reserve_vec(
+                        &mut constraints,
+                        1,
+                        "creo dimension function control constraints",
+                    )?;
+                    constraints.push(constraint.copy_admitted(ctx)?);
+                }
+                let Some(value) = Self::optional_round(
                     argument,
                     Some(&decimal_places),
-                    matches!(name, CreoMathFunction::Ceil),
-                )?
-                .into_option();
-                Some(Self::numeric_result(
-                    argument.dimension.clone(),
-                    value,
+                    name == CreoMathFunction::Ceil,
+                ) else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::numeric_result(
+                    argument.dimension.copy_admitted(ctx)?,
+                    value.into_option(),
                     constraints,
-                ))
+                )))
             }
-            _ => None,
+            _ => Ok(None),
+        }
+    }
+}
+
+impl ExpressionValue for DimensionProbeValue {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let kind = match &self.kind {
+            DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(*value),
+            DimensionProbeKind::Text(Some(value)) => DimensionProbeKind::Text(Some(
+                ctx.copy_retained_text(value, "creo relation dimension clone text")?,
+            )),
+            DimensionProbeKind::Text(None) => DimensionProbeKind::Text(None),
+        };
+        let mut constraints = Vec::new();
+        ctx.reserve_vec(
+            &mut constraints,
+            self.constraints.len(),
+            "creo relation dimension clone constraints",
+        )?;
+        for constraint in &self.constraints {
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(Self {
+            dimension: self.dimension.copy_admitted(ctx)?,
+            kind,
+            constraints,
+        })
+    }
+
+    fn number(value: f64) -> Option<Self> {
+        Some(Self::numeric(Some(value)))
+    }
+
+    fn reserved(name: &str) -> Option<Self> {
+        Self::from_relation_value(&CurveExpressionValue::reserved(name)?)
+    }
+
+    fn string(value: String) -> Option<Self> {
+        Some(Self::text(Some(value)))
+    }
+
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Self {
+            dimension,
+            kind: DimensionProbeKind::Numeric(value),
+            mut constraints,
+        } = self
+        else {
+            return Ok(None);
+        };
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension unit constraints")?;
+        constraints.push(DimensionEquality {
+            left: dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        let value = value
+            .map(|value| value * unit.scale + unit.offset)
+            .filter(|value| value.is_finite());
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::from_relation_dimension(unit.dimension),
+            value,
+            constraints,
+        )))
+    }
+
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                let value = match left.as_ref().zip(right_value.as_ref()) {
+                    Some((left, right)) => {
+                        let mut value =
+                            ctx.copy_retained_text(left, "creo dimension text sum left")?;
+                        ctx.try_reserve_retained_text(
+                            &mut value,
+                            right.len(),
+                            "creo dimension text sum right",
+                        )?;
+                        value.push_str(right);
+                        Some(value)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &self.dimension,
+                    &right.dimension,
+                )?;
+                Ok(Some(Self::numeric_result(
+                    self.dimension.copy_admitted(ctx)?,
+                    (*left).zip(*right_value).map(|(left, right)| left + right),
+                    constraints,
+                )))
+            }
+            _ => Ok(None),
         }
     }
 
-    fn negate(self) -> Option<Self> {
-        let kind = match self.kind {
-            DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(value.map(|v| -v)),
-            DimensionProbeKind::Text(_) => return None,
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
         };
-        Some(Self {
-            dimension: self.dimension,
-            kind,
-            constraints: self.constraints,
-        })
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &right.dimension)?;
+        Ok(Some(Self::numeric_result(
+            self.dimension.copy_admitted(ctx)?,
+            (*left).zip(*right_value).map(|(left, right)| left - right),
+            constraints,
+        )))
+    }
+
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        let value = (*left).zip(*right_value).map(|(left, right)| left * right);
+        let Some(dimension) = self
+            .dimension
+            .combine_admitted(right.dimension, false, ctx)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
+    }
+
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        if right_value.is_some_and(|value| value == 0.0) {
+            return Ok(None);
+        }
+        let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        let value = (*left).zip(*right_value).map(|(left, right)| left / right);
+        let Some(dimension) = self
+            .dimension
+            .combine_admitted(right.dimension, true, ctx)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
+    }
+
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let DimensionProbeKind::Numeric(exponent) = &right.kind else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &right.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        let value = self
+            .numeric_value()
+            .zip(*exponent)
+            .map(|(value, exponent)| value.powf(exponent));
+        let base_dimension = self.dimension;
+        let dimension = match exponent {
+            Some(exponent) if exponent.fract() == 0.0 => {
+                if *exponent < f64::from(i8::MIN) || *exponent > f64::from(i8::MAX) {
+                    return Ok(None);
+                }
+                let Some(dimension) = base_dimension.scale(
+                    i8::try_from(
+                        cadmpeg_core::convert::truncate_f64_to_i32(*exponent).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        })?,
+                    )
+                    .map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value exceeds dimension range",
+                        )
+                    })?,
+                ) else {
+                    return Ok(None);
+                };
+                dimension
+            }
+            Some(_) if base_dimension.is_zero() => SymbolicRelationDimension::default(),
+            Some(_) => return Ok(None),
+            None if base_dimension.is_zero() => SymbolicRelationDimension::default(),
+            None => return Ok(None),
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
+    }
+
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let value = match operator {
+                    ComparisonOperator::Equal => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left == right)),
+                    ComparisonOperator::NotEqual => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left != right)),
+                    _ => return Ok(None),
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    Self::merge_constraints_admitted(&self, &right, ctx)?,
+                )))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                Self::push_constraint_admitted(
+                    ctx,
+                    &mut constraints,
+                    &self.dimension,
+                    &right.dimension,
+                )?;
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    (*left)
+                        .zip(*right_value)
+                        .map(|(left, right)| f64::from(operator.evaluate(left, right))),
+                    constraints,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &self.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &right.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 && right != 0.0)),
+            constraints,
+        )))
+    }
+
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &self.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &right.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 || right != 0.0)),
+            constraints,
+        )))
+    }
+
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let DimensionProbeKind::Numeric(value) = self.kind else {
+            return Ok(None);
+        };
+        let mut constraints = self.constraints;
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension negation constraints")?;
+        constraints.push(DimensionEquality {
+            left: self.dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            value.map(|value| f64::from(value == 0.0)),
+            constraints,
+        )))
+    }
+
+    fn function_checked(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if scope.is_some() {
+            return Ok(None);
+        }
+        let mut constraints = Self::argument_constraints_admitted(arguments, ctx)?;
+        match (name, arguments) {
+            (CreoMathFunction::Itos, [argument]) => {
+                let value = match argument.numeric_value().map(f64::round) {
+                    Some(0.0) => Some(String::new()),
+                    Some(value) => Some(ctx.format_retained(
+                        format_args!("{value:.0}"),
+                        "creo dimension integer text",
+                    )?),
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+                let mut values = [0.0; 2];
+                for (index, control) in controls.iter().enumerate() {
+                    let Some(slot) = values.get_mut(index) else {
+                        return Ok(None);
+                    };
+                    let control = control
+                        .clone_admitted(ctx)?
+                        .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
+                    for constraint in &control.constraints {
+                        ctx.reserve_vec(
+                            &mut constraints,
+                            1,
+                            "creo dimension function control constraints",
+                        )?;
+                        constraints.push(constraint.copy_admitted(ctx)?);
+                    }
+                    let Some(value) = control.numeric_value() else {
+                        return Ok(None);
+                    };
+                    *slot = value;
+                }
+                let (decimals, scientific) = match controls.len() {
+                    0 => (None, false),
+                    1 => {
+                        let Some(decimals) = relation_precision(values[0]) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), false)
+                    }
+                    2 => {
+                        let Some(decimals) = relation_precision(values[0]) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), values[1] != 0.0)
+                    }
+                    _ => return Ok(None),
+                };
+                let value = match argument.numeric_value() {
+                    Some(value) => format_relation_real_admitted(ctx, value, decimals, scientific)?,
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::RelModelName, []) => Ok(Some(Self::text_result(
+                context
+                    .model_name
+                    .map(|name| ctx.copy_retained_text(name, "creo dimension model name text"))
+                    .transpose()?,
+                constraints,
+            ))),
+            (CreoMathFunction::RelModelType, []) => Ok(Some(Self::text_result(
+                Some(ctx.copy_retained_text("part", "creo dimension model type text")?),
+                constraints,
+            ))),
+            (CreoMathFunction::Exists, [argument]) => {
+                let value = match (argument.text_value(), context.existing_symbols) {
+                    (Some(name), Some(symbols)) => {
+                        let (mut key, _reservation) = ctx.format_scoped(
+                            format_args!("{name}"),
+                            "creo dimension exists lookup key",
+                        )?;
+                        key.make_ascii_lowercase();
+                        symbols.contains(&key).then_some(1.0)
+                    }
+                    _ => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                )))
+            }
+            (CreoMathFunction::Search, [value, needle]) => {
+                let value = match value.text_value().zip(needle.text_value()) {
+                    Some((value, needle)) => {
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(value.len()),
+                            "creo dimension text search work",
+                        )?;
+                        Some(
+                            cadmpeg_core::convert::f64_from_index(
+                                value
+                                    .find(needle)
+                                    .map_or(0, |byte| value[..byte].chars().count() + 1),
+                            )
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "Creo numeric value cannot be represented exactly",
+                                )
+                            })?,
+                        )
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                )))
+            }
+            (CreoMathFunction::Extract, [value, position, length]) => {
+                for control in [position, length] {
+                    let control = control
+                        .clone_admitted(ctx)?
+                        .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
+                    for constraint in &control.constraints {
+                        ctx.reserve_vec(
+                            &mut constraints,
+                            1,
+                            "creo dimension function control constraints",
+                        )?;
+                        constraints.push(constraint.copy_admitted(ctx)?);
+                    }
+                }
+                let value =
+                    match value
+                        .text_value()
+                        .zip(position.numeric_value())
+                        .zip(length.numeric_value())
+                    {
+                        Some(((value, position), length)) => {
+                            if !position.is_finite()
+                                || !length.is_finite()
+                                || position.fract() != 0.0
+                                || length.fract() != 0.0
+                                || position <= 0.0
+                                || length < 0.0
+                            {
+                                return Ok(None);
+                            }
+                            ctx.charge_work(
+                                cadmpeg_core::decode::u64_from_index(value.len()),
+                                "creo dimension text extract work",
+                            )?;
+                            let character_count = value.chars().count();
+                            if position
+                                > cadmpeg_core::convert::f64_from_index(character_count)
+                                    .ok_or_else(|| {
+                                        cadmpeg_core::CodecError::malformed(
+                                            "Creo numeric value cannot be represented exactly",
+                                        )
+                                    })?
+                            {
+                                Some(String::new())
+                            } else {
+                                let start = cadmpeg_core::convert::truncate_f64_to_usize(position)
+                                    .ok_or_else(|| {
+                                        cadmpeg_core::CodecError::malformed(
+                                            "Creo numeric value cannot be represented exactly",
+                                        )
+                                    })?
+                                    - 1;
+                                let remaining = character_count - start;
+                                let count = if length
+                                    >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(
+                                        || {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "Creo numeric value cannot be represented exactly",
+                                            )
+                                        },
+                                    )? {
+                                    remaining
+                                } else {
+                                    cadmpeg_core::convert::truncate_f64_to_usize(length)
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "Creo numeric value cannot be represented exactly",
+                                            )
+                                        })?
+                                };
+                                let start_byte = value
+                                    .char_indices()
+                                    .nth(start)
+                                    .map_or(value.len(), |(at, _)| at);
+                                let end_byte = value[start_byte..]
+                                    .char_indices()
+                                    .nth(count)
+                                    .map_or(value.len(), |(at, _)| start_byte + at);
+                                Some(ctx.copy_retained_text(
+                                    &value[start_byte..end_byte],
+                                    "creo dimension extracted text",
+                                )?)
+                            }
+                        }
+                        None => None,
+                    };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::StringLength, [value]) => {
+                let value = match value.text_value() {
+                    Some(value) => {
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(value.len()),
+                            "creo dimension text length work",
+                        )?;
+                        Some(
+                            cadmpeg_core::convert::f64_from_index(value.chars().count())
+                                .ok_or_else(|| {
+                                    cadmpeg_core::CodecError::malformed(
+                                        "Creo numeric value cannot be represented exactly",
+                                    )
+                                })?,
+                        )
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                )))
+            }
+            (CreoMathFunction::StringStarts, [value, prefix]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(prefix.text_value())
+                    .map(|(value, prefix)| f64::from(value.starts_with(prefix))),
+                constraints,
+            ))),
+            (CreoMathFunction::StringEnds, [value, suffix]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(suffix.text_value())
+                    .map(|(value, suffix)| f64::from(value.ends_with(suffix))),
+                constraints,
+            ))),
+            (CreoMathFunction::StringMatch, [value, expected]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(expected.text_value())
+                    .map(|(value, expected)| f64::from(value == expected)),
+                constraints,
+            ))),
+            (CreoMathFunction::StringPattern, [value, pattern]) => {
+                let value = match value.text_value().zip(pattern.text_value()) {
+                    Some((value, pattern)) => {
+                        relation_string_pattern_admitted(ctx, value, pattern)?.map(f64::from)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                )))
+            }
+            _ => Self::numeric_function_checked(name, arguments, constraints, ctx),
+        }
+    }
+
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        let arithmetic = || {
+            let kind = match self.kind {
+                DimensionProbeKind::Numeric(value) => {
+                    DimensionProbeKind::Numeric(value.map(|v| -v))
+                }
+                DimensionProbeKind::Text(_) => return None,
+            };
+            Some(Self {
+                dimension: self.dimension,
+                kind,
+                constraints: self.constraints,
+            })
+        };
+        Ok(arithmetic())
     }
 
     fn finite(&self) -> bool {
@@ -3801,8 +5239,15 @@ impl ExpressionValue for DimensionProbeValue {
 }
 
 impl ExpressionValue for CurveExpressionValue {
-    fn number(value: f64) -> Self {
-        Self::Number(value)
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        copy_expression_value(ctx, self, "creo relation referenced string value")
+    }
+
+    fn number(value: f64) -> Option<Self> {
+        cadmpeg_ir::scalar::FiniteReal::new(value).map(Self::Number)
     }
 
     fn string(value: String) -> Option<Self> {
@@ -3811,137 +5256,369 @@ impl ExpressionValue for CurveExpressionValue {
 
     fn reserved(name: &str) -> Option<Self> {
         if name.eq_ignore_ascii_case("g") {
-            Some(quantity_value(9_800.0, RelationDimension::ACCELERATION))
+            quantity_value(9_800.0, RelationDimension::ACCELERATION)
         } else {
-            reserved_relation_scalar(name).map(Self::number)
+            reserved_relation_scalar(name).and_then(Self::number)
         }
     }
 
-    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        let Self::Number(value) = self else {
-            return None;
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let Self::Number(value) = self else {
+                return None;
+            };
+            quantity_value(value.get() * unit.scale + unit.offset, unit.dimension)
         };
-        Some(quantity_value(
-            value * unit.scale + unit.offset,
-            unit.dimension,
-        ))
+        Ok(arithmetic())
     }
 
-    fn add(self, right: Self) -> Option<Self> {
-        match (self, right) {
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(match (self, right) {
             (Self::String(mut left), Self::String(right)) => {
+                ctx.try_reserve_retained_text(
+                    &mut left,
+                    right.len(),
+                    "creo relation string concatenation",
+                )?;
                 left.push_str(&right);
                 Some(Self::String(left))
             }
             (left, right) => quantity_additive(&left, &right, |left, right| left + right),
-        }
+        })
     }
 
-    fn subtract(self, right: Self) -> Option<Self> {
-        quantity_additive(&self, &right, |left, right| left - right)
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(quantity_additive(&self, &right, |left, right| left - right))
     }
 
-    fn multiply(self, right: Self) -> Option<Self> {
-        let (left, left_dimension) = quantity_parts_ref(&self)?;
-        let (right, right_dimension) = quantity_parts_ref(&right)?;
-        Some(quantity_value(
-            left * right,
-            left_dimension.combine(right_dimension, false)?,
-        ))
-    }
-
-    fn divide(self, right: Self) -> Option<Self> {
-        let (left, left_dimension) = quantity_parts_ref(&self)?;
-        let (right, right_dimension) = quantity_parts_ref(&right)?;
-        Some(quantity_value(
-            left / right,
-            left_dimension.combine(right_dimension, true)?,
-        ))
-    }
-
-    fn power(self, right: Self) -> Option<Self> {
-        let Self::Number(exponent) = right else {
-            return None;
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let (left, left_dimension) = quantity_parts_ref(&self)?;
+            let (right, right_dimension) = quantity_parts_ref(&right)?;
+            quantity_value(
+                left * right,
+                left_dimension.combine(right_dimension, false)?,
+            )
         };
-        let (value, dimension) = quantity_parts_ref(&self)?;
-        if dimension == RelationDimension::default() {
-            return Some(Self::Number(value.powf(exponent)));
-        }
-        let integer = exponent.trunc();
-        (integer == exponent).then_some(())?;
-        let exponent = i8::try_from(integer as i16).ok()?;
-        Some(quantity_value(
-            value.powi(i32::from(exponent)),
-            dimension.scale(exponent)?,
-        ))
+        Ok(arithmetic())
     }
 
-    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        let result = match (self, right) {
-            (Self::Number(left), Self::Number(right)) => operator.evaluate(left, right),
-            (Self::String(left), Self::String(right)) => match operator {
-                ComparisonOperator::Equal => left == right,
-                ComparisonOperator::NotEqual => left != right,
-                _ => return None,
-            },
-            (left, right) => {
-                let (left, left_dimension) = quantity_parts_ref(&left)?;
-                let (right, right_dimension) = quantity_parts_ref(&right)?;
-                (left_dimension == right_dimension).then_some(())?;
-                operator.evaluate(left, right)
-            }
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let (left, left_dimension) = quantity_parts_ref(&self)?;
+            let (right, right_dimension) = quantity_parts_ref(&right)?;
+            quantity_value(left / right, left_dimension.combine(right_dimension, true)?)
         };
-        Some(Self::Number(f64::from(result)))
+        Ok(arithmetic())
     }
 
-    fn logical_and(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, |left, right| {
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(quantity_power(&self, &right))
+    }
+
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let result = match (self, right) {
+                (Self::Number(left), Self::Number(right)) => {
+                    operator.evaluate(left.get(), right.get())
+                }
+                (Self::String(left), Self::String(right)) => match operator {
+                    ComparisonOperator::Equal => left == right,
+                    ComparisonOperator::NotEqual => left != right,
+                    _ => return None,
+                },
+                (left, right) => {
+                    let (left, left_dimension) = quantity_parts_ref(&left)?;
+                    let (right, right_dimension) = quantity_parts_ref(&right)?;
+                    (left_dimension == right_dimension).then_some(())?;
+                    operator.evaluate(left, right)
+                }
+            };
+            Self::number(f64::from(result))
+        };
+        Ok(arithmetic())
+    }
+
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(numeric_binary(self, right, |left, right| {
             f64::from(left != 0.0 && right != 0.0)
-        })
+        }))
     }
 
-    fn logical_or(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, |left, right| {
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        Ok(numeric_binary(self, right, |left, right| {
             f64::from(left != 0.0 || right != 0.0)
-        })
+        }))
     }
 
-    fn logical_not(self) -> Option<Self> {
-        let Self::Number(value) = self else {
-            return None;
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation value operation work")?;
+        let arithmetic = || {
+            let Self::Number(value) = self else {
+                return None;
+            };
+            Self::number(f64::from(value.get() == 0.0))
         };
-        Some(Self::Number(f64::from(value == 0.0)))
+        Ok(arithmetic())
     }
 
-    fn function(
+    fn function_checked(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
-    ) -> Option<Self> {
-        scope.is_none().then_some(())?;
-        evaluate_creo_relation_function(name, arguments, context)
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        use CurveExpressionValue::{Number, String};
+        if scope.is_some() {
+            return Ok(None);
+        }
+        match (name, arguments) {
+            (CreoMathFunction::Itos, [argument]) => {
+                let Some((value, _)) = quantity_parts_ref(argument) else {
+                    return Ok(None);
+                };
+                let rounded = value.round();
+                if rounded == 0.0 {
+                    return Ok(Some(String(std::string::String::new())));
+                }
+                Ok(Some(String(ctx.format_retained(
+                    format_args!("{rounded:.0}"),
+                    "creo relation integer text",
+                )?)))
+            }
+            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+                let Some((value, _)) = quantity_parts_ref(argument) else {
+                    return Ok(None);
+                };
+                let (decimals, scientific) = match controls {
+                    [] => (None, false),
+                    [Number(decimals)] => {
+                        let Some(decimals) = relation_precision(decimals.get()) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), false)
+                    }
+                    [Number(decimals), Number(scientific)] => {
+                        let Some(decimals) = relation_precision(decimals.get()) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), scientific.get() != 0.0)
+                    }
+                    _ => return Ok(None),
+                };
+                Ok(format_relation_real_admitted(ctx, value, decimals, scientific)?.map(String))
+            }
+            (CreoMathFunction::RelModelName, []) => match context.model_name {
+                Some(name) => Ok(Some(String(
+                    ctx.copy_retained_text(name, "creo relation model name value")?,
+                ))),
+                None => Ok(None),
+            },
+            (CreoMathFunction::RelModelType, []) => Ok(Some(String(
+                ctx.copy_retained_text("part", "creo relation model type value")?,
+            ))),
+            (CreoMathFunction::Exists, [String(name)]) => {
+                let Some(symbols) = context.existing_symbols else {
+                    return Ok(None);
+                };
+                let (mut key, _reservation) =
+                    ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
+                key.make_ascii_lowercase();
+                Ok(symbols
+                    .contains(&key)
+                    .then_some(Number(cadmpeg_ir::scalar::FiniteReal::ONE)))
+            }
+            (CreoMathFunction::Search, [String(value), String(needle)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text search work",
+                )?;
+                let position = value
+                    .find(needle)
+                    .map_or(0, |byte| value[..byte].chars().count() + 1);
+                Ok(Self::number(
+                    cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?,
+                ))
+            }
+            (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
+                if position.get().fract() != 0.0
+                    || length.get().fract() != 0.0
+                    || position.get() <= 0.0
+                    || length.get() < 0.0
+                {
+                    return Ok(None);
+                }
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation extract scan",
+                )?;
+                let character_count = value.chars().count();
+                if position.get()
+                    > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?
+                {
+                    return Ok(Some(String(std::string::String::new())));
+                }
+                let start = cadmpeg_core::convert::truncate_f64_to_usize(position.get())
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?
+                    - 1;
+                let remaining = character_count - start;
+                let length = if length.get()
+                    >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })? {
+                    remaining
+                } else {
+                    cadmpeg_core::convert::truncate_f64_to_usize(length.get()).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?
+                };
+                let start_byte = value
+                    .char_indices()
+                    .nth(start)
+                    .map_or(value.len(), |(at, _)| at);
+                let end_byte = value[start_byte..]
+                    .char_indices()
+                    .nth(length)
+                    .map_or(value.len(), |(at, _)| start_byte + at);
+                Ok(Some(String(ctx.copy_retained_text(
+                    &value[start_byte..end_byte],
+                    "creo relation extracted text",
+                )?)))
+            }
+            (CreoMathFunction::If, [Number(condition), String(when_true), String(when_false)]) => {
+                let selected = if condition.get() == 0.0 {
+                    when_false
+                } else {
+                    when_true
+                };
+                Ok(Some(String(ctx.copy_retained_text(
+                    selected,
+                    "creo relation conditional string",
+                )?)))
+            }
+            (CreoMathFunction::StringLength, [String(value)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text length work",
+                )?;
+                Ok(Self::number(
+                    cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        },
+                    )?,
+                ))
+            }
+            (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(prefix.len()),
+                    "creo relation text prefix work",
+                )?;
+                Ok(Self::number(f64::from(value.starts_with(prefix))))
+            }
+            (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text suffix work",
+                )?;
+                Ok(Self::number(f64::from(value.ends_with(suffix))))
+            }
+            (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text match work",
+                )?;
+                Ok(Self::number(f64::from(value == expected)))
+            }
+            (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
+                Ok(relation_string_pattern_admitted(ctx, value, pattern)?
+                    .and_then(|matched| Self::number(f64::from(matched))))
+            }
+            (CreoMathFunction::Pow, [base, Number(exponent)]) => {
+                Ok(quantity_power(base, &Number(*exponent)))
+            }
+            _ => Ok(evaluate_creo_numeric_relation_function(name, arguments)),
+        }
     }
 
-    fn negate(self) -> Option<Self> {
-        match self {
-            Self::Number(value) => Some(Self::Number(-value)),
-            Self::Length(value) => Some(Self::Length(-value)),
-            Self::Angle(value) => Some(Self::Angle(-value)),
-            Self::Quantity(mut value) => {
-                value.value = -value.value;
-                Some(Self::Quantity(value))
-            }
-            Self::String(_) => None,
-        }
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(quantity_parts_ref(&self)
+            .and_then(|(value, dimension)| quantity_value(-value, dimension)))
     }
 
     fn finite(&self) -> bool {
-        match self {
-            Self::Number(value) | Self::Length(value) | Self::Angle(value) => value.is_finite(),
-            Self::Quantity(value) => value.value.is_finite(),
-            Self::String(_) => true,
-        }
+        true
     }
 }
 
@@ -3953,36 +5630,39 @@ fn quantity_additive(
     let (left, left_dimension) = quantity_parts_ref(left)?;
     let (right, right_dimension) = quantity_parts_ref(right)?;
     (left_dimension == right_dimension).then_some(())?;
-    Some(quantity_value(operation(left, right), left_dimension))
+    quantity_value(operation(left, right), left_dimension)
 }
 
 fn quantity_parts_ref(value: &CurveExpressionValue) -> Option<(f64, RelationDimension)> {
     match value {
-        CurveExpressionValue::Number(value) => Some((*value, RelationDimension::default())),
-        CurveExpressionValue::Length(value) => Some((*value, RelationDimension::LENGTH)),
-        CurveExpressionValue::Angle(value) => Some((*value, RelationDimension::ANGLE)),
-        CurveExpressionValue::Quantity(value) => Some((value.value, value.dimension())),
+        CurveExpressionValue::Number(value) => Some((value.get(), RelationDimension::default())),
+        CurveExpressionValue::Length(value) => Some((value.get(), RelationDimension::LENGTH)),
+        CurveExpressionValue::Angle(value) => Some((value.get(), RelationDimension::ANGLE)),
+        CurveExpressionValue::Quantity(value) => Some((value.value(), value.dimension())),
         CurveExpressionValue::String(_) => None,
     }
 }
 
-fn quantity_value(value: f64, dimension: RelationDimension) -> CurveExpressionValue {
-    if dimension == RelationDimension::default() {
+fn quantity_value(value: f64, dimension: RelationDimension) -> Option<CurveExpressionValue> {
+    let value = cadmpeg_ir::scalar::FiniteReal::new(value)?;
+    Some(if dimension == RelationDimension::default() {
         CurveExpressionValue::Number(value)
     } else if dimension == RelationDimension::LENGTH {
         CurveExpressionValue::Length(value)
     } else if dimension == RelationDimension::ANGLE {
         CurveExpressionValue::Angle(value)
     } else {
-        CurveExpressionValue::Quantity(CurveExpressionQuantity {
-            value,
-            length_power: dimension.length,
-            mass_power: dimension.mass,
-            time_power: dimension.time,
-            angle_power: dimension.angle,
-            temperature_power: dimension.temperature,
-        })
-    }
+        CurveExpressionValue::Quantity(CurveExpressionQuantity::new(
+            value.get(),
+            [
+                dimension.length,
+                dimension.mass,
+                dimension.time,
+                dimension.angle,
+                dimension.temperature,
+            ],
+        )?)
+    })
 }
 
 fn numeric_binary(
@@ -3992,7 +5672,7 @@ fn numeric_binary(
 ) -> Option<CurveExpressionValue> {
     match (left, right) {
         (CurveExpressionValue::Number(left), CurveExpressionValue::Number(right)) => {
-            Some(CurveExpressionValue::Number(operation(left, right)))
+            CurveExpressionValue::number(operation(left.get(), right.get()))
         }
         _ => None,
     }
@@ -4003,6 +5683,8 @@ struct ExpressionParser<'a, V> {
     cursor: usize,
     values: &'a BTreeMap<String, V>,
     context: RelationEvaluationContext<'a>,
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+    resource_error: Option<cadmpeg_core::CodecError>,
     nesting: usize,
 }
 
@@ -4032,6 +5714,16 @@ impl ComparisonOperator {
 }
 
 impl<V: ExpressionValue> ExpressionParser<'_, V> {
+    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.resource_error = Some(error);
+                None
+            }
+        }
+    }
+
     fn finite_value(value: V) -> Option<V> {
         value.finite().then_some(value)
     }
@@ -4054,7 +5746,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = Self::finite_value(value.logical_or(self.logical_and()?)?)?;
+            let right = self.logical_and()?;
+            self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+            let result = value.logical_or_checked(right, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
         }
     }
 
@@ -4066,7 +5761,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = Self::finite_value(value.logical_and(self.comparison()?)?)?;
+            let right = self.comparison()?;
+            self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+            let result = value.logical_and_checked(right, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
         }
     }
 
@@ -4083,7 +5781,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             _ => return Some(value),
         };
         self.cursor += width;
-        Self::finite_value(value.compare(self.expression()?, operator)?)
+        let right = self.expression()?;
+        self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+        let result = value.compare_checked(right, operator, self.ctx);
+        Self::finite_value(self.admit(result)??)
     }
 
     fn expression(&mut self) -> Option<V> {
@@ -4093,11 +5794,17 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'+') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.add(self.term()?)?)?;
+                    let right = self.term()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+                    let result = value.add_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'-') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.subtract(self.term()?)?)?;
+                    let right = self.term()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+                    let result = value.subtract_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 _ => return Some(value),
             }
@@ -4111,11 +5818,17 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'*') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.multiply(self.unary()?)?)?;
+                    let right = self.unary()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+                    let result = value.multiply_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.divide(self.unary()?)?)?;
+                    let right = self.unary()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
+                    let result = value.divide_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 _ => return Some(value),
             }
@@ -4124,29 +5837,30 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn unary(&mut self) -> Option<V> {
         self.whitespace();
-        let mut operators = Vec::new();
+        let start = self.cursor;
         loop {
             match self.source.get(self.cursor) {
                 Some(b'+') => self.cursor += 1,
-                Some(b'-') => {
-                    operators.push(b'-');
-                    self.cursor += 1;
-                }
-                Some(b'!' | b'~') => {
-                    operators.push(b'!');
-                    self.cursor += 1;
-                }
+                Some(b'-' | b'!' | b'~') => self.cursor += 1,
                 _ => break,
             }
             self.whitespace();
         }
+        let end = self.cursor;
         let mut value = self.power()?;
-        for operator in operators.into_iter().rev() {
-            value = Self::finite_value(if operator == b'-' {
-                value.negate()?
-            } else {
-                value.logical_not()?
-            })?;
+        for index in (start..end).rev() {
+            let operator = self.source[index];
+            value = match operator {
+                b'-' => {
+                    let result = value.negate_checked(self.ctx);
+                    Self::finite_value(self.admit(result)??)?
+                }
+                b'!' | b'~' => {
+                    let result = value.logical_not_checked(self.ctx);
+                    Self::finite_value(self.admit(result)??)?
+                }
+                _ => value,
+            };
         }
         Some(value)
     }
@@ -4157,19 +5871,38 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         if self.source.get(self.cursor) != Some(&b'^') {
             return Some(value);
         }
-        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        if self.nesting >= MAX_EXPRESSION_NESTING {
+            let error = self.ctx.refuse_codec_limit(
+                "creo relation nesting ceiling",
+                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
+                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
+            );
+            self.admit::<()>(Err(error))?;
+        }
+        let _depth = self.admit(self.ctx.enter_nested("creo relation exponent depth"))?;
+        self.admit(self.ctx.charge_work(1, "creo relation exponent work"))?;
         self.cursor += 1;
         self.nesting += 1;
         let exponent = self.unary()?;
         self.nesting -= 1;
-        Self::finite_value(value.power(exponent)?)
+        let result = value.power_checked(exponent, self.ctx);
+        Self::finite_value(self.admit(result)??)
     }
 
     fn primary(&mut self) -> Option<V> {
         self.whitespace();
         let mut value = match self.source.get(self.cursor)? {
             b'(' => {
-                (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+                if self.nesting >= MAX_EXPRESSION_NESTING {
+                    let error = self.ctx.refuse_codec_limit(
+                        "creo relation nesting ceiling",
+                        cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
+                        cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
+                    );
+                    self.admit::<()>(Err(error))?;
+                }
+                let _depth = self.admit(self.ctx.enter_nested("creo relation group depth"))?;
+                self.admit(self.ctx.charge_work(1, "creo relation group work"))?;
                 self.cursor += 1;
                 self.nesting += 1;
                 let value = self.logical_or()?;
@@ -4193,7 +5926,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .position(|byte| *byte == b']')?;
             let unit_end = unit_start + unit_length;
             let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
-            value = Self::finite_value(value.with_unit(relation_unit(unit)?)?)?;
+            let unit = self.admit(relation_unit(self.ctx, unit))??;
+            let result = value.with_unit_checked(unit, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
             self.cursor = unit_end + 1;
         }
         Self::finite_value(value)
@@ -4211,9 +5946,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             self.cursor += 1;
         }
         (self.source.get(self.cursor) == Some(&delimiter)).then_some(())?;
-        let value = std::str::from_utf8(&self.source[start..self.cursor])
-            .ok()?
-            .to_owned();
+        let source = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        let value = self.admit(
+            self.ctx
+                .copy_retained_text(source, "creo relation literal text"),
+        )?;
         self.cursor += 1;
         V::string(value)
     }
@@ -4248,7 +5985,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             .ok()?
             .parse()
             .ok()?;
-        Some(V::number(value))
+        V::number(value)
     }
 
     fn identifier_or_function(&mut self) -> Option<V> {
@@ -4260,17 +5997,41 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             if let Some(value) = V::reserved(name) {
                 return Some(value);
             }
-            return self.values.get(&expression_identifier_key(name)).cloned();
+            let (mut key, _reservation) = self.admit(
+                self.ctx
+                    .format_scoped(format_args!("{name}"), "creo relation lookup key"),
+            )?;
+            key.make_ascii_lowercase();
+            let copied = self.values.get(&key)?.clone_admitted(self.ctx);
+            return self.admit(copied);
         }
-        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        if self.nesting >= MAX_EXPRESSION_NESTING {
+            let error = self.ctx.refuse_codec_limit(
+                "creo relation nesting ceiling",
+                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
+                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
+            );
+            self.admit::<()>(Err(error))?;
+        }
         let (function, scope) = creo_relation_function(name)?;
+        let _depth = self.admit(self.ctx.enter_nested("creo relation function depth"))?;
+        self.admit(self.ctx.charge_work(1, "creo relation function work"))?;
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
+        let mut argument_storage =
+            self.admit(self.ctx.reserve_scoped(0, "Creo relation argument storage"))?;
         let mut arguments = Vec::new();
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
-                arguments.push(self.logical_or()?);
+                let parsed = argument_storage
+                    .with_storage(|| Ok::<_, cadmpeg_core::CodecError>(self.logical_or()));
+                let argument = self.admit(parsed)??;
+                self.admit(argument_storage.with_storage(|| {
+                    self.ctx
+                        .reserve_vec(&mut arguments, 1, "creo relation function arguments")
+                }))?;
+                arguments.push(argument);
                 self.whitespace();
                 if self.source.get(self.cursor) != Some(&b',') {
                     break;
@@ -4282,7 +6043,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, scope, &arguments, self.context)
+        let result = V::function_checked(function, scope, &arguments, self.context, self.ctx);
+        self.admit(result)?
     }
 }
 
@@ -4331,55 +6093,84 @@ enum CreoMathFunction {
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
-    match name.to_ascii_lowercase().as_str() {
-        "sin" => Some(CreoMathFunction::Sin),
-        "cos" => Some(CreoMathFunction::Cos),
-        "tan" => Some(CreoMathFunction::Tan),
-        "asin" => Some(CreoMathFunction::Asin),
-        "acos" => Some(CreoMathFunction::Acos),
-        "atan" => Some(CreoMathFunction::Atan),
-        "atan2" => Some(CreoMathFunction::Atan2),
-        "sinh" => Some(CreoMathFunction::Sinh),
-        "cosh" => Some(CreoMathFunction::Cosh),
-        "tanh" => Some(CreoMathFunction::Tanh),
-        "sign" => Some(CreoMathFunction::Sign),
-        "mod" => Some(CreoMathFunction::Mod),
-        "if" => Some(CreoMathFunction::If),
-        "bound" => Some(CreoMathFunction::Bound),
-        "dead" => Some(CreoMathFunction::Dead),
-        "near" => Some(CreoMathFunction::Near),
-        "min" => Some(CreoMathFunction::Min),
-        "max" => Some(CreoMathFunction::Max),
-        "log" => Some(CreoMathFunction::Log),
-        "ln" => Some(CreoMathFunction::Ln),
-        "exp" => Some(CreoMathFunction::Exp),
-        "pow" => Some(CreoMathFunction::Pow),
-        "sqrt" => Some(CreoMathFunction::Sqrt),
-        "abs" => Some(CreoMathFunction::Abs),
-        "ceil" => Some(CreoMathFunction::Ceil),
-        "floor" => Some(CreoMathFunction::Floor),
-        "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
-        "itos" => Some(CreoMathFunction::Itos),
-        "rtos" => Some(CreoMathFunction::Rtos),
-        "rel_model_name" => Some(CreoMathFunction::RelModelName),
-        "rel_model_type" => Some(CreoMathFunction::RelModelType),
-        "exists" => Some(CreoMathFunction::Exists),
-        "search" => Some(CreoMathFunction::Search),
-        "extract" => Some(CreoMathFunction::Extract),
-        "string_length" => Some(CreoMathFunction::StringLength),
-        "string_starts" => Some(CreoMathFunction::StringStarts),
-        "string_ends" => Some(CreoMathFunction::StringEnds),
-        "string_match" => Some(CreoMathFunction::StringMatch),
-        "string_pattern" => Some(CreoMathFunction::StringPattern),
-        "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
-        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" | "massprop_param"
-        | "material_param" | "mp_mass" | "mp_assigned_mass" | "mp_surf_area" | "mp_volume"
-        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" | "has_value" | "match_value" | "average"
-        | "value_by_argument" | "weighted_average" | "value" | "count_rows" => {
-            Some(CreoMathFunction::ContextDependent)
-        }
-        _ => None,
-    }
+    const FUNCTIONS: &[(&str, CreoMathFunction)] = &[
+        ("sin", CreoMathFunction::Sin),
+        ("cos", CreoMathFunction::Cos),
+        ("tan", CreoMathFunction::Tan),
+        ("asin", CreoMathFunction::Asin),
+        ("acos", CreoMathFunction::Acos),
+        ("atan", CreoMathFunction::Atan),
+        ("atan2", CreoMathFunction::Atan2),
+        ("sinh", CreoMathFunction::Sinh),
+        ("cosh", CreoMathFunction::Cosh),
+        ("tanh", CreoMathFunction::Tanh),
+        ("sign", CreoMathFunction::Sign),
+        ("mod", CreoMathFunction::Mod),
+        ("if", CreoMathFunction::If),
+        ("bound", CreoMathFunction::Bound),
+        ("dead", CreoMathFunction::Dead),
+        ("near", CreoMathFunction::Near),
+        ("min", CreoMathFunction::Min),
+        ("max", CreoMathFunction::Max),
+        ("log", CreoMathFunction::Log),
+        ("ln", CreoMathFunction::Ln),
+        ("exp", CreoMathFunction::Exp),
+        ("pow", CreoMathFunction::Pow),
+        ("sqrt", CreoMathFunction::Sqrt),
+        ("abs", CreoMathFunction::Abs),
+        ("ceil", CreoMathFunction::Ceil),
+        ("floor", CreoMathFunction::Floor),
+        ("dbl_in_tol", CreoMathFunction::DblInTol),
+        ("itos", CreoMathFunction::Itos),
+        ("rtos", CreoMathFunction::Rtos),
+        ("rel_model_name", CreoMathFunction::RelModelName),
+        ("rel_model_type", CreoMathFunction::RelModelType),
+        ("exists", CreoMathFunction::Exists),
+        ("search", CreoMathFunction::Search),
+        ("extract", CreoMathFunction::Extract),
+        ("string_length", CreoMathFunction::StringLength),
+        ("string_starts", CreoMathFunction::StringStarts),
+        ("string_ends", CreoMathFunction::StringEnds),
+        ("string_match", CreoMathFunction::StringMatch),
+        ("string_pattern", CreoMathFunction::StringPattern),
+    ];
+    const CONTEXT_DEPENDENT: &[&str] = &[
+        "cable_len",
+        "cable_thick",
+        "cbl_logical_file",
+        "eang",
+        "elen",
+        "edistk",
+        "ecoordx",
+        "ecoordy",
+        "evalgraph",
+        "trajpar_of_pnt",
+        "massprop_param",
+        "material_param",
+        "mp_mass",
+        "mp_assigned_mass",
+        "mp_surf_area",
+        "mp_volume",
+        "mp_cg_x",
+        "mp_cg_y",
+        "mp_cg_z",
+        "has_value",
+        "match_value",
+        "average",
+        "value_by_argument",
+        "weighted_average",
+        "value",
+        "count_rows",
+    ];
+    FUNCTIONS
+        .iter()
+        .find_map(|(spelling, function)| name.eq_ignore_ascii_case(spelling).then_some(*function))
+        .or_else(|| {
+            CONTEXT_DEPENDENT
+                .iter()
+                .any(|spelling| name.eq_ignore_ascii_case(spelling))
+                .then_some(CreoMathFunction::ContextDependent)
+        })
 }
 
 fn creo_relation_function(name: &str) -> Option<(CreoMathFunction, Option<&str>)> {
@@ -4435,7 +6226,7 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
             }
         }
         (CreoMathFunction::Near, [x, y, delta]) if *delta >= 0.0 => {
-            ((x - y).abs() <= *delta) as u8 as f64
+            f64::from(u8::from((x - y).abs() <= *delta))
         }
         (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [x, y]) => {
             if extremum_selects_left(name, *x, *y)? {
@@ -4457,7 +6248,7 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
             relation_round(*x, *decimal_places, false)?
         }
         (CreoMathFunction::DblInTol, [first, second, tolerance]) if *tolerance >= 0.0 => {
-            ((first - second).abs() <= *tolerance) as u8 as f64
+            f64::from(u8::from((first - second).abs() <= *tolerance))
         }
         _ => return None,
     };
@@ -4470,8 +6261,8 @@ fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> 
     if decimal_places > 8.0 {
         return Some(value);
     }
-    (decimal_places >= i32::MIN as f64).then_some(())?;
-    let scale = 10_f64.powi(decimal_places as i32);
+    (decimal_places >= f64::from(i32::MIN)).then_some(())?;
+    let scale = 10_f64.powi(cadmpeg_core::convert::truncate_f64_to_i32(decimal_places)?);
     (scale.is_finite() && scale > 0.0).then_some(())?;
     let scaled = (value
         + if upward {
@@ -4499,102 +6290,52 @@ fn extremum_selects_left(name: CreoMathFunction, left: f64, right: f64) -> Optio
     }
 }
 
-fn evaluate_creo_relation_function(
+fn quantity_power(
+    value: &CurveExpressionValue,
+    right: &CurveExpressionValue,
+) -> Option<CurveExpressionValue> {
+    let CurveExpressionValue::Number(exponent) = right else {
+        return None;
+    };
+    let (value, dimension) = quantity_parts_ref(value)?;
+    let exponent = exponent.get();
+    if dimension == RelationDimension::default() {
+        return CurveExpressionValue::number(value.powf(exponent));
+    }
+    let integer = exponent.trunc();
+    (integer == exponent).then_some(())?;
+    let exponent =
+        i8::try_from(i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(integer)?).ok()?)
+            .ok()?;
+    quantity_value(value.powi(i32::from(exponent)), dimension.scale(exponent)?)
+}
+
+fn evaluate_creo_numeric_relation_function(
     name: CreoMathFunction,
     arguments: &[CurveExpressionValue],
-    context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
-    use CurveExpressionValue::{Angle, Length, Number, Quantity, String};
+    use CurveExpressionValue::{Angle, Number, String};
     let value = match (name, arguments) {
-        (CreoMathFunction::Itos, [argument]) => {
-            let (value, _) = quantity_parts_ref(argument)?;
-            let rounded = value.round();
-            if rounded == 0.0 {
-                String(std::string::String::new())
-            } else {
-                String(format!("{rounded:.0}"))
-            }
-        }
-        (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
-            let (value, _) = quantity_parts_ref(argument)?;
-            let (decimals, scientific) = match controls {
-                [] => (None, false),
-                [Number(decimals)] => (Some(relation_precision(*decimals)?), false),
-                [Number(decimals), Number(scientific)] => {
-                    (Some(relation_precision(*decimals)?), *scientific != 0.0)
-                }
-                _ => return None,
-            };
-            String(format_relation_real(value, decimals, scientific)?)
-        }
-        (CreoMathFunction::RelModelName, []) => String(context.model_name?.to_owned()),
-        (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
-        (CreoMathFunction::Exists, [String(name)])
-            if context
-                .existing_symbols?
-                .contains(&expression_identifier_key(name)) =>
-        {
-            Number(1.0)
-        }
-        (CreoMathFunction::Search, [String(value), String(needle)]) => {
-            let position = value
-                .find(needle)
-                .map_or(0, |byte| value[..byte].chars().count() + 1);
-            Number(position as f64)
-        }
-        (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
-            if !position.is_finite()
-                || !length.is_finite()
-                || position.fract() != 0.0
-                || length.fract() != 0.0
-                || *position <= 0.0
-                || *length < 0.0
-            {
-                return None;
-            }
-            let character_count = value.chars().count();
-            if *position > character_count as f64 {
-                String(std::string::String::new())
-            } else {
-                let start = *position as usize - 1;
-                let remaining = character_count - start;
-                let length = if *length >= remaining as f64 {
-                    remaining
-                } else {
-                    *length as usize
-                };
-                String(value.chars().skip(start).take(length).collect())
-            }
-        }
-        (CreoMathFunction::StringLength, [String(value)]) => Number(value.chars().count() as f64),
-        (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
-            Number(f64::from(value.starts_with(prefix)))
-        }
-        (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
-            Number(f64::from(value.ends_with(suffix)))
-        }
-        (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
-            Number(f64::from(value == expected))
-        }
-        (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
-            Number(f64::from(relation_string_pattern(value, pattern)?))
-        }
         (
             name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
             [Angle(value)],
-        ) => Number(evaluate_creo_math_function(name, &[*value])?),
+        ) => CurveExpressionValue::number(evaluate_creo_math_function(name, &[value.get()])?)?,
         (
             name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
             [Number(value)],
-        ) => Angle(evaluate_creo_math_function(name, &[*value])?),
+        ) => {
+            cadmpeg_ir::scalar::FiniteReal::new(evaluate_creo_math_function(name, &[value.get()])?)
+                .map(Angle)?
+        }
         (CreoMathFunction::Atan2, [left, right]) => {
             let (left, left_dimension) = quantity_parts_ref(left)?;
             let (right, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension).then_some(())?;
-            Angle(evaluate_creo_math_function(
+            cadmpeg_ir::scalar::FiniteReal::new(evaluate_creo_math_function(
                 CreoMathFunction::Atan2,
                 &[left, right],
             )?)
+            .map(Angle)?
         }
         (CreoMathFunction::If, [Number(condition), when_true, when_false]) => {
             match (when_true, when_false) {
@@ -4605,11 +6346,13 @@ fn evaluate_creo_relation_function(
                     (true_dimension == false_dimension).then_some(())?;
                 }
             }
-            if *condition == 0.0 {
-                when_false.clone()
+            let selected = if condition.get() == 0.0 {
+                when_false
             } else {
-                when_true.clone()
-            }
+                when_true
+            };
+            let (value, dimension) = quantity_parts_ref(selected)?;
+            quantity_value(value, dimension)?
         }
         (CreoMathFunction::Sign, [value, sign]) => {
             let (value, dimension) = quantity_parts_ref(value)?;
@@ -4621,13 +6364,13 @@ fn evaluate_creo_relation_function(
                     value.abs()
                 },
                 dimension,
-            )
+            )?
         }
         (CreoMathFunction::Mod, [left, right]) => {
             let (left, left_dimension) = quantity_parts_ref(left)?;
             let (right, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension && right != 0.0).then_some(())?;
-            quantity_value(left % right, left_dimension)
+            quantity_value(left % right, left_dimension)?
         }
         (CreoMathFunction::Bound, [value, lower, upper]) => {
             let (value, value_dimension) = quantity_parts_ref(value)?;
@@ -4637,7 +6380,16 @@ fn evaluate_creo_relation_function(
                 && value_dimension == upper_dimension
                 && lower < upper)
                 .then_some(())?;
-            quantity_value(value.clamp(lower, upper), value_dimension)
+            quantity_value(
+                if value < lower {
+                    lower
+                } else if value > upper {
+                    upper
+                } else {
+                    value
+                },
+                value_dimension,
+            )?
         }
         (CreoMathFunction::Dead, [value, lower, upper]) => {
             let (value, value_dimension) = quantity_parts_ref(value)?;
@@ -4654,26 +6406,26 @@ fn evaluate_creo_relation_function(
             } else {
                 0.0
             };
-            quantity_value(value, value_dimension)
+            quantity_value(value, value_dimension)?
         }
         (CreoMathFunction::Pow, [base, Number(exponent)]) => {
-            base.clone().power(Number(*exponent))?
+            quantity_power(base, &Number(*exponent))?
         }
         (CreoMathFunction::Sqrt, [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
             (value >= 0.0).then_some(())?;
-            quantity_value(value.sqrt(), dimension.root(2)?)
+            quantity_value(value.sqrt(), dimension.root(2)?)?
         }
         (CreoMathFunction::Abs, [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
-            quantity_value(value.abs(), dimension)
+            quantity_value(value.abs(), dimension)?
         }
         (name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor), [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
             quantity_value(
                 relation_round(value, 0.0, matches!(name, CreoMathFunction::Ceil))?,
                 dimension,
-            )
+            )?
         }
         (
             name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
@@ -4683,11 +6435,11 @@ fn evaluate_creo_relation_function(
             quantity_value(
                 relation_round(
                     value,
-                    *decimal_places,
+                    decimal_places.get(),
                     matches!(name, CreoMathFunction::Ceil),
                 )?,
                 dimension,
-            )
+            )?
         }
         (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
             let (left_value, left_dimension) = quantity_parts_ref(left)?;
@@ -4707,92 +6459,154 @@ fn evaluate_creo_relation_function(
                 && left_dimension == tolerance_dimension
                 && tolerance >= 0.0)
                 .then_some(())?;
-            Number(f64::from((left - right).abs() <= tolerance))
+            CurveExpressionValue::number(f64::from((left - right).abs() <= tolerance))?
         }
         _ => {
-            let numbers = arguments
-                .iter()
-                .map(|argument| match argument {
-                    Number(value) => Some(*value),
-                    Length(_) | Angle(_) | Quantity(_) | String(_) => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Number(evaluate_creo_math_function(name, &numbers)?)
+            let mut numbers = [0.0; 3];
+            for (index, argument) in arguments.iter().enumerate() {
+                let slot = numbers.get_mut(index)?;
+                let Number(value) = argument else {
+                    return None;
+                };
+                *slot = value.get();
+            }
+            CurveExpressionValue::number(evaluate_creo_math_function(
+                name,
+                &numbers[..arguments.len()],
+            )?)?
         }
     };
-    value.finite().then_some(value)
+    Some(value)
 }
 
-fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
-    regex::RegexBuilder::new(&format!(r"\A(?:{pattern})\z"))
-        .size_limit(1 << 20)
-        .dfa_size_limit(1 << 20)
-        .build()
-        .ok()
-        .map(|pattern| pattern.is_match(value))
+const RELATION_REGEX_SIZE_LIMIT: usize = 1 << 20;
+
+fn relation_string_pattern_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+    pattern: &str,
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(pattern.len()),
+        "creo relation regex compile work",
+    )?;
+    let (expression, _source_reservation) = ctx.format_scoped(
+        format_args!(r"\A(?:{pattern})\z"),
+        "creo relation regex source text",
+    )?;
+    let _compiler_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(RELATION_REGEX_SIZE_LIMIT),
+        "creo relation regex compiler scratch",
+    )?;
+    let compiled = regex::RegexBuilder::new(&expression)
+        .size_limit(RELATION_REGEX_SIZE_LIMIT)
+        .dfa_size_limit(RELATION_REGEX_SIZE_LIMIT)
+        .build();
+    let Ok(compiled) = compiled else {
+        return Ok(None);
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(value.len()),
+        "creo relation regex match work",
+    )?;
+    Ok(Some(compiled.is_match(value)))
 }
 
-const MAX_RELATION_STRING_PRECISION: usize = 128;
+const MAX_RELATION_STRING_PRECISION: f64 = 128.0;
 
 fn relation_precision(value: f64) -> Option<usize> {
     (value.is_finite()
         && value.fract() == 0.0
-        && value >= 0.0
-        && value <= MAX_RELATION_STRING_PRECISION as f64)
-        .then_some(value as usize)
+        && (0.0..=MAX_RELATION_STRING_PRECISION).contains(&value))
+    .then(|| cadmpeg_core::convert::truncate_f64_to_usize(value))
+    .flatten()
 }
 
-fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -> Option<String> {
+fn format_relation_real_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: f64,
+    decimals: Option<usize>,
+    scientific: bool,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
     if !value.is_finite() {
-        return None;
+        return Ok(None);
     }
     if value == 0.0 {
-        return Some(String::new());
+        return Ok(Some(String::new()));
     }
     let Some(decimals) = decimals else {
-        return Some(value.to_string());
+        return Ok(Some(ctx.format_retained(
+            format_args!("{value}"),
+            "creo relation real text",
+        )?));
     };
     if !scientific {
-        return Some(format!("{value:.decimals$}"));
+        return Ok(Some(ctx.format_retained(
+            format_args!("{value:.decimals$}"),
+            "creo relation real text",
+        )?));
     }
-    let formatted = format!("{value:.decimals$e}");
-    let (mantissa, exponent) = formatted.split_once('e')?;
-    let exponent = exponent.parse::<i32>().ok()?;
-    Some(format!(
-        "{mantissa}e{}{magnitude:02}",
-        if exponent < 0 { "-" } else { "" },
-        magnitude = exponent.unsigned_abs()
-    ))
+    let (formatted, _reservation) = ctx.format_scoped(
+        format_args!("{value:.decimals$e}"),
+        "creo relation scientific scratch",
+    )?;
+    let Some((mantissa, exponent)) = formatted.split_once('e') else {
+        return Ok(None);
+    };
+    let Ok(exponent) = exponent.parse::<i32>() else {
+        return Ok(None);
+    };
+    Ok(Some(ctx.format_retained(
+        format_args!(
+            "{mantissa}e{}{magnitude:02}",
+            if exponent < 0 { "-" } else { "" },
+            magnitude = exponent.unsigned_abs()
+        ),
+        "creo relation real text",
+    )?))
 }
 
-fn evaluate_relation_expression(
+fn parse_relation_expression<V: ExpressionValue>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
-    values: &BTreeMap<String, CurveExpressionValue>,
+    values: &BTreeMap<String, V>,
     context: RelationEvaluationContext<'_>,
-) -> Option<CurveExpressionValue> {
+) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(expression.len()),
+        "creo relation source scan",
+    )?;
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
         context,
+        ctx,
+        resource_error: None,
         nesting: 0,
     };
-    let value = parser.logical_or()?;
+    let value = parser.logical_or();
+    if let Some(error) = parser.resource_error {
+        return Err(error);
+    }
     parser.whitespace();
-    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+    Ok(value.filter(|value| parser.cursor == parser.source.len() && value.finite()))
 }
 
 fn apply_declared_relation_unit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: CurveExpressionValue,
     declared_unit: Option<&str>,
-) -> Option<CurveExpressionValue> {
+) -> Result<Option<CurveExpressionValue>, cadmpeg_core::CodecError> {
     let Some(declared_unit) = declared_unit else {
-        return Some(value);
+        return Ok(Some(value));
     };
-    let unit = relation_unit(declared_unit)?;
-    match (value, unit.dimension) {
+    let Some(unit) = relation_unit(ctx, declared_unit)? else {
+        return Ok(None);
+    };
+    Ok(match (value, unit.dimension) {
         (CurveExpressionValue::Number(value), _) => {
-            CurveExpressionValue::Number(value).with_unit(unit)
+            quantity_value(value.get() * unit.scale + unit.offset, unit.dimension)
         }
         (value @ CurveExpressionValue::Length(_), RelationDimension::LENGTH)
         | (value @ CurveExpressionValue::Angle(_), RelationDimension::ANGLE) => Some(value),
@@ -4800,99 +6614,94 @@ fn apply_declared_relation_unit(
             Some(CurveExpressionValue::Quantity(value))
         }
         _ => None,
-    }
-}
-
-fn evaluate_affine_expression(
-    expression: &str,
-    values: &BTreeMap<String, AffineValue>,
-) -> Option<AffineValue> {
-    let mut parser = ExpressionParser {
-        source: expression.as_bytes(),
-        cursor: 0,
-        values,
-        context: RelationEvaluationContext::default(),
-        nesting: 0,
-    };
-    let value = parser.logical_or()?;
-    parser.whitespace();
-    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
-}
-
-fn evaluate_simultaneous_affine_expression(
-    expression: &str,
-    values: &BTreeMap<String, SimultaneousAffineValue>,
-    context: RelationEvaluationContext<'_>,
-) -> Option<SimultaneousAffineValue> {
-    let mut parser = ExpressionParser {
-        source: expression.as_bytes(),
-        cursor: 0,
-        values,
-        context,
-        nesting: 0,
-    };
-    let value = parser.logical_or()?;
-    parser.whitespace();
-    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
-}
-
-fn evaluate_dimension_expression(
-    expression: &str,
-    values: &BTreeMap<String, DimensionProbeValue>,
-    context: RelationEvaluationContext<'_>,
-) -> Option<DimensionProbeValue> {
-    let mut parser = ExpressionParser {
-        source: expression.as_bytes(),
-        cursor: 0,
-        values,
-        context,
-        nesting: 0,
-    };
-    let value = parser.logical_or()?;
-    parser.whitespace();
-    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+    })
 }
 
 fn infer_solve_variable_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<RelationDimension>> {
-    (known_dimensions.len() == block.unknowns.len()).then_some(())?;
-    let variable_keys = block
-        .unknowns
-        .iter()
-        .map(|unknown| &unknown.name)
-        .map(|variable| expression_identifier_key(variable))
-        .collect::<Vec<_>>();
-    let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
-    (unique_keys.len() == variable_keys.len()).then_some(())?;
+) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
+    if known_dimensions.len() != block.unknowns.len() {
+        return Ok(None);
+    }
+    let mut variable_keys = Vec::new();
+    for unknown in &block.unknowns {
+        ctx.reserve_vec(&mut variable_keys, 1, "creo dimension variable keys")?;
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo dimension variable key text")?;
+        key.make_ascii_lowercase();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(variable_keys.len()),
+            "creo dimension duplicate checks",
+        )?;
+        if variable_keys.contains(&key) {
+            return Ok(None);
+        }
+        variable_keys.push(key);
+    }
 
-    let mut probe_values = values
-        .iter()
-        .filter_map(|(name, value)| {
-            DimensionProbeValue::from_relation_value(value).map(|value| (name.clone(), value))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut probe_values = BTreeMap::new();
+    for (name, value) in values {
+        let probe = match value {
+            CurveExpressionValue::String(value) => DimensionProbeValue::text(Some(
+                ctx.copy_retained_text(value, "creo dimension known text")?,
+            )),
+            _ => match DimensionProbeValue::from_relation_value(value) {
+                Some(probe) => probe,
+                None => continue,
+            },
+        };
+        ctx.insert_btree_map(
+            &mut probe_values,
+            ctx.copy_retained_text(name, "creo dimension known value names")?,
+            probe,
+            "creo dimension known value nodes",
+        )?;
+    }
     for (key, dimension) in variable_keys.iter().zip(known_dimensions) {
-        let value = dimension.map_or_else(
-            || DimensionProbeValue::variable(key),
-            |dimension| DimensionProbeValue {
-                dimension: SymbolicRelationDimension::from_relation_dimension(dimension),
+        let value = match dimension {
+            Some(dimension) => DimensionProbeValue {
+                dimension: SymbolicRelationDimension::from_relation_dimension(*dimension),
                 kind: DimensionProbeKind::Numeric(None),
                 constraints: Vec::new(),
             },
-        );
-        probe_values.insert(key.clone(), value);
+            None => DimensionProbeValue::variable(ctx, key)?,
+        };
+        ctx.insert_btree_map(
+            &mut probe_values,
+            ctx.copy_retained_text(key, "creo dimension unknown value names")?,
+            value,
+            "creo dimension unknown value nodes",
+        )?;
     }
 
     let mut constraints = Vec::new();
     for equation in &block.equations {
-        let left = evaluate_dimension_expression(&equation.left, &probe_values, context)?;
-        let right = evaluate_dimension_expression(&equation.right, &probe_values, context)?;
-        constraints.extend(left.constraints.iter().cloned());
-        constraints.extend(right.constraints.iter().cloned());
+        let Some(left) = parse_relation_expression::<DimensionProbeValue>(
+            ctx,
+            &equation.left,
+            &probe_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<DimensionProbeValue>(
+            ctx,
+            &equation.right,
+            &probe_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        for constraint in left.constraints.iter().chain(&right.constraints) {
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension constraint rows")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension constraint rows")?;
         constraints.push(DimensionEquality {
             left: left.dimension,
             right: right.dimension,
@@ -4901,37 +6710,61 @@ fn infer_solve_variable_dimensions(
 
     let mut axis_rows: [Vec<AffineEquationRow>; 5] =
         std::array::from_fn(|_| Vec::<AffineEquationRow>::new());
-    let axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|axis| {
-        variable_keys
-            .iter()
-            .map(|variable| dimension_variable_key(variable, axis))
-            .collect()
-    });
+    let mut axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|_| Vec::new());
+    for (axis, keys) in axis_variable_keys.iter_mut().enumerate() {
+        for variable in &variable_keys {
+            ctx.reserve_vec(keys, 1, "creo dimension axis variable keys")?;
+            keys.push(dimension_variable_key(
+                ctx,
+                variable,
+                axis,
+                "creo dimension axis variable names",
+            )?);
+        }
+    }
     for equality in constraints {
         for (axis, rows) in axis_rows.iter_mut().enumerate() {
-            let difference = equality.left.axes[axis]
-                .clone()
-                .combine(equality.right.axes[axis].clone(), true)?;
-            let coefficients = axis_variable_keys[axis]
-                .iter()
-                .map(|variable| {
-                    difference
-                        .variables
-                        .get(variable)
-                        .copied()
-                        .unwrap_or_default()
-                        .as_f64()
-                })
-                .collect::<Vec<_>>();
-            let rhs = -difference.constant.as_f64();
+            let left = equality.left.axes[axis].copy_admitted(ctx)?;
+            let right = equality.right.axes[axis].copy_admitted(ctx)?;
+            let Some(difference) = left.combine_admitted(ctx, right, true)? else {
+                return Ok(None);
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(axis_variable_keys[axis].len()),
+                "creo dimension equation coefficient work",
+            )?;
+            let mut coefficients = ctx.alloc_filled(
+                axis_variable_keys[axis].len(),
+                0.0,
+                "creo dimension equation coefficients",
+            )?;
+            for (coefficient, variable) in coefficients.iter_mut().zip(&axis_variable_keys[axis]) {
+                *coefficient = difference
+                    .variables
+                    .get(variable)
+                    .copied()
+                    .unwrap_or_default()
+                    .as_f64()
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo dimension coefficient cannot be represented exactly",
+                        )
+                    })?;
+            }
+            let rhs = -difference.constant.as_f64().ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Creo dimension constant cannot be represented exactly",
+                )
+            })?;
             if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
+                ctx.reserve_vec(rows, 1, "creo dimension equation rows")?;
                 rows.push(AffineEquationRow { coefficients, rhs });
             }
         }
     }
 
     let axis_len = variable_keys.len();
-    let alloc_axis = || alloc_filled(axis_len, 0i8, "creo_solve_dimension_components").ok();
+    let alloc_axis = || ctx.alloc_filled(axis_len, 0i8, "creo_solve_dimension_components");
     let mut components: [Vec<i8>; 5] = [
         alloc_axis()?,
         alloc_axis()?,
@@ -4948,45 +6781,77 @@ fn infer_solve_variable_dimensions(
             components[4][index] = dimension.temperature;
         }
     }
-    let required_columns = known_dimensions
-        .iter()
-        .enumerate()
-        .filter_map(|(index, dimension)| dimension.is_none().then_some(index))
-        .collect::<BTreeSet<_>>();
+    let mut required_columns = BTreeSet::new();
+    for (index, dimension) in known_dimensions.iter().enumerate() {
+        if dimension.is_none() {
+            ctx.insert_btree_set(
+                &mut required_columns,
+                index,
+                "creo dimension required column nodes",
+            )?;
+        }
+    }
     for (axis, rows) in axis_rows.iter_mut().enumerate() {
-        let solution = solve_dimension_axis(rows, variable_keys.len(), &required_columns)?;
+        let Some(solution) =
+            solve_dimension_axis(ctx, rows, variable_keys.len(), &required_columns)?
+        else {
+            return Ok(None);
+        };
         for (index, value) in solution.into_iter().enumerate() {
             if known_dimensions[index].is_some() {
                 continue;
             }
             let rounded = value.round();
-            (value.is_finite() && (value - rounded).abs() <= EPS_DIMENSION_SOLUTION)
-                .then_some(())?;
-            components[axis][index] = i8::try_from(rounded as i16).ok()?;
+            if !value.is_finite()
+                || (value - rounded).abs() > EPS_DIMENSION_SOLUTION
+                || rounded < f64::from(i8::MIN)
+                || rounded > f64::from(i8::MAX)
+            {
+                return Ok(None);
+            }
+            components[axis][index] = i8::try_from(
+                cadmpeg_core::convert::truncate_f64_to_i32(rounded).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "Creo numeric value cannot be represented exactly",
+                    )
+                })?,
+            )
+            .map_err(|_| {
+                cadmpeg_core::CodecError::malformed("Creo numeric value exceeds dimension range")
+            })?;
         }
     }
-    Some(
-        (0..variable_keys.len())
-            .map(|index| RelationDimension {
-                length: components[0][index],
-                mass: components[1][index],
-                time: components[2][index],
-                angle: components[3][index],
-                temperature: components[4][index],
-            })
-            .collect(),
-    )
+    let mut dimensions = ctx.alloc_filled(
+        variable_keys.len(),
+        RelationDimension::default(),
+        "creo inferred variable dimensions",
+    )?;
+    for (index, dimension) in dimensions.iter_mut().enumerate() {
+        *dimension = RelationDimension {
+            length: components[0][index],
+            mass: components[1][index],
+            time: components[2][index],
+            angle: components[3][index],
+            temperature: components[4][index],
+        };
+    }
+    Ok(Some(dimensions))
 }
 
 fn solve_dimension_axis(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut [AffineEquationRow],
     variable_count: usize,
     required_columns: &BTreeSet<usize>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut pivot_row = 0;
     let mut pivot_rows = Vec::new();
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     for column in 0..variable_count {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(rows.len()),
+            "creo matrix pivot scan",
+        )?;
         let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
@@ -4999,119 +6864,158 @@ fn solve_dimension_axis(
             continue;
         }
         rows.swap(pivot_row, selected);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(rows[pivot_row].coefficients.len()),
+            "creo matrix pivot normalization",
+        )?;
         for coefficient in &mut rows[pivot_row].coefficients {
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        let pivot_coefficients = rows[pivot_row].coefficients.clone();
-        let pivot_rhs = rows[pivot_row].rhs;
-        for (row_index, row) in rows.iter_mut().enumerate() {
-            if row_index == pivot_row {
-                continue;
-            }
-            let factor = row.coefficients[column];
-            if factor.abs() <= coefficient_tolerance {
-                continue;
-            }
-            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
-                *coefficient -= factor * pivot;
-                if coefficient.abs() <= coefficient_tolerance {
-                    *coefficient = 0.0;
-                }
-            }
-            row.rhs -= factor * pivot_rhs;
-        }
+        eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
+        ctx.reserve_vec(&mut pivot_rows, 1, "creo solve dimension pivot rows")?;
         pivot_rows.push((column, pivot_row));
         pivot_row += 1;
     }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(rows.len())
+            .checked_mul(
+                cadmpeg_core::decode::u64_from_index(variable_count)
+                    .checked_add(2)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
+                    })?,
+            )
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
+            })?,
+        "creo matrix residual scan",
+    )?;
     let residual_tolerance =
         EPS_LINEAR_SYSTEM_RESIDUAL * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    rows.iter()
-        .all(|row| {
-            let has_coefficients = row
-                .coefficients
-                .iter()
-                .any(|coefficient| coefficient.abs() > coefficient_tolerance);
-            has_coefficients || row.rhs.abs() <= residual_tolerance
-        })
-        .then_some(())?;
-    required_columns
+    if !rows.iter().all(|row| {
+        let has_coefficients = row
+            .coefficients
+            .iter()
+            .any(|coefficient| coefficient.abs() > coefficient_tolerance);
+        has_coefficients || row.rhs.abs() <= residual_tolerance
+    }) {
+        return Ok(None);
+    }
+    if !required_columns
         .iter()
         .all(|required| pivot_rows.iter().any(|(column, _)| column == required))
-        .then_some(())?;
-    let mut solution = alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis").ok()?;
+    {
+        return Ok(None);
+    }
+    let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis")?;
     for (column, row) in pivot_rows {
         solution[column] = rows[row].rhs;
     }
-    Some(solution)
+    Ok(Some(solution))
 }
 
 fn solve_affine_expression_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<CurveExpressionValue>> {
-    (variable_dimensions.len() == block.unknowns.len()).then_some(())?;
-    let variable_keys = block
-        .unknowns
-        .iter()
-        .map(|unknown| &unknown.name)
-        .map(|variable| expression_identifier_key(variable))
-        .collect::<Vec<_>>();
-    let mut affine_values = values
-        .iter()
-        .filter_map(|(name, value)| {
-            let (value, dimension) = quantity_parts_ref(value)?;
-            Some((
-                name.clone(),
-                SimultaneousAffineValue::constant(value, dimension),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
+    if variable_dimensions.len() != block.unknowns.len() {
+        return Ok(None);
+    }
+    let mut variable_keys = Vec::new();
+    for unknown in &block.unknowns {
+        ctx.reserve_vec(&mut variable_keys, 1, "creo affine variable keys")?;
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo affine variable names")?;
+        key.make_ascii_lowercase();
+        variable_keys.push(key);
+    }
+    let mut affine_values = BTreeMap::new();
+    for (name, value) in values {
+        let Some((value, dimension)) = quantity_parts_ref(value) else {
+            continue;
+        };
+        ctx.insert_btree_map(
+            &mut affine_values,
+            ctx.copy_retained_text(name, "creo affine known value names")?,
+            SimultaneousAffineValue::constant(value, dimension),
+            "creo affine known value nodes",
+        )?;
+    }
     for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
-        affine_values.insert(
-            variable.clone(),
+        let mut coefficients = BTreeMap::new();
+        ctx.insert_btree_map(
+            &mut coefficients,
+            ctx.copy_retained_text(variable, "creo affine coefficient names")?,
+            1.0,
+            "creo affine coefficient nodes",
+        )?;
+        ctx.insert_btree_map(
+            &mut affine_values,
+            ctx.copy_retained_text(variable, "creo affine unknown value names")?,
             SimultaneousAffineValue {
                 dimension: *dimension,
                 constant: 0.0,
-                coefficients: BTreeMap::from([(variable.clone(), 1.0)]),
-            },
-        );
-    }
-    let mut rows = block
-        .equations
-        .iter()
-        .map(|equation| {
-            let left =
-                evaluate_simultaneous_affine_expression(&equation.left, &affine_values, context)?;
-            let right =
-                evaluate_simultaneous_affine_expression(&equation.right, &affine_values, context)?;
-            let difference = left.combine(right, true)?;
-            let coefficients = variable_keys
-                .iter()
-                .map(|variable| {
-                    difference
-                        .coefficients
-                        .get(variable)
-                        .copied()
-                        .unwrap_or(0.0)
-                })
-                .collect::<Vec<_>>();
-            Some(AffineEquationRow {
                 coefficients,
-                rhs: -difference.constant,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let solution = solve_unique_affine_system(&mut rows, variable_keys.len())?;
-    Some(
-        solution
-            .into_iter()
-            .zip(variable_dimensions)
-            .map(|(value, dimension)| quantity_value(value, *dimension))
-            .collect(),
-    )
+            },
+            "creo affine unknown value nodes",
+        )?;
+    }
+    let mut rows = Vec::new();
+    for equation in &block.equations {
+        let Some(left) = parse_relation_expression::<SimultaneousAffineValue>(
+            ctx,
+            &equation.left,
+            &affine_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<SimultaneousAffineValue>(
+            ctx,
+            &equation.right,
+            &affine_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(difference) = left.combine_admitted(right, true, ctx)? else {
+            return Ok(None);
+        };
+        let mut coefficients = ctx.alloc_filled(
+            variable_keys.len(),
+            0.0,
+            "creo affine equation coefficients",
+        )?;
+        for (coefficient, variable) in coefficients.iter_mut().zip(&variable_keys) {
+            *coefficient = difference
+                .coefficients
+                .get(variable)
+                .copied()
+                .unwrap_or(0.0);
+        }
+        ctx.reserve_vec(&mut rows, 1, "creo affine equation rows")?;
+        rows.push(AffineEquationRow {
+            coefficients,
+            rhs: -difference.constant,
+        });
+    }
+    let Some(solution) = solve_unique_affine_system(ctx, &mut rows, variable_keys.len())? else {
+        return Ok(None);
+    };
+    let mut values = Vec::new();
+    ctx.reserve_vec(&mut values, solution.len(), "creo affine solved values")?;
+    for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
+        let Some(value) = quantity_value(value, *dimension) else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
 }
 
 const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
@@ -5130,41 +7034,65 @@ struct SolveResidual {
 }
 
 fn solve_nonlinear_expression_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<CurveExpressionValue>> {
-    nonlinear_equations_are_smooth(block).then_some(())?;
-    let variable_dimensions =
-        infer_solve_variable_dimensions(block, values, known_dimensions, context)?;
+) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
+    if !nonlinear_equations_are_smooth(block) {
+        return Ok(None);
+    }
+    let Some(variable_dimensions) =
+        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)?
+    else {
+        return Ok(None);
+    };
     let variable_count = block.unknowns.len();
-    (variable_count > 0
-        && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
-        && block.equations.len() >= variable_count)
-        .then_some(())?;
-    let mut seeds = nonlinear_initial_guesses(initial_values, &variable_dimensions)?.into_iter();
-    let initial_seed = seeds.next()?;
-    let solution =
-        refine_nonlinear_solution(block, values, &variable_dimensions, &initial_seed, context)?;
+    if variable_count == 0
+        || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
+        || block.equations.len() < variable_count
+    {
+        return Ok(None);
+    }
+    let Some(seeds) = nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions)? else {
+        return Ok(None);
+    };
+    let mut seeds = seeds.into_iter();
+    let Some(initial_seed) = seeds.next() else {
+        return Ok(None);
+    };
+    let Some(solution) = refine_nonlinear_solution(
+        ctx,
+        block,
+        values,
+        &variable_dimensions,
+        &initial_seed,
+        context,
+    )?
+    else {
+        return Ok(None);
+    };
     for seed in seeds {
         let Some(candidate) =
-            refine_nonlinear_solution(block, values, &variable_dimensions, &seed, context)
+            refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context)?
         else {
             continue;
         };
         if !nonlinear_solutions_close(&solution, &candidate) {
-            return None;
+            return Ok(None);
         }
     }
-    Some(
-        solution
-            .into_iter()
-            .zip(variable_dimensions)
-            .map(|(value, dimension)| quantity_value(value, dimension))
-            .collect(),
-    )
+    let mut solved = Vec::new();
+    ctx.reserve_vec(&mut solved, solution.len(), "creo nonlinear solved values")?;
+    for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
+        let Some(value) = quantity_value(value, dimension) else {
+            return Ok(None);
+        };
+        solved.push(value);
+    }
+    Ok(Some(solved))
 }
 
 fn nonlinear_equations_are_smooth(block: &CurveExpressionSolveBlock) -> bool {
@@ -5227,103 +7155,136 @@ fn nonlinear_expression_is_smooth(expression: &str) -> bool {
 }
 
 fn nonlinear_initial_guesses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     initial_values: &[Option<CurveExpressionValue>],
     variable_dimensions: &[RelationDimension],
-) -> Option<Vec<Vec<f64>>> {
+) -> Result<Option<Vec<Vec<f64>>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
     let mut seeds = Vec::new();
-    let mut add_seed = |seed: Vec<f64>| {
+    let mut add_seed = |seed: Vec<f64>| -> Result<(), cadmpeg_core::CodecError> {
         if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
+            ctx.reserve_vec(&mut seeds, 1, "creo solve seed rows")?;
             seeds.push(seed);
         }
+        Ok(())
     };
-    (initial_values.len() == variable_count).then_some(())?;
-    let initial = initial_values
-        .iter()
+    if initial_values.len() != variable_count {
+        return Ok(None);
+    }
+    let mut initial = ctx.alloc_filled(variable_count, 0.0, "creo solve initial seed")?;
+    for ((slot, value), dimension) in initial
+        .iter_mut()
+        .zip(initial_values)
         .zip(variable_dimensions)
-        .map(|(value, dimension)| {
-            value.as_ref().and_then(|value| {
-                let (value, value_dimension) = quantity_parts_ref(value)?;
-                (value_dimension == *dimension).then_some(value)
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    add_seed(initial);
-    add_seed(alloc_filled(variable_count, 0.0, "creo_solve_seed_zero").ok()?);
+    {
+        let Some((number, value_dimension)) = value.as_ref().and_then(quantity_parts_ref) else {
+            return Ok(None);
+        };
+        if value_dimension != *dimension {
+            return Ok(None);
+        }
+        *slot = number;
+    }
+    add_seed(initial)?;
+    add_seed(ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_zero")?)?;
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
-        add_seed(alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude").ok()?);
-        add_seed(alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude").ok()?);
+        add_seed(ctx.alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude")?)?;
+        add_seed(ctx.alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude")?)?;
     }
     for index in 0..variable_count {
         for magnitude in [0.1, 1.0, 10.0] {
-            let mut positive = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
+            let mut positive = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             positive[index] = magnitude;
-            add_seed(positive);
-            let mut negative = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
+            add_seed(positive)?;
+            let mut negative = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             negative[index] = -magnitude;
-            add_seed(negative);
+            add_seed(negative)?;
         }
     }
-    Some(seeds)
+    Ok(Some(seeds))
 }
 
 fn refine_nonlinear_solution(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     seed: &[f64],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    let mut point = seed.to_vec();
-    let mut residuals =
-        evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)?;
+    let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
+    point.copy_from_slice(seed);
+    let Some(mut residuals) =
+        evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &point, context)?
+    else {
+        return Ok(None);
+    };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
+        ctx.charge_work(1, "creo nonlinear iteration work")?;
         if nonlinear_residuals_converged(&residuals) {
-            let mut rank_rows = nonlinear_jacobian_rows(
+            let Some(mut rank_rows) = nonlinear_jacobian_rows(
+                ctx,
                 block,
                 values,
                 variable_dimensions,
                 &point,
                 &residuals,
                 context,
-            )?;
-            solve_unique_affine_system(&mut rank_rows, variable_count)?;
-            return Some(point);
+            )?
+            else {
+                return Ok(None);
+            };
+            if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+                return Ok(None);
+            }
+            return Ok(Some(point));
         }
-        let mut rows = nonlinear_jacobian_rows(
+        let Some(mut rows) = nonlinear_jacobian_rows(
+            ctx,
             block,
             values,
             variable_dimensions,
             &point,
             &residuals,
             context,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         for (row, residual) in rows.iter_mut().zip(&residuals) {
             row.rhs = -residual.value;
         }
-        let delta = solve_unique_affine_system(&mut rows, variable_count)?;
+        let Some(delta) = solve_unique_affine_system(ctx, &mut rows, variable_count)? else {
+            return Ok(None);
+        };
         let maximum_delta = delta.iter().map(|value| value.abs()).fold(0.0, f64::max);
         let point_scale = point.iter().map(|value| value.abs()).fold(1.0, f64::max);
-        (maximum_delta.is_finite() && maximum_delta <= 1e12 * point_scale).then_some(())?;
-        let base_norm = nonlinear_residual_norm(&residuals);
+        if !maximum_delta.is_finite() || maximum_delta > 1e12 * point_scale {
+            return Ok(None);
+        }
+        let base_norm = nonlinear_residual_norm(&residuals, &residuals);
         let mut accepted = None;
+        let mut valid_candidate = false;
         let mut scale = 1.0;
         for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
-            let candidate = point
-                .iter()
-                .zip(&delta)
-                .map(|(value, change)| value + scale * change)
-                .collect::<Vec<_>>();
+            ctx.charge_work(1, "creo nonlinear line-search work")?;
+            let mut candidate =
+                ctx.alloc_filled(point.len(), 0.0, "creo nonlinear line-search point")?;
+            for ((slot, value), change) in candidate.iter_mut().zip(&point).zip(&delta) {
+                *slot = value + scale * change;
+            }
             if candidate.iter().all(|value| value.is_finite()) {
                 if let Some(candidate_residuals) = evaluate_nonlinear_residuals(
+                    ctx,
                     block,
                     values,
                     variable_dimensions,
                     &candidate,
                     context,
-                ) {
-                    let candidate_norm = nonlinear_residual_norm(&candidate_residuals);
+                )? {
+                    valid_candidate = true;
+                    let candidate_norm = nonlinear_residual_norm(&candidate_residuals, &residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
                         || candidate_norm < base_norm
                     {
@@ -5334,79 +7295,144 @@ fn refine_nonlinear_solution(
             }
             scale *= 0.5;
         }
-        let (candidate, candidate_residuals) = accepted?;
+        let Some((candidate, candidate_residuals)) = accepted else {
+            if !valid_candidate {
+                return Ok(None);
+            }
+            return Err(ctx.refuse_codec_limit(
+                "creo nonlinear line-search ceiling",
+                cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS),
+                cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS) + 1,
+            ));
+        };
         point = candidate;
         residuals = candidate_residuals;
         if maximum_delta * scale <= NONLINEAR_SOLVE_STEP_TOLERANCE * point_scale
             && !nonlinear_residuals_converged(&residuals)
         {
-            return None;
+            return Ok(None);
         }
     }
     if !nonlinear_residuals_converged(&residuals) {
-        return None;
+        return Err(ctx.refuse_codec_limit(
+            "creo nonlinear iteration ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS),
+            cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS) + 1,
+        ));
     }
-    let mut rank_rows = nonlinear_jacobian_rows(
+    let Some(mut rank_rows) = nonlinear_jacobian_rows(
+        ctx,
         block,
         values,
         variable_dimensions,
         &point,
         &residuals,
         context,
-    )?;
-    solve_unique_affine_system(&mut rank_rows, variable_count)?;
-    Some(point)
+    )?
+    else {
+        return Ok(None);
+    };
+    if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(point))
 }
 
 fn nonlinear_jacobian_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     residuals: &[SolveResidual],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<AffineEquationRow>> {
+) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    let mut rows = Vec::with_capacity(residuals.len());
+    let mut rows = Vec::new();
     for (row_index, residual) in residuals.iter().enumerate() {
-        let mut coefficients = Vec::with_capacity(variable_count);
+        let mut coefficients = Vec::new();
+        ctx.reserve_vec(
+            &mut coefficients,
+            variable_count,
+            "creo nonlinear Jacobian coefficients",
+        )?;
         for column in 0..variable_count {
             let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
-            let mut plus = point.to_vec();
-            let mut minus = point.to_vec();
+            let mut plus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear positive probe")?;
+            let mut minus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear negative probe")?;
+            plus.copy_from_slice(point);
+            minus.copy_from_slice(point);
             plus[column] += step;
             minus[column] -= step;
-            let plus_residuals =
-                evaluate_nonlinear_residuals(block, values, variable_dimensions, &plus, context)?;
-            let minus_residuals =
-                evaluate_nonlinear_residuals(block, values, variable_dimensions, &minus, context)?;
-            let plus_residual = plus_residuals.get(row_index)?;
-            let minus_residual = minus_residuals.get(row_index)?;
-            (plus_residual.dimension == residual.dimension
-                && minus_residual.dimension == residual.dimension)
-                .then_some(())?;
+            let Some(plus_residuals) = evaluate_nonlinear_residuals(
+                ctx,
+                block,
+                values,
+                variable_dimensions,
+                &plus,
+                context,
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(minus_residuals) = evaluate_nonlinear_residuals(
+                ctx,
+                block,
+                values,
+                variable_dimensions,
+                &minus,
+                context,
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(plus_residual) = plus_residuals.get(row_index) else {
+                return Ok(None);
+            };
+            let Some(minus_residual) = minus_residuals.get(row_index) else {
+                return Ok(None);
+            };
+            if plus_residual.dimension != residual.dimension
+                || minus_residual.dimension != residual.dimension
+            {
+                return Ok(None);
+            }
             let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
-            derivative.is_finite().then_some(())?;
+            if !derivative.is_finite() {
+                return Ok(None);
+            }
             coefficients.push(derivative);
         }
+        ctx.reserve_vec(&mut rows, 1, "creo nonlinear Jacobian rows")?;
         rows.push(AffineEquationRow {
             coefficients,
             rhs: 0.0,
         });
     }
-    Some(rows)
+    Ok(Some(rows))
 }
 
 fn evaluate_nonlinear_residuals(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<SolveResidual>> {
-    (variable_dimensions.len() == block.unknowns.len() && point.len() == variable_dimensions.len())
-        .then_some(())?;
-    let mut evaluation_values = values.clone();
+) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
+    if variable_dimensions.len() != block.unknowns.len() || point.len() != variable_dimensions.len()
+    {
+        return Ok(None);
+    }
+    let mut evaluation_values = BTreeMap::new();
+    for (name, value) in values {
+        ctx.insert_btree_map(
+            &mut evaluation_values,
+            ctx.copy_retained_text(name, "creo nonlinear known value names")?,
+            copy_expression_value(ctx, value, "creo nonlinear known string values")?,
+            "creo nonlinear known value nodes",
+        )?;
+    }
     for ((variable, dimension), value) in block
         .unknowns
         .iter()
@@ -5414,36 +7440,70 @@ fn evaluate_nonlinear_residuals(
         .zip(variable_dimensions)
         .zip(point)
     {
-        value.is_finite().then_some(())?;
-        evaluation_values.insert(
-            expression_identifier_key(variable),
-            quantity_value(*value, *dimension),
-        );
+        if !value.is_finite() {
+            return Ok(None);
+        }
+        let mut key = ctx.copy_retained_text(variable, "creo nonlinear unknown value names")?;
+        key.make_ascii_lowercase();
+        let Some(value) = quantity_value(*value, *dimension) else {
+            return Ok(None);
+        };
+        ctx.insert_btree_map(
+            &mut evaluation_values,
+            key,
+            value,
+            "creo nonlinear unknown value nodes",
+        )?;
     }
-    block
-        .equations
-        .iter()
-        .map(|equation| {
-            let left = evaluate_relation_expression(&equation.left, &evaluation_values, context)?;
-            let right = evaluate_relation_expression(&equation.right, &evaluation_values, context)?;
-            let (left, left_dimension) = quantity_parts_ref(&left)?;
-            let (right, right_dimension) = quantity_parts_ref(&right)?;
-            (left_dimension == right_dimension).then_some(())?;
-            let value = left - right;
-            let scale = left.abs().max(right.abs()).max(1.0);
-            (value.is_finite() && scale.is_finite()).then_some(SolveResidual {
-                value,
-                scale,
-                dimension: left_dimension,
-            })
-        })
-        .collect()
+    let mut residuals = Vec::new();
+    for equation in &block.equations {
+        let Some(left) = parse_relation_expression::<CurveExpressionValue>(
+            ctx,
+            &equation.left,
+            &evaluation_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<CurveExpressionValue>(
+            ctx,
+            &equation.right,
+            &evaluation_values,
+            context,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some((left, left_dimension)) = quantity_parts_ref(&left) else {
+            return Ok(None);
+        };
+        let Some((right, right_dimension)) = quantity_parts_ref(&right) else {
+            return Ok(None);
+        };
+        if left_dimension != right_dimension {
+            return Ok(None);
+        }
+        let value = left - right;
+        let scale = left.abs().max(right.abs()).max(1.0);
+        if !value.is_finite() || !scale.is_finite() {
+            return Ok(None);
+        }
+        ctx.reserve_vec(&mut residuals, 1, "creo nonlinear residual rows")?;
+        residuals.push(SolveResidual {
+            value,
+            scale,
+            dimension: left_dimension,
+        });
+    }
+    Ok(Some(residuals))
 }
 
-fn nonlinear_residual_norm(residuals: &[SolveResidual]) -> f64 {
+fn nonlinear_residual_norm(residuals: &[SolveResidual], reference: &[SolveResidual]) -> f64 {
     residuals
         .iter()
-        .map(|residual| (residual.value / residual.scale).abs())
+        .zip(reference)
+        .map(|(residual, reference)| (residual.value / reference.scale).abs())
         .fold(0.0, f64::max)
 }
 
@@ -5466,12 +7526,61 @@ struct AffineEquationRow {
     rhs: f64,
 }
 
+fn eliminate_pivot_column(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &mut [AffineEquationRow],
+    pivot_row: usize,
+    column: usize,
+    coefficient_tolerance: f64,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
+    let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
+        return Ok(());
+    };
+    for row in before.iter_mut().chain(after.iter_mut()) {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(row.coefficients.len())
+                .checked_mul(3)
+                .and_then(|work| work.checked_add(3))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo matrix elimination", u64::MAX, u64::MAX)
+                })?,
+            "creo matrix elimination",
+        )?;
+        let factor = row.coefficients[column];
+        if factor.abs() <= coefficient_tolerance {
+            continue;
+        }
+        for (coefficient, pivot_coefficient) in row.coefficients.iter_mut().zip(&pivot.coefficients)
+        {
+            *coefficient -= factor * pivot_coefficient;
+            if coefficient.abs() <= coefficient_tolerance {
+                *coefficient = 0.0;
+            }
+        }
+        row.rhs -= factor * pivot.rhs;
+    }
+    Ok(())
+}
+
 fn solve_unique_affine_system(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut [AffineEquationRow],
     variable_count: usize,
-) -> Option<Vec<f64>> {
-    (variable_count > 0 && rows.len() >= variable_count).then_some(())?;
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    if variable_count == 0 || rows.len() < variable_count {
+        return Ok(None);
+    }
     for row in rows.iter_mut() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(row.coefficients.len())
+                .checked_mul(2)
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo matrix row normalization", u64::MAX, u64::MAX)
+                })?,
+            "creo matrix row normalization",
+        )?;
         let scale = row
             .coefficients
             .iter()
@@ -5484,90 +7593,125 @@ fn solve_unique_affine_system(
             row.rhs /= scale;
         }
     }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(rows.len())
+            .checked_mul(
+                cadmpeg_core::decode::u64_from_index(variable_count)
+                    .checked_add(2)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
+                    })?,
+            )
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
+            })?,
+        "creo matrix residual scan",
+    )?;
     let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
-    let mut pivot_row = 0;
-    for column in 0..variable_count {
-        let selected = (pivot_row..rows.len()).max_by(|&first, &second| {
+    for (pivot_row, column) in (0..variable_count).enumerate() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(rows.len()),
+            "creo matrix pivot scan",
+        )?;
+        let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
                 .total_cmp(&rows[second].coefficients[column].abs())
-        })?;
+        }) else {
+            return Ok(None);
+        };
         let divisor = rows[selected].coefficients[column];
-        (divisor.abs() > coefficient_tolerance).then_some(())?;
+        if divisor.abs() <= coefficient_tolerance {
+            return Ok(None);
+        }
         rows.swap(pivot_row, selected);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(rows[pivot_row].coefficients.len()),
+            "creo matrix pivot normalization",
+        )?;
         for coefficient in &mut rows[pivot_row].coefficients {
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        let pivot_coefficients = rows[pivot_row].coefficients.clone();
-        let pivot_rhs = rows[pivot_row].rhs;
-        for (row_index, row) in rows.iter_mut().enumerate() {
-            if row_index == pivot_row {
-                continue;
-            }
-            let factor = row.coefficients[column];
-            if factor.abs() <= coefficient_tolerance {
-                continue;
-            }
-            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
-                *coefficient -= factor * pivot;
-                if coefficient.abs() <= coefficient_tolerance {
-                    *coefficient = 0.0;
-                }
-            }
-            row.rhs -= factor * pivot_rhs;
-        }
-        pivot_row += 1;
+        eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
     }
-    rows.iter()
-        .skip(variable_count)
-        .all(|row| {
-            row.coefficients
-                .iter()
-                .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
-                && row.rhs.abs() <= residual_tolerance
-        })
-        .then_some(())?;
-    let solution = rows
-        .iter()
-        .take(variable_count)
-        .map(|row| row.rhs)
-        .collect::<Vec<_>>();
-    solution
+    if !rows.iter().skip(variable_count).all(|row| {
+        row.coefficients
+            .iter()
+            .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
+            && row.rhs.abs() <= residual_tolerance
+    }) {
+        return Ok(None);
+    }
+    let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo affine unique solution")?;
+    for (slot, row) in solution.iter_mut().zip(rows.iter()) {
+        *slot = row.rhs;
+    }
+    Ok(solution
         .iter()
         .all(|value| value.is_finite())
-        .then_some(solution)
+        .then_some(solution))
 }
 
-fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, AffineValue> {
-    let mut values = BTreeMap::from([(
-        "t".to_string(),
+fn evaluate_affine_program(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &CurveExpressionRecord,
+) -> Result<BTreeMap<String, AffineValue>, cadmpeg_core::CodecError> {
+    let mut values = BTreeMap::new();
+    ctx.insert_btree_map(
+        &mut values,
+        ctx.copy_retained_text("t", "creo affine time value name")?,
         AffineValue {
             constant: 0.0,
             linear: 1.0,
         },
-    )]);
-    let mut defined_symbols = BTreeSet::from(["t".to_string()]);
+        "creo affine time value node",
+    )?;
+    let mut defined_symbols = BTreeSet::new();
+    ctx.insert_btree_set(
+        &mut defined_symbols,
+        ctx.copy_retained_text("t", "creo affine defined time name")?,
+        "creo affine defined time node",
+    )?;
     for assignment in &record.assignments {
         let Some((name, declared_unit)) = assignment.parameter_target() else {
             continue;
         };
-        let key = expression_identifier_key(name);
+        let mut key = ctx.copy_retained_text(name, "creo affine assignment names")?;
+        key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
-        defined_symbols.insert(key.clone());
+        if !defined_symbols.contains(&key) {
+            ctx.insert_btree_set(
+                &mut defined_symbols,
+                ctx.copy_retained_text(&key, "creo affine defined symbol names")?,
+                "creo affine defined symbol nodes",
+            )?;
+        }
         match assignment.activation {
             CurveExpressionActivation::Active => {
-                let value = declaration_is_valid
-                    .then(|| evaluate_affine_expression(&assignment.expression, &values))
+                let value = if declaration_is_valid {
+                    parse_relation_expression::<crate::curve::AffineValue>(
+                        ctx,
+                        &assignment.expression,
+                        &values,
+                        RelationEvaluationContext::default(),
+                    )?
+                    .map(|value| match declared_unit {
+                        Some(unit) => match relation_unit(ctx, unit)? {
+                            Some(unit) => value.with_unit_checked(unit, ctx),
+                            None => Ok(None),
+                        },
+                        None => Ok(Some(value)),
+                    })
+                    .transpose()?
                     .flatten()
-                    .and_then(|value| {
-                        declared_unit
-                            .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
-                    });
+                } else {
+                    None
+                };
                 if let Some(value) = value {
-                    values.insert(key, value);
+                    ctx.insert_btree_map(&mut values, key, value, "creo affine value nodes")?;
                 } else {
                     values.remove(&key);
                 }
@@ -5578,32 +7722,52 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
             }
         }
     }
-    values
+    Ok(values)
 }
 
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
-pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
-    record.prohibited_constructs.is_empty().then_some(())?;
-    record.solve_blocks.is_empty().then_some(())?;
-    (!record.unresolved_solve_control).then_some(())?;
-    let values = evaluate_affine_program(record);
-    let radius = values.get("r")?;
-    let theta = values.get("theta")?;
-    let z = values.get("z")?;
-    if radius.constant <= 0.0 || radius.linear != 0.0 {
-        return None;
+pub(crate) fn expression_helix(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &CurveExpressionRecord,
+) -> Result<Option<CurveExpressionHelix>, cadmpeg_core::CodecError> {
+    if !record.prohibited_constructs.is_empty()
+        || !record.solve_blocks.is_empty()
+        || record.unresolved_solve_control
+    {
+        return Ok(None);
     }
-    let angular_travel = theta.linear;
-    let revolutions = angular_travel.abs() / 360.0;
-    (revolutions > 0.0).then_some(CurveExpressionHelix {
-        radius: radius.constant,
-        height: z.linear,
-        z_start: z.constant,
-        revolutions,
-        start_angle: theta.constant.to_radians(),
-        clockwise: angular_travel < 0.0,
-    })
+    for output in ["r", "theta", "z"] {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record.assignments.len()),
+            "creo helix output scan work",
+        )?;
+        if !record.assignments.iter().any(|assignment| {
+            assignment
+                .parameter_target()
+                .is_some_and(|(name, _)| name.eq_ignore_ascii_case(output))
+        }) {
+            return Ok(None);
+        }
+    }
+    let values = evaluate_affine_program(ctx, record)?;
+    Ok((|| {
+        let radius = values.get("r")?;
+        let theta = values.get("theta")?;
+        let z = values.get("z")?;
+        if radius.linear != 0.0 {
+            return None;
+        }
+        let angular_travel = theta.linear;
+        CurveExpressionHelix::new(
+            radius.constant,
+            z.linear,
+            z.constant,
+            angular_travel.abs() / 360.0,
+            theta.constant.to_radians(),
+            angular_travel < 0.0,
+        )
+    })())
 }
 
 /// Decode positional `crv_array` rows whose terminal suffix has one
@@ -5611,68 +7775,80 @@ pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressio
 /// `srf_array` should use [`topology_rows_with_face_ids`] so an ambiguous
 /// reference boundary can be resolved by its face roles.
 #[cfg(test)]
-pub fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
-    topology_rows_with_face_ids(payload, None)
+fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
+    crate::decode::with_test_decode_ctx(|ctx| topology_rows_with_face_ids(ctx, payload, None))
+        .expect("test curve topology rows admitted")
 }
 
 /// Decode standard topology rows using the enclosing `srf_array` identifier
 /// set to resolve variable-width reference boundaries.
-pub fn topology_rows_with_face_ids(
+pub(crate) fn topology_rows_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<CurveTopologyRow> {
-    let mut rows = framed_rows_with_face_ids(payload, face_ids)
-        .into_iter()
-        .filter_map(|row| {
-            parse_topology_row(
-                &payload[row.start..row.end],
-                row.start,
-                row.suffix_start,
-                row.suffix,
-            )
-        })
-        .collect::<Vec<_>>();
-    rows.sort_by_key(|row| row.offset);
+) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
+    let mut rows = Vec::new();
+    for row in framed_rows_with_face_ids(ctx, payload, face_ids)? {
+        if let Some(parsed) = parse_topology_row(
+            &payload[row.start..row.end],
+            row.start,
+            row.suffix_start,
+            row.suffix,
+        ) {
+            ctx.reserve_vec(&mut rows, 1, "creo topology curve rows")?;
+            rows.push(parsed);
+        }
+    }
+    ctx.stable_sort_by(
+        rows.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo topology rows with face ids rows ordering",
+    )?;
     rows.dedup_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 /// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
 /// Any malformed row or count mismatch withholds the entire array.
-#[must_use]
-pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
+pub(crate) fn depdb_cross_section_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<DepdbCurveRow>, cadmpeg_core::CodecError> {
     let Some(array) = find(payload, b"crv_array\0", 0) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let header = array + b"crv_array\0".len();
     if payload.get(header..header + 2) != Some(&[0xf2, psb::token::ARRAY_OPEN]) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (count, after_count) = compact_int(payload, header + 2);
     if after_count == header + 2 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Ok(count) = usize::try_from(count) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    if count == 0 || prototypes(payload).len() != 1 {
-        return Vec::new();
+    if count == 0 || prototypes(ctx, payload)?.len() != 1 {
+        return Ok(Vec::new());
     }
     let Some(topology) = find(payload, b"topol_ref_data\0", after_count) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let positional_count = count - 1;
     // Each row consumes at least one payload byte past the topology cursor
     // before its terminator, so the row count cannot exceed the unread bytes.
-    let capacity = bounded_len(
-        positional_count as u64,
+    let Some(capacity) = bounded_len(
+        cadmpeg_core::decode::u64_from_index(positional_count),
         1,
-        payload.len().saturating_sub(cursor),
-    )
-    .unwrap_or(0);
-    let mut rows = Vec::with_capacity(capacity);
+        payload.get(cursor..).map_or(0, <[u8]>::len),
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, capacity, "creo cross-section curve rows")?;
     let mut boundaries = Vec::new();
     for (marker, length) in [
         (b"\xe1\xe3".as_slice(), 2),
@@ -5681,80 +7857,91 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     ] {
         let mut search = cursor;
         while let Some(offset) = find(payload, marker, search) {
+            ctx.reserve_vec(&mut boundaries, 1, "creo cross-section row boundaries")?;
             boundaries.push((offset, length));
             search = offset + marker.len();
         }
     }
-    boundaries.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut boundaries,
+        Ord::cmp,
+        |_| 0,
+        "creo cross-section row boundaries sort",
+    )?;
     boundaries.dedup();
     while rows.len() < positional_count {
         let first_candidate = boundaries.partition_point(|(end, _)| *end < cursor);
-        let Some((row, terminator, length)) = boundaries[first_candidate..]
-            .iter()
-            .copied()
-            .find_map(|(end, length)| {
-                let row = parse_depdb_curve_segment(&payload[cursor..end], cursor, &cache)?;
-                Some((row, end, length))
-            })
-        else {
-            return Vec::new();
+        let mut selected = None;
+        for (end, length) in boundaries[first_candidate..].iter().copied() {
+            if let Some(row) =
+                parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache)?
+            {
+                selected = Some((row, end, length));
+                break;
+            }
+        }
+        let Some((row, terminator, length)) = selected else {
+            return Ok(Vec::new());
         };
         rows.push(row);
         cursor = terminator + length;
     }
     if rows.len() == positional_count {
-        rows
+        Ok(rows)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
 fn parse_depdb_curve_segment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &[u8],
     absolute_offset: usize,
     cache: &scalar::ScalarCache,
-) -> Option<DepdbCurveRow> {
-    let suffixes = (4..=11)
-        .filter_map(|suffix_length| {
-            let start = segment.len().checked_sub(suffix_length)?;
-            let (zero0, p1) = compact_int(segment, start);
-            let (x1, p2) = compact_int(segment, p1);
-            let (f1, p3) = compact_int(segment, p2);
-            let (zero1, end) = compact_int(segment, p3);
-            (p1 > start && p2 > p1 && p3 > p2 && end == segment.len())
-                .then_some((start, [zero0, x1, f1, zero1]))
-        })
-        .filter(|(_, suffix)| suffix[0] == 0 && suffix[3] == 0)
-        .collect::<Vec<_>>();
-    let [(suffix_start, suffix)] = suffixes.as_slice() else {
-        return None;
+) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
+    let mut suffix_candidate = None;
+    for suffix_length in 4..=11 {
+        let Some(start) = segment.len().checked_sub(suffix_length) else {
+            continue;
+        };
+        let (zero0, p1) = compact_int(segment, start);
+        let (x1, p2) = compact_int(segment, p1);
+        let (f1, p3) = compact_int(segment, p2);
+        let (zero1, end) = compact_int(segment, p3);
+        if p1 > start && p2 > p1 && p3 > p2 && end == segment.len() && zero0 == 0 && zero1 == 0 {
+            if suffix_candidate.is_some() {
+                return Ok(None);
+            }
+            suffix_candidate = Some((start, [zero0, x1, f1, zero1]));
+        }
+    }
+    let Some((suffix_start, suffix)) = suffix_candidate else {
+        return Ok(None);
     };
-    let prefixes = (0..*suffix_start).filter_map(|start| {
-        let prefix = topology_prefix_fields(segment, start)?;
-        (prefix.end <= *suffix_start).then_some((start, prefix))
-    });
-    let prefixes = prefixes
-        .fold(BTreeMap::new(), |mut by_end, (start, prefix)| {
-            by_end
-                .entry(prefix.end)
-                .and_modify(|(known_start, known_prefix)| {
-                    if start < *known_start {
-                        *known_start = start;
-                        *known_prefix = prefix;
-                    }
-                })
-                .or_insert((start, prefix));
-            by_end
-        })
-        .into_values()
-        .collect::<Vec<_>>();
-    let [(row_start, prefix)] = prefixes.as_slice() else {
-        return None;
+    let mut prefix_candidate: Option<(usize, TopologyPrefix)> = None;
+    for start in 0..suffix_start {
+        let Some(prefix) = topology_prefix_fields(segment, start) else {
+            continue;
+        };
+        if prefix.end > suffix_start {
+            continue;
+        }
+        match prefix_candidate {
+            None => prefix_candidate = Some((start, prefix)),
+            Some((_, known)) if known.end == prefix.end => {}
+            Some(_) => return Ok(None),
+        }
+    }
+    let Some((row_start, prefix)) = prefix_candidate else {
+        return Ok(None);
     };
-    let body = segment[prefix.end..*suffix_start].to_vec();
-    let (scalar_tokens, references, opaque_spans) =
-        curve_scalar_lane(&body, prefix.type_byte, cache)?;
-    Some(DepdbCurveRow {
+    let body = ctx.copy_retained(&segment[prefix.end..suffix_start], "creo curve row body")?;
+    let CurveScalarLane {
+        scalar_tokens,
+        references,
+        opaque_spans,
+    } = curve_scalar_lane(ctx, &body, prefix.type_byte, cache)?;
+    Ok(Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
@@ -5768,7 +7955,7 @@ fn parse_depdb_curve_segment(
         references,
         opaque_spans,
         offset: absolute_offset + row_start,
-    })
+    }))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5808,11 +7995,10 @@ struct TopologyPrefix {
 
 fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
     let short = find_in(payload, b"\xe1\xe3", start, end).map(|offset| (offset, 2));
-    let long_search_end = short.map_or(end, |(offset, _)| {
-        offset
-            .saturating_add(b"\xe1\xf5\x05\xf6\xe3".len())
-            .min(end)
-    });
+    let long_search_end = match short {
+        Some((offset, _)) => offset.checked_add(b"\xe1\xf5\x05\xf6\xe3".len())?.min(end),
+        None => end,
+    };
     let long =
         find_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, long_search_end).map(|offset| (offset, 5));
     match (short, long) {
@@ -5837,15 +8023,21 @@ fn curve_namespace_end(payload: &[u8], start: usize) -> usize {
         .unwrap_or(payload.len())
 }
 
-fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -> Vec<FramedRow> {
+fn framed_rows_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Result<Vec<FramedRow>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut arrays = Vec::new();
     let mut search = 0;
     while let Some(array) = find(payload, b"crv_array\0", search) {
+        ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(array + b"crv_array\0".len());
         search = array + b"crv_array\0".len();
     }
     if arrays.is_empty() {
+        ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(0);
     }
     for (index, &namespace_start) in arrays.iter().enumerate() {
@@ -5861,65 +8053,91 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         let mut boundary_anchored = false;
         let mut segments = Vec::new();
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
+            ctx.reserve_vec(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
             boundary_anchored = true;
         }
         if cursor < namespace_end {
+            ctx.reserve_vec(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, namespace_end, boundary_anchored));
         }
-        let known_face_ids = face_ids.map(|face_ids| {
-            let mut known = face_ids.clone();
+        let known_face_ids = if let Some(face_ids) = face_ids {
+            let mut known = BTreeSet::new();
+            for id in face_ids {
+                ctx.insert_btree_set(&mut known, *id, "creo known curve face ID nodes")?;
+            }
             for &(start, end, _) in &segments {
                 let Some(suffix) = unique_topology_suffix_in_segment(&payload[start..end]) else {
                     continue;
                 };
-                known.extend(suffix.faces.into_iter().flatten().map(NonZeroU32::get));
+                for id in suffix.faces.into_iter().flatten().map(NonZeroU32::get) {
+                    ctx.insert_btree_set(&mut known, id, "creo known curve face ID nodes")?;
+                }
             }
-            known
-        });
+            Some(known)
+        } else {
+            None
+        };
         for &(start, end, boundary_anchored) in &segments {
             if let Some(row) = framed_segment_with_face_ids(
+                ctx,
                 payload,
                 namespace_start,
-                start,
-                end,
+                (start, end),
                 boundary_anchored,
                 face_ids,
                 known_face_ids.as_ref(),
-            ) {
+            )? {
+                ctx.reserve_vec(&mut result, 1, "creo framed curve rows")?;
                 result.push(row);
             }
         }
     }
-    result.sort_by_key(|row| row.start);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.start.cmp(&right.start),
+        |_| 0,
+        "creo framed rows with face ids result ordering",
+    )?;
     result.dedup_by_key(|row| row.start);
-    result
+    Ok(result)
 }
 
 fn framed_segment_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     namespace_start: usize,
-    start: usize,
-    end: usize,
+    bounds: (usize, usize),
     boundary_anchored: bool,
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
-) -> Option<FramedRow> {
-    let segment = payload.get(start..end)?;
-    let mut prefixes = (0..segment.len())
-        .filter_map(|row_start| {
-            topology_prefix_fields(segment, row_start).map(|prefix| (row_start, prefix.end))
-        })
-        .collect::<Vec<_>>();
-    prefixes.sort_unstable_by_key(|(_, end)| *end);
+) -> Result<Option<FramedRow>, cadmpeg_core::CodecError> {
+    let (start, end) = bounds;
+
+    let Some(segment) = payload.get(start..end) else {
+        return Ok(None);
+    };
+    let mut prefixes = Vec::new();
+    for row_start in 0..segment.len() {
+        if let Some(prefix) = topology_prefix_fields(segment, row_start) {
+            ctx.reserve_vec(&mut prefixes, 1, "creo framed curve prefixes")?;
+            prefixes.push((row_start, prefix.end));
+        }
+    }
+    ctx.sort_unstable_by(
+        &mut prefixes,
+        |left, right| left.1.cmp(&right.1),
+        |_| 0,
+        "creo framed curve prefixes sort",
+    )?;
     let closes = segment
         .iter()
         .enumerate()
         .filter(|(_, byte)| **byte == psb::token::COMPOUND_CLOSE)
         .map(|(offset, _)| offset)
-        .collect::<Vec<_>>();
-    for close in closes.into_iter().rev() {
+        .rev();
+    for close in closes {
         let row_end = close + 1;
         if !complete_curve_row_linkage(&segment[row_end..]) {
             continue;
@@ -5937,28 +8155,28 @@ fn framed_segment_with_face_ids(
         if boundary_anchored
             && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
         {
-            return Some(FramedRow {
+            return Ok(Some(FramedRow {
                 namespace_start,
                 start,
                 end: start + row_end,
                 suffix_start,
                 suffix,
                 reference_geometry,
-            });
+            }));
         }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
         if eligible == 1 {
-            return Some(FramedRow {
+            return Ok(Some(FramedRow {
                 namespace_start,
                 start: start + prefixes[0].0,
                 end: start + row_end,
                 suffix_start: suffix_start - prefixes[0].0,
                 suffix,
                 reference_geometry,
-            });
+            }));
         }
     }
-    None
+    Ok(None)
 }
 
 fn generic_compact_at(bytes: &[u8], offset: usize) -> Option<(u32, usize)> {
@@ -5987,7 +8205,10 @@ fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
         let Some((count, next)) = generic_compact_at(bytes, cursor + 1) else {
             return false;
         };
-        let Some(count) = bounded_len(count.into(), 1, bytes.len().saturating_sub(next)) else {
+        let Some(remaining) = bytes.len().checked_sub(next) else {
+            return false;
+        };
+        let Some(count) = bounded_len(count.into(), 1, remaining) else {
             return false;
         };
         cursor = next;
@@ -6009,22 +8230,27 @@ fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
     terminal_count <= 4
 }
 
+#[derive(Debug)]
+struct CurveScalarLane {
+    scalar_tokens: Vec<CurveParameterScalar>,
+    references: Vec<CurveParameterReference>,
+    opaque_spans: Vec<CurveParameterOpaqueSpan>,
+}
+
 fn curve_scalar_lane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
     type_byte: u8,
     cache: &scalar::ScalarCache,
-) -> Option<(
-    Vec<CurveParameterScalar>,
-    Vec<CurveParameterReference>,
-    Vec<CurveParameterOpaqueSpan>,
-)> {
+) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
     let mut scalars = Vec::new();
     let mut references = Vec::new();
-    let mut claimed = alloc_filled(body.len(), false, "creo curve scalar claims").ok()?;
+    let mut claimed = ctx.alloc_filled(body.len(), false, "creo curve scalar claims")?;
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
             if let Ok((reference, next)) = reference_id(body, cursor + 1) {
+                ctx.reserve_vec(&mut references, 1, "creo curve parameter references")?;
                 references.push(CurveParameterReference {
                     entity_id: reference,
                     offset: cursor,
@@ -6040,11 +8266,12 @@ fn curve_scalar_lane(
             && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
             && scalars.len() < 8
         {
+            let raw = ctx.copy_retained(&body[cursor..=cursor], "creo curve zero raw token")?;
+            ctx.reserve_vec(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value: 0.0,
-                raw: vec![0x18],
+                raw,
                 offset: cursor,
-                length: 1,
             });
             claimed[cursor] = true;
             cursor += 1;
@@ -6056,11 +8283,12 @@ fn curve_scalar_lane(
             scalar::decode_in_row_lane(body, cursor, cache)
         };
         if let Some((value, next)) = decoded {
+            let raw = ctx.copy_retained(&body[cursor..next], "creo curve scalar raw token")?;
+            ctx.reserve_vec(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value,
-                raw: body[cursor..next].to_vec(),
+                raw,
                 offset: cursor,
-                length: next - cursor,
             });
             claimed[cursor..next].fill(true);
             cursor = next;
@@ -6079,32 +8307,36 @@ fn curve_scalar_lane(
         while cursor < body.len() && !claimed[cursor] {
             cursor += 1;
         }
-        opaque_spans.push(CurveParameterOpaqueSpan {
-            raw: body[start..cursor].to_vec(),
-            offset: start,
-            length: cursor - start,
-        });
+        let raw = ctx.copy_retained(&body[start..cursor], "creo curve opaque raw span")?;
+        ctx.reserve_vec(&mut opaque_spans, 1, "creo curve opaque spans")?;
+        opaque_spans.push(CurveParameterOpaqueSpan { raw, offset: start });
     }
-    Some((scalars, references, opaque_spans))
+    Ok(CurveScalarLane {
+        scalar_tokens: scalars,
+        references,
+        opaque_spans,
+    })
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
 /// topology suffix. Use [`parameter_records_with_face_ids`] when the enclosing
 /// `srf_array` identifiers are available.
 #[cfg(test)]
-pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
-    parameter_records_with_face_ids(payload, None)
+fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
+    crate::decode::with_test_decode_ctx(|ctx| parameter_records_with_face_ids(ctx, payload, None))
+        .expect("test curve parameter records")
 }
 
 /// Decode analytic bodies using the enclosing `srf_array` identifier set to
 /// resolve variable-width reference boundaries.
-pub fn parameter_records_with_face_ids(
+pub(crate) fn parameter_records_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<CurveParameterRecord> {
-    let cache = scalar::ScalarCache::from_section(payload);
+) -> Result<Vec<CurveParameterRecord>, cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
-    for framed in framed_rows_with_face_ids(payload, face_ids) {
+    for framed in framed_rows_with_face_ids(ctx, payload, face_ids)? {
         let row = &payload[framed.start..framed.end];
         let (curve_id, after_id) = compact_int(row, 0);
         let Some(&type_byte) = row.get(after_id) else {
@@ -6122,12 +8354,14 @@ pub fn parameter_records_with_face_ids(
         if suffix_start < body_start {
             continue;
         }
-        let body = row[body_start..suffix_start].to_vec();
-        let Some((scalar_tokens, references, opaque_spans)) =
-            curve_scalar_lane(&body, type_byte, &cache)
-        else {
-            continue;
-        };
+        let body =
+            ctx.copy_retained(&row[body_start..suffix_start], "creo curve parameter body")?;
+        let CurveScalarLane {
+            scalar_tokens,
+            references,
+            opaque_spans,
+        } = curve_scalar_lane(ctx, &body, type_byte, &cache)?;
+        ctx.reserve_vec(&mut records, 1, "creo curve parameter records")?;
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
@@ -6141,20 +8375,7 @@ pub fn parameter_records_with_face_ids(
             suffix_offset: framed.start + suffix_start,
         });
     }
-    records
-}
-
-fn uniquely_bounded_parameter_records(
-    records: &[CurveParameterRecord],
-) -> Vec<&CurveParameterRecord> {
-    let mut counts = BTreeMap::new();
-    for record in records {
-        *counts.entry(record.curve_id).or_insert(0usize) += 1;
-    }
-    records
-        .iter()
-        .filter(|record| counts.get(&record.curve_id) == Some(&1))
-        .collect()
+    Ok(records)
 }
 
 fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
@@ -6163,65 +8384,82 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
 
     record.references.is_empty().then_some(())?;
     let mut tokens = record.scalar_tokens.iter().peekable();
-    let mut values = Vec::with_capacity(8);
+    let mut values = [0.0; 8];
+    let mut value_count = 0;
     let mut cursor = 0;
     while cursor < record.body.len() {
         if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
             cursor += HELD_SCALAR_OPEN.len();
             let token = tokens.next().filter(|token| token.offset == cursor)?;
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
-            values.push(token.value);
-            cursor += token.length;
+            *values.get_mut(value_count)? = token.value;
+            value_count += 1;
+            cursor += token.raw.len();
             (record.body.get(cursor) == Some(&HELD_SCALAR_CLOSE)).then_some(())?;
             cursor += 1;
             continue;
         }
         if let Some(token) = tokens.peek().filter(|token| token.offset == cursor) {
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
-            values.push(token.value);
-            cursor += token.length;
+            *values.get_mut(value_count)? = token.value;
+            value_count += 1;
+            cursor += token.raw.len();
             tokens.next();
         } else if record.body[cursor] == 0x12 {
-            values.push(0.0);
+            *values.get_mut(value_count)? = 0.0;
+            value_count += 1;
             cursor += 1;
         } else {
             return None;
         }
     }
     tokens.next().is_none().then_some(())?;
-    values.iter().all(|value| value.is_finite()).then_some(())?;
-    values.try_into().ok()
+    (value_count == values.len() && values.iter().all(|value| value.is_finite())).then_some(values)
 }
 
 /// Interpret complete eight-slot parameter lanes for pcurve-family rows.
-pub fn pcurve_endpoints(
+pub(crate) fn pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
-) -> Vec<PcurveEndpoints> {
-    let mut result = uniquely_bounded_parameter_records(parameters)
-        .into_iter()
-        .filter(|record| matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08))
-        .filter_map(|record| {
-            let values = complete_pcurve_values(record)?;
-            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-            let topology = matching.next()?;
-            matching.next().is_none().then_some(())?;
-            (topology.type_byte == record.type_byte).then_some(())?;
-            Some(PcurveEndpoints {
-                curve_id: record.curve_id,
-                faces: topology.faces,
-                face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
-                face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
-                offset: record.offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    result.sort_by_key(|record| record.offset);
-    result
+) -> Result<Vec<PcurveEndpoints>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+        record.curve_id
+    })? {
+        if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+            continue;
+        }
+        let Some(values) = complete_pcurve_values(record) else {
+            continue;
+        };
+        let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+        let Some(topology) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() || topology.type_byte != record.type_byte {
+            continue;
+        }
+        ctx.reserve_vec(&mut result, 1, "creo pcurve endpoint rows")?;
+        result.push(PcurveEndpoints {
+            curve_id: record.curve_id,
+            faces: topology.faces,
+            face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
+            face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
+            offset: record.offset,
+        });
+    }
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo pcurve endpoints result ordering",
+    )?;
+    Ok(result)
 }
 
 fn decode_two_chart_scalar(
@@ -6241,26 +8479,40 @@ fn decode_two_chart_scalar(
 }
 
 fn complete_two_chart_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
     start: usize,
     count: u32,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<[[f64; 2]; 2]>> {
-    let sample_count = bounded_len(u64::from(count), 4, body.len().saturating_sub(start))?;
-    (sample_count >= 2).then_some(())?;
+) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
+    let Some(remaining) = body.len().checked_sub(start) else {
+        return Ok(None);
+    };
+    let Some(sample_count) = bounded_len(u64::from(count), 4, remaining) else {
+        return Ok(None);
+    };
+    if sample_count < 2 {
+        return Ok(None);
+    }
     let mut cursor = start;
-    let mut samples = Vec::with_capacity(sample_count);
+    let mut samples = Vec::new();
+    ctx.reserve_vec(&mut samples, sample_count, "creo two-chart sample points")?;
     for _ in 0..sample_count {
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let (decoded, next) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)?;
-            (next > cursor && decoded.is_finite()).then_some(())?;
+            let Some((decoded, next)) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)
+            else {
+                return Ok(None);
+            };
+            if next <= cursor || !decoded.is_finite() {
+                return Ok(None);
+            }
             *value = decoded;
             cursor = next;
         }
         samples.push(sample);
     }
-    (cursor == body.len()).then_some(samples)
+    Ok((cursor == body.len()).then_some(samples))
 }
 
 /// Decode byte-complete two-chart sample bodies from one curve namespace.
@@ -6268,12 +8520,13 @@ fn complete_two_chart_samples(
 /// A canonical body supplies `fc <count>`. Later rows in the same feature and
 /// raw curve family replay the canonical sample extent without the prefix.
 /// Every admitted row consumes exactly four finite scalars per sample.
-pub fn two_chart_pcurve_samples(
+pub(crate) fn two_chart_pcurve_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<TwoChartPcurveSamples> {
-    let cache = scalar::ScalarCache::from_section(payload);
-    let framed = framed_rows_with_face_ids(payload, face_ids);
+) -> Result<Vec<TwoChartPcurveSamples>, cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    let framed = framed_rows_with_face_ids(ctx, payload, face_ids)?;
     let mut canonical_counts = BTreeMap::<(usize, u32, u8), BTreeSet<u32>>::new();
     for row in &framed {
         let bytes = &payload[row.start..row.end];
@@ -6287,12 +8540,19 @@ pub fn two_chart_pcurve_samples(
         let (count, start) = compact_int(body, 1);
         if prefix.feature_id != 0
             && start > 1
-            && complete_two_chart_samples(body, start, count, &cache).is_some()
+            && complete_two_chart_samples(ctx, body, start, count, &cache)?.is_some()
         {
-            canonical_counts
-                .entry((row.namespace_start, prefix.feature_id, prefix.type_byte))
-                .or_default()
-                .insert(count);
+            let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
+            ctx.admit_btree_entry(
+                &canonical_counts,
+                &group_key,
+                "creo two-chart canonical group nodes",
+            )?;
+            let counts = match canonical_counts.entry(group_key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
+            };
+            ctx.insert_btree_set(counts, count, "creo two-chart canonical count nodes")?;
         }
     }
 
@@ -6308,20 +8568,29 @@ pub fn two_chart_pcurve_samples(
                 continue;
             }
             let (count, start) = compact_int(body, 1);
-            (start > 1)
-                .then(|| complete_two_chart_samples(body, start, count, &cache))
-                .flatten()
+            if start > 1 {
+                complete_two_chart_samples(ctx, body, start, count, &cache)?
+            } else {
+                None
+            }
         } else {
             let Some(counts) =
                 canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte))
             else {
                 continue;
             };
-            let mut candidates = counts
-                .iter()
-                .filter_map(|count| complete_two_chart_samples(body, 0, *count, &cache));
-            let candidate = candidates.next();
-            if candidates.next().is_some() {
+            let mut candidate = None;
+            let mut ambiguous = false;
+            for count in counts {
+                if let Some(samples) = complete_two_chart_samples(ctx, body, 0, *count, &cache)? {
+                    if candidate.is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                    candidate = Some(samples);
+                }
+            }
+            if ambiguous {
                 None
             } else {
                 candidate
@@ -6330,6 +8599,7 @@ pub fn two_chart_pcurve_samples(
         let Some(samples) = samples else {
             continue;
         };
+        ctx.reserve_vec(&mut result, 1, "creo two-chart sample rows")?;
         result.push(TwoChartPcurveSamples {
             curve_id: prefix.id,
             faces: [row.suffix[0], row.suffix[1]],
@@ -6337,13 +8607,27 @@ pub fn two_chart_pcurve_samples(
             offset: row.start,
         });
     }
-    result.sort_by_key(|record| record.offset);
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo two chart pcurve samples result ordering",
+    )?;
     let mut counts = BTreeMap::new();
     for record in &result {
-        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+        ctx.admit_btree_entry(
+            &counts,
+            &record.curve_id,
+            "creo two-chart result count nodes",
+        )?;
+        let count = match counts.entry(record.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
+        };
+        *count += 1;
     }
     result.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    result
+    Ok(result)
 }
 
 fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[f64; 2]; 2]> {
@@ -6360,17 +8644,17 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
     (prefix.offset == 0
         && prefix.raw == [0xfc, 0x02]
         && terminal.raw.first() == Some(&0x34)
-        && terminal.length == 3)
+        && terminal.raw.len() == 3)
         .then_some(())?;
-    let mut cursor = prefix.length;
+    let mut cursor = prefix.raw.len();
     for token in tokens {
         (token.offset == cursor
-            && token.length != 0
-            && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            && !token.raw.is_empty()
+            && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
         .then_some(())?;
-        cursor += token.length;
+        cursor += token.raw.len();
     }
-    (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
+    (terminal.offset == cursor && terminal.offset + terminal.raw.len() == record.body.len())
         .then_some(())?;
     let values = tokens.each_ref().map(|token| token.value);
     (values.iter().all(|value| value.is_finite())
@@ -6388,34 +8672,51 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
 /// A path is admitted only when the body has one unique topology row, a
 /// complete seven-scalar lane, and the bounded terminal operand. Other fc 02
 /// bodies remain native parameter records until their grammar is settled.
-pub fn fc02_short_pcurve_endpoints(
+pub(crate) fn fc02_short_pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
-) -> Vec<Fc02ShortPcurveEndpoints> {
-    let mut result = uniquely_bounded_parameter_records(parameters)
-        .into_iter()
-        .filter_map(|record| {
-            let face_0_endpoints = complete_fc02_short_pcurve_values(record)?;
-            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-            let topology = matching.next()?;
-            matching.next().is_none().then_some(())?;
-            (topology.type_byte == record.type_byte).then_some(())?;
-            Some(Fc02ShortPcurveEndpoints {
-                curve_id: record.curve_id,
-                faces: topology.faces.map(stored_face_reference),
-                face_0_endpoints,
-                offset: record.offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    result.sort_by_key(|record| record.offset);
-    result
+) -> Result<Vec<Fc02ShortPcurveEndpoints>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+        record.curve_id
+    })? {
+        let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
+            continue;
+        };
+        let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+        let Some(topology) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() || topology.type_byte != record.type_byte {
+            continue;
+        }
+        ctx.reserve_vec(&mut result, 1, "creo FC02 short pcurve endpoints")?;
+        result.push(Fc02ShortPcurveEndpoints {
+            curve_id: record.curve_id,
+            faces: topology.faces.map(stored_face_reference),
+            face_0_endpoints,
+            offset: record.offset,
+        });
+    }
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo fc02 short pcurve endpoints result ordering",
+    )?;
+    Ok(result)
 }
 
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
-pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
+pub(crate) fn fc_coordinates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &[CurveParameterRecord],
+) -> Result<Vec<FcCurveCoordinates>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in uniquely_bounded_parameter_records(parameters) {
+    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+        record.curve_id
+    })? {
         let Some((&0xfc, tail)) = record.body.split_first() else {
             continue;
         };
@@ -6427,9 +8728,11 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
         while cursor < lane.len() {
             if matches!(lane[cursor], 0x46 | 0x2d) {
                 if let Some((value, next)) = scalar::decode(lane, cursor) {
+                    ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")?;
                     tokens.push(FcCurveCoordinateToken {
                         value_mm: value,
-                        raw: lane[cursor..next].to_vec(),
+                        raw: ctx
+                            .copy_retained(&lane[cursor..next], "creo fc coordinate token bytes")?,
                         offset: cursor + 2,
                     });
                     cursor = next;
@@ -6443,32 +8746,48 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
             let mut unclaimed = 0;
             for token in &tokens {
                 if unclaimed < token.offset {
+                    ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                     opaque_spans.push(FcCurveOpaqueSpan {
-                        raw: record.body[unclaimed..token.offset].to_vec(),
+                        raw: ctx.copy_retained(
+                            &record.body[unclaimed..token.offset],
+                            "creo fc opaque span bytes",
+                        )?,
                         offset: unclaimed,
                     });
                 }
                 unclaimed = token.offset + token.raw.len();
             }
             if unclaimed < record.body.len() {
+                ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                 opaque_spans.push(FcCurveOpaqueSpan {
-                    raw: record.body[unclaimed..].to_vec(),
+                    raw: ctx
+                        .copy_retained(&record.body[unclaimed..], "creo fc opaque span bytes")?,
                     offset: unclaimed,
                 });
             }
+            let mut values_mm = Vec::new();
+            ctx.reserve_vec(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
+            values_mm.extend(tokens.iter().map(|token| token.value_mm));
+            let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
+            ctx.reserve_vec(&mut result, 1, "creo fc coordinate rows")?;
             result.push(FcCurveCoordinates {
                 curve_id: record.curve_id,
                 subtype,
-                body: record.body.clone(),
-                values_mm: tokens.iter().map(|token| token.value_mm).collect(),
+                body,
+                values_mm,
                 tokens,
                 opaque_spans,
                 offset: record.offset,
             });
         }
     }
-    result.sort_by_key(|record| record.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo fc coordinates result ordering",
+    )?;
+    Ok(result)
 }
 
 fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
@@ -6485,6 +8804,7 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     if matches!(prefix, 0xe0..=0xe3 | 0xf7 | 0xf8) || offset + 7 > body.len() {
         return None;
     }
+    // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
     let byte_1 = prefix.wrapping_sub(0x8b);
     scalar::ieee7_with_prefix(
         body,
@@ -6495,9 +8815,14 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 }
 
 /// Validate FC05 point lanes against their exact circle identity.
-pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
+pub(crate) fn fc05_circles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &[CurveParameterRecord],
+) -> Result<Vec<Fc05Circle>, cadmpeg_core::CodecError> {
     let mut circles = Vec::new();
-    for record in uniquely_bounded_parameter_records(parameters) {
+    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+        record.curve_id
+    })? {
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
             continue;
         }
@@ -6530,6 +8855,7 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
                 break;
             };
+            ctx.reserve_vec(&mut points, 1, "creo fc05 point rows")?;
             points.push((x, z, parameter, ordinate));
             cursor = next;
         }
@@ -6549,30 +8875,42 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         let first = points[0];
         let middle = points[points.len() / 2];
         let last = points[points.len() - 1];
-        let a11 = 2.0 * (middle.0 - first.0);
-        let a12 = 2.0 * (middle.1 - first.1);
-        let a21 = 2.0 * (last.0 - middle.0);
-        let a22 = 2.0 * (last.1 - middle.1);
-        let determinant = a11.mul_add(a22, -(a12 * a21));
-        if determinant.abs() < 1e-15 {
+        let middle_delta = [middle.0 - first.0, middle.1 - first.1];
+        let last_delta = [last.0 - first.0, last.1 - first.1];
+        let scale = middle_delta
+            .into_iter()
+            .chain(last_delta)
+            .map(f64::abs)
+            .fold(0.0, f64::max);
+        if !scale.is_finite() || scale == 0.0 {
             continue;
         }
-        let bx = middle.0.mul_add(middle.0, middle.1 * middle.1)
-            - first.0.mul_add(first.0, first.1 * first.1);
-        let bz = last.0.mul_add(last.0, last.1 * last.1)
-            - middle.0.mul_add(middle.0, middle.1 * middle.1);
-        let center_x = bx.mul_add(a22, -(a12 * bz)) / determinant;
-        let center_z = a11.mul_add(bz, -(bx * a21)) / determinant;
+        let middle_delta = middle_delta.map(|value| value / scale);
+        let last_delta = last_delta.map(|value| value / scale);
+        let determinant = middle_delta[0].mul_add(last_delta[1], -middle_delta[1] * last_delta[0]);
+        if determinant.abs() <= 64.0 * f64::EPSILON {
+            continue;
+        }
+        // Fit in a translated chart so subtracting squared world positions
+        // cannot erase a small circle's radius.
+        let middle_squared =
+            middle_delta[0].mul_add(middle_delta[0], middle_delta[1] * middle_delta[1]);
+        let last_squared = last_delta[0].mul_add(last_delta[0], last_delta[1] * last_delta[1]);
+        let center_u = 0.5 * middle_squared.mul_add(last_delta[1], -middle_delta[1] * last_squared)
+            / determinant;
+        let center_v = 0.5 * middle_delta[0].mul_add(last_squared, -middle_squared * last_delta[0])
+            / determinant;
+        let center_x = center_u.mul_add(scale, first.0);
+        let center_z = center_v.mul_add(scale, first.1);
         let radius = (first.0 - center_x).hypot(first.1 - center_z);
-        if radius <= 0.0 {
+        if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
             continue;
         }
-        let residuals = points
+        let max_residual = points
             .iter()
             .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
-            .collect::<Vec<_>>();
-        let max_residual = residuals.iter().copied().fold(0.0, f64::max);
-        if max_residual > EPS_CIRCLE_RESIDUAL * radius.max(1.0) {
+            .fold(0.0, f64::max);
+        if max_residual > EPS_CIRCLE_RESIDUAL * radius {
             continue;
         }
         let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
@@ -6613,8 +8951,15 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             }
             _ => Fc05AngleParameterRelation::Inconsistent,
         };
-        let sample_direction_row_frame =
-            [(first.0 - center_x) / radius, (first.1 - center_z) / radius];
+        let Some((sample_direction_row_frame, _)) =
+            cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+                first.0 - center_x,
+                first.1 - center_z,
+            ])
+        else {
+            continue;
+        };
+        ctx.reserve_vec(&mut circles, 1, "creo fc05 circles")?;
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],
@@ -6627,26 +8972,47 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             offset: record.offset,
         });
     }
-    circles.sort_by_key(|circle| circle.offset);
-    circles
+    ctx.stable_sort_by(
+        circles.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo fc05 circles circles ordering",
+    )?;
+    Ok(circles)
 }
 
 /// Bind validated `fc 05` circles to typed cylinder/plane face pairs and retain
 /// only groups that agree on radius and center at two distinct cap ordinates.
-pub fn fc05_cylinder_cap_pairs(
+pub(crate) fn fc05_cylinder_cap_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     circles: &[Fc05Circle],
     topology: &[CurveTopologyRow],
     surfaces: &[crate::surface::SurfaceRow],
-) -> Vec<Fc05CylinderCapPair> {
+) -> Result<Vec<Fc05CylinderCapPair>, cadmpeg_core::CodecError> {
     use std::collections::BTreeMap;
 
-    let faces = crate::topology::uniquely_identified_rows(topology)
-        .into_iter()
-        .map(|row| (row.id, row.faces))
-        .collect::<BTreeMap<_, [Option<NonZeroU32>; 2]>>();
+    let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
+    for row in crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)? {
+        ctx.insert_btree_map(
+            &mut faces,
+            row.id,
+            row.faces,
+            "creo fc05 topology-face nodes",
+        )?;
+    }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
-        *circle_counts.entry(circle.curve_id).or_default() += 1;
+        ctx.admit_btree_entry(
+            &circle_counts,
+            &circle.curve_id,
+            "creo fc05 circle-count nodes",
+        )?;
+        match circle_counts.entry(circle.curve_id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+        }
     }
     let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32, f64)>>::new();
     for circle in circles {
@@ -6656,39 +9022,48 @@ pub fn fc05_cylinder_cap_pairs(
         let Some(adjacent) = faces.get(&circle.curve_id) else {
             continue;
         };
-        let cylinders = adjacent
+        let mut cylinders = adjacent
             .iter()
             .flatten()
             .map(|face| face.get())
             .filter(|face| {
                 crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-            })
-            .collect::<Vec<_>>();
-        let planes = adjacent
+            });
+        let mut planes = adjacent
             .iter()
             .flatten()
             .map(|face| face.get())
             .filter(|face| {
                 crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
-            })
-            .collect::<Vec<_>>();
-        if let ([cylinder], [plane], Some(ordinate)) = (
-            cylinders.as_slice(),
-            planes.as_slice(),
+            });
+        let (Some(cylinder), None, Some(plane), None, Some(ordinate)) = (
+            cylinders.next(),
+            cylinders.next(),
+            planes.next(),
+            planes.next(),
             circle.cap_ordinate_row_frame,
-        ) {
-            groups
-                .entry(*cylinder)
-                .or_default()
-                .push((circle, *plane, ordinate));
-        }
+        ) else {
+            continue;
+        };
+        ctx.admit_btree_entry(&groups, &cylinder, "creo fc05 cylinder group nodes")?;
+        let group = match groups.entry(cylinder) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
+        };
+        ctx.reserve_vec(group, 1, "creo fc05 cylinder group members")?;
+        group.push((circle, plane, ordinate));
     }
 
     let mut result = Vec::new();
     for (surface_id, mut group) in groups {
-        group.sort_by_key(|(circle, _, _)| circle.offset);
+        ctx.stable_sort_by(
+            group.as_mut_slice(),
+            |(left, _, _), (right, _, _)| left.offset.cmp(&right.offset),
+            |_| std::mem::size_of::<usize>(),
+            "creo fc05 cylinder cap pairs group ordering",
+        )?;
         let first = group[0].0;
         let Fc05AngleParameterRelation::Consistent {
             sense: parameter_sense,
@@ -6697,7 +9072,7 @@ pub fn fc05_cylinder_cap_pairs(
         else {
             continue;
         };
-        let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
+        let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm;
         if !group.iter().all(|(circle, _, _)| {
             let Fc05AngleParameterRelation::Consistent {
                 sense,
@@ -6710,8 +9085,8 @@ pub fn fc05_cylinder_cap_pairs(
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
                 && sense == parameter_sense
-                && (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
-                && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
+                && (direction[0] - reference_direction_row_frame[0]).abs() <= EPS_RADIUS_AGREEMENT
+                && (direction[1] - reference_direction_row_frame[1]).abs() <= EPS_RADIUS_AGREEMENT
         }) {
             continue;
         }
@@ -6721,22 +9096,24 @@ pub fn fc05_cylinder_cap_pairs(
                 .iter()
                 .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
             {
+                ctx.reserve_vec(&mut ordinates, 1, "creo fc05 distinct cap ordinates")?;
                 ordinates.push(ordinate);
             }
         }
         if ordinates.len() < 2 {
             continue;
         }
+        let mut cap_edges = Vec::new();
+        ctx.reserve_vec(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
+        cap_edges.extend(group.iter().map(|(circle, plane, ordinate)| Fc05CapEdge {
+            curve_id: circle.curve_id,
+            cap_plane_id: *plane,
+            cap_ordinate_row_frame: *ordinate,
+        }));
+        ctx.reserve_vec(&mut result, 1, "creo fc05 cylinder cap pairs")?;
         result.push(Fc05CylinderCapPair {
             surface_id,
-            cap_edges: group
-                .iter()
-                .map(|(circle, plane, ordinate)| Fc05CapEdge {
-                    curve_id: circle.curve_id,
-                    cap_plane_id: *plane,
-                    cap_ordinate_row_frame: *ordinate,
-                })
-                .collect(),
+            cap_edges,
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
             reference_direction_row_frame,
@@ -6745,13 +9122,21 @@ pub fn fc05_cylinder_cap_pairs(
             offset: first.offset,
         });
     }
-    result.sort_by_key(|pair| pair.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo fc05 cylinder cap pairs result ordering",
+    )?;
+    Ok(result)
 }
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
-pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
-    let cache = scalar::ScalarCache::from_section(payload);
+pub(crate) fn prototype_pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PrototypePcurveEndpoints>, cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -6776,24 +9161,31 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
             continue;
         }
         let mut cursor = header + 3;
-        let mut values = Vec::with_capacity(8);
-        while cursor < prototype_end && values.len() < 8 {
+        let mut values = [0.0; 8];
+        let mut value_count = 0;
+        while cursor < prototype_end && value_count < values.len() {
             if payload[cursor] == 0x12
                 || (payload[cursor] == 0x18
-                    && values.len() == 7
+                    && value_count == 7
                     && (cursor + 1 == prototype_end || payload.get(cursor + 1) == Some(&0xe0)))
             {
-                values.push(0.0);
+                values[value_count] = 0.0;
+                value_count += 1;
                 cursor += 1;
             } else if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
-                values.push(value);
+                values[value_count] = value;
+                value_count += 1;
                 cursor = next;
             } else {
                 break;
             }
         }
         let array_is_bounded = cursor == prototype_end || payload.get(cursor) == Some(&0xe0);
-        if values.len() == 8 && values.iter().all(|value| value.is_finite()) && array_is_bounded {
+        if value_count == values.len()
+            && values.iter().all(|value| value.is_finite())
+            && array_is_bounded
+        {
+            ctx.reserve_vec(&mut result, 1, "creo prototype pcurve endpoints")?;
             result.push(PrototypePcurveEndpoints {
                 curve_id,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
@@ -6802,12 +9194,20 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
             });
         }
     }
-    result.sort_by_key(|record| record.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo prototype pcurve endpoints result ordering",
+    )?;
+    Ok(result)
 }
 
 /// Decode the four labeled topology pointers of each curve prototype.
-pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
+pub(crate) fn prototype_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<CurvePrototypeTopology>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -6838,6 +9238,7 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
         let Some(next_1) = reference(b"next_crv_hdr_ptr[1]\0") else {
             continue;
         };
+        ctx.reserve_vec(&mut result, 1, "creo prototype topology rows")?;
         result.push(CurvePrototypeTopology {
             curve_id,
             faces: [face_0, face_1].map(NonZeroU32::new),
@@ -6845,42 +9246,75 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
             offset: namespace,
         });
     }
-    result.sort_by_key(|record| record.offset);
-    result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo prototype topology result ordering",
+    )?;
+    Ok(result)
 }
 
 /// Bind complete prototype UV endpoints to labeled prototype topology.
-pub fn bind_prototype_pcurves(
+pub(crate) fn bind_prototype_pcurves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurves: &[PrototypePcurveEndpoints],
     topology: &[CurvePrototypeTopology],
-) -> Vec<BoundPrototypePcurve> {
+) -> Result<Vec<BoundPrototypePcurve>, cadmpeg_core::CodecError> {
     let mut pcurve_counts = BTreeMap::new();
     for pcurve in pcurves {
-        *pcurve_counts.entry(pcurve.curve_id).or_insert(0usize) += 1;
+        ctx.admit_btree_entry(
+            &pcurve_counts,
+            &pcurve.curve_id,
+            "creo prototype pcurve count nodes",
+        )?;
+        let count = match pcurve_counts.entry(pcurve.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
+        };
+        *count += 1;
     }
     let mut topology_counts = BTreeMap::new();
     for row in topology {
-        *topology_counts.entry(row.curve_id).or_insert(0usize) += 1;
+        ctx.admit_btree_entry(
+            &topology_counts,
+            &row.curve_id,
+            "creo prototype topology count nodes",
+        )?;
+        let count = match topology_counts.entry(row.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
+        };
+        *count += 1;
     }
-    let mut result = pcurves
+    let mut result = Vec::new();
+    for pcurve in pcurves
         .iter()
         .filter(|pcurve| pcurve_counts.get(&pcurve.curve_id) == Some(&1))
         .filter(|pcurve| topology_counts.get(&pcurve.curve_id) == Some(&1))
-        .filter_map(|pcurve| {
-            let topology = topology
-                .iter()
-                .find(|topology| topology.curve_id == pcurve.curve_id)?;
-            Some(BoundPrototypePcurve {
-                curve_id: pcurve.curve_id,
-                faces: topology.faces,
-                face_0_endpoints: pcurve.face_0_endpoints,
-                face_1_endpoints: pcurve.face_1_endpoints,
-                offset: pcurve.offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    result.sort_by_key(|record| record.offset);
-    result
+    {
+        let topology = topology
+            .iter()
+            .find(|topology| topology.curve_id == pcurve.curve_id);
+        let Some(topology) = topology else {
+            continue;
+        };
+        ctx.reserve_vec(&mut result, 1, "creo bound prototype pcurves")?;
+        result.push(BoundPrototypePcurve {
+            curve_id: pcurve.curve_id,
+            faces: topology.faces,
+            face_0_endpoints: pcurve.face_0_endpoints,
+            face_1_endpoints: pcurve.face_1_endpoints,
+            offset: pcurve.offset,
+        });
+    }
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo bind prototype pcurves result ordering",
+    )?;
+    Ok(result)
 }
 
 /// The stored face identifier of a bounded half-edge side; `0` is unbounded.
@@ -6936,12 +9370,14 @@ fn topology_suffix_with_face_ids(
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Option<TopologySuffixCandidate> {
     let candidates = topology_suffix_candidates(row)?;
-    if candidates.len() == 1 {
-        return candidates.first().copied();
+    let mut initial = candidates.iter().flatten().copied();
+    if let (Some(candidate), None) = (initial.next(), initial.next()) {
+        return Some(candidate);
     }
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
-        let role_matches = candidates
+        let mut role_matches = candidates
             .iter()
+            .flatten()
             .filter(|candidate| {
                 candidate
                     .faces
@@ -6949,16 +9385,15 @@ fn topology_suffix_with_face_ids(
                     .flatten()
                     .all(|id| ids.contains(&id.get()))
             })
-            .copied()
-            .collect::<Vec<_>>();
-        match role_matches.as_slice() {
-            [candidate] => return Some(*candidate),
-            [] => {}
+            .copied();
+        match (role_matches.next(), role_matches.next()) {
+            (Some(candidate), None) => return Some(candidate),
+            (None, None) => {}
             _ => return None,
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|candidate| {
+    let mut role_matches = candidates.into_iter().flatten().filter(|candidate| {
         candidate
             .faces
             .iter()
@@ -6980,21 +9415,23 @@ fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<TopologySuffixCan
         let Some(candidates) = topology_suffix_candidates(&segment[..row_end]) else {
             continue;
         };
-        if let [candidate] = candidates.as_slice() {
-            return Some(*candidate);
+        let mut unique = candidates.into_iter().flatten();
+        if let (Some(candidate), None) = (unique.next(), unique.next()) {
+            return Some(candidate);
         }
     }
     None
 }
 
-fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>> {
+fn topology_suffix_candidates(row: &[u8]) -> Option<[Option<TopologySuffixCandidate>; 24]> {
     let close = row.len().checked_sub(1)?;
     (row.get(close) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
-    let reference_geometry_candidates = if row.get(close.saturating_sub(2)..close) == Some(&[0, 0])
-    {
-        vec![(close - 2, [0, 0])]
+    let mut reference_geometry_candidates = [None; 3];
+    let mut reference_count = 0;
+    if close.checked_sub(2).and_then(|start| row.get(start..close)) == Some(&[0, 0]) {
+        reference_geometry_candidates[0] = Some((close - 2, [0, 0]));
+        reference_count = 1;
     } else {
-        let mut candidates = Vec::new();
         for length in 2..=4 {
             let Some(start) = close.checked_sub(length) else {
                 continue;
@@ -7006,13 +9443,18 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == close {
-                candidates.push((start, [first, second]));
+                reference_geometry_candidates[reference_count] = Some((start, [first, second]));
+                reference_count += 1;
             }
         }
-        candidates
-    };
-    let mut candidates = Vec::new();
-    for (reference_geometry_start, reference_geometry) in reference_geometry_candidates {
+    }
+    let mut candidates = [None; 24];
+    let mut candidate_count = 0;
+    for (reference_geometry_start, reference_geometry) in reference_geometry_candidates
+        .into_iter()
+        .take(reference_count)
+        .flatten()
+    {
         for length in 4..=11 {
             let Some(start) = reference_geometry_start.checked_sub(length) else {
                 continue;
@@ -7030,12 +9472,13 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == reference_geometry_start {
-                candidates.push(TopologySuffixCandidate {
+                candidates[candidate_count] = Some(TopologySuffixCandidate {
                     start,
                     faces: [f0, f1].map(NonZeroU32::new),
                     next_edges: [e0, e1],
                     reference_geometry,
                 });
+                candidate_count += 1;
             }
         }
     }
@@ -7044,7 +9487,7 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
 
 fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
     let offset = find_in(data, needle, from, end)?;
-    find_in(data, needle, offset.saturating_add(1), end)
+    find_in(data, needle, offset.checked_add(1)?, end)
         .is_none()
         .then_some(offset)
 }

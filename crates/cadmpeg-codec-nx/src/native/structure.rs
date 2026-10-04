@@ -2,15 +2,18 @@
 //! Typed records from the bounded fast-load assembly structure stream.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::fmt::Write;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::object_uuid::ObjectUuidValue;
 
+pub(crate) mod occurrences;
 mod uuid_group_members;
+use occurrences::FastLoadOccurrences;
 use uuid_group_members::UuidGroupMembers;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
@@ -19,37 +22,37 @@ const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentPrototype {
+pub(super) struct FastLoadComponentPrototype {
     /// Globally unique prototype identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized prototype table.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Serialized component name.
-    pub name: String,
+    name: String,
     /// Directory entry containing the roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the name tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One UUID identity in the fast-load component roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentUuid {
+pub(super) struct FastLoadComponentUuid {
     /// Globally unique native UUID-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized UUID table.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Canonical lowercase UUID text.
-    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Directory entry containing the UUID table.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the UUID tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum OccurrenceLaneForm {
+enum OccurrenceLaneForm {
     Base,
     Extended,
 }
@@ -77,7 +80,7 @@ impl From<OccurrenceLaneForm> for u8 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum OccurrenceMarker {
+enum OccurrenceMarker {
     One,
     Nine,
 }
@@ -106,7 +109,7 @@ impl From<OccurrenceMarker> for u8 {
 /// One-based slot in a count-minus-one roster table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) struct RosterIndex(u8);
+struct RosterIndex(u8);
 
 impl TryFrom<u8> for RosterIndex {
     type Error = &'static str;
@@ -133,99 +136,251 @@ impl RosterIndex {
 }
 
 /// One ordered component use referencing a reusable fast-load prototype.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentOccurrence {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct FastLoadComponentOccurrence {
     /// Globally unique occurrence identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized occurrence table.
-    pub ordinal: u32,
-    /// Byte discriminator for the serialized occurrence lane form.
-    pub occurrence_lane_form: OccurrenceLaneForm,
+    ordinal: u32,
     /// Exact marker byte in the serialized occurrence marker lane.
-    pub marker: OccurrenceMarker,
+    marker: OccurrenceMarker,
     /// Absolute file offset of the occurrence marker.
-    pub marker_source_offset: u64,
-    /// Referenced [`FastLoadComponentPrototype::id`].
-    pub prototype: String,
+    marker_source_offset: u64,
     /// One-based serialized prototype-table index.
-    pub prototype_index: RosterIndex,
+    prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
-    pub component_uuid: String,
+    component_uuid: String,
     /// Absolute file offset of the UUID-table index.
-    pub uuid_source_offset: u64,
+    uuid_source_offset: u64,
     /// Directory entry containing the roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the prototype index.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
+}
+
+impl FastLoadComponentOccurrence {
+    /// Referenced fast-load prototype identity.
+    fn prototype(&self) -> String {
+        format!("nx:fast-load:prototype#{}", self.prototype_index.ordinal())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub(in crate::native) struct FastLoadComponentOccurrenceWire {
+    id: String,
+    ordinal: u32,
+    occurrence_lane_form: OccurrenceLaneForm,
+    marker: OccurrenceMarker,
+    marker_source_offset: u64,
+    prototype: String,
+    prototype_index: RosterIndex,
+    component_uuid: String,
+    uuid_source_offset: u64,
+    source_entry: String,
+    source_offset: u64,
+}
+impl TryFrom<FastLoadComponentOccurrenceWire> for FastLoadComponentOccurrence {
+    type Error = &'static str;
+    fn try_from(wire: FastLoadComponentOccurrenceWire) -> Result<Self, Self::Error> {
+        let occurrence = Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            marker: wire.marker,
+            marker_source_offset: wire.marker_source_offset,
+            prototype_index: wire.prototype_index,
+            component_uuid: wire.component_uuid,
+            uuid_source_offset: wire.uuid_source_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        };
+        if wire.prototype != occurrence.prototype() {
+            return Err("FastLoadComponentOccurrence.prototype disagrees with prototype_index");
+        }
+        Ok(occurrence)
+    }
+}
+impl From<(&FastLoadComponentOccurrence, OccurrenceLaneForm)> for FastLoadComponentOccurrenceWire {
+    fn from(
+        (value, occurrence_lane_form): (&FastLoadComponentOccurrence, OccurrenceLaneForm),
+    ) -> Self {
+        Self {
+            id: value.id.clone(),
+            ordinal: value.ordinal,
+            occurrence_lane_form,
+            marker: value.marker,
+            marker_source_offset: value.marker_source_offset,
+            prototype: value.prototype(),
+            prototype_index: value.prototype_index,
+            component_uuid: value.component_uuid.clone(),
+            uuid_source_offset: value.uuid_source_offset,
+            source_entry: value.source_entry.clone(),
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Equal-cardinality component uses and OM UUID values sharing one UUID.
 ///
 /// The two ordered lists intentionally do not assert an instance-level pairing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentObjectGroup {
+pub(super) struct FastLoadComponentObjectGroup {
     /// Globally unique group identity.
-    pub id: String,
+    pub(super) id: String,
     /// Referenced [`FastLoadComponentUuid::id`].
-    pub component_uuid: String,
+    component_uuid: String,
     /// Canonical lowercase UUID shared by every member.
-    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Independent ordered occurrence and OM UUID-value lists of equal cardinality.
     #[serde(flatten)]
-    pub members: UuidGroupMembers,
+    members: UuidGroupMembers,
     /// Directory entry containing the component roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the roster UUID tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Join fast-load occurrences and OM UUID frames only at the UUID group level.
-pub fn fast_load_component_object_groups(
+pub(super) fn fast_load_component_object_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     uuids: &[FastLoadComponentUuid],
     occurrences: &[FastLoadComponentOccurrence],
     object_uuid_values: &[ObjectUuidValue],
-) -> Vec<FastLoadComponentObjectGroup> {
-    uuids
-        .iter()
-        .filter_map(|uuid| {
-            let uses = occurrences
-                .iter()
-                .filter(|occurrence| occurrence.component_uuid == uuid.id)
-                .map(|occurrence| occurrence.id.clone())
-                .collect::<Vec<_>>();
-            let values = object_uuid_values
-                .iter()
-                .filter(|value| value.uuid == uuid.uuid)
-                .map(|value| value.id.clone())
-                .collect::<Vec<_>>();
-            let members = UuidGroupMembers::new(uses, values).ok()?;
-            Some(FastLoadComponentObjectGroup {
-                id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
-                component_uuid: uuid.id.clone(),
-                uuid: uuid.uuid.clone(),
-                members,
-                source_entry: uuid.source_entry.clone(),
-                source_offset: uuid.source_offset,
-            })
+) -> Result<Vec<FastLoadComponentObjectGroup>, cadmpeg_core::CodecError> {
+    let scan_work = uuids
+        .len()
+        .checked_mul(2)
+        .and_then(|count| {
+            count.checked_mul(occurrences.len().checked_add(object_uuid_values.len())?)
         })
-        .collect()
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load object groups", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "scan NX fast-load object groups",
+    )?;
+    let mut groups = Vec::new();
+    for uuid in uuids {
+        let mut use_count = 0usize;
+        let mut value_count = 0usize;
+        for _occurrence in occurrences
+            .iter()
+            .filter(|occurrence| occurrence.component_uuid == uuid.id)
+        {
+            use_count = use_count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX fast-load group occurrence count", 0, 1)
+            })?;
+        }
+        for _value in object_uuid_values
+            .iter()
+            .filter(|value| value.uuid == uuid.uuid)
+        {
+            value_count = value_count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group value count", 0, 1))?;
+        }
+        if use_count == 0 || use_count != value_count {
+            continue;
+        }
+        let list_count = use_count
+            .checked_add(value_count)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group list count", 0, 1))?;
+        let mut temporary = ctx.reserve_scoped(0, "NX fast-load group temporary lists")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(list_count),
+            "NX fast-load group temporary lists",
+        )?;
+        let mut uses = Vec::new();
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(&mut uses, use_count, "allocate NX fast-load group uses")
+        })?;
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| occurrence.component_uuid == uuid.id)
+        {
+            uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
+        }
+        let mut values = Vec::new();
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut values,
+                value_count,
+                "allocate NX fast-load group values",
+            )
+        })?;
+        for value in object_uuid_values
+            .iter()
+            .filter(|value| value.uuid == uuid.uuid)
+        {
+            values.push(ctx.copy_retained_text(&value.id, "allocate NX fast-load group value")?);
+        }
+        let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
+            continue;
+        };
+        ctx.reserve_vec(&mut groups, 1, "NX fast-load object groups")?;
+        let uuid_text =
+            ctx.copy_retained_text(uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
+        groups.push(FastLoadComponentObjectGroup {
+            id: structure_identity(
+                ctx,
+                "nx:fast-load:object-group#",
+                uuid.ordinal,
+                "retain NX fast-load group identity",
+            )?,
+            component_uuid: ctx
+                .copy_retained_text(&uuid.id, "retain NX fast-load group component UUID")?,
+            uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            members,
+            source_entry: ctx
+                .copy_retained_text(&uuid.source_entry, "retain NX fast-load group source entry")?,
+            source_offset: uuid.source_offset,
+        });
+    }
+    Ok(groups)
 }
 
-struct SourceOccurrence {
-    marker: OccurrenceMarker,
-    prototype_index: RosterIndex,
-    uuid_index: RosterIndex,
+fn structure_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    prefix: &str,
+    ordinal: u32,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut remaining = ordinal;
+    let mut digits = 1usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let length = prefix
+        .len()
+        .checked_add(digits)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut id = ctx.retained_string(length, operation)?;
+    write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
+fn roster_offset(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entry_offset: u64,
+    local_offset: usize,
+) -> Result<u64, cadmpeg_core::CodecError> {
+    entry_offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(envelope::LEN))
+        .and_then(|offset| offset.checked_add(cadmpeg_core::decode::u64_from_index(local_offset)))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load roster source offset", 0, 1))
 }
 
 struct Candidate {
     start: usize,
     end: usize,
-    prototypes: Vec<(usize, String)>,
+    prototype_count: usize,
+    prototypes_offset: usize,
     occurrence_lane_form: OccurrenceLaneForm,
     occurrence_markers_offset: usize,
     occurrences_offset: usize,
-    occurrences: Vec<SourceOccurrence>,
-    uuids: Vec<(usize, crate::canonical_uuid::CanonicalUuid<String>)>,
+    occurrence_count: usize,
+    uuid_count: usize,
+    uuids_offset: usize,
     uuid_indices_offset: usize,
 }
 
@@ -233,148 +388,221 @@ struct Candidate {
 /// rule. A valid parse nested inside a larger parse is an interpretation of
 /// bytes already owned by that larger candidate, not a second roster. Two
 /// disjoint candidates or partially overlapping candidates remain ambiguous.
-fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
-    candidates.sort_by(|left, right| {
-        left.start
-            .cmp(&right.start)
-            .then_with(|| right.end.cmp(&left.end))
-    });
-    let mut selected = Vec::new();
+fn select_roster_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    candidates: impl IntoIterator<Item = Result<Option<Candidate>, CodecError>>,
+) -> Result<Option<Candidate>, cadmpeg_core::CodecError> {
+    let mut selected: Option<Candidate> = None;
+    let mut furthest_end = 0usize;
     for candidate in candidates {
-        let Some(previous) = selected.last_mut() else {
-            selected.push(candidate);
+        let Some(candidate) = candidate? else {
             continue;
         };
-        if candidate.start >= previous.end {
-            selected.push(candidate);
-            continue;
+        ctx.charge_work(1, "select NX fast-load roster candidate")?;
+        furthest_end = furthest_end.max(candidate.end);
+        if selected.as_ref().is_none_or(|best| {
+            candidate.start < best.start
+                || (candidate.start == best.start && candidate.end > best.end)
+        }) {
+            selected = Some(candidate);
         }
-        if candidate.end <= previous.end {
-            continue;
-        }
-        return None;
     }
-    let [candidate] = selected.try_into().ok()?;
-    Some(candidate)
+    Ok(selected.filter(|candidate| candidate.end == furthest_end))
 }
 
 /// Extract the component roster only when its entry and internal frame are
 /// unique and every counted lane is complete.
-pub fn fast_load_component_roster(
+pub(super) fn fast_load_component_roster(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container<'_>,
-) -> (
-    Vec<FastLoadComponentPrototype>,
-    Vec<FastLoadComponentUuid>,
-    Vec<FastLoadComponentOccurrence>,
-) {
+) -> Result<
+    (
+        Vec<FastLoadComponentPrototype>,
+        Vec<FastLoadComponentUuid>,
+        FastLoadOccurrences,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut entries = container
         .entries
         .iter()
-        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span.is_some());
+        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span().is_some());
     let Some(entry) = entries.next() else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     if entries.next().is_some() {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     }
-    let Some((entry_offset, entry_size)) = entry.file_span else {
-        return (Vec::new(), Vec::new(), Vec::new());
+    let Some((entry_offset, entry_size)) = entry.file_span() else {
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
         (usize::try_from(entry_offset), usize::try_from(entry_size))
     else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(end) = entry_offset_usize.checked_add(entry_size) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(bytes) = container.data.get(entry_offset_usize..end) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(payload) = framed_payload(bytes) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
     // Every admitted roster has one of two structural anchors before the
     // complete counted lanes. Search for both before invoking the parser;
     // trying the parser at every byte makes a large opaque structure stream
-    // quadratic in its candidate count. A MODEL roster matches both anchors,
-    // so deduplicate candidate starts before enforcing uniqueness.
-    let mut starts = BTreeSet::new();
-    for (anchor_offset, window) in payload.windows(ROSTER_ANCHOR.len()).enumerate() {
-        if window == ROSTER_ANCHOR {
-            if let Some(start) = anchor_offset.checked_add(4) {
-                starts.insert(start);
-            }
-        }
-    }
-    for (model_offset, window) in payload.windows(MODEL_FRAME.len()).enumerate() {
-        if window == MODEL_FRAME {
-            if let Some(start) = model_offset.checked_sub(2) {
-                starts.insert(start);
-            }
-        }
-    }
-    let candidates = starts
-        .into_iter()
-        .filter_map(|start| parse_candidate(payload, start))
-        .collect::<Vec<_>>();
-    let Some(candidate) = select_roster_candidate(candidates) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+    // quadratic in its candidate count. A MODEL roster can match both anchors;
+    // repeated starts produce the same parse and do not alter span selection.
+    let anchor_work = payload
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load roster anchors", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(anchor_work),
+        "scan NX fast-load roster anchors",
+    )?;
+    let candidates = payload
+        .windows(ROSTER_ANCHOR.len())
+        .enumerate()
+        .filter_map(|(offset, window)| {
+            (window == ROSTER_ANCHOR)
+                .then(|| offset.checked_add(4))
+                .flatten()
+        })
+        .chain(
+            payload
+                .windows(MODEL_FRAME.len())
+                .enumerate()
+                .filter_map(|(offset, window)| {
+                    (window == MODEL_FRAME)
+                        .then(|| offset.checked_sub(2))
+                        .flatten()
+                }),
+        )
+        .map(|start| parse_candidate(ctx, payload, start));
+    let Some(candidate) = select_roster_candidate(ctx, candidates)? else {
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let prototypes: Vec<_> = candidate
-        .prototypes
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, (offset, name))| FastLoadComponentPrototype {
-            id: format!("nx:fast-load:prototype#{ordinal}"),
-            ordinal: ordinal as u32,
-            name,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
-        })
-        .collect();
-    let uuids: Vec<_> = candidate
-        .uuids
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, (offset, uuid))| FastLoadComponentUuid {
-            id: format!("nx:fast-load:uuid#{ordinal}"),
-            ordinal: ordinal as u32,
+    let mut prototypes = ctx.collection_vec::<FastLoadComponentPrototype>(
+        candidate.prototype_count,
+        "NX fast-load prototypes",
+    )?;
+    let mut at = candidate.prototypes_offset;
+    for ordinal in 0..candidate.prototype_count {
+        let (offset, name) = parse_string(payload, &mut at).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("NX fast-load prototype parse changed")
+        })?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load prototype ordinal", 0, 1))?;
+        prototypes.push(FastLoadComponentPrototype {
+            id: structure_identity(
+                ctx,
+                "nx:fast-load:prototype#",
+                ordinal,
+                "retain NX fast-load prototype identity",
+            )?,
+            ordinal,
+            name: ctx.copy_retained_text(name, "retain NX fast-load prototype name")?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load prototype source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, offset)?,
+        });
+    }
+    let mut uuids =
+        ctx.collection_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
+    let mut at = candidate.uuids_offset;
+    for ordinal in 0..candidate.uuid_count {
+        let (offset, text) = parse_tagged_string(payload, &mut at, 3).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("NX fast-load UUID parse changed")
+        })?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load UUID ordinal", 0, 1))?;
+        let text = ctx.copy_retained_text(text, "retain NX fast-load UUID text")?;
+        let uuid = crate::canonical_uuid::CanonicalUuid::new(text)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        uuids.push(FastLoadComponentUuid {
+            id: structure_identity(
+                ctx,
+                "nx:fast-load:uuid#",
+                ordinal,
+                "retain NX fast-load UUID identity",
+            )?,
+            ordinal,
             uuid,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
-        })
-        .collect();
-    let occurrences = candidate
-        .occurrences
-        .into_iter()
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load UUID source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, offset)?,
+        });
+    }
+    let lane_bytes = |offset: usize| -> Result<&[u8], CodecError> {
+        let end = offset
+            .checked_add(candidate.occurrence_count)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load occurrence lane", 0, 1))?;
+        payload
+            .get(offset..end)
+            .ok_or_else(|| CodecError::malformed("NX fast-load occurrence lane changed"))
+    };
+    let markers = lane_bytes(candidate.occurrence_markers_offset)?;
+    let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
+    let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
+    let mut records = ctx.collection_vec::<FastLoadComponentOccurrence>(
+        candidate.occurrence_count,
+        "NX fast-load occurrences",
+    )?;
+    for (ordinal, ((marker, prototype_index), uuid_index)) in markers
+        .iter()
+        .zip(prototype_indices)
+        .zip(uuid_indices)
         .enumerate()
-        .map(|(ordinal, occurrence)| FastLoadComponentOccurrence {
-            id: format!("nx:fast-load:occurrence#{ordinal}"),
-            ordinal: ordinal as u32,
-            occurrence_lane_form: candidate.occurrence_lane_form,
-            marker: occurrence.marker,
-            marker_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrence_markers_offset as u64
-                + ordinal as u64,
-            prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
-            prototype_index: occurrence.prototype_index,
-            component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
-            uuid_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.uuid_indices_offset as u64
-                + ordinal as u64,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrences_offset as u64
-                + ordinal as u64,
-        })
-        .collect();
-    (prototypes, uuids, occurrences)
+    {
+        let marker = OccurrenceMarker::try_from(*marker).map_err(CodecError::malformed)?;
+        let prototype_index =
+            RosterIndex::try_from(*prototype_index).map_err(CodecError::malformed)?;
+        let uuid_index = RosterIndex::try_from(*uuid_index).map_err(CodecError::malformed)?;
+        let component_uuid = uuids
+            .get(uuid_index.ordinal())
+            .ok_or_else(|| CodecError::malformed("NX fast-load UUID index changed"))?;
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load occurrence ordinal", 0, 1))?;
+        let marker_offset = candidate
+            .occurrence_markers_offset
+            .checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load marker offset", 0, 1))?;
+        let uuid_offset = candidate
+            .uuid_indices_offset
+            .checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load UUID index offset", 0, 1))?;
+        let occurrence_offset = candidate
+            .occurrences_offset
+            .checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load occurrence offset", 0, 1))?;
+        records.push(FastLoadComponentOccurrence {
+            id: structure_identity(
+                ctx,
+                "nx:fast-load:occurrence#",
+                ordinal_u32,
+                "retain NX fast-load occurrence identity",
+            )?,
+            ordinal: ordinal_u32,
+            marker,
+            marker_source_offset: roster_offset(ctx, entry_offset, marker_offset)?,
+            prototype_index,
+            component_uuid: ctx.copy_retained_text(
+                &component_uuid.id,
+                "retain NX fast-load occurrence UUID reference",
+            )?,
+            uuid_source_offset: roster_offset(ctx, entry_offset, uuid_offset)?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load occurrence source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, occurrence_offset)?,
+        });
+    }
+    let occurrences = FastLoadOccurrences::from_decoded(candidate.occurrence_lane_form, records)?;
+    Ok((prototypes, uuids, occurrences))
 }
 
 fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
@@ -388,97 +616,95 @@ fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
     bytes.get(envelope::LEN..)
 }
 
-fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
+fn parse_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<Candidate>, CodecError> {
     let mut at = start;
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    let metadata_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut metadata = Vec::with_capacity(metadata_count);
-    for _ in 0..metadata_count {
-        metadata.push(parse_string(bytes, &mut at)?.1);
-    }
-    metadata
-        .first()
-        .is_some_and(|value| !value.is_empty())
-        .then_some(())?;
-    take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
-    let occurrence_lane_form =
-        OccurrenceLaneForm::try_from(*take(bytes, &mut at, 1)?.first()?).ok()?;
-    take(bytes, &mut at, 1)?.eq(&[0]).then_some(())?;
+    let parsed = (|| {
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        let metadata_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
+        let mut first_metadata_nonempty = false;
+        for index in 0..metadata_count {
+            let (_, value) = parse_string(bytes, &mut at)?;
+            if index == 0 {
+                first_metadata_nonempty = !value.is_empty();
+            }
+        }
+        first_metadata_nonempty.then_some(())?;
+        take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
+        let occurrence_lane_form =
+            OccurrenceLaneForm::try_from(*take(bytes, &mut at, 1)?.first()?).ok()?;
+        take(bytes, &mut at, 1)?.eq(&[0]).then_some(())?;
 
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let occurrence_markers_offset = at;
-    let occurrence_markers = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(OccurrenceMarker::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    take(bytes, &mut at, 6)?
-        .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
-        .then_some(())?;
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
+        let occurrence_markers_offset = at;
+        take(bytes, &mut at, occurrence_count)?
+            .iter()
+            .all(|marker| OccurrenceMarker::try_from(*marker).is_ok())
+            .then_some(())?;
+        take(bytes, &mut at, 6)?
+            .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
+            .then_some(())?;
 
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    let prototype_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut prototypes = Vec::with_capacity(prototype_count);
-    for _ in 0..prototype_count {
-        prototypes.push(parse_string(bytes, &mut at)?);
-    }
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        let prototype_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
+        let prototypes_offset = at;
+        for _ in 0..prototype_count {
+            parse_string(bytes, &mut at)?;
+        }
 
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
-    let occurrences_offset = at;
-    let prototype_indices = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(|index| {
-            RosterIndex::try_from(index)
-                .ok()
-                .filter(|index| index.ordinal() < prototype_count)
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    let uuid_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut uuids = Vec::with_capacity(uuid_count);
-    for _ in 0..uuid_count {
-        let uuid = parse_tagged_string(bytes, &mut at, 3)?;
-        let value = crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
-        uuids.push((uuid.0, value));
-    }
-    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
-    (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
-    let uuid_indices_offset = at;
-    let uuid_indices = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(|index| {
-            RosterIndex::try_from(index)
-                .ok()
-                .filter(|index| index.ordinal() < uuid_count)
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    Some(Candidate {
-        start,
-        end: at,
-        prototypes,
-        occurrence_lane_form,
-        occurrence_markers_offset,
-        occurrences_offset,
-        occurrences: occurrence_markers
-            .into_iter()
-            .zip(prototype_indices)
-            .zip(uuid_indices)
-            .map(|((marker, prototype_index), uuid_index)| SourceOccurrence {
-                marker,
-                prototype_index,
-                uuid_index,
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
+        let occurrences_offset = at;
+        take(bytes, &mut at, occurrence_count)?
+            .iter()
+            .all(|index| {
+                RosterIndex::try_from(*index).is_ok_and(|index| index.ordinal() < prototype_count)
             })
-            .collect(),
-        uuids,
-        uuid_indices_offset,
-    })
+            .then_some(())?;
+
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        let uuid_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
+        let uuids_offset = at;
+        for _ in 0..uuid_count {
+            let uuid = parse_tagged_string(bytes, &mut at, 3)?;
+            crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
+        }
+        take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+        (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
+        let uuid_indices_offset = at;
+        take(bytes, &mut at, occurrence_count)?
+            .iter()
+            .all(|index| {
+                RosterIndex::try_from(*index).is_ok_and(|index| index.ordinal() < uuid_count)
+            })
+            .then_some(())?;
+
+        Some(Candidate {
+            start,
+            end: at,
+            prototype_count,
+            prototypes_offset,
+            occurrence_lane_form,
+            occurrence_markers_offset,
+            occurrences_offset,
+            occurrence_count,
+            uuid_count,
+            uuids_offset,
+            uuid_indices_offset,
+        })
+    })();
+    let scanned = at
+        .checked_sub(start)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load roster candidate", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scanned),
+        "scan NX fast-load roster candidate",
+    )?;
+    Ok(parsed)
 }
 
 fn decoded_count(encoded: u8) -> Option<usize> {
@@ -487,11 +713,11 @@ fn decoded_count(encoded: u8) -> Option<usize> {
         .filter(|count| *count > 0)
 }
 
-fn parse_string(bytes: &[u8], at: &mut usize) -> Option<(usize, String)> {
+fn parse_string<'a>(bytes: &'a [u8], at: &mut usize) -> Option<(usize, &'a str)> {
     parse_tagged_string(bytes, at, 4)
 }
 
-fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, String)> {
+fn parse_tagged_string<'a>(bytes: &'a [u8], at: &mut usize, tag: u8) -> Option<(usize, &'a str)> {
     let offset = *at;
     take(bytes, at, 1)?.eq(&[tag]).then_some(())?;
     let framed_len = decoded_count(*take(bytes, at, 1)?.first()?)?;
@@ -499,7 +725,7 @@ fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, 
     let (&terminator, value) = framed.split_last()?;
     value.iter().all(|byte| *byte >= 0x20).then_some(())?;
     (terminator == 0).then_some(())?;
-    Some((offset, std::str::from_utf8(value).ok()?.to_owned()))
+    Some((offset, std::str::from_utf8(value).ok()?))
 }
 
 fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
@@ -511,9 +737,91 @@ fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::occurrences::FastLoadOccurrences;
+    use super::{
+        fast_load_component_object_groups, Candidate, FastLoadComponentObjectGroup,
+        OccurrenceLaneForm, ENTRY_NAME,
+    };
+    use crate::container::Container;
     use crate::container::{DirEntry, Region};
-    use std::borrow::Cow;
+    use crate::native::om::object_uuid::ObjectUuidValue;
+
+    fn fast_load_component_roster(
+        container: &Container<'_>,
+    ) -> Result<
+        (
+            Vec<super::FastLoadComponentPrototype>,
+            Vec<super::FastLoadComponentUuid>,
+            FastLoadOccurrences,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        crate::test_support::with_decode_context(|ctx| {
+            super::fast_load_component_roster(ctx, container)
+        })
+    }
+
+    fn select_roster_candidate(candidates: Vec<Candidate>) -> Option<Candidate> {
+        crate::test_support::with_decode_context(|ctx| {
+            super::select_roster_candidate(
+                ctx,
+                candidates.into_iter().map(|candidate| Ok(Some(candidate))),
+            )
+        })
+        .expect("default test work limit admits candidate selection")
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_candidate_work_limit() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                let error = super::fast_load_component_roster(ctx, &file)
+                    .expect_err("roster candidate selection needs work");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
+        );
+    }
+
+    fn fast_load_roster_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                super::fast_load_component_roster(ctx, &file).unwrap_err()
+            },
+        )
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_collection_limit() {
+        let error = fast_load_roster_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_retained_limit() {
+        let error = fast_load_roster_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
 
     fn string(bytes: &mut Vec<u8>, value: &str) {
         bytes.extend([4, u8::try_from(value.len() + 2).expect("short test string")]);
@@ -616,16 +924,17 @@ mod tests {
                 .to_be_bytes(),
         );
         data.extend(payload);
-        let len = data.len() as u64;
+        let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
-            data: Cow::Owned(data),
+            data: data.into(),
             physical_size: len,
-            layout: crate::container::test_modern_layout(0x06, 1),
+            layout: crate::container::test_modern_layout(0x06),
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
-                file_span: Some((0, len)),
+                body: crate::container::DirEntryBody::File { offset: 0, len },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         }
@@ -635,12 +944,14 @@ mod tests {
         Candidate {
             start,
             end,
-            prototypes: Vec::new(),
+            prototype_count: 0,
+            prototypes_offset: 0,
             occurrence_lane_form: OccurrenceLaneForm::Base,
             occurrence_markers_offset: 0,
             occurrences_offset: 0,
-            occurrences: Vec::new(),
-            uuids: Vec::new(),
+            occurrence_count: 0,
+            uuid_count: 0,
+            uuids_offset: 0,
             uuid_indices_offset: 0,
         }
     }
@@ -648,10 +959,19 @@ mod tests {
     #[test]
     fn extracts_repeated_component_occurrences() {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
-        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(uuids.len(), 1);
-        assert_eq!(u8::from(occurrences[0].occurrence_lane_form), 0);
-        assert_eq!(u8::from(occurrences[0].marker), b'9');
+        assert_eq!(
+            u8::from(
+                occurrences
+                    .wire_records()
+                    .next()
+                    .unwrap()
+                    .occurrence_lane_form
+            ),
+            0
+        );
+        assert_eq!(u8::from(occurrences.as_slice()[0].marker), b'9');
         assert_eq!(
             prototypes
                 .iter()
@@ -661,19 +981,24 @@ mod tests {
         );
         assert_eq!(
             occurrences
+                .as_slice()
                 .iter()
                 .map(|o| u8::from(o.prototype_index))
                 .collect::<Vec<_>>(),
             [1, 2, 2, 3]
         );
-        assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+        assert_eq!(
+            occurrences.as_slice()[1].prototype(),
+            occurrences.as_slice()[2].prototype()
+        );
     }
 
     #[test]
     fn extracts_roster_with_none_metadata() {
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
             payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),
-        ));
+        ))
+        .unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -682,9 +1007,9 @@ mod tests {
             ["pin", "head"]
         );
         assert_eq!(uuids.len(), 1);
-        assert_eq!(occurrences.len(), 2);
-        assert_eq!(u8::from(occurrences[0].prototype_index), 1);
-        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
+        assert_eq!(occurrences.as_slice().len(), 2);
+        assert_eq!(u8::from(occurrences.as_slice()[0].prototype_index), 1);
+        assert_eq!(u8::from(occurrences.as_slice()[1].prototype_index), 2);
     }
 
     #[test]
@@ -697,7 +1022,8 @@ mod tests {
                 &[1, 2],
                 0,
                 b"99",
-            )));
+            )))
+            .unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -706,8 +1032,8 @@ mod tests {
             ["gear", "rod"]
         );
         assert_eq!(uuids.len(), 1);
-        assert_eq!(occurrences.len(), 2);
-        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
+        assert_eq!(occurrences.as_slice().len(), 2);
+        assert_eq!(u8::from(occurrences.as_slice()[1].prototype_index), 2);
     }
 
     #[test]
@@ -718,24 +1044,25 @@ mod tests {
             1,
             b"919",
         ));
-        let (_, _, occurrences) = fast_load_component_roster(&container);
+        let (_, _, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(
             occurrences
-                .iter()
+                .wire_records()
                 .map(|occurrence| u8::from(occurrence.occurrence_lane_form))
                 .collect::<Vec<_>>(),
             [1, 1, 1]
         );
         assert_eq!(
             occurrences
+                .as_slice()
                 .iter()
                 .map(|occurrence| u8::from(occurrence.marker))
                 .collect::<Vec<_>>(),
             [b'9', b'1', b'9']
         );
         assert_eq!(
-            occurrences[1].marker_source_offset,
-            occurrences[0].marker_source_offset + 1
+            occurrences.as_slice()[1].marker_source_offset,
+            occurrences.as_slice()[0].marker_source_offset + 1
         );
     }
 
@@ -743,8 +1070,8 @@ mod tests {
     fn rejects_unknown_occurrence_lane_form_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container(bytes)).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -752,15 +1079,15 @@ mod tests {
     fn rejects_unknown_occurrence_marker_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container(bytes)).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
     #[test]
     fn groups_equal_uuid_multiplicity_without_pairing_instances() {
         let container = container(payload(&["plate", "bolt"], &[1, 2, 2]));
-        let (_, uuids, occurrences) = fast_load_component_roster(&container);
+        let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         let values = (0..3)
             .map(|ordinal| ObjectUuidValue {
                 id: format!("nx:test:object-uuid#{ordinal}"),
@@ -772,7 +1099,10 @@ mod tests {
                 source_offset: 200 + ordinal,
             })
             .collect::<Vec<_>>();
-        let groups = fast_load_component_object_groups(&uuids, &occurrences, &values);
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &values)
+        })
+        .unwrap();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members.occurrences().count(), 3);
         assert_eq!(groups[0].members.object_uuid_values().count(), 3);
@@ -781,15 +1111,87 @@ mod tests {
             "nx:test:object-uuid#1"
         );
 
-        assert!(fast_load_component_object_groups(&uuids, &occurrences, &values[..2]).is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| fast_load_component_object_groups(
+                ctx,
+                &uuids,
+                occurrences.as_slice(),
+                &values[..2]
+            ))
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    fn fast_load_object_group_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let container = container(payload(&["plate"], &[1]));
+        let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
+        let value = ObjectUuidValue {
+            id: "object-uuid#0".to_string(),
+            section_ordinal: 0,
+            uuid: uuids[0].uuid.clone(),
+            records: crate::om::nonempty::NonEmpty::new(["record#0".to_string()]).unwrap(),
+            source_entry: "om".to_string(),
+            source_offset: 0,
+        };
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &[value])
+                    .unwrap_err()
+            },
+        )
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_collection_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_retained_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_scoped_limit() {
+        let error =
+            fast_load_object_group_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_work_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
     fn rejects_out_of_range_prototype_index_atomically() {
         let container = container(payload(&["plate"], &[1, 2]));
         assert_eq!(
-            fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -798,8 +1200,8 @@ mod tests {
         let mut container = container(payload(&["plate"], &[1]));
         container.data.to_mut()[11] += 1;
         assert_eq!(
-            fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -813,8 +1215,8 @@ mod tests {
             .expect("fixture contains terminal occurrence count");
         bytes[offset + 1] = 2;
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container(bytes)).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -828,8 +1230,8 @@ mod tests {
             + 5;
         bytes[terminator] = b'X';
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container(bytes)).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -839,8 +1241,8 @@ mod tests {
         first.extend(payload(&["bolt"], &[1]));
         let container = container(first);
         assert_eq!(
-            fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            fast_load_component_roster(&container).unwrap(),
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -869,8 +1271,9 @@ mod tests {
 
     #[test]
     fn occurrence_wire_preserves_closed_source_bytes() {
-        let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"prototype","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
-        let occurrence: FastLoadComponentOccurrence = serde_json::from_str(json).unwrap();
+        let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"nx:fast-load:prototype#253","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
+        let occurrences: FastLoadOccurrences = serde_json::from_str(&format!("[{json}]")).unwrap();
+        let occurrence = occurrences.wire_records().next().unwrap();
         assert_eq!(serde_json::to_string(&occurrence).unwrap(), json);
         for (field, invalid) in [
             ("occurrence_lane_form", 2),
@@ -882,11 +1285,15 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid.into();
-            assert!(serde_json::from_value::<FastLoadComponentOccurrence>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                serde_json::from_value::<FastLoadOccurrences>(serde_json::json!([wire]))
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
+        let invalid = json.replace("nx:fast-load:prototype#253", "nx:fast-load:prototype#252");
+        assert!(serde_json::from_str::<FastLoadOccurrences>(&format!("[{invalid}]")).is_err());
     }
 
     #[test]

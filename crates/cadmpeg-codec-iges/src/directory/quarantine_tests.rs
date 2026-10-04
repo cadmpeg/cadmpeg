@@ -2,32 +2,87 @@
 //! Directory Entry quarantine: the two-list parse, its arena, and its ledger.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::decode::TransferDisposition;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{card, owned_test_file, owned_test_file_with_global, OwnedTestEntity};
+use crate::test_support::test_cards::card;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
+
+#[test]
+fn directory_quarantine_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = super::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 160,
+        bytes: Vec::new(),
+        defect: super::DirectoryDefect::UnpairedCard,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        record.identity(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges directory quarantine identity"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        record.identity(&ctx).unwrap(),
+        "iges:quarantine:directory#3"
+    );
+}
+
+#[test]
+fn directory_quarantine_loss_refuses_message_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = super::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 160,
+        bytes: Vec::new(),
+        defect: super::DirectoryDefect::FieldNotAnInteger("level"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        record.loss_note(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges directory quarantine loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let loss = record.loss_note(&ctx).unwrap();
+    assert_eq!(
+        loss.provenance.unwrap().tag.as_deref(),
+        Some("directory_entry:D3")
+    );
+    assert!(loss
+        .message
+        .contains("the level field is not a decimal integer"));
+}
 
 /// Zero-based index of the level field inside the first Directory card.
 const LEVEL_FIELD: usize = 4;
-
-fn strict_options() -> DecodeOptions {
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    options
-}
-
-fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
-}
 
 fn two_point_file() -> Vec<u8> {
     owned_test_file(&[
@@ -88,12 +143,6 @@ fn corrupt_field(bytes: &[u8], card_index: usize, field: usize, value: [u8; 8]) 
     corrupted
 }
 
-fn decode(bytes: Vec<u8>) -> DecodeResult {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
-}
-
 #[test]
 fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     let bytes = corrupt_field(&two_point_file(), 2, LEVEL_FIELD, *b"     abc");
@@ -141,7 +190,13 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         .find(|entry| entry.source == "D3")
         .expect("quarantined directory ledger row");
     assert_eq!(row.target(), Some("iges:quarantine:directory#3"));
-    assert_eq!(row.disposition(), TransferDisposition::Retained);
+    assert_eq!(
+        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
+            &(row.outcome),
+            "disposition"
+        ),
+        TransferDisposition::Retained
+    );
 
     let summary = IgesCodec
         .inspect(

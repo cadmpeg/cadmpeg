@@ -2,7 +2,30 @@
   "ir": {
     "ir_version": "6",
     "source": {
-      "format": "f3d",
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "primary": {
+            "dialect": "f3d:manifest-3-2-0-0",
+            "declared": {
+              "top_level_manifest_version": "3-2-0-0"
+            },
+            "admission": "admitted"
+          },
+          "extra": [
+            {
+              "dialect": "acis:asm-binaryfile-8",
+              "declared": {
+                "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+                "reference_width": "8",
+                "save_format_major": "231",
+                "save_format_minor": "0"
+              },
+              "admission": "admitted"
+            }
+          ]
+        }
+      },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "active_brep_sha256": "06392ed0764d5875f6b190f837c13eafdff9d9c6639df14bd12ff4f50f18b870",
@@ -13,36 +36,13 @@
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "1597",
         "zip_entry_count": "3"
-      },
-      "dialects": {
-        "primary": {
-          "format": "f3d",
-          "dialect": "f3d:manifest-3-2-0-0",
-          "declared": {
-            "top_level_manifest_version": "3-2-0-0"
-          },
-          "admission": "admitted"
-        },
-        "extra": [
-          {
-            "format": "acis",
-            "dialect": "acis:asm-binaryfile-8",
-            "declared": {
-              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-              "reference_width": "8",
-              "save_format_major": "231",
-              "save_format_minor": "0"
-            },
-            "admission": "admitted"
-          }
-        ]
       }
     },
     "units": {
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 1e-6,
+      "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
     "model": {
@@ -68,8 +68,11 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "faces": [
-            "f3d:brep:entity#4"
+          "members": [
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#4"
+            }
           ]
         }
       ],
@@ -79,21 +82,26 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#5"
-          ]
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#5"
+            ]
+          }
         }
       ],
       "loops": [
         {
           "id": "f3d:brep:entity#5",
           "face": "f3d:brep:entity#4",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#7",
-            "f3d:brep:entity#8",
-            "f3d:brep:entity#9"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#7",
+              "f3d:brep:entity#8",
+              "f3d:brep:entity#9"
+            ]
+          }
         }
       ],
       "coedges": [
@@ -101,8 +109,6 @@
           "id": "f3d:brep:entity#7",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#10",
-          "next": "f3d:brep:entity#8",
-          "previous": "f3d:brep:entity#9",
           "radial_next": "f3d:brep:entity#7",
           "sense": "forward"
         },
@@ -110,8 +116,6 @@
           "id": "f3d:brep:entity#8",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#11",
-          "next": "f3d:brep:entity#9",
-          "previous": "f3d:brep:entity#7",
           "radial_next": "f3d:brep:entity#8",
           "sense": "forward"
         },
@@ -119,8 +123,6 @@
           "id": "f3d:brep:entity#9",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#12",
-          "next": "f3d:brep:entity#7",
-          "previous": "f3d:brep:entity#8",
           "radial_next": "f3d:brep:entity#9",
           "sense": "forward"
         }
@@ -128,30 +130,36 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14",
-          "param_range": [
-            0.0,
-            1.0
-          ]
+          "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15",
-          "param_range": [
-            0.0,
-            1.0
-          ]
+          "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13",
-          "param_range": [
-            0.0,
-            1.0
-          ]
+          "end": "f3d:brep:entity#13"
         }
       ],
       "vertices": [
@@ -274,6 +282,7 @@
             "records": [],
             "state_flag": 0,
             "state_id": 2,
+            "topology_cache": "released",
             "version_flag": 1
           },
           {
@@ -287,6 +296,7 @@
             "records": [],
             "state_flag": 0,
             "state_id": 3,
+            "topology_cache": "released",
             "version_flag": 1
           }
         ],
@@ -312,7 +322,6 @@
             "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
             "byte_offset": 1628,
             "history_entry_count": 99,
-            "projection_finalized": true,
             "states": [],
             "stream_size": 2
           }
@@ -455,7 +464,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#13",
@@ -486,12 +494,38 @@
     }
   },
   "report": {
-    "format": "f3d",
-    "container_only": false,
-    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "primary": {
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
+      }
+    },
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "material.not-transferred",
           "kind": "material_not_transferred"
@@ -504,167 +538,140 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2035 bytes uncompressed)"
-    ],
-    "dialects": {
-      "primary": {
-        "format": "f3d",
-        "dialect": "f3d:manifest-3-2-0-0",
-        "declared": {
-          "top_level_manifest_version": "3-2-0-0"
-        },
-        "admission": "admitted"
-      },
-      "extra": [
-        {
-          "format": "acis",
-          "dialect": "acis:asm-binaryfile-8",
-          "declared": {
-            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-            "reference_width": "8",
-            "save_format_major": "231",
-            "save_format_minor": "0"
-          },
-          "admission": "admitted"
-        }
-      ]
-    }
+    ]
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "BulletinBoard"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "delta_state"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001947": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "delta_state"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000000": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "entity_change"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000001": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 1,
           "tag": "entity_change"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "history_stream"
         },
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903": {
-          "stream": 1,
+          "stream": "f3d:native",
           "offset": 0,
           "tag": "history_payload"
         },
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 168,
           "tag": "body"
         },
         "f3d:brep:entity#10": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 934,
           "tag": "edge"
         },
         "f3d:brep:entity#11": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1032,
           "tag": "edge"
         },
         "f3d:brep:entity#12": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1130,
           "tag": "edge"
         },
         "f3d:brep:entity#13": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1228,
           "tag": "vertex"
         },
         "f3d:brep:entity#14": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1291,
           "tag": "vertex"
         },
         "f3d:brep:entity#15": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1354,
           "tag": "vertex"
         },
         "f3d:brep:entity#16": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1417,
           "tag": "point"
         },
         "f3d:brep:entity#17": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1477,
           "tag": "point"
         },
         "f3d:brep:entity#18": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 1537,
           "tag": "point"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 229,
           "tag": "region"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 292,
           "tag": "shell"
         },
         "f3d:brep:entity#4": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 372,
           "tag": "face"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 453,
           "tag": "loop"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 514,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#7": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 634,
           "tag": "coedge"
         },
         "f3d:brep:entity#8": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 734,
           "tag": "coedge"
         },
         "f3d:brep:entity#9": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 834,
           "tag": "coedge"
         }
       },
       "exactness": {
         "f3d:brep:entity#6": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
@@ -672,15 +679,15 @@
         }
       }
     },
-    "retained_records": [
-      {
-        "id": "f3d:file:source-image#0",
+    "retained_records": {
+      "f3d:file:source-image#0": {
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 3641,
-        "sha256": "9c123d92577fe4a6792c525b515a7635ec5fe81cd62a286f02f02a32f0100389",
-        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAHz7ieHzBwAA8wcAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOBUJlZ2luDgJvZg4DQVNNDgdIaXN0b3J5DQREYXRhDQ5oaXN0b3J5X3N0cmVhbQQCAAAAAAAAAAQCAAAAAAAAAAQAAAAAAAAAAARjAAAAAAAAAAz//////////wwAAAAAAAAAAAwBAAAAAAAAAAz//////////xENC2RlbHRhX3N0YXRlBAIAAAAAAAAABAEAAAAAAAAABAAAAAAAAAAADP//////////DAEAAAAAAAAADAAAAAAAAAAADP//////////DAAAAAAAAAAACwQBAAAAAAAAAAwAAAAAAAAAAAQCAAAAAAAAAAQBAAAAAAAAAAwmBwAAAAAAAAwBAAAAAAAAAAQBAAAAAAAAAAz//////////wwIAAAAAAAAAAQAAAAAAAAAAAQAAAAAAAAAABEND2hpc3RvcnlfcGF5bG9hZAQlAAAAAAAAAAwmBwAAAAAAAAz//////////xENC2RlbHRhX3N0YXRlBAMAAAAAAAAABAEAAAAAAAAABAAAAAAAAAAADAAAAAAAAAAADP//////////DAEAAAAAAAAADP//////////DAAAAAAAAAAACxFQSwECCgMKAAAAAAAAACEAoL+x6zsCAAA7AgAADAAAAAAAAAAAAAAApIEAAAAATWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAH3N1T1NAgAATQIAACQAAAAAAAAAAAAAAKSBZQIAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQB8+4nh8wcAAPMHAAAyAAAAAAAAAAAAAACkgfQEAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaFBLBQYAAAAAAwADAOwAAAA3DQAAAAA="
+        "bytes": {
+          "retention": "inline",
+          "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAHz7ieHzBwAA8wcAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOBUJlZ2luDgJvZg4DQVNNDgdIaXN0b3J5DQREYXRhDQ5oaXN0b3J5X3N0cmVhbQQCAAAAAAAAAAQCAAAAAAAAAAQAAAAAAAAAAARjAAAAAAAAAAz//////////wwAAAAAAAAAAAwBAAAAAAAAAAz//////////xENC2RlbHRhX3N0YXRlBAIAAAAAAAAABAEAAAAAAAAABAAAAAAAAAAADP//////////DAEAAAAAAAAADAAAAAAAAAAADP//////////DAAAAAAAAAAACwQBAAAAAAAAAAwAAAAAAAAAAAQCAAAAAAAAAAQBAAAAAAAAAAwmBwAAAAAAAAwBAAAAAAAAAAQBAAAAAAAAAAz//////////wwIAAAAAAAAAAQAAAAAAAAAAAQAAAAAAAAAABEND2hpc3RvcnlfcGF5bG9hZAQlAAAAAAAAAAwmBwAAAAAAAAz//////////xENC2RlbHRhX3N0YXRlBAMAAAAAAAAABAEAAAAAAAAABAAAAAAAAAAADAAAAAAAAAAADP//////////DAEAAAAAAAAADP//////////DAAAAAAAAAAACxFQSwECCgMKAAAAAAAAACEAoL+x6zsCAAA7AgAADAAAAAAAAAAAAAAApIEAAAAATWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAH3N1T1NAgAATQIAACQAAAAAAAAAAAAAAKSBZQIAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQB8+4nh8wcAAPMHAAAyAAAAAAAAAAAAAACkgfQEAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaFBLBQYAAAAAAwADAOwAAAA3DQAAAAA="
+        }
       }
-    ]
+    }
   }
 }

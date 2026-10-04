@@ -5,16 +5,28 @@
 //! the `05 08 01` vertex-coordinate scanner (`scan_vertex_records`), and the
 //! degree-5 UV jet decoder (`parse_consolidated_pcurve`). Nothing here depends
 //! on a `families` module; the family decoders consume it downward.
-//!
-//! The `Consolidated*` names are retained from this code's original home in
-//! `families::consolidated::records`; a rename cascades across ~40 call sites
-//! and several `native` field paths, so the names carry naming debt here.
 
-use std::{collections::HashSet, ops::Range};
+use cadmpeg_core::decode::u64_from_index;
 
-use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::knots_strictly_increasing;
+type NativePcurveLanesOutput = Result<
+    (
+        Vec<FiniteReal>,
+        Vec<FiniteVector<2>>,
+        Vec<FiniteVector<2>>,
+        Vec<FiniteVector<2>>,
+    ),
+    CodecError,
+>;
+
+use std::{borrow::Borrow, collections::HashSet, ops::Range};
+
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::topology::IncreasingParameterInterval;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::a_family_frame as a_frame;
@@ -24,53 +36,126 @@ use super::bytes::{compact_int, f64_le};
 
 /// One knot of a degree-5 consolidated UV jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConsolidatedPcurveSite {
+pub(crate) struct ConsolidatedPcurveSite {
     /// Global parameter at this site.
-    pub knot: f64,
+    pub(crate) knot: FiniteReal,
     /// UV position.
-    pub point: [f64; 2],
+    pub(crate) point: FiniteVector<2>,
     /// UV first derivative.
-    pub first_derivatives: [f64; 2],
+    pub(crate) first_derivatives: FiniteVector<2>,
     /// UV second derivative.
-    pub second_derivatives: [f64; 2],
+    pub(crate) second_derivatives: FiniteVector<2>,
+}
+
+/// At least two UV jet sites in strict knot order. Only immutable access is exposed.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OrderedPcurveSites(Vec<ConsolidatedPcurveSite>);
+
+impl TryFrom<Vec<ConsolidatedPcurveSite>> for OrderedPcurveSites {
+    type Error = &'static str;
+    fn try_from(sites: Vec<ConsolidatedPcurveSite>) -> Result<Self, Self::Error> {
+        if sites.len() < 2
+            || sites
+                .windows(2)
+                .any(|pair| pair[0].knot.get() >= pair[1].knot.get())
+        {
+            return Err("pcurve sites require at least two strictly increasing knots");
+        }
+        Ok(Self(sites))
+    }
+}
+
+impl std::ops::Deref for OrderedPcurveSites {
+    type Target = [ConsolidatedPcurveSite];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a OrderedPcurveSites {
+    type Item = &'a ConsolidatedPcurveSite;
+    type IntoIter = std::slice::Iter<'a, ConsolidatedPcurveSite>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedPcurve {
+pub(crate) struct ConsolidatedPcurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Referenced support-surface identifier.
-    pub support_id: u32,
+    pub(crate) support_id: u32,
     /// Number of leading extrapolation sites encoded by the array marker.
-    pub extrapolation_sites: u32,
+    pub(crate) extrapolation_sites: u32,
     /// Knot-aligned UV jet samples.
-    pub sites: Vec<ConsolidatedPcurveSite>,
+    pub(crate) sites: OrderedPcurveSites,
     /// Native parameter range.
-    pub range: [f64; 2],
+    pub(crate) range: IncreasingParameterInterval,
     /// Bytes following the native range inside the framed record.
-    pub tail: Vec<u8>,
+    pub(crate) tail: Vec<u8>,
+}
+
+/// Decode class-`0x20` UV jets from one framed record family.
+pub(crate) fn family_pcurves_from_records(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    family: ConsolidatedFamily,
+) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
+    let mut pcurves = Vec::new();
+    for frame in family_frames_from_records(records, family, 0x20) {
+        if let Some(pcurve) =
+            parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
+        {
+            ctx.push_vec(&mut pcurves, pcurve, "catia_consolidated_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 impl ConsolidatedPcurve {
-    pub const DEGREE: u32 = 5;
+    pub(crate) const DEGREE: u32 = 5;
 
-    pub fn knots(&self) -> Vec<f64> {
+    pub(crate) fn native_lanes(&self, ctx: &DecodeContext<'_>) -> NativePcurveLanesOutput {
+        let mut knots = Vec::new();
+        let mut points = Vec::new();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
+        ctx.reserve_vec(&mut points, self.sites.len(), "catia_native_pcurve_points")?;
+        ctx.reserve_vec(
+            &mut first,
+            self.sites.len(),
+            "catia_native_pcurve_first_derivatives",
+        )?;
+        ctx.reserve_vec(
+            &mut second,
+            self.sites.len(),
+            "catia_native_pcurve_second_derivatives",
+        )?;
+        for site in &self.sites {
+            knots.push(site.knot);
+            points.push(site.point);
+            first.push(site.first_derivatives);
+            second.push(site.second_derivatives);
+        }
+        Ok((knots, points, first, second))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn knots(&self) -> Vec<FiniteReal> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
-    pub fn points(&self) -> Vec<[f64; 2]> {
+    #[cfg(test)]
+    pub(crate) fn points(&self) -> Vec<FiniteVector<2>> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub fn first_derivatives(&self) -> Vec<[f64; 2]> {
-        self.sites
-            .iter()
-            .map(|site| site.first_derivatives)
-            .collect()
-    }
-
-    pub fn second_derivatives(&self) -> Vec<[f64; 2]> {
+    #[cfg(test)]
+    pub(crate) fn second_derivatives(&self) -> Vec<FiniteVector<2>> {
         self.sites
             .iter()
             .map(|site| site.second_derivatives)
@@ -78,12 +163,64 @@ impl ConsolidatedPcurve {
     }
 }
 
-pub(crate) fn parse_consolidated_pcurve(
+fn parse_consolidated_pcurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     pos: usize,
     payload: usize,
     end: usize,
-) -> Option<ConsolidatedPcurve> {
+) -> Result<Option<ConsolidatedPcurve>, CodecError> {
+    let Some((support_id, count, extrapolation_sites, lanes, range, tail_at)) =
+        pcurve_layout(data, payload, end)
+    else {
+        return Ok(None);
+    };
+    let scalar_work = u64_from_index(count).checked_mul(7 * 8).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_pcurve_scalar_scan", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(scalar_work, "catia_pcurve_scalar_scan")?;
+    let mut sites = Vec::new();
+    ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
+    for index in 0..count {
+        let offset = index * 8;
+        let values = lanes.map(|lane| f64_le(data, lane + offset));
+        let [Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)] = values
+        else {
+            return Ok(None);
+        };
+        sites.push(ConsolidatedPcurveSite {
+            knot,
+            point: [u, v].into(),
+            first_derivatives: [du, dv].into(),
+            second_derivatives: [ddu, ddv].into(),
+        });
+    }
+    ctx.charge_work(u64_from_index(sites.len()), "catia_pcurve_site_order")?;
+    let Ok(sites) = OrderedPcurveSites::try_from(sites) else {
+        return Ok(None);
+    };
+    Ok(Some(ConsolidatedPcurve {
+        pos,
+        support_id,
+        extrapolation_sites,
+        sites,
+        range,
+        tail: ctx.copy_slice(&data[tail_at..end], "catia_consolidated_pcurve_tail")?,
+    }))
+}
+
+fn pcurve_layout(
+    data: &[u8],
+    payload: usize,
+    end: usize,
+) -> Option<(
+    u32,
+    usize,
+    u32,
+    [usize; 7],
+    IncreasingParameterInterval,
+    usize,
+)> {
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -110,15 +247,8 @@ pub(crate) fn parse_consolidated_pcurve(
     if at.checked_add(knot_bytes.checked_add(20)?)? > end {
         return None;
     }
-    let read = |at: &mut usize| -> Option<Vec<f64>> {
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            values.push(f64_le(data, *at)?);
-            *at += 8;
-        }
-        Some(values)
-    };
-    let knots = read(&mut at)?;
+    let knot_at = at;
+    at += knot_bytes;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
@@ -130,62 +260,36 @@ pub(crate) fn parse_consolidated_pcurve(
     if at.checked_add(remaining_array_bytes.checked_add(18)?)? > end {
         return None;
     }
-    let u = read(&mut at)?;
-    let v = read(&mut at)?;
-    let du = read(&mut at)?;
-    let dv = read(&mut at)?;
+    let u_at = at;
+    at += knot_bytes;
+    let v_at = at;
+    at += knot_bytes;
+    let du_at = at;
+    at += knot_bytes;
+    let dv_at = at;
+    at += knot_bytes;
     if data.get(at) != Some(&0x05) {
         return None;
     }
     at += 1;
-    let ddu = read(&mut at)?;
-    let ddv = read(&mut at)?;
-    let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
+    let ddu_at = at;
+    at += knot_bytes;
+    let ddv_at = at;
+    at += knot_bytes;
+    let range =
+        IncreasingParameterInterval::new([f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()])?;
     at += 16;
-    if at > end
-        || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
-        || !knots_strictly_increasing(&knots)
-        || range[0] >= range[1]
-        || knots
-            .iter()
-            .chain(&u)
-            .chain(&v)
-            .chain(&du)
-            .chain(&dv)
-            .chain(&ddu)
-            .chain(&ddv)
-            .chain(&range)
-            .any(|x| !x.is_finite())
-    {
+    let lanes = [knot_at, u_at, v_at, du_at, dv_at, ddu_at, ddv_at];
+    if at > end || !matches!(&data[at..end], [0x07] | [0x07, 0x00]) {
         return None;
     }
-    Some(ConsolidatedPcurve {
-        pos,
-        support_id,
-        extrapolation_sites,
-        sites: knots
-            .into_iter()
-            .zip(u.into_iter().zip(v))
-            .zip(du.into_iter().zip(dv))
-            .zip(ddu.into_iter().zip(ddv))
-            .map(
-                |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
-                    knot,
-                    point: [u, v],
-                    first_derivatives: [du, dv],
-                    second_derivatives: [ddu, ddv],
-                },
-            )
-            .collect(),
-        range,
-        tail: data[at..end].to_vec(),
-    })
+    Some((support_id, count, extrapolation_sites, lanes, range, at))
 }
 
 /// Header-token width of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum ConsolidatedFrameWidth {
+pub(crate) enum ConsolidatedFrameWidth {
     /// One-byte header token.
     One,
     /// Two-byte header token.
@@ -226,7 +330,7 @@ impl TryFrom<u8> for ConsolidatedFrameWidth {
 /// Independent framing flag of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum ConsolidatedFrameFlag {
+pub(crate) enum ConsolidatedFrameFlag {
     /// Flag `0x03`.
     Flag03,
     /// Flag `0x13`.
@@ -264,41 +368,126 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
     }
 }
 
+/// A token that fits its declared one-, two-, or three-byte width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WidthCodedToken {
+    width: ConsolidatedFrameWidth,
+    value: u32,
+}
+
+impl WidthCodedToken {
+    pub(crate) fn new(width: ConsolidatedFrameWidth, value: u32) -> Result<Self, &'static str> {
+        let maximum = match width {
+            ConsolidatedFrameWidth::One => 0xff,
+            ConsolidatedFrameWidth::Two => 0xffff,
+            ConsolidatedFrameWidth::Three => 0xff_ffff,
+        };
+        if value > maximum {
+            return Err("header token does not fit its declared width");
+        }
+        Ok(Self { width, value })
+    }
+    pub(crate) fn width(self) -> ConsolidatedFrameWidth {
+        self.width
+    }
+    pub(crate) fn value(self) -> u32 {
+        self.value
+    }
+}
+
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConsolidatedRawFrame<Offset = usize> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConsolidatedRawFrame<Offset = usize> {
     /// Record byte offset.
-    #[serde(rename = "byte_offset")]
-    pub pos: Offset,
-    /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    pub(crate) pos: Offset,
+    token: WidthCodedToken,
     /// Independent framing flag.
-    pub flag: ConsolidatedFrameFlag,
-    /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) flag: ConsolidatedFrameFlag,
     /// Complete class-specific payload.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct RawFrameWire<Offset> {
+    byte_offset: Offset,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
+    header_token: u32,
+    payload: Vec<u8>,
+}
+
+impl<Offset> ConsolidatedRawFrame<Offset> {
+    pub(crate) fn new(
+        pos: Offset,
+        width: ConsolidatedFrameWidth,
+        flag: ConsolidatedFrameFlag,
+        header_token: u32,
+        payload: Vec<u8>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            pos,
+            token: WidthCodedToken::new(width, header_token)?,
+            flag,
+            payload,
+        })
+    }
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth {
+        self.token.width()
+    }
+    pub(crate) fn header_token(&self) -> u32 {
+        self.token.value()
+    }
+}
+
+impl<Offset: Serialize> Serialize for ConsolidatedRawFrame<Offset> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("ConsolidatedRawFrame", 5)?;
+        wire.serialize_field("byte_offset", &self.pos)?;
+        wire.serialize_field("width", &self.width())?;
+        wire.serialize_field("flag", &self.flag)?;
+        wire.serialize_field("header_token", &self.header_token())?;
+        wire.serialize_field("payload", &self.payload)?;
+        wire.end()
+    }
+}
+
+impl<'de, Offset: Deserialize<'de>> Deserialize<'de> for ConsolidatedRawFrame<Offset> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = RawFrameWire::<Offset>::deserialize(deserializer)?;
+        Self::new(
+            wire.byte_offset,
+            wire.width,
+            wire.flag,
+            wire.header_token,
+            wire.payload,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 impl ConsolidatedRawFrame {
-    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Self {
-        Self {
-            pos: record.range.start,
-            width: record.width,
-            flag: record.flag,
-            header_token: record.header_token,
+    pub(crate) fn from_record(
+        record: &ConsolidatedRecord,
+        payload: Vec<u8>,
+    ) -> Result<Self, CodecError> {
+        Self::new(
+            record.byte_offset(),
+            record.width(),
+            record.flag,
+            record.header_token(),
             payload,
-        }
+        )
+        .map_err(CodecError::malformed)
     }
 }
 
 impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
     fn from(frame: ConsolidatedRawFrame) -> Self {
         Self {
-            pos: frame.pos as u64,
-            width: frame.width,
+            pos: u64_from_index(frame.pos),
+            token: frame.token,
             flag: frame.flag,
-            header_token: frame.header_token,
             payload: frame.payload,
         }
     }
@@ -314,7 +503,7 @@ pub(crate) struct ConsolidatedFrame {
 
 /// Width-coded consolidated record family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsolidatedFamily {
+pub(crate) enum ConsolidatedFamily {
     /// U32-length A family (`a5/a6/a7`).
     A,
     /// U8-length B family (`b2/b3/b4`).
@@ -323,27 +512,83 @@ pub enum ConsolidatedFamily {
 
 /// One length-closed record in a consolidated A/B cluster.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidatedRecord {
+pub(crate) struct ConsolidatedRecord {
     /// Zero-based logical record-source ordinal supplied by the container.
-    pub source_index: usize,
+    source_index: usize,
     /// Byte range in the reconstructed logical record source.
-    pub source_range: Range<usize>,
-    /// Whether the complete frame occupies one physical extent.
-    pub physically_contiguous: bool,
+    source_range: Range<usize>,
+    /// Physical placement of the frame.
+    placement: ConsolidatedPlacement,
     /// Record family.
-    pub family: ConsolidatedFamily,
-    /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    family: ConsolidatedFamily,
+    /// Header token admitted together with its byte width.
+    token: WidthCodedToken,
     /// Independent flag byte (`0x03`, `0x13`, or `0x83`).
-    pub flag: ConsolidatedFrameFlag,
+    flag: ConsolidatedFrameFlag,
     /// Record class byte.
-    pub class: u8,
-    /// Little-endian width-coded header token.
-    pub header_token: u32,
-    /// Complete record byte range.
-    pub range: Range<usize>,
-    /// Payload byte range.
-    pub payload: Range<usize>,
+    class: u8,
+}
+
+/// Physical placement of a consolidated frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ConsolidatedPlacement {
+    /// A frame contained in one physical extent.
+    Contiguous {
+        /// Complete physical frame range.
+        range: Range<usize>,
+        /// Physical payload range.
+        payload: Range<usize>,
+    },
+    /// A frame crossing physical extents.
+    Spanning {
+        /// Physical start offset.
+        byte_offset: usize,
+    },
+}
+
+impl ConsolidatedRecord {
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth {
+        self.token.width()
+    }
+    pub(crate) fn header_token(&self) -> u32 {
+        self.token.value()
+    }
+    pub(crate) fn source_index(&self) -> usize {
+        self.source_index
+    }
+    pub(crate) fn source_range(&self) -> &Range<usize> {
+        &self.source_range
+    }
+    pub(crate) fn family(&self) -> ConsolidatedFamily {
+        self.family
+    }
+    pub(crate) fn flag(&self) -> ConsolidatedFrameFlag {
+        self.flag
+    }
+    pub(crate) fn class(&self) -> u8 {
+        self.class
+    }
+
+    pub(crate) fn byte_offset(&self) -> usize {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { range, .. } => range.start,
+            ConsolidatedPlacement::Spanning { byte_offset } => *byte_offset,
+        }
+    }
+
+    pub(crate) fn range(&self) -> Option<Range<usize>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { range, .. } => Some(range.clone()),
+            ConsolidatedPlacement::Spanning { .. } => None,
+        }
+    }
+
+    pub(crate) fn payload(&self) -> Option<Range<usize>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { payload, .. } => Some(payload.clone()),
+            ConsolidatedPlacement::Spanning { .. } => None,
+        }
+    }
 }
 
 /// Return whether a record slice is one logically contiguous frame run.
@@ -366,8 +611,49 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 /// [`consolidated_records_in_sources`] so directory and unrelated-file bytes
 /// cannot seed the inventory.
 #[must_use]
-pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(data, std::iter::once(std::iter::once(0..data.len())))
+#[cfg(test)]
+pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            std::iter::once(std::iter::once(SourceExtent::whole(data))),
+        )
+        .expect("service decode")
+    })
+}
+
+/// A physical record-source extent proved to lie inside the image it indexes.
+///
+/// A source extent comes from a parsed stream descriptor. The record scanner
+/// reads every byte of the extent, so an extent the image does not hold cannot
+/// be shortened to fit it: [`SourceExtent::within`] refuses to build one, and
+/// the type has no other constructor from parsed values. The complete image is
+/// always its own extent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceExtent(Range<usize>);
+
+impl SourceExtent {
+    /// The complete image.
+    #[must_use]
+    pub(crate) fn whole(data: &[u8]) -> Self {
+        Self(0..data.len())
+    }
+
+    /// One declared extent of `data`.
+    ///
+    /// A declared end past the end of the image, or a start past its own end,
+    /// is not an extent of this image and states no record source.
+    #[must_use]
+    pub(crate) fn within(data: &[u8], start: usize, end: usize) -> Option<Self> {
+        (start <= end && end <= data.len()).then_some(Self(start..end))
+    }
+
+    /// The proved byte range within the image.
+    #[must_use]
+    pub(crate) fn range(&self) -> Range<usize> {
+        self.0.clone()
+    }
 }
 
 /// Inventory length-closed consolidated A/B records in disjoint physical
@@ -384,7 +670,47 @@ pub(crate) fn consolidated_records_in_ranges(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(data, ranges.into_iter().map(std::iter::once))
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            ranges
+                .into_iter()
+                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                .map(std::iter::once),
+        )
+        .expect("service decode")
+    })
+}
+
+/// Inventory records in descriptor-scoped logical sources stated as byte
+/// ranges of `data`.
+///
+/// A range the image does not hold is not an extent of it and states no record
+/// source. Fixture builders state ranges directly; container decode paths carry
+/// [`SourceExtent`] values proved at the directory.
+#[cfg(test)]
+pub(crate) fn consolidated_records_in_range_sources<S, R>(
+    data: &[u8],
+    sources: S,
+) -> Vec<ConsolidatedRecord>
+where
+    S: IntoIterator<Item = R>,
+    R: IntoIterator<Item = Range<usize>>,
+{
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            sources.into_iter().map(|ranges| {
+                ranges
+                    .into_iter()
+                    .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                    .collect::<Vec<_>>()
+            }),
+        )
+        .expect("service decode")
+    })
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -393,23 +719,31 @@ pub(crate) fn consolidated_records_in_ranges(
 /// as an ordinal-bearing non-contiguous frame; typed payload decoding requires
 /// one physical extent.
 pub(crate) fn consolidated_records_in_sources<S, R>(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     sources: S,
-) -> Vec<ConsolidatedRecord>
+) -> Result<Vec<ConsolidatedRecord>, CodecError>
 where
     S: IntoIterator<Item = R>,
-    R: IntoIterator<Item = Range<usize>>,
+    R: IntoIterator,
+    R::Item: Borrow<SourceExtent>,
 {
     let mut records = Vec::new();
-    for (source_index, ranges) in sources.into_iter().enumerate() {
-        let source_ranges = ranges
-            .into_iter()
-            .filter_map(|range| {
-                let start = range.start.min(data.len());
-                let end = range.end.min(data.len());
-                (start < end).then_some(start..end)
-            })
-            .collect::<Vec<_>>();
+    for (source_index, extents) in sources.into_iter().enumerate() {
+        // Revalidate extents against this image before using their ranges.
+        let mut source_ranges = Vec::new();
+        for extent in extents {
+            ctx.charge_work(1, "catia_record_source_extent_admission")?;
+            let range = extent.borrow().range();
+            if range.end > data.len() || range.start > range.end {
+                return Err(CodecError::malformed(
+                    "record source extent is outside the supplied image",
+                ));
+            }
+            if range.start < range.end {
+                ctx.push_vec(&mut source_ranges, range, "catia_record_source_ranges")?;
+            }
+        }
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -417,45 +751,74 @@ where
             let end = range.end;
             let mut pos = start;
             while pos < end {
+                ctx.charge_work(1, "catia_record_scan")?;
                 let Some(mut record) = parse_consolidated_record(data, pos, end) else {
                     pos += 1;
                     continue;
                 };
+                let Some(physical_range) = record.range() else {
+                    return Ok(records);
+                };
                 record.source_index = source_index;
-                let Some(source_start) = source_offset.checked_add(record.range.start - start)
+                let Some(source_start) = source_offset.checked_add(physical_range.start - start)
                 else {
-                    return records;
+                    return Ok(records);
                 };
-                let Some(source_end) = source_offset.checked_add(record.range.end - start) else {
-                    return records;
+                let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
+                    return Ok(records);
                 };
+                pos = physical_range.end;
                 record.source_range = source_start..source_end;
-                pos = record.range.end;
-                source_records.push(record);
+                ctx.push_vec(&mut source_records, record, "catia_source_records")?;
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
-                return records;
+                return Ok(records);
             };
             source_offset = next_source_offset;
         }
-        let mut record_starts = source_records
-            .iter()
-            .map(|record| record.source_range.start)
-            .collect::<HashSet<_>>();
-        let mut record_ranges = source_records
-            .iter()
-            .map(|record| (record.source_range.start, record.source_range.end))
-            .collect::<HashSet<_>>();
+        let mut record_starts = HashSet::new();
+        let mut record_ranges = HashSet::new();
+        for record in &source_records {
+            ctx.insert_hash_set(
+                &mut record_starts,
+                record.source_range.start,
+                "catia_record_starts",
+            )?;
+            ctx.insert_hash_set(
+                &mut record_ranges,
+                (record.source_range.start, record.source_range.end),
+                "catia_record_ranges",
+            )?;
+        }
         loop {
             let mut added = Vec::new();
-            let source_ends = source_records
-                .iter()
-                .map(|record| record.source_range.end)
-                .collect::<HashSet<_>>();
+            let mut source_ends = HashSet::new();
+            ctx.charge_work(
+                u64_from_index(source_records.len()),
+                "catia_spanning_record_inventory",
+            )?;
+            for record in &source_records {
+                ctx.insert_hash_set(
+                    &mut source_ends,
+                    record.source_range.end,
+                    "catia_record_source_ends",
+                )?;
+            }
             for source_start in source_ends {
+                ctx.charge_work(1, "catia_spanning_record_lookup")?;
                 if record_starts.contains(&source_start) {
                     continue;
                 }
+                let work = u64_from_index(source_ranges.len())
+                    .checked_mul(14)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "catia_spanning_record_probe",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                ctx.charge_work(work, "catia_spanning_record_probe")?;
                 let Some(record) = parse_spanning_consolidated_record(
                     data,
                     &source_ranges,
@@ -464,20 +827,39 @@ where
                 ) else {
                     continue;
                 };
-                if record_ranges.insert((record.source_range.start, record.source_range.end)) {
-                    record_starts.insert(record.source_range.start);
-                    added.push(record);
+                if ctx.insert_hash_set(
+                    &mut record_ranges,
+                    (record.source_range.start, record.source_range.end),
+                    "catia_record_ranges",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut record_starts,
+                        record.source_range.start,
+                        "catia_record_starts",
+                    )?;
+                    ctx.push_vec(&mut added, record, "catia_spanning_records")?;
                 }
             }
             if added.is_empty() {
                 break;
             }
+            ctx.reserve_vec(&mut source_records, added.len(), "catia_source_records")?;
             source_records.extend(added);
-            source_records.sort_by_key(|record| record.source_range.start);
+            ctx.stable_sort_by(
+                &mut source_records,
+                |left, right| left.source_range.start.cmp(&right.source_range.start),
+                |_| 0,
+                "catia_source_records_sort",
+            )?;
         }
+        ctx.reserve_vec(
+            &mut records,
+            source_records.len(),
+            "catia_consolidated_records",
+        )?;
         records.extend(source_records);
     }
-    records
+    Ok(records)
 }
 
 fn parse_spanning_consolidated_record(
@@ -544,7 +926,8 @@ fn parse_spanning_consolidated_record(
     }
     let mut logical_boundary = 0usize;
     let mut crosses_extent = false;
-    for range in ranges.iter().take(ranges.len().saturating_sub(1)) {
+    let (_, preceding_ranges) = ranges.split_last()?;
+    for range in preceding_ranges {
         logical_boundary = logical_boundary.checked_add(range.end - range.start)?;
         crosses_extent |= source_start < logical_boundary && logical_boundary < source_end;
     }
@@ -569,14 +952,11 @@ fn parse_spanning_consolidated_record(
     Some(ConsolidatedRecord {
         source_index,
         source_range: source_start..source_end,
-        physically_contiguous: false,
+        placement: ConsolidatedPlacement::Spanning { byte_offset },
         family,
-        width,
+        token: WidthCodedToken::new(width, header_token).ok()?,
         flag,
         class,
-        header_token,
-        range: byte_offset..byte_offset,
-        payload: byte_offset..byte_offset,
     })
 }
 
@@ -614,7 +994,7 @@ fn parse_consolidated_record(
     let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
     let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let end = payload_start.checked_add(length)?;
-    if end > source_end {
+    if end > source_end || end > data.len() {
         return None;
     }
     let header_token = data
@@ -627,95 +1007,85 @@ fn parse_consolidated_record(
     Some(ConsolidatedRecord {
         source_index: 0,
         source_range: pos..end,
-        physically_contiguous: true,
         family,
-        width,
+        token: WidthCodedToken::new(width, header_token).ok()?,
         flag,
         class,
-        header_token,
-        range: pos..end,
-        payload: payload_start..end,
+        placement: ConsolidatedPlacement::Contiguous {
+            range: pos..end,
+            payload: payload_start..end,
+        },
     })
 }
 
-pub(crate) fn a_family_frames_from_records(
+pub(crate) fn family_frames_from_records(
     records: &[ConsolidatedRecord],
+    family: ConsolidatedFamily,
     class: u8,
-) -> Vec<ConsolidatedFrame> {
+) -> impl Iterator<Item = ConsolidatedFrame> + '_ {
     records
         .iter()
-        .filter(|record| {
-            record.physically_contiguous
-                && record.family == ConsolidatedFamily::A
-                && record.class == class
+        .filter(move |record| record.family == family && record.class == class)
+        .filter_map(|record| {
+            Some(ConsolidatedFrame {
+                pos: record.byte_offset(),
+                payload: record.payload()?.start,
+                end: record.range()?.end,
+                header_token: record.header_token(),
+            })
         })
-        .map(|record| ConsolidatedFrame {
-            pos: record.range.start,
-            payload: record.payload.start,
-            end: record.range.end,
-            header_token: record.header_token,
-        })
-        .collect()
-}
-
-pub(crate) fn b_family_frames_from_records(
-    records: &[ConsolidatedRecord],
-    class: u8,
-) -> Vec<ConsolidatedFrame> {
-    records
-        .iter()
-        .filter(|record| {
-            record.physically_contiguous
-                && record.family == ConsolidatedFamily::B
-                && record.class == class
-        })
-        .map(|record| ConsolidatedFrame {
-            pos: record.range.start,
-            payload: record.payload.start,
-            end: record.range.end,
-            header_token: record.header_token,
-        })
-        .collect()
 }
 
 #[cfg(test)]
 pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
     let records = consolidated_records(data);
-    b_family_frames_from_records(&records, class)
+    family_frames_from_records(&records, ConsolidatedFamily::B, class).collect()
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
-    scan_vertex_record_ranges(bytes)
-        .into_iter()
-        .map(|range| {
-            let x = f32_le(bytes, range.start + 3);
-            let y = f32_le(bytes, range.start + 7);
-            let z = f32_le(bytes, range.start + 11);
-            Point3::new(x as f64, y as f64, z as f64)
-        })
-        .collect()
+pub(crate) fn scan_vertex_records<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = FinitePoint3> + 'a, CodecError> {
+    Ok(scan_vertex_rows(ctx, bytes)?.map(|(_, point)| point))
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
-pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
+pub(crate) fn scan_vertex_record_ranges<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = Range<usize>> + 'a, CodecError> {
+    Ok(scan_vertex_rows(ctx, bytes)?.map(|(range, _)| range))
+}
+
+/// Every `05 08 01` row whose three coordinates are finite, with its byte
+/// range and admitted point.
+fn scan_vertex_rows<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "catia_vertex_row_scan")?;
     let mut p = 0usize;
-    while p + 15 <= bytes.len() {
+    Ok(std::iter::from_fn(move || loop {
+        if p + 15 > bytes.len() {
+            return None;
+        }
         if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
             let x = f32_le(bytes, p + 3);
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
-            if x.is_finite() && y.is_finite() && z.is_finite() {
-                ranges.push(p..p + 15);
-            }
+            let start = p;
             p += 15;
+            if let Some(point) =
+                FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
+            {
+                return Some((start..p, point));
+            }
         } else {
             p += 1;
         }
-    }
-    ranges
+    }))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -727,7 +1097,310 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        consolidated_records, consolidated_records_in_range_sources,
+        consolidated_records_in_ranges, family_frames_from_records, scan_vertex_records,
+        ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
+        ConsolidatedRecord,
+    };
+
+    #[test]
+    fn raw_frame_token_fit_is_checked_in_construction_and_serde() {
+        use super::ConsolidatedRawFrame;
+        for (width, maximum) in [
+            (ConsolidatedFrameWidth::One, 0xff),
+            (ConsolidatedFrameWidth::Two, 0xffff),
+            (ConsolidatedFrameWidth::Three, 0xff_ffff),
+        ] {
+            let frame = ConsolidatedRawFrame::new(
+                12_u64,
+                width,
+                ConsolidatedFrameFlag::Flag03,
+                maximum,
+                vec![1],
+            )
+            .expect("fitting token");
+            let bytes = serde_json::to_vec(&frame).expect("frame JSON");
+            assert_eq!(
+                serde_json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes)
+                    .expect("checked frame JSON"),
+                frame
+            );
+            assert!(ConsolidatedRawFrame::new(
+                12_u64,
+                width,
+                ConsolidatedFrameFlag::Flag03,
+                maximum + 1,
+                vec![1]
+            )
+            .is_err());
+            let mut wire = serde_json::to_value(&frame).expect("frame wire");
+            wire["header_token"] = serde_json::json!(maximum + 1);
+            assert!(serde_json::from_value::<ConsolidatedRawFrame<u64>>(wire).is_err());
+        }
+        let frame = ConsolidatedRawFrame::new(
+            12_u64,
+            ConsolidatedFrameWidth::One,
+            ConsolidatedFrameFlag::Flag03,
+            5,
+            vec![1],
+        )
+        .expect("frame");
+        assert_eq!(
+            serde_json::to_string(&frame).expect("frame bytes"),
+            r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":[1]}"#
+        );
+    }
+
+    #[test]
+    fn ordered_pcurve_sites_reject_empty_singleton_and_nonincreasing_knots() {
+        let site = |knot| super::ConsolidatedPcurveSite {
+            knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
+            point: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+            first_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+            second_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+        };
+        for sites in [
+            vec![],
+            vec![site(0.0)],
+            vec![site(0.0), site(0.0)],
+            vec![site(1.0), site(0.0)],
+        ] {
+            assert!(super::OrderedPcurveSites::try_from(sites).is_err());
+        }
+        let sites =
+            super::OrderedPcurveSites::try_from(vec![site(0.0), site(1.0)]).expect("ordered knots");
+        assert_eq!(
+            sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>(),
+            [0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn vertex_scan_refuses_marker_free_work() {
+        let bytes = [0_u8; 64];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::scan_vertex_records(ctx, &bytes)
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_vertex_row_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn consolidated_record_scan_refuses_marker_free_work() {
+        let bytes = [0_u8; 64];
+        crate::test_support::with_work_limit(1, |ctx| {
+            let error = super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+            )
+            .expect_err("marker-free scan consumes work");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_record_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn consolidated_record_inventory_refuses_each_contiguous_collection() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        for (limit, operation) in [
+            (0, "catia_record_source_ranges"),
+            (1, "catia_source_records"),
+            (2, "catia_record_starts"),
+            (3, "catia_record_ranges"),
+            (4, "catia_record_source_ends"),
+            (5, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(
+                    ctx,
+                    &bytes,
+                    std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+                )
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+            )
+        })
+        .expect("service decode");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn borrowed_source_extents_keep_record_inventory_limits() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        let sources = [vec![super::SourceExtent::whole(&bytes)]];
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_record_source_ranges"
+        ));
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        })
+        .expect("borrowed source inventory fits service profile");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn spanning_record_inventory_refuses_nested_growth() {
+        let mut bytes = vec![0xb2, 0x03, 0x20, 0x01, 0x05, 0];
+        let spanning_start = bytes.len();
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x34]);
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+        let split = spanning_start + 10;
+        for (limit, operation) in [
+            (8, "catia_spanning_records"),
+            (9, "catia_source_records"),
+            (13, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(
+                    ctx,
+                    &bytes,
+                    [[
+                        super::SourceExtent::within(&bytes, 0, split).expect("first extent"),
+                        super::SourceExtent::within(&bytes, split, bytes.len())
+                            .expect("second extent"),
+                    ]],
+                )
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let records =
+            consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].source_range, spanning_start..bytes.len());
+    }
+
+    #[test]
+    fn pcurve_late_nonfinite_scalar_refuses_before_scan() {
+        let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let record = &records[0];
+        let payload = record.payload().expect("payload");
+        let (_, count, _, lanes, _, _) =
+            super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
+        let late = lanes[6] + (count - 1) * 8;
+        bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        crate::test_support::with_work_limit(0, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+                    .expect_err("scalar scan needs work")
+            else {
+                panic!("resource refusal")
+            };
+            assert_eq!(limit.operation, "catia_pcurve_scalar_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        assert!(crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service work")
+        .is_empty());
+    }
+
+    #[test]
+    fn consolidated_pcurve_sites_tail_and_outer_collection_refuse_limits() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        for (limit, operation) in [
+            (1, "catia_consolidated_pcurve_sites"),
+            (2, "catia_consolidated_pcurve_tail"),
+            (3, "catia_consolidated_pcurves"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_consolidated_pcurve_tail",
+            |ctx| super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A),
+        );
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_consolidated_pcurve_tail")
+        );
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service decode");
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].sites.len(), 2);
+        assert_eq!(pcurves[0].tail, [0x07]);
+    }
+
+    #[test]
+    fn consolidated_pcurve_native_lanes_refuse_each_materialization() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service decode");
+        let pcurve = &pcurves[0];
+        for (limit, operation) in [
+            (1, "catia_native_pcurve_knots"),
+            (3, "catia_native_pcurve_points"),
+            (5, "catia_native_pcurve_first_derivatives"),
+            (7, "catia_native_pcurve_second_derivatives"),
+        ] {
+            let limited =
+                crate::test_support::with_collection_limit(limit, |ctx| pcurve.native_lanes(ctx));
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let lanes = crate::test_support::with_service_context(|ctx| pcurve.native_lanes(ctx))
+            .expect("service decode");
+        assert_eq!(
+            (lanes.0.len(), lanes.1.len(), lanes.2.len(), lanes.3.len()),
+            (2, 2, 2, 2)
+        );
+    }
 
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {
@@ -761,7 +1434,7 @@ mod tests {
         let records = consolidated_records(&bytes);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].family, ConsolidatedFamily::A);
-        assert_eq!(records[0].range, 0..18);
+        assert_eq!(records[0].range(), Some(0..18));
     }
 
     #[test]
@@ -773,7 +1446,7 @@ mod tests {
 
         let records = consolidated_records_in_ranges(&bytes, [0..12, 12..bytes.len()]);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].range, 15..21);
+        assert_eq!(records[0].range(), Some(15..21));
         assert_eq!(records[0].source_index, 1);
         assert_eq!(records[0].family, ConsolidatedFamily::B);
     }
@@ -789,7 +1462,7 @@ mod tests {
 
         let records = consolidated_records_in_ranges(&bytes, std::iter::once(9..bytes.len()));
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].range, 9..18);
+        assert_eq!(records[0].range(), Some(9..18));
     }
 
     #[test]
@@ -801,14 +1474,19 @@ mod tests {
         bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
         let split = spanning_start + 10;
 
-        let records = consolidated_records_in_sources(&bytes, [[0..split, split..bytes.len()]]);
+        let records =
+            consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
 
         assert_eq!(records.len(), 2);
         assert_eq!(records[1].family, ConsolidatedFamily::A);
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
-        assert!(!records[1].physically_contiguous);
-        assert!(a_family_frames_from_records(&records, 0x34).is_empty());
+        assert!(records[1].range().is_none());
+        assert!(
+            family_frames_from_records(&records, ConsolidatedFamily::A, 0x34)
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -816,29 +1494,39 @@ mod tests {
         let first = ConsolidatedRecord {
             source_index: 0,
             source_range: 0..4,
-            physically_contiguous: true,
             family: ConsolidatedFamily::A,
-            width: ConsolidatedFrameWidth::One,
+            token: super::WidthCodedToken::new(ConsolidatedFrameWidth::One, 0)
+                .expect("width-coded token"),
             flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
-            header_token: 0,
-            range: 0..4,
-            payload: 3..4,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 0..4,
+                payload: 3..4,
+            },
         };
         let adjacent = ConsolidatedRecord {
             source_range: 4..8,
-            range: 4..8,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 4..8,
+                payload: 7..8,
+            },
             ..first.clone()
         };
         let separated = ConsolidatedRecord {
             source_range: 5..9,
-            range: 5..9,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 5..9,
+                payload: 7..8,
+            },
             ..first.clone()
         };
         let adjacent_other_source = ConsolidatedRecord {
             source_index: 1,
             source_range: 4..8,
-            range: 4..8,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 4..8,
+                payload: 7..8,
+            },
             ..first.clone()
         };
 
@@ -857,11 +1545,56 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
 
-        let [point] = scan_vertex_records(&bytes)
-            .try_into()
-            .expect("one vertex row");
+        let [point] = crate::test_support::with_service_context(|ctx| {
+            scan_vertex_records(ctx, &bytes)
+                .expect("service resource budget")
+                .collect::<Vec<_>>()
+        })
+        .try_into()
+        .expect("one vertex row");
         assert_eq!(point.x, 2_000_000.0);
         assert_eq!(point.y, -2_000_000.0);
         assert_eq!(point.z, 2_000_000.0);
+    }
+}
+
+#[cfg(test)]
+mod source_image_admission_tests {
+    #[test]
+    fn record_sources_reject_extents_from_a_larger_image() {
+        let larger = [0_u8; 260];
+        let short = [0xb2, 0x03, 0x24, 0xff, 0x01];
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &short,
+                [[super::SourceExtent::whole(&larger)]],
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+        assert!(super::parse_consolidated_record(&short, 0, larger.len()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod width_token_admission_tests {
+    #[test]
+    fn consolidated_record_retains_an_immutable_width_coded_token() {
+        for (marker, width, maximum) in [
+            (0xb2, super::ConsolidatedFrameWidth::One, 0xff),
+            (0xb3, super::ConsolidatedFrameWidth::Two, 0xffff),
+            (0xb4, super::ConsolidatedFrameWidth::Three, 0xff_ffff),
+        ] {
+            let mut bytes = vec![marker, 3, 0x24, 0];
+            bytes.resize(4 + usize::from(u8::from(width)), 0xff);
+            let record =
+                super::parse_consolidated_record(&bytes, 0, bytes.len()).expect("complete frame");
+            assert_eq!(record.width(), width);
+            assert_eq!(record.header_token(), maximum);
+            assert!(super::WidthCodedToken::new(width, maximum + 1).is_err());
+        }
     }
 }

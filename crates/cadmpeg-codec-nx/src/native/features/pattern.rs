@@ -36,42 +36,47 @@ use crate::printable_string::PrintableString;
 use serde::Serialize;
 use std::num::NonZeroU8;
 
+mod borrowed_wires;
+
+use super::format_feature_child_id;
+use super::format_feature_history_id;
 use super::offset_data_block_bytes;
 
-use super::unique_offset_data_block;
+use super::charged_unique_offset_data_block;
 use super::visit_feature_history_operation_records;
 
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePatternReference {
+pub(in crate::native) struct FeaturePatternReference {
     /// Globally unique pattern-reference identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning pattern operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Exact byte layout that framed the reference field.
-    pub layout: PatternPayloadReferenceLayout,
+    layout: PatternPayloadReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: PayloadIndexToken,
+    pub(in crate::native) token: PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_data_block"
+    )]
+    pub(in crate::native) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternCountedReferenceLaneWire",
-    into = "FeaturePatternCountedReferenceLaneWire"
-)]
-pub struct FeaturePatternCountedReferenceLane {
-    pub id: String,
-    pub operation_label: String,
-    pub references: CountedPatternReferences<Option<String>>,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeaturePatternCountedReferenceLaneWire")]
+pub(in crate::native) struct FeaturePatternCountedReferenceLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    references: CountedPatternReferences<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -95,6 +100,7 @@ struct FeaturePatternCountedReferenceLaneWire {
     object_index_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReferenceLaneWire {
     fn from(value: FeaturePatternCountedReferenceLane) -> Self {
         Self {
@@ -175,42 +181,39 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
 
 /// Canonical printable string in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePatternConstructionString {
+pub(in crate::native) struct FeaturePatternConstructionString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed pattern payload carrying the string.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based string order within the payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Exact printable value.
-    pub value: PrintableString<String>,
+    value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Complete signed Q1.55 lane in a reconstructed pattern payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternConstructionFixedLaneWire",
-    into = "FeaturePatternConstructionFixedLaneWire"
-)]
-pub struct FeaturePatternConstructionFixedLane {
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePatternConstructionFixedLaneWire")]
+pub(in crate::native) struct FeaturePatternConstructionFixedLane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed pattern payload carrying the lane.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based lane order within the payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Framed scalar run with absolute source locations.
-    pub lane: FramedScalarRun<Q155LaneFrame, u64>,
+    lane: FramedScalarRun<Q155LaneFrame, u64>,
     /// Absolute source offset of the fixed discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -239,6 +242,7 @@ struct FeaturePatternConstructionFixedLaneWire {
     value_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
     fn from(record: FeaturePatternConstructionFixedLane) -> Self {
         Self {
@@ -301,7 +305,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
         let lane = FramedScalarRun::new(
             Q155LaneFrame,
             wire.payload_offset,
-            NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a Q1.55 atom")?,
         )?;
         if !lane
             .iter()
@@ -324,7 +328,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
 /// Byte layout selected by one exact pattern-transform lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeaturePatternTransformLayout {
+enum FeaturePatternTransformLayout {
     /// One shifted scalar per row and terminal mode `01`.
     ScalarRows,
     /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
@@ -332,17 +336,14 @@ pub enum FeaturePatternTransformLayout {
 }
 
 /// Exact counted transform lane carried by a bounded pattern payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternTransformLaneWire",
-    into = "FeaturePatternTransformLaneWire"
-)]
-pub struct FeaturePatternTransformLane {
-    pub id: String,
-    pub operation_label: String,
-    pub row_schema_index: NonZeroU8,
-    pub rows: PatternRows<crate::om::compact::LocatedCompactIndex<u64>, u64>,
-    pub source_offset: u64,
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePatternTransformLaneWire")]
+pub(in crate::native) struct FeaturePatternTransformLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    row_schema_index: NonZeroU8,
+    rows: PatternRows<crate::om::compact::LocatedCompactIndex<u64>, u64>,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -376,6 +377,7 @@ struct FeaturePatternTransformLaneWire {
     selector_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl FeaturePatternTransformLaneWire {
     fn push_scalar(
         &mut self,
@@ -397,6 +399,7 @@ impl FeaturePatternTransformLaneWire {
     }
 }
 
+#[cfg(test)]
 impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
     fn from(lane: FeaturePatternTransformLane) -> Self {
         let layout = match &lane.rows {
@@ -427,7 +430,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     };
                     wire.push_scalar(
                         encoding,
-                        row.values.scalar.value(),
+                        row.values.scalar.value().get(),
                         row.values.scalar.raw(),
                         row.values.offset,
                     );
@@ -439,7 +442,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     for value in row.values.first {
                         wire.push_scalar(
                             PatternScalarEncoding::Binary64,
-                            value.scalar.value(),
+                            value.scalar.value().get(),
                             value.scalar.as_bytes(),
                             value.offset,
                         );
@@ -447,7 +450,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     let terminal = row.values.terminal;
                     wire.push_scalar(
                         terminal.scalar.encoding(),
-                        terminal.scalar.value(),
+                        terminal.scalar.value().get(),
                         terminal.scalar.raw(),
                         terminal.offset,
                     );
@@ -476,7 +479,7 @@ impl PatternScalarWire {
         };
         if self.encoding != encoding
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().to_bits()
+            || self.value.to_bits() != scalar.value().get().to_bits()
         {
             return Err("encodings and values must match each exact raw_values atom".into());
         }
@@ -510,7 +513,7 @@ impl PatternScalarWire {
             .ok_or("raw_values wide-row terminal must contain exact one or binary32")?;
         if self.encoding != scalar.encoding()
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().to_bits()
+            || self.value.to_bits() != scalar.value().get().to_bits()
         {
             return Err(
                 "encodings and values must match the exact raw_values terminal atom".into(),
@@ -621,20 +624,17 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
 }
 
 /// Exact counted instance-output lane carried by a bounded operation payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureMultiInstanceOutputLaneWire",
-    into = "FeatureMultiInstanceOutputLaneWire"
-)]
-pub struct FeatureMultiInstanceOutputLane {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureMultiInstanceOutputLaneWire")]
+pub(in crate::native) struct FeatureMultiInstanceOutputLane {
     /// Globally unique output-lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Multi Instance Output` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Complete selector groups and their trailing references.
-    pub outputs: crate::om::instances::MultiInstanceOutputs<u64>,
+    outputs: crate::om::instances::MultiInstanceOutputs<u64>,
     /// Absolute source offset of the opening `25 01, count` field.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -669,6 +669,7 @@ struct FeatureMultiInstanceOutputLaneWire {
     trailing_object_index_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire {
     fn from(lane: FeatureMultiInstanceOutputLane) -> Self {
         Self {
@@ -794,25 +795,22 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
 }
 
 /// Exact counted selector lane carried by an identical-instance output payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureIdenticalInstanceOutputLaneWire",
-    into = "FeatureIdenticalInstanceOutputLaneWire"
-)]
-pub struct FeatureIdenticalInstanceOutputLane {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureIdenticalInstanceOutputLaneWire")]
+pub(in crate::native) struct FeatureIdenticalInstanceOutputLane {
     /// Globally unique output-lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `IDENTICAL INSTANCE OUTPUT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Schema index preceding the count field.
-    pub leading_schema_index: u8,
+    leading_schema_index: u8,
     /// Schema index framing the serialized count.
-    pub count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
+    count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
     /// Ordered complete source tokens.
-    pub selectors:
+    selectors:
         crate::om::compact::CountedIndexMembers<crate::om::compact::LocatedCompactIndex<u64>>,
     /// Absolute source offset of the leading schema index.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -840,6 +838,7 @@ struct FeatureIdenticalInstanceOutputLaneWire {
     selector_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutputLaneWire {
     fn from(lane: FeatureIdenticalInstanceOutputLane) -> Self {
         Self {
@@ -919,297 +918,649 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
 
 /// Decode and resolve exact ordered construction references in pattern
 /// payloads without assigning seed or transform semantics to their slots.
-pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternReference> {
-    let indexed = container.indexed_om_sections();
+pub(in crate::native) fn feature_pattern_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(decoded) = PatternReferences::read(record.payload_view()) else {
                 return;
             };
             let layout = decoded.layout();
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.into_references().into_iter().enumerate().map(|(ordinal, reference)| {
-                FeaturePatternReference {
-                    id: format!(
-                        "nx:feature-history:pattern-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    layout,
-                    ordinal: ordinal as u32,
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
+            for (ordinal, reference) in decoded.into_references().into_iter().enumerate() {
+                let item = (|| -> Result<FeaturePatternReference, cadmpeg_core::CodecError> {
+                    let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
+                        ctx.refuse_codec_limit("NX pattern reference ordinal", 0, 1)
+                    })?;
+                    Ok(FeaturePatternReference {
+                        id: format_feature_history_id(
+                            ctx,
+                            "pattern-reference",
+                            section_key,
+                            operation_ordinal,
+                            Some(ordinal),
+                        )?,
+                        operation_label: format_feature_history_id(
+                            ctx,
+                            "operation-label",
+                            section_key,
+                            operation_ordinal,
+                            None,
+                        )?,
+                        layout,
+                        ordinal: ordinal_u32,
+                        token: reference.token,
+                        data_block: charged_unique_offset_data_block(
+                            ctx,
+                            &indexed,
+                            reference.token.value(),
+                        )?,
+                        source_offset: entry_offset
+                            + cadmpeg_core::decode::u64_from_index(reference.offset),
+                    })
+                })();
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
+                if let Err(error) = ctx.reserve_vec(&mut references, 1, "NX pattern references") {
+                    failure = Some(error);
+                    return;
                 }
-            }));
+                references.push(item);
+            }
         },
-    );
-    references
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(references)
 }
 
 /// Decode and resolve the exact counted reference lane in `Pattern Feature`
 /// payloads without assigning roles to its references.
-pub fn feature_pattern_counted_reference_lanes(
+pub(in crate::native) fn feature_pattern_counted_reference_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeaturePatternCountedReferenceLane> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
+    let mut refusal: Option<cadmpeg_core::CodecError> = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = CountedPatternReferences::read(record.payload_view()) else {
+            if refusal.is_some() {
                 return;
+            }
+            let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
             };
-            let Ok(references) = lane.resolve(entry_offset, |token| {
-                unique_offset_data_block(&indexed, token.value())
-            }) else {
+            let references = match lane.resolve(ctx, entry_offset, |token| {
+                charged_unique_offset_data_block(ctx, &indexed, token.value())
+            }) {
+                Ok(Some(references)) => references,
+                Ok(None) => return,
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
+            };
+            let id = match format_feature_history_id(
+                ctx,
+                "pattern-counted-reference-lane",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(id) => id,
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(label) => label,
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX counted pattern reference lanes")
+            {
+                refusal = Some(error);
                 return;
-            };
+            }
             lanes.push(FeaturePatternCountedReferenceLane {
-                id: format!(
-                    "nx:feature-history:pattern-counted-reference-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 references,
             });
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = refusal {
+        return Err(error);
+    }
+    Ok(lanes)
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
-pub fn feature_pattern_construction_payloads(
+pub(in crate::native) fn feature_pattern_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeaturePatternReference],
-) -> Vec<FeatureConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    let kinds = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label.value.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    references
-        .iter()
-        .map(|reference| reference.operation_label.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|operation_label| {
-            let operation_kind = match *kinds.get(operation_label)? {
-                "Pattern Feature" => FeaturePatternKind::Feature,
-                "Pattern Geometry" => FeaturePatternKind::Geometry,
-                _ => return None,
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let scan_work = references
+        .len()
+        .checked_mul(references.len())
+        .and_then(|work| work.checked_add(labels.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX pattern construction references", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "join NX pattern construction references",
+    )?;
+    let mut index_reservation = ctx.reserve_scoped(0, "NX pattern construction indexes")?;
+    let mut kinds = BTreeMap::<&str, &str>::new();
+    for label in labels {
+        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &str)>() * 4,
+        ))?;
+        ctx.insert_btree_map(
+            &mut kinds,
+            label.id.as_str(),
+            label.value.as_str(),
+            "NX pattern construction labels",
+        )?;
+    }
+    let mut operations = BTreeSet::<&str>::new();
+    for reference in references {
+        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX pattern construction operations",
+        )?;
+    }
+    let mut output = Vec::new();
+    'operations: for operation_label in operations {
+        let Some(kind) = kinds.get(operation_label) else {
+            continue;
+        };
+        let operation_kind = match *kind {
+            "Pattern Feature" => FeaturePatternKind::Feature,
+            "Pattern Geometry" => FeaturePatternKind::Geometry,
+            _ => continue,
+        };
+        let mut graph_reservation = ctx.reserve_scoped(0, "NX pattern construction graph")?;
+        let mut graph = Vec::new();
+        for reference in references
+            .iter()
+            .filter(|reference| reference.operation_label == operation_label)
+        {
+            ctx.reserve_scoped_vec(
+                &mut graph_reservation,
+                &mut graph,
+                1,
+                "NX pattern construction graph",
+            )?;
+            graph.push(reference);
+        }
+        ctx.stable_sort_by(
+            &mut graph,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
+            "sort NX pattern construction graph",
+        )?;
+        if !matches!(graph.len(), 9 | 10)
+            || graph
+                .iter()
+                .enumerate()
+                .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
+            || graph
+                .iter()
+                .any(|reference| reference.layout != graph[0].layout)
+        {
+            continue;
+        }
+        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
+        let mut data_blocks = Vec::new();
+        for reference in &graph {
+            let Some(block) = reference.data_block.as_deref() else {
+                continue 'operations;
             };
-            let mut graph = references
-                .iter()
-                .filter(|reference| reference.operation_label == operation_label)
-                .collect::<Vec<_>>();
-            graph.sort_by_key(|reference| reference.ordinal);
-            if !matches!(graph.len(), 9 | 10)
-                || graph
-                    .iter()
-                    .enumerate()
-                    .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
-                || graph
-                    .iter()
-                    .any(|reference| reference.layout != graph[0].layout)
-            {
-                return None;
-            }
-            let data_blocks = graph
-                .iter()
-                .map(|reference| reference.data_block.clone())
-                .collect::<Option<Vec<_>>>()?;
-            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
-            if data_blocks.iter().any(|block| {
-                block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store)
-            }) {
-                return None;
-            }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(FeatureConstructionPayload {
-                id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
-                operation_label: operation_label.to_string(),
-                owner: FeatureConstructionOwner::Pattern {
-                    operation_kind,
-                    reference_layout: graph[0].layout,
-                    construction_references: graph
-                        .iter()
-                        .map(|reference| reference.id.clone())
-                        .collect(),
-                },
-                content,
-            })
-        })
-        .collect()
+            source_id_storage.with_storage(|| {
+                ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs")
+            })?;
+            data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
+        }
+        let Some(store) = data_blocks
+            .first()
+            .and_then(|block| block.rsplit_once(":block#").map(|(prefix, _)| prefix))
+        else {
+            continue;
+        };
+        if data_blocks.iter().any(|block| {
+            block
+                .rsplit_once(":block#")
+                .is_none_or(|(prefix, _)| prefix != store)
+        }) {
+            continue;
+        }
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+            continue;
+        };
+        let prefix = "nx:feature-history:pattern-construction-payload#";
+        let id_len = prefix
+            .len()
+            .checked_add(operation_key.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("NX pattern construction payload identity", 0, 1)
+            })?;
+        let mut id = ctx.retained_string(id_len, "NX pattern construction payload identity")?;
+        id.push_str(prefix);
+        id.push_str(operation_key);
+        let mut construction_references = Vec::new();
+        for reference in &graph {
+            ctx.reserve_vec(
+                &mut construction_references,
+                1,
+                "NX pattern construction reference IDs",
+            )?;
+            construction_references.push(
+                ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?,
+            );
+        }
+        let record = FeatureConstructionPayload {
+            id,
+            operation_label: ctx
+                .copy_retained_text(operation_label, "NX pattern construction operation label")?,
+            owner: FeatureConstructionOwner::Pattern {
+                operation_kind,
+                reference_layout: graph[0].layout,
+                construction_references,
+            },
+            content,
+        };
+        ctx.reserve_vec(&mut output, 1, "NX pattern construction payloads")?;
+        output.push(record);
+    }
+    Ok(output)
 }
 
 /// Decode canonical printable strings from reconstructed pattern payloads.
-pub fn feature_pattern_construction_strings(
+pub(in crate::native) fn feature_pattern_construction_strings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Vec<FeaturePatternConstructionString> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+) -> Result<Vec<FeaturePatternConstructionString>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut strings = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            crate::om::string_values(joined.bytes(), 0)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, value)| {
-                    let payload_offset = value.offset as u64;
-                    Some(FeaturePatternConstructionString {
-                        id: format!("{}-string-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        payload_offset,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
+            let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
+            let value = ctx
+                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
+            let value = PrintableString::new(value)
+                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+            let operation_label = ctx.copy_retained_text(
+                &payload.operation_label,
+                "NX pattern construction string label",
+            )?;
+            let construction_payload =
+                ctx.copy_retained_text(&payload.id, "NX pattern construction string payload")?;
+            ctx.reserve_vec(&mut strings, 1, "NX pattern construction strings")?;
+            strings.push(FeaturePatternConstructionString {
+                id,
+                operation_label,
+                construction_payload,
+                ordinal: ordinal_u32,
+                value,
+                payload_offset,
+                source_offset,
+            });
+        }
+    }
+    Ok(strings)
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
-pub fn feature_pattern_construction_fixed_lanes(
+pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Vec<FeaturePatternConstructionFixedLane> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut lanes = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = lane.offset();
+            let Some(lane) =
+                lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))?
             else {
-                return Vec::new();
+                continue;
             };
-            crate::om::draft_construction_fixed_lanes(joined.bytes())
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
-                    Some(FeaturePatternConstructionFixedLane {
-                        id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        lane,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
+            };
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX pattern fixed lane ordinal", 0, 1))?;
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
+            let operation_label =
+                ctx.copy_retained_text(&payload.operation_label, "NX pattern fixed lane label")?;
+            let construction_payload =
+                ctx.copy_retained_text(&payload.id, "NX pattern fixed lane payload")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX pattern construction fixed lanes")?;
+            lanes.push(FeaturePatternConstructionFixedLane {
+                id,
+                operation_label,
+                construction_payload,
+                ordinal: ordinal_u32,
+                lane,
+                source_offset,
+            });
+        }
+    }
+    Ok(lanes)
 }
 
 /// Decode exact counted transform lanes from bounded pattern payloads.
-pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatternTransformLane> {
+pub(in crate::native) fn feature_pattern_transform_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeaturePatternTransformLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::pattern_payload_transform_lane(record.payload_view())
-            else {
+            if failure.is_some() {
                 return;
+            }
+            let lane = match crate::om::pattern_payload_transform_lane(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
+            let rows = match lane.rows.map_charged(
+                ctx,
+                |selector| crate::om::compact::LocatedCompactIndex {
+                    atom: selector.atom,
+                    offset: entry_offset + cadmpeg_core::decode::u64_from_index(selector.offset),
+                },
+                |offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset),
+            ) {
+                Ok(rows) => rows,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let id = match format_feature_history_id(
+                ctx,
+                "pattern-transform-lane",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(id) => id,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(label) => label,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX pattern transform lanes") {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeaturePatternTransformLane {
-                id: format!(
-                    "nx:feature-history:pattern-transform-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 row_schema_index: lane.row_schema_index,
-                rows: lane.rows.map(
-                    |selector| crate::om::compact::LocatedCompactIndex {
-                        atom: selector.atom,
-                        offset: entry_offset + selector.offset as u64,
-                    },
-                    |offset| entry_offset + offset as u64,
-                ),
-                source_offset: entry_offset + lane.offset as u64,
+                rows,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(lanes)
 }
 
 /// Decode exact counted output lanes from bounded multi-instance payloads.
-pub fn feature_multi_instance_output_lanes(
+pub(in crate::native) fn feature_multi_instance_output_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureMultiInstanceOutputLane> {
+) -> Result<Vec<FeatureMultiInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::multi_instance_output_payload_lane(record.payload_view())
-            else {
+            if failure.is_some() {
                 return;
+            }
+            let lane =
+                match crate::om::multi_instance_output_payload_lane(ctx, record.payload_view()) {
+                    Ok(Some(lane)) => lane,
+                    Ok(None) => return,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
+            let outputs = match lane.outputs.map_offsets(ctx, |offset| {
+                entry_offset + cadmpeg_core::decode::u64_from_index(offset)
+            }) {
+                Ok(outputs) => outputs,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
+            let id = match format_feature_history_id(
+                ctx,
+                "multi-instance-output-lane",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(id) => id,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(label) => label,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX multi-instance output lanes") {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeatureMultiInstanceOutputLane {
-                id: format!(
-                    "nx:feature-history:multi-instance-output-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                outputs: lane.outputs.map_offsets(|offset| entry_offset + offset as u64),
-                source_offset: entry_offset + lane.offset as u64,
+                id,
+                operation_label,
+                outputs,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(lanes)
 }
 
 /// Decode exact counted selector lanes from bounded identical-instance output
 /// payloads.
-pub fn feature_identical_instance_output_lanes(
+pub(in crate::native) fn feature_identical_instance_output_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureIdenticalInstanceOutputLane> {
+) -> Result<Vec<FeatureIdenticalInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) =
-                crate::om::identical_instance_output_payload_lane(record.payload_view())
-            else {
+            if failure.is_some() {
+                return;
+            }
+            let lane =
+                match crate::om::identical_instance_output_payload_lane(ctx, record.payload_view())
+                {
+                    Ok(lane) => lane,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
+            let Some(lane) = lane else {
                 return;
             };
+            let selectors = match lane.selectors.map_charged(ctx, |token| {
+                Ok(crate::om::compact::LocatedCompactIndex {
+                    atom: token.atom,
+                    offset: entry_offset + cadmpeg_core::decode::u64_from_index(token.offset),
+                })
+            }) {
+                Ok(selectors) => selectors,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let id = match format_feature_history_id(
+                ctx,
+                "identical-instance-output-lane",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(id) => id,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            ) {
+                Ok(label) => label,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX identical-instance output lanes")
+            {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeatureIdenticalInstanceOutputLane {
-                id: format!(
-                    "nx:feature-history:identical-instance-output-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
-                selectors: lane.selectors.map(|token| crate::om::compact::LocatedCompactIndex {
-                    atom: token.atom,
-                    offset: entry_offset + token.offset as u64,
-                }),
-                source_offset: entry_offset + lane.offset as u64,
+                selectors,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(lanes)
+    }
 }
 
 use super::deserialize_reference_lane_count;
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");

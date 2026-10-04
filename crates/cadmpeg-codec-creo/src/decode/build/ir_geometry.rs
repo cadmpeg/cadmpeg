@@ -4,7 +4,9 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::AnnotationBuilder;
+use std::collections::BTreeSet;
 
 use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
@@ -12,27 +14,40 @@ use crate::feature::definitions::SolverSubtable;
 use super::super::coverage::{
     curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
 };
-use super::super::feature_history::{
+use super::super::feature_history::dimensions::{
     feature_relation_table_expected_rows, feature_relation_table_missing_rows,
+};
+use super::super::feature_history::revolution::{
     transfer_resolved_extrusion_vertex_orbit_curves, transfer_resolved_revolution_surfaces,
     transfer_resolved_revolution_vertex_orbit_curves,
 };
-use super::super::surfaces::{
-    transfer_active_datum_cylinders, transfer_cap_pair_cylinders,
-    transfer_carrier_intersection_curves, transfer_circular_sweep_cylinders,
-    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
-    transfer_fc05_cap_circles, transfer_first_instance_prototype_surfaces, transfer_hole_cylinders,
-    transfer_legacy_ascii_surface_carriers, transfer_native_brep, transfer_nurbs_boundary_curves,
-    transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
-    transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
-    transfer_positional_spline_replays, transfer_positional_tori, transfer_rowless_round_cylinders,
-    transfer_split_outline_cylinders, transfer_tabulated_cylinder_spline_extrusions,
-    BrepTransferDiagnostics, NativeBrepTransferSummary,
+use super::super::surfaces::brep::{
+    transfer_cap_pair_cylinders, transfer_native_brep, BrepTransferDiagnostics,
+    NativeBrepCurveEvidence, NativeBrepTransferSummary,
 };
-use super::super::sweep::{
-    transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
-    transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
-    transfer_saved_spline_curves,
+use super::super::surfaces::cylinders::{
+    transfer_active_datum_cylinders, transfer_circular_sweep_cylinders,
+    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
+    transfer_hole_cylinders, transfer_positional_cones, transfer_positional_cylinders,
+    transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
+};
+use super::super::surfaces::positional::{
+    transfer_paired_envelope_spheres, transfer_positional_line_extrusion_planes,
+    transfer_positional_tori, transfer_tabulated_cylinder_spline_extrusions,
+};
+use super::super::surfaces::prototypes::{
+    transfer_first_instance_prototype_surfaces, transfer_legacy_ascii_surface_carriers,
+    transfer_positional_spline_replays,
+};
+use super::super::surfaces::transfer_curves::{
+    transfer_carrier_intersection_curves, transfer_nurbs_boundary_curves,
+};
+use super::super::surfaces::{transfer_fc05_cap_circles, transfer_part_product};
+use super::super::sweep::circular::transfer_resolved_circular_extrusion_breps;
+use super::super::sweep::extrusion_brep::transfer_resolved_extrusion_breps;
+use super::super::sweep::revolution_brep::transfer_resolved_revolution_breps;
+use super::super::sweep::surfaces::{
+    transfer_feature_extrusion_surfaces, transfer_saved_spline_curves,
 };
 use crate::decode::analytic::carriers::{
     retain_unresolved_surface_carriers, transfer_topology_bound_planes,
@@ -41,21 +56,72 @@ use crate::decode::analytic::pcurves::{
     reconcile_support_apex_cone_parameter_branches, transfer_analytic_pcurve_carriers,
 };
 use crate::decode::sketch_transfer::transfer::transfer_sketches;
+use crate::decode::source_carriers::SourceUnitCarriers;
+
+fn append_borrowed_curve_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeSet<CurveId>,
+    source: impl IntoIterator<Item = &'a CurveId>,
+) -> Result<(), CodecError> {
+    for id in source {
+        if target.contains(id) {
+            continue;
+        }
+        ctx.insert_btree_set(
+            target,
+            id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?,
+            "creo derived intersection curve IDs",
+        )?;
+    }
+    Ok(())
+}
+
+fn append_owned_curve_ids(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeSet<CurveId>,
+    source: BTreeSet<CurveId>,
+) -> Result<(), CodecError> {
+    for id in source {
+        ctx.insert_btree_set(target, id, "creo derived topology carrier IDs")?;
+    }
+    Ok(())
+}
 
 pub(super) fn transfer_and_record_scanned_geometry(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    coverage: &mut cadmpeg_ir::Coverage,
-    brep_diagnostics: &mut BrepTransferDiagnostics,
-) -> Result<(), CodecError> {
-    let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
-    let first_instance_prototype_surface_count =
-        transfer_first_instance_prototype_surfaces(scan, ir, annotations);
-    let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations);
-    let legacy_ascii_surface_carrier_count =
-        transfer_legacy_ascii_surface_carriers(scan, ir, annotations);
+    coverage: &mut cadmpeg_ir::report::decode::Coverage,
+    transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<BrepTransferDiagnostics, CodecError> {
+    let cross_section_plane_count =
+        transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let positional_spline_replay_count = transfer_positional_spline_replays(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let legacy_ascii_surface_carrier_count = transfer_legacy_ascii_surface_carriers(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let legacy_torus_sphere_carrier_count = scan
         .surfaces
         .legacy_carriers
@@ -68,82 +134,176 @@ pub(super) fn transfer_and_record_scanned_geometry(
             )
         })
         .count();
-    let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
-    let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
+    let paired_envelope_sphere_count =
+        transfer_paired_envelope_spheres(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_torus_count =
+        transfer_positional_tori(ctx, scan, ir, annotations, source_carriers)?;
     let positional_line_extrusion_plane_count =
-        transfer_positional_line_extrusion_planes(scan, ir, annotations);
-    let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations);
-    transfer_fc05_cap_circles(scan, ir, annotations);
-    transfer_cap_pair_cylinders(scan, ir, annotations);
-    let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations);
-    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations);
-    let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(scan, ir, annotations);
+        transfer_positional_line_extrusion_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let tabulated_cylinder_spline_extrusion_count = transfer_tabulated_cylinder_spline_extrusions(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    transfer_fc05_cap_circles(ctx, scan, ir, annotations, source_carriers)?;
+    transfer_cap_pair_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let saved_spline_curve_count =
+        transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
+    let sketch_segment_coverage =
+        transfer_sketches(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
+    let feature_revolution_surface_count = transfer_resolved_revolution_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_revolution_vertex_orbit_curve_count =
-        transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations);
-    let feature_extrusion_surface_count =
-        transfer_feature_extrusion_surfaces(scan, ir, annotations);
+        transfer_resolved_revolution_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
+    let feature_extrusion_surface_count = transfer_feature_extrusion_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_extrusion_vertex_orbit_curve_count =
-        transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
-    let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations);
-    let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations);
-    let positional_cylinders = transfer_positional_cylinders(scan, ir, annotations);
-    let positional_cone_count = transfer_positional_cones(scan, ir, annotations);
-    let split_outline_cylinder_count = transfer_split_outline_cylinders(scan, ir, annotations);
-    let hole_cylinder_count = transfer_hole_cylinders(scan, ir, annotations);
+        transfer_resolved_extrusion_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
+    let active_datum_cylinder_count =
+        transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let circular_sweep_cylinder_count =
+        transfer_circular_sweep_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cylinders =
+        transfer_positional_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cone_count =
+        transfer_positional_cones(ctx, scan, ir, annotations, source_carriers)?;
+    let split_outline_cylinder_count =
+        transfer_split_outline_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let constrained_slot_fillet_cylinder_count =
-        transfer_constrained_slot_fillet_cylinders(scan, ir, annotations);
-    let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations);
-    let support_apex_cone_branch_count =
-        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
-    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations);
+        transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let rowless_round_cylinder_count =
+        transfer_rowless_round_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let support_apex_cone_branch_count = reconcile_support_apex_cone_parameter_branches(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        source_carriers,
+    )?;
+    let analytic_pcurve_carriers =
+        transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
-    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
+    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
     let mut derived_intersection_curves = transfer_carrier_intersection_curves(
+        ctx,
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    );
-    derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
+        source_carriers,
+    )?;
+    append_borrowed_curve_ids(
+        ctx,
+        &mut derived_intersection_curves,
+        &nurbs_boundary_curves.ids,
+    )?;
     let topology_bound_plane_count = transfer_topology_bound_planes(
+        ctx,
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    );
-    derived_intersection_curves.extend(transfer_carrier_intersection_curves(
+        source_carriers,
+    )?;
+    let topology_carriers = transfer_carrier_intersection_curves(
+        ctx,
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    ));
+        source_carriers,
+    )?;
+    append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)?;
+    append_borrowed_curve_ids(
+        ctx,
+        &mut derived_intersection_curves,
+        &analytic_pcurve_carriers,
+    )?;
     let NativeBrepTransferSummary {
         topological_point_count,
         native_topological_edge_count,
         diagnostics,
     } = transfer_native_brep(
+        ctx,
         scan,
         ir,
         annotations,
-        &derived_intersection_curves,
-        &analytic_pcurve_carriers,
-        &nurbs_boundary_curves.endpoint_witnesses,
-    );
-    diagnostics.record_coverage(coverage);
-    *brep_diagnostics = diagnostics;
-    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
-    let feature_circular_extrusion_brep_count =
-        transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
-    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations);
-    retain_unresolved_surface_carriers(scan, ir, annotations);
-    let transferred_part_product = transfer_part_product(scan, ir, annotations);
+        NativeBrepCurveEvidence {
+            derived_intersections: &derived_intersection_curves,
+            nurbs_endpoints: &nurbs_boundary_curves.endpoint_witnesses,
+        },
+        transfer_losses,
+        source_carriers,
+    )?;
+    diagnostics.record_coverage(ctx, coverage)?;
+    let mut brep_diagnostics = diagnostics;
+    let feature_revolution_brep_count = transfer_resolved_revolution_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let feature_circular_extrusion_brep_count = transfer_resolved_circular_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        &mut brep_diagnostics,
+        source_carriers,
+    )?;
+    retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
+    let transferred_part_product =
+        transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
     let decoded_feature_skamp_count = scan
         .features
         .definitions
@@ -163,8 +323,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 .map_or(0, SolverSubtable::missing_rows)
         })
         .sum::<usize>();
-    let skamp_constraint_coverage =
-        design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
+    let skamp_constraint_coverage = design_constraint_transfer_coverage(
+        ctx,
+        &ir.model.sketch_constraints,
+        ":skamp:",
+        "creo:skamp:",
+    )?;
     let decoded_feature_relation_count = scan
         .features
         .definitions
@@ -177,8 +341,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
-        .map(feature_relation_table_missing_rows)
-        .sum::<usize>();
+        .try_fold(0usize, |missing, relations| {
+            missing
+                .checked_add(feature_relation_table_missing_rows(relations)?)
+                .ok_or_else(|| CodecError::malformed("missing relation row count exceeds usize"))
+        })?;
     let malformed_feature_relation_table_count = scan
         .features
         .definitions
@@ -206,20 +373,23 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(
+        ctx,
         &ir.model.sketch_constraints,
         ":relation:",
         "creo:relation:",
-    );
+    )?;
     let equation_constraint_coverage = design_constraint_transfer_coverage(
+        ctx,
         &ir.model.sketch_constraints,
         ":equation:",
         "creo:equation:",
-    );
+    )?;
     let surface_coverage = surface_transfer_coverage(
+        ctx,
         &scan.surfaces.rows,
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
-    );
+    )?;
     let decoded_type24_round_edge_envelope_count = scan
         .surfaces
         .parameters
@@ -235,455 +405,639 @@ pub(super) fn transfer_and_record_scanned_geometry(
             record.type24_round_edge_envelope()
         })
         .count();
-    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
+    let curve_coverage =
+        curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
     {
         coverage.record(
+            ctx,
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.unique_rows,
-        );
+            surface_coverage.unique_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.transferred_rows,
-        );
+            surface_coverage.transferred_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.retained_unknown_rows,
-        );
+            surface_coverage.retained_unknown_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage
-                .unique_rows
-                .saturating_sub(surface_coverage.transferred_rows),
-        );
+                .unique_rows()
+                .checked_sub(surface_coverage.transferred_rows())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::AMBIGUOUS_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.ambiguous_rows,
-        );
+            surface_coverage.ambiguous_rows(),
+        )?;
         for kind in crate::decode::coverage::SURFACE_KINDS {
             let (rows, transferred) = surface_coverage.family(kind);
             let keys = crate::coverage::surface_family_keys(kind);
-            coverage.record(keys.visible, rows);
-            coverage.record(keys.transferred, transferred);
-            coverage.record(keys.untransferred, rows.saturating_sub(transferred));
-            coverage.record(keys.retained_unknown, surface_coverage.unknown_family(kind));
+            coverage.record(ctx, keys.visible, rows)?;
+            coverage.record(ctx, keys.transferred, transferred)?;
+            coverage.record(
+                ctx,
+                keys.untransferred,
+                rows.checked_sub(transferred).ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+            )?;
+            coverage.record(
+                ctx,
+                keys.retained_unknown,
+                surface_coverage.unknown_family(kind),
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::UNIQUE_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.unique_rows,
-        );
+            curve_coverage.unique_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.transferred_rows,
-        );
+            curve_coverage.transferred_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.retained_unknown_rows,
-        );
+            curve_coverage.retained_unknown_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage
-                .unique_rows
-                .saturating_sub(curve_coverage.transferred_rows),
-        );
+                .unique_rows()
+                .checked_sub(curve_coverage.transferred_rows())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::AMBIGUOUS_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.ambiguous_rows,
-        );
-        for (type_byte, (rows, transferred)) in &curve_coverage.by_type {
+            curve_coverage.ambiguous_rows(),
+        )?;
+        for (type_byte, (rows, transferred)) in curve_coverage.by_type() {
             coverage.record_hex_byte(
+                ctx,
                 crate::coverage::VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 *rows,
-            );
+            )?;
             coverage.record_hex_byte(
+                ctx,
                 crate::coverage::TRANSFERRED_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 *transferred,
-            );
+            )?;
             coverage.record_hex_byte(
+                ctx,
                 crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 curve_coverage
-                    .unknown_by_type
+                    .unknown_by_type()
                     .get(type_byte)
                     .copied()
                     .unwrap_or_default(),
-            );
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_CROSS_SECTION_PLANE_COUNT,
             cross_section_plane_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT,
             first_instance_prototype_surface_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT,
             positional_spline_replay_count,
-        );
+        )?;
         if legacy_ascii_surface_carrier_count != 0 {
             coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_LEGACY_ASCII_SURFACE_CARRIER_COUNT,
                 legacy_ascii_surface_carrier_count,
-            );
+            )?;
         }
         if legacy_torus_sphere_carrier_count != 0 {
             coverage.record(
+                ctx,
                 crate::coverage::DECODED_LEGACY_TORUS_OR_SPHERE_CARRIER_COUNT,
                 legacy_torus_sphere_carrier_count,
-            );
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT,
             paired_envelope_sphere_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT,
             positional_torus_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_LINE_EXTRUSION_PLANE_COUNT,
             positional_line_extrusion_plane_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_TABULATED_CYLINDER_SPLINE_EXTRUSION_COUNT,
             tabulated_cylinder_spline_extrusion_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_SAVED_SPLINE_CURVE_COUNT,
             saved_spline_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_TOPOLOGICAL_POINT_COUNT,
             topological_point_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_NATIVE_TOPOLOGICAL_EDGE_COUNT,
             native_topological_edge_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_ANALYTIC_PCURVE_CARRIER_COUNT,
             analytic_pcurve_carrier_count,
-        );
+        )?;
         if support_apex_cone_branch_count != 0 {
             coverage.record(
+                ctx,
                 crate::coverage::RECONCILED_SUPPORT_APEX_CONE_PARAMETER_BRANCH_COUNT,
                 support_apex_cone_branch_count,
-            );
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_EXTRUSION_PLANE_BOUNDARY_CURVE_COUNT,
             extrusion_plane_boundary_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_EXTRUSION_PLANE_SECTION_GENERATOR_CURVE_COUNT,
             extrusion_plane_section_generator_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT,
             shared_extrusion_generator_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_TOPOLOGY_BOUND_PLANE_SURFACE_COUNT,
             topology_bound_plane_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_SURFACE_COUNT,
             feature_revolution_surface_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_VERTEX_ORBIT_CURVE_COUNT,
             feature_revolution_vertex_orbit_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_SURFACE_COUNT,
             feature_extrusion_surface_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_VERTEX_ORBIT_CURVE_COUNT,
             feature_extrusion_vertex_orbit_curve_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_CIRCULAR_SWEEP_CYLINDER_COUNT,
             circular_sweep_cylinder_count,
-        );
+        )?;
         if active_datum_cylinder_count != 0 {
             coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_ACTIVE_DATUM_CYLINDER_COUNT,
                 active_datum_cylinder_count,
-            );
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_HOLE_CYLINDER_COUNT,
             hole_cylinder_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT,
             positional_cylinders.transferred,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_COMPLETE_ENVELOPE_COUNT,
             positional_cylinders.round_edge_complete_envelopes,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_MISSING_SUPPORT_PLANE_COUNT,
             positional_cylinders.round_edge_missing_support_planes,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_UNSOLVED_CARRIER_COUNT,
             positional_cylinders.round_edge_unsolved_carriers,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_SOLVED_CARRIER_COUNT,
             positional_cylinders.round_edge_solved_carriers,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_ROUND_EDGE_CARRIER_COUNT,
             positional_cylinders.round_edge_transferred_carriers,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_NO_PERPENDICULAR_SUPPORT_PAIR_COUNT,
             positional_cylinders.round_edge_no_perpendicular_support_pair,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_ENDPOINT_INCIDENCE_MISMATCH_COUNT,
             positional_cylinders.round_edge_endpoint_incidence_mismatch,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_RADIUS_PROJECTION_MISMATCH_COUNT,
             positional_cylinders.round_edge_radius_projection_mismatch,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_NONUNIQUE_RADIUS_COUNT,
             positional_cylinders.round_edge_nonunique_radius,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_CARRIER_VALIDATION_FAILURE_COUNT,
             positional_cylinders.round_edge_carrier_validation_failure,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ROUND_EDGE_REPLAY_CONFLICT_COUNT,
             positional_cylinders.round_edge_replay_conflict,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::AXIAL_INTERVAL_CORNER_ENVELOPE_COUNT,
             positional_cylinders.axial_interval_corner_envelopes,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::AXIAL_INTERVAL_CORNER_SOLVED_CARRIER_COUNT,
             positional_cylinders.axial_interval_corner_solved_carriers,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::DECODED_TYPE24_ROUND_EDGE_ENVELOPE_COUNT,
             decoded_type24_round_edge_envelope_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_CONE_COUNT,
             positional_cone_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_SPLIT_OUTLINE_CYLINDER_COUNT,
             split_outline_cylinder_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_CONSTRAINED_SLOT_FILLET_CYLINDER_COUNT,
             constrained_slot_fillet_cylinder_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT,
             rowless_round_cylinder_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_BREP_COUNT,
             feature_revolution_brep_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_CIRCULAR_EXTRUSION_BREP_COUNT,
             feature_circular_extrusion_brep_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_BREP_COUNT,
             feature_extrusion_brep_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_PART_PRODUCT_COUNT,
             usize::from(transferred_part_product),
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT,
-            sketch_segment_coverage.decoded_rows,
-        );
+            sketch_segment_coverage.decoded_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
-            sketch_segment_coverage.resolved_geometry,
-        );
+            sketch_segment_coverage.resolved_geometry(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
             sketch_segment_coverage
-                .decoded_rows
-                .saturating_sub(sketch_segment_coverage.resolved_geometry),
-        );
+                .decoded_rows()
+                .checked_sub(sketch_segment_coverage.resolved_geometry())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+        )?;
         for (family, (decoded, resolved)) in sketch_segment_coverage.families() {
             let keys = crate::coverage::sketch_segment_keys(family);
-            coverage.record(keys.decoded, decoded);
-            coverage.record(keys.resolved, resolved);
-            coverage.record(keys.unresolved, decoded.saturating_sub(resolved));
+            coverage.record(ctx, keys.decoded, decoded)?;
+            coverage.record(ctx, keys.resolved, resolved)?;
+            coverage.record(
+                ctx,
+                keys.unresolved,
+                decoded.checked_sub(resolved).ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT,
-            sketch_segment_coverage.missing_rows,
-        );
+            sketch_segment_coverage.missing_rows(),
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::DECODED_FEATURE_SKAMP_COUNT,
             decoded_feature_skamp_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT,
             missing_feature_skamp_row_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.transferred,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_NATIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.native,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
-            skamp_constraint_coverage.typed(),
-        );
+            skamp_constraint_coverage.typed()?,
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active_native,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
-            skamp_constraint_coverage.active_typed(),
-        );
+            skamp_constraint_coverage.active_typed()?,
+        )?;
         for (kind, count) in &skamp_constraint_coverage.native_by_kind {
             coverage.record_indexed(
+                ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
             coverage.record_indexed(
+                ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         coverage.record(
+            ctx,
             crate::coverage::DECODED_FEATURE_RELATION_COUNT,
             decoded_feature_relation_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT,
             missing_feature_relation_row_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT,
             malformed_feature_relation_table_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT,
             decoded_feature_relation_triple_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT,
             missing_feature_relation_triple_row_count,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.transferred,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.native,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
-            relation_constraint_coverage.typed(),
-        );
+            relation_constraint_coverage.typed()?,
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active_native,
-        );
+        )?;
         coverage.record(
+            ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
-            relation_constraint_coverage.active_typed(),
-        );
+            relation_constraint_coverage.active_typed()?,
+        )?;
         for (kind, count) in &relation_constraint_coverage.native_by_kind {
             coverage.record_indexed(
+                ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
             coverage.record_indexed(
+                ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         if equation_constraint_coverage.transferred != 0 {
             coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.transferred,
-            );
+            )?;
             coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.native,
-            );
+            )?;
             coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
-                equation_constraint_coverage.typed(),
-            );
+                equation_constraint_coverage.typed()?,
+            )?;
             coverage.record(
+                ctx,
                 crate::coverage::ACTIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.active,
-            );
+            )?;
             coverage.record(
+                ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.active_native,
-            );
+            )?;
             coverage.record(
+                ctx,
                 crate::coverage::ACTIVE_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
-                equation_constraint_coverage.active_typed(),
-            );
+                equation_constraint_coverage.active_typed()?,
+            )?;
         }
     }
-    Ok(())
+    Ok(brep_diagnostics)
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::BTreeSet;
 
-    use crate::decode::surfaces::BrepTransferDiagnostics;
+    use super::{
+        append_borrowed_curve_ids, append_owned_curve_ids, transfer_and_record_scanned_geometry,
+    };
 
-    use super::transfer_and_record_scanned_geometry;
+    #[test]
+    fn derived_curve_id_copy_refuses_each_resource_limit() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        for (item_limit, byte_limit, dimension, operation) in [
+            (
+                0,
+                u64::MAX,
+                ResourceDimension::CollectionItems,
+                "creo derived intersection curve IDs",
+            ),
+            (
+                1,
+                0,
+                ResourceDimension::RetainedBytes,
+                "creo derived intersection curve ID copies",
+            ),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = item_limit;
+            policy.limits.max_retained_bytes = byte_limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let error =
+                append_borrowed_curve_ids(&ctx, &mut BTreeSet::new(), std::slice::from_ref(&id))
+                    .expect_err("below-need limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.dimension == dimension && resource.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut copied = BTreeSet::new();
+        append_borrowed_curve_ids(&ctx, &mut copied, std::slice::from_ref(&id))
+            .expect("service copy");
+        assert_eq!(copied, BTreeSet::from([id]));
+    }
+
+    #[test]
+    fn derived_topology_carrier_node_refuses_below_collection_limit() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error =
+            append_owned_curve_ids(&ctx, &mut BTreeSet::new(), BTreeSet::from([id.clone()]))
+                .expect_err("one node exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo derived topology carrier IDs"));
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut target = BTreeSet::new();
+        append_owned_curve_ids(&ctx, &mut target, BTreeSet::from([id.clone()]))
+            .expect("service node");
+        assert_eq!(target, BTreeSet::from([id]));
+    }
 
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows = vec![
             crate::surface::SurfaceRow {
                 id: 5,
@@ -724,33 +1078,39 @@ mod tests {
                 offset: 21,
             },
         ];
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(5),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(5),
+            vec![crate::topology::HalfEdgeId {
                 curve_id: 10,
                 side: crate::topology::Side::Zero,
             }],
-        });
+        ));
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 4.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 5.0,
-            },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 4.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 5.0,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         });
 
@@ -759,15 +1119,15 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("test decode context");
         let mut annotations = AnnotationBuilder::new();
-        let mut coverage = cadmpeg_ir::Coverage::default();
-        let mut brep_diagnostics = BrepTransferDiagnostics::default();
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         transfer_and_record_scanned_geometry(
             &ctx,
             &scan,
             &mut ir,
             &mut annotations,
             &mut coverage,
-            &mut brep_diagnostics,
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
         .expect("synthetic geometry transfer");
 
@@ -781,18 +1141,15 @@ mod tests {
                         .expect("identity grammar")
             })
             .expect("plane-cylinder intersection curve");
-        let CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } = &curve.geometry
-        else {
+        let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
             panic!("expected exact plane-cylinder circle");
         };
-        assert_eq!(*center, Point3::new(0.0, 0.0, 4.0));
+        let center = circle_curve.center().get();
+        let axis = circle_curve.frame().axis().as_raw();
+        let radius = circle_curve.radius().get();
+        assert_eq!(center, Point3::new(0.0, 0.0, 4.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_eq!(*radius, 5.0);
+        assert_eq!(radius, 5.0);
         assert_eq!(
             coverage.get("transferred_topology_bound_plane_surface_count"),
             Some(&1)

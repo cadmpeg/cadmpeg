@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 
 #[test]
 fn invalid_surface_side_is_opaque_and_does_not_transfer_color() {
@@ -67,12 +67,7 @@ fn invalid_surface_side_does_not_block_a_valid_sibling_style() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     let unknowns = result

@@ -1,7 +1,120 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+mod resource_limits;
+
+use super::counted_parameter_scalar_slots;
+use super::named_prototype_records;
+use super::named_surface_value;
+use super::parameter_records;
+use super::plane_local_systems;
+use crate::psb;
+use crate::scalar;
+use crate::surface::admitted_counted_parameter_body;
+use crate::surface::complete_plane_local_system_slots;
+use crate::surface::decode_row_scalar;
+use crate::surface::first_compound_close;
+use crate::surface::plane_direct_frame;
+use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
+use crate::surface::plane_frame;
+use crate::surface::plane_local_system_compound_close;
+use crate::surface::plane_matrix_frame;
+use crate::surface::rows as checked_rows;
+use crate::surface::scalar_slots_with_tokens_and_end;
+use crate::surface::slot_equality;
+use crate::surface::LocalSystemClassification;
+use crate::surface::OutlinePlane;
+use crate::surface::PlaneEnvelope;
+use crate::surface::PlaneEnvelopeRecord;
+use crate::surface::PlaneLocalSystem;
+use crate::surface::ScalarBodyRefusal;
+use crate::surface::SurfaceBodyBoundary;
+use crate::surface::SurfaceKind;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfaceParameterOpaqueSpan;
+use crate::surface::SurfaceParameterRecord;
+use crate::surface::SurfaceParameterScalar;
+use crate::surface::SurfaceParameterScalarFrame;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfaceRow;
+
+fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
+        .expect("surface rows are admitted")
+}
+
+fn service_scalar_tokens(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Vec<SurfaceParameterScalar> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_tokens(ctx, kind, body, cache))
+        .expect("scalar tokens fit service limits")
+}
+
+fn service_opaque_spans(
+    body: &[u8],
+    tokens: &[SurfaceParameterScalar],
+) -> Vec<SurfaceParameterOpaqueSpan> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::opaque_spans(ctx, body, tokens))
+        .expect("opaque spans fit service limits")
+}
+
+fn service_scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScalarFrame> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_frames(ctx, tokens))
+        .expect("scalar frames fit service limits")
+}
+
+fn service_complete_plane_compact_scalar_suffix<'a>(
+    body: &'a [u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<(Option<f64>, &'a [u8])>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::complete_plane_compact_scalar_suffix(ctx, body, cache)
+            .map(|result| result.map(|table| table.slots))
+    })
+    .expect("compact suffix fits service limits")
+}
+
+fn frame_bound_outline_planes(
+    envelopes: &[PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+) -> Vec<OutlinePlane> {
+    let mut result = envelopes
+        .iter()
+        .filter_map(|record| crate::surface::frame_bound_outline_plane(record, frames))
+        .collect::<Vec<_>>();
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
+
+fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
+    super::with_decode_ctx(&[], |ctx| crate::surface::outline_planes(ctx, envelopes))
+}
+
+fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    super::with_decode_ctx(payload, |ctx| crate::surface::plane_envelopes(ctx, payload))
+}
+
+fn positional_frame_planes(
+    parameters: &[SurfaceParameterRecord],
+    rows: &[SurfaceRow],
+) -> Vec<OutlinePlane> {
+    super::with_decode_ctx(&[], |ctx| {
+        crate::surface::positional_frame_planes(ctx, parameters, rows)
+    })
+}
+
+fn sequential_named_local_system_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::sequential_named_local_system_slots(ctx, body, count, cache, refusal)
+    })
+}
 
 #[test]
 fn derives_one_held_coordinate_outline_plane() {
@@ -25,18 +138,148 @@ fn derives_one_held_coordinate_outline_plane() {
         vec![OutlinePlane {
             surface_id: 42,
             origin: [3.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 20,
         }]
     );
 }
 
 #[test]
-fn derives_plane_from_unique_six_scalar_positional_frame() {
+fn held_coordinate_outline_refuses_output_vector() {
+    let records = [PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[Some(0.0), Some(1.0)], [Some(0.0), Some(1.0)]],
+            corners_3d: [
+                [Some(3.0), Some(-2.0), Some(4.0)],
+                [Some(3.0), Some(5.0), Some(9.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(true), Some(false), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error =
+        crate::surface::outline_planes(&ctx, &records).expect_err("outline vector exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo held-coordinate outline planes")
+    );
+}
+
+fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let records = [PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-3.0), Some(-4.0), Some(7.0)],
+                [Some(5.0), Some(-4.0), None],
+            ],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), None],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    }];
+    let frames = [PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    crate::surface::placed_outline_planes(&ctx, &records, &frames)
+        .expect_err("placed outline collection exceeds limit")
+}
+
+#[test]
+fn placed_outline_refuses_frame_bound_vector() {
+    let error = placed_frame_bound_limit_error(0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline planes")
+    );
+}
+
+#[test]
+fn placed_outline_refuses_frame_bound_id_node() {
+    let error = placed_frame_bound_limit_error(1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline ID nodes")
+    );
+}
+
+#[test]
+fn placed_outline_refuses_output_vector() {
+    let error = placed_frame_bound_limit_error(2);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo placed outline planes")
+    );
+}
+
+#[test]
+fn placed_outline_refuses_matrix_frame_id_node() {
+    let frames = [PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: [
+            Some(1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = crate::surface::placed_outline_planes(&ctx, &[], &frames)
+        .expect_err("matrix frame ID exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo matrix frame ID nodes")
+    );
+}
+
+fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
     let slot = |value, offset| SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![offset as u8],
+        raw: vec![u8::try_from(offset).expect("fixture value fits u8")],
         offset,
     };
     let record = SurfaceParameterRecord {
@@ -52,7 +295,6 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
                 .map(|(offset, value)| slot(value, offset))
                 .collect(),
         }],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Plane,
         ),
@@ -69,14 +311,20 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
         next_surface: 0,
         offset: 3,
     };
+    (record, row)
+}
+
+#[test]
+fn derives_plane_from_unique_six_scalar_positional_frame() {
+    let (record, row) = unique_positional_frame_fixture();
 
     assert_eq!(
         positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [8.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 14,
         }]
     );
@@ -88,6 +336,39 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
     let mut ambiguous = record;
     ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
     assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
+}
+
+fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let (record, row) = unique_positional_frame_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    crate::surface::positional_frame_planes(
+        &ctx,
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&row),
+    )
+    .expect_err("positional plane collection exceeds limit")
+}
+
+#[test]
+fn positional_frame_refuses_candidate_vector() {
+    let error = positional_frame_limit_error(0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional plane candidates")
+    );
+}
+
+#[test]
+fn positional_frame_refuses_output_vector() {
+    let error = positional_frame_limit_error(1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional frame planes")
+    );
 }
 
 #[test]
@@ -129,7 +410,6 @@ fn derives_plane_from_auxiliary_corner_frame() {
                 ],
             },
         ],
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Plane,
         ),
@@ -152,8 +432,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 1.75, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 32,
         }]
     );
@@ -213,8 +493,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 0.0, 7.5],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 37,
         }]
     );
@@ -223,8 +503,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 0.0, 7.5],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 37,
         }]
     );
@@ -236,19 +516,19 @@ fn derives_plane_from_auxiliary_corner_frame() {
         0xd5, 0xd6, 0x25, 0xa6, 0xec, 0x06, 0x18, 0x46, 0x18, 0x81, 0x99, 0x6a, 0xa2, 0x99, 0x53,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    compact_prefix.scalar_tokens = scalar_tokens(
+    compact_prefix.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &compact_prefix.body,
         &scalar::ScalarCache::default(),
     );
-    compact_prefix.scalar_frames = scalar_frames(&compact_prefix.scalar_tokens);
+    compact_prefix.scalar_frames = service_scalar_frames(&compact_prefix.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[compact_prefix], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [2.479_564_003_064_99, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 23,
         }]
     );
@@ -293,8 +573,8 @@ fn derives_plane_from_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: record.surface_id,
             origin: [-92.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: record.body_offset + 27,
         }]
     );
@@ -317,8 +597,8 @@ fn derives_plane_from_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: unprefixed.surface_id,
             origin: [0.0, -5.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: unprefixed.body_offset + 22,
         }]
     );
@@ -373,8 +653,8 @@ fn derives_plane_from_split_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: record.surface_id,
             origin: [0.0, 0.0, 7.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: record.body_offset + 27,
         }]
     );
@@ -396,12 +676,11 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0xdc, 0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xa3, 0x11, 0xff, 0x6a, 0x47,
         0x68, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    let tokens = scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
-    let frames = scalar_frames(&tokens);
+    let tokens = service_scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
+    let frames = service_scalar_frames(&tokens);
     let record = SurfaceParameterRecord {
         surface_id: 41,
-        opaque_spans: opaque_spans(&body, &tokens),
-        terminal_scalar_frame: terminal_scalar_frame(&body, &frames),
+        opaque_spans: service_opaque_spans(&body, &tokens),
         scalar_tokens: tokens,
         scalar_frames: frames,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
@@ -436,8 +715,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [3.326_456_464_841_722_7, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -449,19 +728,19 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x20, 0x00, 0x46, 0x1e, 0x3e, 0x61, 0xf5, 0x38, 0x92, 0x68, 0x46, 0x18, 0xfa, 0xaf, 0xda,
         0xc1, 0x51, 0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_eight_byte.scalar_tokens = scalar_tokens(
+    prefixed_eight_byte.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_eight_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_eight_byte.scalar_frames = scalar_frames(&prefixed_eight_byte.scalar_tokens);
+    prefixed_eight_byte.scalar_frames = service_scalar_frames(&prefixed_eight_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_eight_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [7.560_920_554_712_176, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -473,38 +752,38 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0x4a, 0x19, 0x29, 0x8e, 0x22, 0xd2, 0x2c, 0x46, 0x18, 0xfa, 0xaf, 0xda, 0xc1, 0x51,
         0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_seven_byte.scalar_tokens = scalar_tokens(
+    prefixed_seven_byte.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_seven_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_seven_byte.scalar_frames = scalar_frames(&prefixed_seven_byte.scalar_tokens);
+    prefixed_seven_byte.scalar_frames = service_scalar_frames(&prefixed_seven_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_seven_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [6.290_581_268_384_813, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
 
     let mut unterminated = record.clone();
     unterminated.body.truncate(unterminated.body.len() - 2);
-    unterminated.scalar_tokens = scalar_tokens(
+    unterminated.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &unterminated.body,
         &scalar::ScalarCache::default(),
     );
-    unterminated.scalar_frames = scalar_frames(&unterminated.scalar_tokens);
+    unterminated.scalar_frames = service_scalar_frames(&unterminated.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[unterminated], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [3.326_456_464_841_722_7, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -516,19 +795,19 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0xd0, 0x0d, 0x05, 0xd2, 0xf6, 0xc4, 0x80, 0x46, 0x1b, 0x1c, 0x28, 0x70, 0x5d, 0x7a, 0x9b,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    y_held.scalar_tokens = scalar_tokens(
+    y_held.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &y_held.body,
         &scalar::ScalarCache::default(),
     );
-    y_held.scalar_frames = scalar_frames(&y_held.scalar_tokens);
+    y_held.scalar_frames = service_scalar_frames(&y_held.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[y_held], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 6.777_498_012_261_868, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 23,
         }]
     );
@@ -540,32 +819,32 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x46, 0x18, 0xb0, 0x77, 0xb6, 0x05, 0x5f, 0x34, 0x46, 0x1a, 0x29, 0xfb, 0x8f, 0x4b, 0x8f,
         0x16, 0x2e, 0x20, 0x33,
     ];
-    mixed_width.scalar_tokens = scalar_tokens(
+    mixed_width.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &mixed_width.body,
         &scalar::ScalarCache::default(),
     );
-    mixed_width.scalar_frames = scalar_frames(&mixed_width.scalar_tokens);
+    mixed_width.scalar_frames = service_scalar_frames(&mixed_width.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[mixed_width], std::slice::from_ref(&row)),
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 6.540_998_686_777_831, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 23,
         }]
     );
 
     let mut malformed = record;
     malformed.body[31] = 0x00;
-    let tokens = scalar_tokens(
+    let tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &malformed.body,
         &scalar::ScalarCache::default(),
     );
     assert!(tokens.iter().all(|token| token.offset != 13));
-    malformed.scalar_frames = scalar_frames(&tokens);
+    malformed.scalar_frames = service_scalar_frames(&tokens);
     assert!(positional_frame_planes(&[malformed], &[row]).is_empty());
 }
 
@@ -574,8 +853,9 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
     let body = [
         0x32, 0xbe, 0xe4, 0xe4, 0xe4, 0x0d, 0x0f, 0xe4, 0x0d, 0xe4, 0x0f,
     ];
-    let slots = complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
-        .expect("unique compact scalar suffix");
+    let slots =
+        service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+            .expect("unique compact scalar suffix");
 
     assert_eq!(
         slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
@@ -591,9 +871,11 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
             Some(0.0),
         ]
     );
-    assert!(
-        complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default()).is_none()
-    );
+    assert!(service_complete_plane_compact_scalar_suffix(
+        &body[2..],
+        &scalar::ScalarCache::default()
+    )
+    .is_none());
 }
 
 #[test]
@@ -676,8 +958,17 @@ fn plane_envelope_coordinates_decode_compact_positive_half() {
     let body = [
         0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
     ];
-    let (slots, consumed) =
-        plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &scalar::ScalarCache::default());
+    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
+        plane_envelope_scalar_slots_with_tokens_and_end(
+            ctx,
+            &body,
+            10,
+            &scalar::ScalarCache::default(),
+        )
+        .map(|result| result.map(|table| (table.slots, table.consumed)))
+    })
+    .expect("envelope slots are admitted")
+    .expect("a complete ten-slot envelope table");
 
     assert_eq!(consumed, body.len());
     assert_eq!(slots[4].0, Some(-0.5));
@@ -699,8 +990,8 @@ fn decodes_named_plane_outline_with_zero_boundary_type() {
         vec![OutlinePlane {
             surface_id: 7,
             origin: [1.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 104,
         }]
     );
@@ -732,7 +1023,7 @@ fn derives_plane_with_unresolved_distinct_corner_coordinates() {
         offset: 20,
     }];
     assert_eq!(outline_planes(&records)[0].origin, [0.0, -4.0, 0.0]);
-    assert_eq!(outline_planes(&records)[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(outline_planes(&records)[0].normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -770,8 +1061,8 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
         [OutlinePlane {
             surface_id: 42,
             origin: [0.0, -4.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             offset: 20,
         }]
     );
@@ -848,8 +1139,8 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }
 
 #[test]
@@ -863,8 +1154,8 @@ fn explicit_plane_frame_uses_the_stored_normal_triple() {
 
     let frame = plane_direct_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
-    assert_eq!(frame.u_axis, Some([0.6, 0.0, 0.8]));
-    assert_eq!(frame.normal, Some([0.8, 0.0, -0.6]));
+    assert_eq!(frame.u_axis(), Some([0.6, 0.0, 0.8]));
+    assert_eq!(frame.normal(), Some([0.8, 0.0, -0.6]));
 }
 
 #[test]
@@ -911,7 +1202,10 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
 
     assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
     assert_eq!(
-        plane_local_system_compound_close(&payload, 0, payload.len(), &cache),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            plane_local_system_compound_close(ctx, &payload, 0, payload.len(), &cache)
+        })
+        .expect("local-system close fits service limits"),
         Some(close)
     );
 }
@@ -928,8 +1222,8 @@ fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, -1.0]));
 }
 
 #[test]
@@ -943,7 +1237,7 @@ fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
     let systems = plane_local_systems(&payload);
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
-    assert_eq!(systems[0].frame().normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(systems[0].frame().normal(), Some([0.0, 0.0, -1.0]));
 }
 
 #[test]
@@ -966,20 +1260,20 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
         plane_frame(&options([
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         ]))
-        .normal,
+        .normal(),
         Some([0.0, 0.0, 1.0])
     );
     let first_rank_zero = plane_frame(&options([
         0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -3.0, 0.0,
     ]));
     assert_eq!(first_rank_zero.origin, Some([0.0, -3.0, 0.0]));
-    assert_eq!(first_rank_zero.u_axis, Some([1.0, 0.0, 0.0]));
-    assert_eq!(first_rank_zero.normal, Some([0.0, -1.0, 0.0]));
+    assert_eq!(first_rank_zero.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(first_rank_zero.normal(), Some([0.0, -1.0, 0.0]));
     assert_eq!(
         plane_frame(&options([
             1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
         ]))
-        .normal,
+        .normal(),
         Some([0.0, 0.0, 1.0])
     );
     assert!(plane_frame(&options([
@@ -995,6 +1289,29 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
 }
 
 #[test]
+fn positional_plane_frame_keeps_large_orthogonal_support_normal_unit() {
+    let slots = [
+        1.0e100, 0.0, 0.0, 0.0, 1.0e100, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    let frame = plane_frame(&slots.map(Some));
+
+    assert_eq!(frame.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, 1.0]));
+}
+
+#[test]
+fn positional_plane_frame_refuses_overflowed_cross_component() {
+    let a = f64::from_bits(0x5fed_817d_bb14_96d1);
+    let b = f64::from_bits(0x5fd8_c57e_64a4_a42f);
+    let slots = [a, b, 0.0, -b, a, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let frame = plane_frame(&slots.map(Some));
+
+    assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
+    assert!(frame.u_axis.is_none());
+    assert!(frame.normal.is_none());
+}
+
+#[test]
 fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
     let slots = [
         1.0, 0.0, 0.0, // x components of the three columns
@@ -1005,8 +1322,8 @@ fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
 
     let frame = plane_matrix_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
-    assert_eq!(frame.u_axis, Some([1.0, 0.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, 1.0]));
+    assert_eq!(frame.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, 1.0]));
 }
 
 #[test]
@@ -1014,7 +1331,13 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
     let body = [
         0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
     ];
-    let slots = scalar_slots_with_tokens_and_end(&body, 3, &scalar::ScalarCache::default()).0;
+    let slots = crate::decode::with_test_decode_ctx(|ctx| {
+        scalar_slots_with_tokens_and_end(ctx, &body, 3, &scalar::ScalarCache::default())
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
+    })
+    .expect("scalar slots are admitted")
+    .expect("a complete three-slot table")
+    .0;
 
     let magnitude = f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6]);
     assert_eq!(
@@ -1026,212 +1349,118 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
 }
 
 #[test]
-fn terminal_positional_slot_zero_occupies_one_byte() {
-    let slots =
-        scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 2, &scalar::ScalarCache::default()).0;
-
-    assert_eq!(slots, [(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])]);
-}
-
-#[test]
-fn named_local_system_expands_row_lane_zero_forms() {
-    let body = [
-        0xf9, 0x04, 0x03, 0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x43, 0xe0, 0x00,
-        0x18, 0xe4,
-    ];
-
+fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
+    let cache = scalar::ScalarCache::default();
+    // A byte the surface-row lane defines no scalar form for ends the table.
     assert_eq!(
-        named_surface_value(
-            &SurfacePrototypeFamily::Plane,
-            "local_sys",
-            &body,
-            &scalar::ScalarCache::default(),
-        ),
-        SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values: vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(-0.5),
-                Some(0.0),
-                Some(1.0),
-            ],
-            tokens: None,
-        }
-    );
-}
-
-#[test]
-fn named_local_system_splits_zero_before_coordinate_token() {
-    let body = [
-        0x41, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d,
-        0x18, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d, 0x5d, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2,
-        0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
-    ];
-
-    let slots = sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default())
-        .expect("complete local system");
-
-    assert_eq!(slots[2], Some(0.0));
-    assert_eq!(slots[3], slots[1]);
-    assert_eq!(slots[4], slots[0].map(|value| -value));
-    assert_eq!(slots[5..], [Some(0.0); 7]);
-}
-
-#[test]
-fn named_local_system_decodes_terminal_zero_slot() {
-    let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload);
-
-    assert_eq!(
-        records[0].field("local_sys").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values: vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(15.0),
-                Some(0.0),
-            ],
-            tokens: None,
+        crate::decode::with_test_decode_ctx(|ctx| {
+            scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x01, 0xe4], 3, &cache)
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
         })
+        .expect("scalar slots are admitted"),
+        None
     );
-}
-
-#[test]
-fn named_local_system_advances_across_inherited_slots() {
-    let body = [
-        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
-    ];
-
+    // A body that runs out before its declared count states fewer slots than
+    // it declares.
     assert_eq!(
-        sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default()),
-        Some(vec![
-            Some(1.0),
-            Some(0.0),
-            None,
-            None,
-            None,
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-        ])
+        crate::decode::with_test_decode_ctx(|ctx| {
+            scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 3, &cache)
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("scalar slots are admitted"),
+        None
     );
-}
-
-#[test]
-fn named_local_system_rejects_invalid_inherited_slot_transitions() {
-    for body in [
-        &[0xe7][..],
-        &[0xe7, 0x00],
-        &[0xe7, 0x0d],
-        &[0xe4, 0xe7, 0x0c],
-    ] {
-        assert_eq!(
-            sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default()),
-            None
-        );
-    }
-}
-
-#[test]
-fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
-    let payload = b"srf_prim_ptr(cylinder)\0\
-        \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
-        \xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload);
-
+    // A complete table states every slot with the bytes it was decoded from,
+    // and those bytes run from zero to the returned offset.
+    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
+        scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0xe4, 0x18], 3, &cache)
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
+    })
+    .expect("scalar slots are admitted")
+    .expect("a complete three-slot table");
+    assert_eq!(consumed, 3);
     assert_eq!(
-        records[0].field("local_sys").map(|field| &field.value),
-        Some(&SurfaceNamedValue::Opaque(
-            b"\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18".to_vec()
-        ))
+        slots.iter().map(|slot| slot.1.len()).sum::<usize>(),
+        consumed
     );
+    assert!(slots.iter().all(|slot| slot.0.is_some()));
 }
 
 #[test]
-fn named_local_system_uses_the_signed_coordinate_dict_lane() {
-    let payload = b"srf_prim_ptr(torus)\0\
-        \xe0\x02local_sys\0\xf9\x04\x03\
-        \x7a\xeb\xb6\x28\xd0\x03\x82\
-        \x28\xb2\x01\x83\xce\x09\x70\xf1\
-        \x18\xe5\x10\
-        \x41\xb2\x01\x83\xce\x09\x70\xf1\
-        \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
-        \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
-    let records = named_prototype_records(payload);
-    let SurfaceNamedValue::ScalarArray { values, .. } =
-        &records[0].field("local_sys").expect("local system").value
-    else {
-        panic!("scalar local system");
-    };
-
-    assert_eq!(values[0], Some(0.997_523_383_819_597_8));
-    assert_eq!(values[1], Some(0.070_335_614_969_227_37));
-    assert_eq!(values[6], Some(-0.070_335_614_969_227_37));
-    assert_eq!(values[7], Some(0.997_523_383_819_597_8));
-    assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
+fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x01, 0x0e], 3, &cache)
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("envelope slots are admitted"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x18], 3, &cache)
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("envelope slots are admitted"),
+        None
+    );
+    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
+        plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x0e, 0x18], 3, &cache)
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
+    })
+    .expect("envelope slots are admitted")
+    .expect("a complete three-slot envelope table");
+    assert_eq!(consumed, 3);
+    assert_eq!(
+        slots.iter().map(|slot| slot.1.len()).sum::<usize>(),
+        consumed
+    );
+    assert!(slots.iter().all(|slot| slot.0.is_some()));
 }
 
 #[test]
-fn named_local_system_decodes_positive_compact_half_coordinate() {
-    let body = [0xf9, 0x04, 0x03, 0x0e];
-    let SurfaceNamedValue::ScalarArray { values, .. } = named_surface_value(
-        &SurfacePrototypeFamily::Plane,
-        "local_sys",
-        &body,
-        &scalar::ScalarCache::default(),
-    ) else {
-        panic!("scalar local system");
-    };
+fn spline_scalar_grid_parser_propagates_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
-    assert_eq!(values[0], Some(0.5));
-}
-
-#[test]
-fn dimensioned_scalar_arrays_decode_compact_extents() {
-    let mut body = vec![0xf9, 0x80, 0x88, 0x03];
-    body.extend([0x0f; 136 * 3]);
-    let SurfaceNamedValue::ScalarArray {
-        dimensions,
-        count,
-        values,
-        ..
-    } = named_surface_value(
-        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
-        "i_points",
-        &body,
-        &scalar::ScalarCache::default(),
+    let mut payload = b"srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
+    payload.extend([0x0f; 6]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        &payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    else {
-        panic!("dimensioned scalar array");
-    };
+    .expect_err("six scalar slots exceed the five-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo named spline scalar slots"
+    ));
 
-    assert_eq!(dimensions, 136);
-    assert_eq!(count, 3);
-    assert_eq!(values.len(), 408);
-    assert!(values.iter().all(|value| *value == Some(0.0)));
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        &payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits six scalar slots");
+    let SurfaceNamedValue::ScalarArray(array) = &records[0]
+        .field("i_points")
+        .expect("named scalar field")
+        .value
+    else {
+        panic!("named scalar field must decode as a grid");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 6]);
 }
 
 #[test]
@@ -1241,22 +1470,32 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
     payload.extend_from_slice(&negative);
     payload.extend_from_slice(&[0xe4, 0x0f]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("i_pnts").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 3,
-            values: vec![
-                Some(f64::from_be_bytes([
-                    0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
-                ])),
-                Some(1.0),
-                Some(0.0),
-            ],
-            tokens: Some(vec![negative.to_vec(), vec![0xe4], vec![0x0f]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 3)
+                .expect("valid scalar array");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(
+                    ctx,
+                    vec![
+                        (
+                            Some(f64::from_be_bytes([
+                                0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                            ])),
+                            negative.to_vec(),
+                        ),
+                        (Some(1.0), vec![0xe4]),
+                        (Some(0.0), vec![0x0f]),
+                    ],
+                )
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
+            array
+        }))
     );
 }
 
@@ -1266,13 +1505,13 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
         \xe0\x02i_pnts\0\xf9\x01\x03\x98\x01\x02\x03\x04\x05\x06\xe4\xe4\
         \xe0\x02tangts\0\xf9\x01\x03\x4c\x01\x02\x03\x04\x05\x06\xe4\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let prototype = &records[0];
 
     assert!(matches!(
         prototype.field("i_pnts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == [
                 Some(f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
                 Some(1.0),
@@ -1280,8 +1519,8 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
     ));
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == [
                 Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
                 Some(1.0),
                 Some(1.0),
@@ -1296,12 +1535,12 @@ fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() 
         \x71\x01\x02\x03\x04\x05\x06\
         \x46\x40\x01\x02\x03\x04\x05\x06\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert!(matches!(
         records[0].field("i_pnts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == [
                 Some(f64::from_be_bytes([0x3f, 0xe6, 1, 2, 3, 4, 5, 6])),
                 Some(f64::from_be_bytes([0x40, 0x40, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
@@ -1316,7 +1555,7 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
         \xaa\xe0\x01id\0\xe3\xe4\x0f\
         \xe0\x01tangts\0\xf9\x01\x03\xe4\xe4\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let prototype = &records[0];
 
     assert_eq!(
@@ -1326,12 +1565,7 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
     assert!(prototype.field("id").is_none());
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 3,
-            values,
-            ..
-        }) if values == &[Some(1.0), Some(1.0), Some(1.0)]
+        Some(SurfaceNamedValue::ScalarArray(array)) if array.dimensions() == 1 && array.count() == 3 && array.values() == [Some(1.0), Some(1.0), Some(1.0)]
     ));
 }
 
@@ -1340,7 +1574,7 @@ fn named_torus_radii_decode_compact_positive_quarters() {
     let payload = b"srf_prim_ptr(torus)\0\
         \xe0\x01radius1\0\x0e\
         \xe0\x01radius2\0\x0d\xf1\xf7\x0e\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius1").map(|field| &field.value),
@@ -1361,7 +1595,7 @@ fn named_prototype_radius_decodes_positive_eight_byte_form() {
     payload.push(0x28);
     payload.extend_from_slice(&raw[1..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius").map(|field| &field.value),
@@ -1379,7 +1613,7 @@ fn named_prototype_radius_decodes_positive_dict_form() {
     payload.push(prefix);
     payload.extend_from_slice(&raw[2..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius").map(|field| &field.value),
@@ -1400,7 +1634,7 @@ fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
     payload.push(prefix);
     payload.extend_from_slice(&raw[2..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("par_v_0").map(|field| &field.value),
@@ -1416,7 +1650,7 @@ fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
 fn fillet_parameter_bounds_do_not_use_the_radius_only_28_form() {
     let payload = b"srf_prim_ptr(fillet_srf)\0\
         \xe0\x01par_v_1\0\x28\x01\x02\x03\x04\x05\x06\x07";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("par_v_1").map(|field| &field.value),
@@ -1432,7 +1666,7 @@ fn spline_metadata_decodes_wrapped_compact_values() {
         \xe0\x00frst_cntr_crv_hdr_ptr\0\x2f\
         \xe0\x01trv\0\x01\
         \xe0\x01tan_spline\0";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("flip").map(|field| &field.value),
@@ -1475,6 +1709,8 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
                 name,
                 body,
                 &scalar::ScalarCache::default(),
+                &"prototype fixture",
+                &mut crate::lane_refusal::LaneRefusals::new()
             ),
             SurfaceNamedValue::Opaque(body.to_vec())
         );
@@ -1485,7 +1721,7 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
 fn parent_feature_array_accepts_its_exact_reference_trailer() {
     let payload = b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\
         \xf8\x02\x07\x08\xf7\x03\x09\xe1\xf6\xf6";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("parent_feats").map(|field| &field.value),
@@ -1511,10 +1747,181 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
                 "parent_feats",
                 &body,
                 &scalar::ScalarCache::default(),
+                &"prototype fixture",
+                &mut crate::lane_refusal::LaneRefusals::new()
             ),
             SurfaceNamedValue::Opaque(body)
         );
     }
+}
+
+#[test]
+fn a_compact_integer_array_holding_fewer_values_than_it_declares_is_not_an_array() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+
+    // `f8 02` declares two values and the body states two.
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "dum_array",
+            &[0xf8, 0x02, 0x07, 0x08],
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::CompactIntArray(vec![7, 8])
+    );
+    // `f8 03` declares three and the body still states two.
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "dum_array",
+            &[0xf8, 0x03, 0x07, 0x08],
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::Opaque(vec![0xf8, 0x03, 0x07, 0x08])
+    );
+}
+
+#[test]
+fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_trailer() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+    let trailer = [0xf7u8, 0x03, 0x09, 0xe1, 0xf6, 0xf6];
+
+    let mut two = vec![0xf8u8, 0x02, 0x07, 0x08];
+    two.extend_from_slice(&trailer);
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &two,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::CompactIntArray(vec![7, 8])
+    );
+
+    // `compact_int` advances on every byte inside the body, so an array that
+    // holds fewer values than it declares ran out of body: the cursor is on
+    // the end and no bytes remain to state a trailer.
+    let short = vec![0xf8u8, 0x03, 0x07, 0x08];
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &short,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::Opaque(short.clone())
+    );
+
+    // A body that does hold three values reads the trailer's first byte as the
+    // third, so the trailer no longer begins at the cursor.
+    let mut three = vec![0xf8u8, 0x03, 0x07, 0x08];
+    three.extend_from_slice(&trailer);
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &three,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::Opaque(three.clone())
+    );
+}
+
+/// A scalar body declaring more slots than the positional table is wide and
+/// fewer value bytes than slots states more slots than its bytes can carry, so
+/// the guard in `admitted_scalar_body` refuses it before the decode runs.
+#[test]
+fn a_surface_scalar_body_with_fewer_bytes_than_slots_above_twelve_is_refused() {
+    let family = SurfacePrototypeFamily::Plane;
+    let cache = scalar::ScalarCache::default();
+
+    // `f9 0d 01`: thirteen dimensions, one entry, no value bytes.
+    let body = [0xf9u8, 0x0d, 0x01];
+    assert_eq!(
+        named_surface_value(
+            &family,
+            "dum_array",
+            &body,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::Opaque(body.to_vec())
+    );
+}
+
+#[test]
+fn a_counted_parameter_body_whose_values_start_past_the_body_is_refused() {
+    let body = [0xf8u8, 0x03, 0xe6];
+
+    // One byte past the body states no value bytes at all. The record is
+    // refused rather than read as "zero bytes remain".
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() + 1, 0),
+        None
+    );
+    assert_eq!(admitted_counted_parameter_body(&body, usize::MAX, 0), None);
+
+    // The values start on the last byte of the body, so one byte remains and
+    // states at most three slots.
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() - 1, 3),
+        Some(&body[body.len() - 1..])
+    );
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() - 1, 4),
+        None
+    );
+}
+
+#[test]
+fn a_counted_parameter_body_admits_three_slots_per_remaining_byte() {
+    // `f8 09` declares nine slots; the three `e6` run tokens state three zero
+    // slots each.
+    const VALUES_START: usize = 2;
+    const SLOTS: usize = 9;
+    let body = [0xf8u8, 0x09, 0xe6, 0xe6, 0xe6];
+
+    assert_eq!(body.len() - VALUES_START, SLOTS / 3);
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, 9),
+        Some(&body[VALUES_START..])
+    );
+    // One slot above the densest parse the walk can answer.
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, 10),
+        None
+    );
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, u32::MAX),
+        None
+    );
+
+    // The bound is the density `counted_parameter_scalar_slots` reaches over
+    // those same bytes.
+    let cache = scalar::ScalarCache::default();
+    let slots = counted_parameter_scalar_slots(&body[VALUES_START..], SLOTS, &cache);
+    assert_eq!(
+        slots.as_ref().map(std::vec::Vec::len),
+        Some(SLOTS),
+        "three run tokens state nine slots"
+    );
+    assert_eq!(
+        counted_parameter_scalar_slots(&body[VALUES_START..], SLOTS + 1, &cache),
+        None
+    );
 }
 
 #[test]
@@ -1548,3 +1955,5 @@ fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
     );
     assert_eq!(body[7], 0xf6);
 }
+
+mod named_local_systems;

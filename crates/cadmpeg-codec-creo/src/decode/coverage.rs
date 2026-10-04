@@ -1,23 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface, curve, sketch-segment, and design-constraint transfer coverage.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition};
+use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 
 use crate::container::ContainerScan;
 
-use super::feature_history::surface_kind_for_geometry;
-use super::records::CreoSurfaceNamedParameterRecord;
+use super::feature_history::link::surface_kind_for_geometry;
 
-pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
+fn charged_map_entry<'a, K: Ord, V: Default>(
+    ctx: &DecodeContext<'_>,
+    map: &'a mut BTreeMap<K, V>,
+    key: K,
+    operation: &'static str,
+) -> Result<&'a mut V, CodecError> {
+    ctx.admit_btree_entry(map, &key, operation)?;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::btree_map::Entry::Vacant(entry) => Ok(entry.insert(V::default())),
+    }
+}
+
+pub(super) fn source_section(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    offset: usize,
+) -> Result<String, CodecError> {
+    ctx.copy_retained_text(
+        source_section_ref(scan, offset),
+        "creo expression source section",
+    )
+}
+
+pub(super) fn source_section_ref<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
     scan.framing
         .sections
         .iter()
-        .find(|section| offset >= section.offset && offset < section.offset + section.length)
+        .find(|section| section.contains(offset))
         .map_or_else(
             || {
                 if matches!(
@@ -29,12 +55,11 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
                     "unknown"
                 }
             },
-            |section| section.name.as_str(),
+            |section| section.name(),
         )
-        .to_string()
 }
 
-pub(crate) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
+pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     match kind {
         crate::surface::SurfaceKind::Plane => "plane",
         crate::surface::SurfaceKind::Cylinder => "cylinder",
@@ -46,7 +71,7 @@ pub(crate) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str 
     }
 }
 
-pub(crate) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
+pub(super) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
     crate::surface::SurfaceKind::Plane,
     crate::surface::SurfaceKind::Cylinder,
     crate::surface::SurfaceKind::Cone,
@@ -69,53 +94,231 @@ const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
 }
 
 #[derive(Default)]
-pub(crate) struct SurfaceTransferCoverage {
-    pub(crate) unique_rows: usize,
-    pub(crate) transferred_rows: usize,
-    pub(crate) retained_unknown_rows: usize,
-    pub(crate) ambiguous_rows: usize,
+pub(in crate::decode) struct SurfaceTransferCoverage {
+    unique_rows: usize,
+    transferred_rows: usize,
+    retained_unknown_rows: usize,
+    ambiguous_rows: usize,
     by_family: [(usize, usize); 7],
     unknown_by_family: [usize; 7],
 }
 
 impl SurfaceTransferCoverage {
-    pub(crate) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
+    /// Recorded unique rows.
+    pub(super) fn unique_rows(&self) -> usize {
+        self.unique_rows
+    }
+
+    /// Recorded transferred rows.
+    pub(super) fn transferred_rows(&self) -> usize {
+        self.transferred_rows
+    }
+
+    /// Recorded retained unknown rows.
+    pub(super) fn retained_unknown_rows(&self) -> usize {
+        self.retained_unknown_rows
+    }
+
+    /// Recorded ambiguous rows.
+    pub(super) fn ambiguous_rows(&self) -> usize {
+        self.ambiguous_rows
+    }
+
+    fn record_ambiguous_rows(&mut self, count: usize) {
+        self.ambiguous_rows += count;
+    }
+
+    pub(super) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
         self.by_family[surface_family_index(kind)]
     }
 
-    fn family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut (usize, usize) {
-        &mut self.by_family[surface_family_index(kind)]
-    }
-
-    pub(crate) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
+    pub(super) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
         self.unknown_by_family[surface_family_index(kind)]
     }
 
-    fn unknown_family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut usize {
-        &mut self.unknown_by_family[surface_family_index(kind)]
+    fn record_source_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.unique_rows += 1;
+        self.by_family[surface_family_index(kind)].0 += 1;
+    }
+
+    fn record_transferred_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.transferred_rows += 1;
+        self.by_family[surface_family_index(kind)].1 += 1;
+    }
+
+    fn record_retained_unknown_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.retained_unknown_rows += 1;
+        self.unknown_by_family[surface_family_index(kind)] += 1;
     }
 }
 
 #[derive(Default)]
-pub(crate) struct CurveTransferCoverage {
-    pub(crate) unique_rows: usize,
-    pub(crate) transferred_rows: usize,
-    pub(crate) retained_unknown_rows: usize,
-    pub(crate) ambiguous_rows: usize,
-    pub(crate) by_type: BTreeMap<u8, (usize, usize)>,
-    pub(crate) unknown_by_type: BTreeMap<u8, usize>,
+pub(in crate::decode) struct CurveTransferCoverage {
+    unique_rows: usize,
+    transferred_rows: usize,
+    retained_unknown_rows: usize,
+    ambiguous_rows: usize,
+    by_type: BTreeMap<u8, (usize, usize)>,
+    unknown_by_type: BTreeMap<u8, usize>,
+}
+
+impl CurveTransferCoverage {
+    /// Recorded unique rows.
+    pub(super) fn unique_rows(&self) -> usize {
+        self.unique_rows
+    }
+
+    /// Recorded transferred rows.
+    pub(super) fn transferred_rows(&self) -> usize {
+        self.transferred_rows
+    }
+
+    /// Recorded retained unknown rows.
+    pub(super) fn retained_unknown_rows(&self) -> usize {
+        self.retained_unknown_rows
+    }
+
+    /// Recorded ambiguous rows.
+    pub(super) fn ambiguous_rows(&self) -> usize {
+        self.ambiguous_rows
+    }
+
+    fn record_ambiguous_rows(&mut self, count: usize) {
+        self.ambiguous_rows += count;
+    }
+
+    fn record_source_row(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        type_byte: u8,
+    ) -> Result<(), CodecError> {
+        self.unique_rows += 1;
+        charged_map_entry(
+            ctx,
+            &mut self.by_type,
+            type_byte,
+            "creo curve coverage type nodes",
+        )?
+        .0 += 1;
+        charged_map_entry(
+            ctx,
+            &mut self.unknown_by_type,
+            type_byte,
+            "creo curve coverage unknown type nodes",
+        )?;
+        Ok(())
+    }
+
+    fn record_transferred_row(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        type_byte: u8,
+    ) -> Result<(), CodecError> {
+        self.transferred_rows += 1;
+        charged_map_entry(
+            ctx,
+            &mut self.by_type,
+            type_byte,
+            "creo curve coverage type nodes",
+        )?
+        .1 += 1;
+        Ok(())
+    }
+
+    fn record_retained_unknown_row(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        type_byte: u8,
+    ) -> Result<(), CodecError> {
+        self.retained_unknown_rows += 1;
+        *charged_map_entry(
+            ctx,
+            &mut self.unknown_by_type,
+            type_byte,
+            "creo curve coverage unknown type nodes",
+        )? += 1;
+        Ok(())
+    }
+
+    /// Source and transferred counts by native curve type.
+    pub(super) fn by_type(&self) -> &BTreeMap<u8, (usize, usize)> {
+        &self.by_type
+    }
+
+    /// Retained unknown counts by native curve type.
+    pub(super) fn unknown_by_type(&self) -> &BTreeMap<u8, usize> {
+        &self.unknown_by_type
+    }
 }
 
 #[derive(Default)]
-pub(crate) struct SketchSegmentTransferCoverage {
-    pub(crate) decoded_rows: usize,
-    pub(crate) resolved_geometry: usize,
-    pub(crate) missing_rows: usize,
+pub(super) struct SketchSegmentTransferCoverage {
+    decoded_rows: usize,
+    resolved_geometry: usize,
+    missing_rows: usize,
     by_family: [Option<(usize, usize)>; 9],
 }
 
 impl SketchSegmentTransferCoverage {
-    pub(crate) fn families(
+    /// Records decoded and missing rows for a segment table.
+    pub(super) fn record_table_rows(
+        &mut self,
+        decoded: usize,
+        expected: usize,
+    ) -> Result<(), CodecError> {
+        let missing = expected.checked_sub(decoded).ok_or_else(|| {
+            CodecError::malformed("decoded sketch rows exceed the declared count")
+        })?;
+        self.decoded_rows = self
+            .decoded_rows
+            .checked_add(decoded)
+            .ok_or_else(|| CodecError::malformed("decoded sketch row count exceeds usize"))?;
+        self.missing_rows = self
+            .missing_rows
+            .checked_add(missing)
+            .ok_or_else(|| CodecError::malformed("missing sketch row count exceeds usize"))?;
+        Ok(())
+    }
+
+    /// Records decoded rows in one segment family.
+    pub(super) fn record_family_rows(
+        &mut self,
+        family: crate::coverage::SketchSegmentFamily,
+        count: usize,
+    ) {
+        self.family_mut(family).0 += count;
+    }
+
+    /// Records resolved geometry instances.
+    pub(super) fn record_resolved_geometry(&mut self, count: usize) {
+        self.resolved_geometry += count;
+    }
+
+    /// Records resolved rows in one segment family.
+    pub(super) fn record_family_resolution(
+        &mut self,
+        family: crate::coverage::SketchSegmentFamily,
+        count: usize,
+    ) {
+        self.family_mut(family).1 += count;
+    }
+
+    /// Recorded decoded rows.
+    pub(super) fn decoded_rows(&self) -> usize {
+        self.decoded_rows
+    }
+
+    /// Recorded resolved geometry.
+    pub(super) fn resolved_geometry(&self) -> usize {
+        self.resolved_geometry
+    }
+
+    /// Recorded missing rows.
+    pub(super) fn missing_rows(&self) -> usize {
+        self.missing_rows
+    }
+
+    pub(super) fn families(
         &self,
     ) -> impl Iterator<Item = (crate::coverage::SketchSegmentFamily, (usize, usize))> + '_ {
         crate::coverage::SketchSegmentFamily::ALL
@@ -124,161 +327,216 @@ impl SketchSegmentTransferCoverage {
             .filter_map(|(family, counts)| counts.map(|counts| (family, counts)))
     }
 
-    pub(crate) fn family_mut(
-        &mut self,
-        family: crate::coverage::SketchSegmentFamily,
-    ) -> &mut (usize, usize) {
+    fn family_mut(&mut self, family: crate::coverage::SketchSegmentFamily) -> &mut (usize, usize) {
         self.by_family[family.index()].get_or_insert((0, 0))
     }
 }
 
 #[derive(Default)]
-pub(crate) struct DesignConstraintTransferCoverage {
-    pub(crate) transferred: usize,
-    pub(crate) native: usize,
-    pub(crate) active: usize,
-    pub(crate) active_native: usize,
-    pub(crate) native_by_kind: BTreeMap<u32, usize>,
-    pub(crate) active_native_by_kind: BTreeMap<u32, usize>,
+pub(in crate::decode) struct DesignConstraintTransferCoverage {
+    pub(super) transferred: usize,
+    pub(super) native: usize,
+    pub(super) active: usize,
+    pub(super) active_native: usize,
+    pub(super) native_by_kind: BTreeMap<u32, usize>,
+    pub(super) active_native_by_kind: BTreeMap<u32, usize>,
 }
 
 impl DesignConstraintTransferCoverage {
-    pub(crate) fn typed(&self) -> usize {
-        self.transferred.saturating_sub(self.native)
+    pub(super) fn typed(&self) -> Result<usize, CodecError> {
+        self.transferred.checked_sub(self.native).ok_or_else(|| {
+            CodecError::malformed("native constraint count exceeds transferred count")
+        })
     }
 
-    pub(crate) fn active_typed(&self) -> usize {
-        self.active.saturating_sub(self.active_native)
+    pub(super) fn active_typed(&self) -> Result<usize, CodecError> {
+        self.active.checked_sub(self.active_native).ok_or_else(|| {
+            CodecError::malformed("native constraint count exceeds transferred count")
+        })
     }
 }
 
-pub(crate) fn design_constraint_transfer_coverage(
+pub(super) fn design_constraint_transfer_coverage(
+    ctx: &DecodeContext<'_>,
     constraints: &[SketchConstraint],
     id_marker: &str,
     native_kind_prefix: &str,
-) -> DesignConstraintTransferCoverage {
-    constraints
+) -> Result<DesignConstraintTransferCoverage, CodecError> {
+    let mut coverage = DesignConstraintTransferCoverage::default();
+    for constraint in constraints
         .iter()
         .filter(|constraint| constraint.id.as_str().contains(id_marker))
-        .fold(
-            DesignConstraintTransferCoverage::default(),
-            |mut coverage, constraint| {
-                coverage.transferred += 1;
-                let native_kind_text = match &constraint.definition {
-                    SketchConstraintDefinition::Native { native_kind, .. }
-                        if native_kind.starts_with(native_kind_prefix) =>
-                    {
-                        Some(native_kind.as_str())
-                    }
-                    _ => None,
+    {
+        coverage.transferred += 1;
+        let native_kind_text = match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::Native { native_kind, .. }
+                if native_kind.as_str().starts_with(native_kind_prefix) =>
+            {
+                Some(native_kind.as_str())
+            }
+            _ => None,
+        };
+        let native_kind = native_kind_text
+            .and_then(|kind| kind.strip_prefix(native_kind_prefix))
+            .and_then(|kind| kind.parse().ok());
+        if native_kind_text.is_some() {
+            coverage.native += 1;
+        }
+        if let Some(native_kind) = native_kind {
+            *charged_map_entry(
+                ctx,
+                &mut coverage.native_by_kind,
+                native_kind,
+                "creo native constraint kind nodes",
+            )? += 1;
+            if constraint.active == Some(true) {
+                *charged_map_entry(
+                    ctx,
+                    &mut coverage.active_native_by_kind,
+                    native_kind,
+                    "creo active native constraint kind nodes",
+                )? += 1;
+            }
+        }
+        if constraint.active == Some(true) {
+            coverage.active += 1;
+            if native_kind_text.is_some() {
+                coverage.active_native += 1;
+            }
+        }
+    }
+    Ok(coverage)
+}
+
+pub(super) fn constraint_kind_breakdown<'a>(
+    coverage: &'a cadmpeg_ir::report::decode::Coverage,
+    prefix: &'a str,
+) -> impl std::fmt::Display + 'a {
+    struct Breakdown<'a> {
+        coverage: &'a cadmpeg_ir::report::decode::Coverage,
+        prefix: &'a str,
+    }
+    impl std::fmt::Display for Breakdown<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let mut first = true;
+            for (key, count) in self.coverage.iter() {
+                let Some(kind) = key
+                    .strip_prefix(self.prefix)
+                    .and_then(|name| name.strip_suffix("_constraint_count"))
+                else {
+                    continue;
                 };
-                let native_kind = native_kind_text
-                    .and_then(|kind| kind.strip_prefix(native_kind_prefix))
-                    .and_then(|kind| kind.parse().ok());
-                if native_kind_text.is_some() {
-                    coverage.native += 1;
+                if *count == 0 {
+                    continue;
                 }
-                if let Some(native_kind) = native_kind {
-                    *coverage.native_by_kind.entry(native_kind).or_default() += 1;
-                    if constraint.active == Some(true) {
-                        *coverage
-                            .active_native_by_kind
-                            .entry(native_kind)
-                            .or_default() += 1;
-                    }
+                if !first {
+                    f.write_str(", ")?;
                 }
-                if constraint.active == Some(true) {
-                    coverage.active += 1;
-                    if native_kind_text.is_some() {
-                        coverage.active_native += 1;
-                    }
-                }
-                coverage
-            },
-        )
+                write!(f, "type {kind}={count}")?;
+                first = false;
+            }
+            Ok(())
+        }
+    }
+    Breakdown { coverage, prefix }
 }
 
-pub(crate) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix: &str) -> String {
-    coverage
-        .iter()
-        .filter_map(|(key, count)| {
-            let kind = key
-                .strip_prefix(prefix)?
-                .strip_suffix("_constraint_count")?;
-            (*count != 0).then_some(format!("type {kind}={count}"))
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-pub(crate) fn curve_transfer_coverage(
+pub(super) fn curve_transfer_coverage(
+    ctx: &DecodeContext<'_>,
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
-) -> CurveTransferCoverage {
-    let unique_rows = crate::topology::uniquely_identified_rows(rows);
-    let transferred_ids = curves
+) -> Result<CurveTransferCoverage, CodecError> {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let mut transferred_ids = BTreeSet::new();
+    for id in curves
         .iter()
-        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter(|curve| {
+            !matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
         .filter_map(|curve| {
             curve
                 .source_object
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()
         })
-        .collect::<BTreeSet<_>>();
-    let unknown_ids = curves
-        .iter()
-        .filter(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-        .filter_map(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
-                .object_id
-                .strip_prefix("VisibGeom:")?
-                .parse::<u32>()
-                .ok()
-        })
-        .collect::<BTreeSet<_>>();
-    let mut coverage = CurveTransferCoverage {
-        unique_rows: unique_rows.len(),
-        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
-        ..CurveTransferCoverage::default()
-    };
-    for row in unique_rows {
-        let transferred = usize::from(transferred_ids.contains(&row.id));
-        let retained_unknown = usize::from(unknown_ids.contains(&row.id));
-        coverage.transferred_rows += transferred;
-        coverage.retained_unknown_rows += retained_unknown;
-        let type_coverage = coverage.by_type.entry(row.type_byte).or_default();
-        type_coverage.0 += 1;
-        type_coverage.1 += transferred;
-        *coverage.unknown_by_type.entry(row.type_byte).or_default() += retained_unknown;
+    {
+        ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")?;
     }
-    coverage
+    let mut unknown_ids = BTreeSet::new();
+    for id in curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
+        .filter_map(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
+                .object_id
+                .as_str()
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+    {
+        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")?;
+    }
+    let mut coverage = CurveTransferCoverage::default();
+    coverage.record_ambiguous_rows(
+        rows.len()
+            .checked_sub(unique_rows.len())
+            .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
+    );
+    for row in unique_rows {
+        coverage.record_source_row(ctx, row.type_byte)?;
+        if transferred_ids.contains(&row.id) {
+            coverage.record_transferred_row(ctx, row.type_byte)?;
+        }
+        if unknown_ids.contains(&row.id) {
+            coverage.record_retained_unknown_row(ctx, row.type_byte)?;
+        }
+    }
+    Ok(coverage)
 }
 
-pub(crate) fn surface_transfer_coverage(
+pub(super) fn surface_transfer_coverage(
+    ctx: &DecodeContext<'_>,
     rows: &[crate::surface::SurfaceRow],
     surfaces: &[Surface],
     procedural_surfaces: &[ProceduralSurface],
-) -> SurfaceTransferCoverage {
-    let unique_rows = crate::surface::uniquely_identified_rows(rows);
-    let extrusion_constructions = procedural_surfaces
+) -> Result<SurfaceTransferCoverage, CodecError> {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let mut extrusion_constructions = BTreeSet::new();
+    for id in procedural_surfaces
         .iter()
         .filter(|procedural| {
             matches!(
                 procedural.definition(),
-                ProceduralSurfaceDefinition::Extrusion { .. }
+                ProceduralSurfaceDefinition::Extrusion(_)
             )
         })
         .map(|procedural| &procedural.id)
-        .collect::<BTreeSet<_>>();
-    let extrusion_surfaces = surfaces
+    {
+        ctx.insert_btree_set(
+            &mut extrusion_constructions,
+            id,
+            "creo extrusion construction nodes",
+        )?;
+    }
+    let mut extrusion_surfaces = BTreeSet::new();
+    for id in surfaces
         .iter()
         .filter(|surface| {
             surface
@@ -287,62 +545,77 @@ pub(crate) fn surface_transfer_coverage(
                 .is_some_and(|id| extrusion_constructions.contains(id))
         })
         .map(|surface| &surface.id)
-        .collect::<BTreeSet<_>>();
-    let transferred = surfaces
+    {
+        ctx.insert_btree_set(&mut extrusion_surfaces, id, "creo extrusion surface nodes")?;
+    }
+    let mut transferred = Vec::new();
+    for surface in surfaces {
+        let Some(id) = surface
+            .source_object
+            .as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
+            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
+            .and_then(|id| id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(kind) = surface_kind_for_geometry(&surface.geometry) else {
+            continue;
+        };
+        let extra = extrusion_surfaces.contains(&surface.id).then_some(
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        );
+        ctx.reserve_vec(&mut transferred, 1, "creo transferred surface rows")?;
+        transferred.push((id, [Some(kind), extra]));
+    }
+    let mut unknown_ids = BTreeSet::new();
+    for id in surfaces
         .iter()
-        .filter_map(|surface| {
-            let id = surface
-                .source_object
-                .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
-                .object_id
-                .strip_prefix("VisibGeom:")?
-                .parse::<u32>()
-                .ok()?;
-            let mut kinds = vec![surface_kind_for_geometry(&surface.geometry)?];
-            if extrusion_surfaces.contains(&surface.id) {
-                kinds.push(crate::surface::SurfaceKind::Extrusion(
-                    crate::surface::ExtrusionVariant::Linear,
-                ));
-            }
-            Some((id, kinds))
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )
         })
-        .collect::<Vec<_>>();
-    let unknown_ids = surfaces
-        .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
         .filter_map(|surface| {
             surface
                 .source_object
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()
         })
-        .collect::<BTreeSet<_>>();
-    let mut coverage = SurfaceTransferCoverage {
-        unique_rows: unique_rows.len(),
-        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
-        ..SurfaceTransferCoverage::default()
-    };
-    for row in unique_rows {
-        let is_transferred = transferred.iter().any(|(id, kinds)| {
-            *id == row.id && kinds.iter().any(|kind| kind.same_family(row.kind))
-        });
-        let retained_unknown = unknown_ids.contains(&row.id);
-        coverage.transferred_rows += usize::from(is_transferred);
-        coverage.retained_unknown_rows += usize::from(retained_unknown);
-        let family_coverage = coverage.family_mut(row.kind);
-        family_coverage.0 += 1;
-        family_coverage.1 += usize::from(is_transferred);
-        *coverage.unknown_family_mut(row.kind) += usize::from(retained_unknown);
+    {
+        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")?;
     }
-    coverage
+    let mut coverage = SurfaceTransferCoverage::default();
+    coverage.record_ambiguous_rows(
+        rows.len()
+            .checked_sub(unique_rows.len())
+            .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
+    );
+    for row in unique_rows {
+        coverage.record_source_row(row.kind);
+        if transferred.iter().any(|(id, kinds)| {
+            *id == row.id
+                && kinds
+                    .iter()
+                    .flatten()
+                    .any(|kind| kind.same_family(row.kind))
+        }) {
+            coverage.record_transferred_row(row.kind);
+        }
+        if unknown_ids.contains(&row.id) {
+            coverage.record_retained_unknown_row(row.kind);
+        }
+    }
+    Ok(coverage)
 }
 
-pub(crate) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'static str> {
+pub(super) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'static str> {
     match kind {
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear) => {
             Some("ruled_surface")
@@ -354,126 +627,40 @@ pub(crate) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'sta
     }
 }
 
-pub(crate) fn surface_prototype_family_name(
-    family: &crate::surface::SurfacePrototypeFamily,
-) -> String {
-    match family {
-        crate::surface::SurfacePrototypeFamily::Plane => "plane".to_string(),
-        crate::surface::SurfacePrototypeFamily::Cylinder => "cylinder".to_string(),
-        crate::surface::SurfacePrototypeFamily::Cone => "cone".to_string(),
-        crate::surface::SurfacePrototypeFamily::Torus(_) => "torus_or_sphere".to_string(),
-        crate::surface::SurfacePrototypeFamily::Spline(_) => "spline".to_string(),
-        crate::surface::SurfacePrototypeFamily::Fillet(_) => "fillet".to_string(),
-        crate::surface::SurfacePrototypeFamily::Extrusion(_) => "extrusion".to_string(),
-        crate::surface::SurfacePrototypeFamily::Other(name) => format!("other:{name}"),
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::{DesignConstraintTransferCoverage, SketchSegmentTransferCoverage};
+    use cadmpeg_core::CodecError;
 
-pub(super) fn surface_named_parameter_record(
-    parameter: &crate::surface::SurfaceNamedParameter,
-) -> CreoSurfaceNamedParameterRecord {
-    let (
-        value_kind,
-        compact_values,
-        scalar_dimensions,
-        scalar_count,
-        scalar_values,
-        scalar_tokens,
-        opaque,
-    ) = match &parameter.value {
-        crate::surface::SurfaceNamedValue::Empty => (
-            "empty",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CompactInt(value) => (
-            "compact_int",
-            vec![*value],
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
-            "compact_int_array",
-            values.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
-            "contiguous_entity_references",
-            entity_ids.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ScalarArray {
-            dimensions,
-            count,
-            values,
-            tokens,
-        } => (
-            "scalar_array",
-            Vec::new(),
-            Some(*dimensions),
-            Some(*count),
-            values.clone(),
-            tokens.clone().unwrap_or_default(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CountedScalarArray {
-            count,
-            values,
-            tokens,
-        } => (
-            "counted_scalar_array",
-            Vec::new(),
-            None,
-            Some(*count),
-            values.clone(),
-            tokens.clone(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
-            "scalar_sequence",
-            Vec::new(),
-            None,
-            None,
-            values.iter().copied().map(Some).collect(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::Opaque(value) => (
-            "opaque",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            value.clone(),
-        ),
-    };
-    CreoSurfaceNamedParameterRecord {
-        name: parameter.name.clone(),
-        value_kind,
-        compact_values,
-        scalar_dimensions,
-        scalar_count,
-        scalar_values,
-        scalar_tokens,
-        opaque,
-        body: parameter.body.clone(),
-        offset: parameter.offset,
-        value_offset: parameter.value_offset,
+    #[test]
+    fn sketch_row_coverage_refuses_overfull_table() {
+        let mut coverage = SketchSegmentTransferCoverage::default();
+        assert!(matches!(
+            coverage.record_table_rows(2, 1),
+            Err(CodecError::Malformed(_))
+        ));
+        assert_eq!(coverage.decoded_rows(), 0);
+        assert_eq!(coverage.missing_rows(), 0);
+    }
+
+    #[test]
+    fn typed_constraint_coverage_refuses_native_count_above_total() {
+        let coverage = DesignConstraintTransferCoverage {
+            native: 1,
+            ..Default::default()
+        };
+        assert!(matches!(coverage.typed(), Err(CodecError::Malformed(_))));
+    }
+
+    #[test]
+    fn active_typed_constraint_coverage_refuses_native_count_above_total() {
+        let coverage = DesignConstraintTransferCoverage {
+            active_native: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            coverage.active_typed(),
+            Err(CodecError::Malformed(_))
+        ));
     }
 }

@@ -16,7 +16,12 @@ pub(crate) fn material_payload(name: &str, rgb: [u8; 3]) -> Vec<u8> {
     material.extend_from_slice(&0u32.to_le_bytes());
     material.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-    material.extend_from_slice(&[0xff, 0xfe, 0xff, name.len() as u8]);
+    material.extend_from_slice(&[
+        0xff,
+        0xfe,
+        0xff,
+        u8::try_from(name.len()).expect("length fits u8"),
+    ]);
     for unit in name.encode_utf16() {
         material.extend_from_slice(&unit.to_le_bytes());
     }

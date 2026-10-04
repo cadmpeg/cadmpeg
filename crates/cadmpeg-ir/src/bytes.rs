@@ -14,7 +14,25 @@ pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&STANDARD.encode(bytes))
+    serializer.collect_str(&Base64Text(bytes))
+}
+
+struct Base64Text<'a>(&'a [u8]);
+
+impl fmt::Display for Base64Text<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const INPUT_CHUNK: usize = 768;
+        const OUTPUT_CHUNK: usize = 1024;
+        let mut output = [0u8; OUTPUT_CHUNK];
+        for chunk in self.0.chunks(INPUT_CHUNK) {
+            let used = STANDARD
+                .encode_slice(chunk, &mut output)
+                .map_err(|_| fmt::Error)?;
+            let text = std::str::from_utf8(&output[..used]).map_err(|_| fmt::Error)?;
+            formatter.write_str(text)?;
+        }
+        Ok(())
+    }
 }
 
 /// Deserializes a standard, padded base64 string into bytes.
@@ -56,33 +74,6 @@ where
     }
 
     deserializer.deserialize_str(Base64Visitor)
-}
-
-/// Serde adapter for optional byte vectors.
-pub mod option {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    /// Serialize optional bytes as an optional base64 string.
-    pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match bytes {
-            Some(value) => serializer.serialize_some(&STANDARD.encode(value)),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    /// Deserialize an optional base64 string.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<String>::deserialize(deserializer)?
-            .map(|value| STANDARD.decode(value).map_err(serde::de::Error::custom))
-            .transpose()
-    }
 }
 
 #[cfg(test)]

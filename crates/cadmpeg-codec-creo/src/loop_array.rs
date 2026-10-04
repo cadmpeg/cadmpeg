@@ -8,7 +8,8 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::bytes::find_from as find;
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::psb;
 
@@ -32,7 +33,7 @@ const PROTOTYPE_FIELDS: [&[u8]; 8] = [
 
 /// Layout marker between the loop-array label and its array opener.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayoutMarker {
+pub(crate) enum LayoutMarker {
     /// The `f2` marker.
     F2,
     /// The `f3` marker.
@@ -48,71 +49,60 @@ impl serde::Serialize for LayoutMarker {
     }
 }
 
-/// Retention of positional rows in a loop-array frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopArrayFrameRows {
-    /// Number of complete positional rows retained.
-    Materialized(usize),
-    /// Additional validated rows exceed the declared extent.
-    Overfull,
-}
-
 /// One validated `lo_array` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopArrayFrame {
+pub(crate) struct LoopArrayFrame {
     /// Byte offset of the `lo_array` label.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Optional layout marker immediately after the label: `f2` or `f3`.
     /// Older frames omit this marker and begin directly with `f8`.
-    pub variant: Option<LayoutMarker>,
+    pub(crate) variant: Option<LayoutMarker>,
     /// Stored loop-array slot extent.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Native class reference from the frame header and prototype close.
-    pub class_id: u32,
+    pub(crate) class_id: u32,
     /// Byte offset immediately after the named prototype close.
-    pub prototype_end: usize,
+    pub(crate) prototype_end: usize,
     /// Byte offset of the next array label or the section end.
-    pub end: usize,
-    /// Retention of this frame's positional rows.
-    pub rows: LoopArrayFrameRows,
+    pub(crate) end: usize,
+    /// Additional validated rows exceed the declared extent.
+    pub(crate) overfull: bool,
 }
 
 /// One complete positional `lo_array` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopArrayRecord {
+pub(crate) struct LoopArrayRecord {
     /// Owning frame label offset.
-    pub frame_offset: usize,
+    pub(crate) frame_offset: usize,
     /// `lo_id` compact integer.
-    pub lo_id: u32,
+    pub(crate) lo_id: u32,
     /// `lo_type` compact integer.
-    pub lo_type: u32,
+    pub(crate) lo_type: u32,
     /// `lo_subtype` compact integer.
-    pub lo_subtype: u32,
+    pub(crate) lo_subtype: u32,
     /// `feat_id` compact integer.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Raw `attributes` byte.
-    pub attributes: u8,
+    pub(crate) attributes: u8,
     /// `direction` compact integer.
-    pub direction: u32,
+    pub(crate) direction: u32,
     /// `next_lo_ptr` compact integer.
-    pub next_lo_ptr: u32,
+    pub(crate) next_lo_ptr: u32,
     /// Exact row body from the first body byte through its `e3` close.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the fixed row prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first body byte.
-    pub body_offset: usize,
-    /// Exclusive byte offset after the row close.
-    pub end: usize,
+    pub(crate) body_offset: usize,
 }
 
 /// Results of scanning all `lo_array` frames in one section payload.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LoopArrayScan {
+pub(crate) struct LoopArrayScan {
     /// Validated frame headers and named prototypes.
-    pub frames: Vec<LoopArrayFrame>,
+    pub(crate) frames: Vec<LoopArrayFrame>,
     /// Complete positional rows from non-overfull frames.
-    pub records: Vec<LoopArrayRecord>,
+    pub(crate) records: Vec<LoopArrayRecord>,
 }
 
 fn find_named_field(data: &[u8], start: usize, end: usize, name: &[u8]) -> Option<usize> {
@@ -169,7 +159,7 @@ fn named_prototype_end(data: &[u8], start: usize, end: usize, class_id: u32) -> 
     let mut cursor = start;
     for field in PROTOTYPE_FIELDS {
         cursor = find_named_field(data, cursor, close_end, field)?
-            .checked_add(field.len().saturating_add(3))?;
+            .checked_add(field.len().checked_add(3)?)?;
     }
     Some(close_end)
 }
@@ -213,55 +203,108 @@ fn row_end(data: &[u8], body_start: usize, end: usize) -> Option<usize> {
         if matches!(token.kind, psb::TokenKind::CompoundClose) {
             return Some(cursor);
         }
-        cursor = cursor.checked_add(token.length.max(1))?;
+        // `token_at` answers only for an offset inside `data`, so every token
+        // it states spans at least its own head byte. A zero-length token would
+        // not advance the walk, and the mint refuses it instead of flooring it.
+        cursor = cursor.checked_add(std::num::NonZeroUsize::new(token.length)?.get())?;
     }
     None
 }
 
 fn parse_frame(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     offset: usize,
     section_end: usize,
-) -> Option<(LoopArrayFrame, Vec<LoopArrayRecord>)> {
-    let mut cursor = offset.checked_add(LO_ARRAY_LABEL.len())?;
-    let variant = match *data.get(cursor)? {
+) -> Result<Option<(LoopArrayFrame, Vec<LoopArrayRecord>)>, CodecError> {
+    let Some(mut cursor) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
+        return Ok(None);
+    };
+    let Some(&marker) = data.get(cursor) else {
+        return Ok(None);
+    };
+    let variant = match marker {
         0xf2 => Some(LayoutMarker::F2),
         0xf3 => Some(LayoutMarker::F3),
         0xf8 => None,
-        _ => return None,
+        _ => return Ok(None),
     };
     cursor += usize::from(variant.is_some());
     if data.get(cursor) != Some(&0xf8) {
-        return None;
+        return Ok(None);
     }
-    let (declared_count, after_count) = compact_at(data, cursor + 1, section_end)?;
+    let Some((declared_count, after_count)) = compact_at(data, cursor + 1, section_end) else {
+        return Ok(None);
+    };
     cursor = after_count;
     if data.get(cursor) != Some(&0xf7) {
-        return None;
+        return Ok(None);
     }
-    let (class_id, after_class) = psb::reference_id(data, cursor + 1).ok()?;
+    let Ok((class_id, after_class)) = psb::reference_id(data, cursor + 1) else {
+        return Ok(None);
+    };
     if class_id == 0 || data.get(after_class..after_class + 2) != Some(&[0xfb, 0xe3]) {
-        return None;
+        return Ok(None);
     }
     let header_end = after_class + 2;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len() - header_end)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                ARRAY_BOUNDARY_LABELS.len(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo loop frame boundaries", u64::MAX, u64::MAX)
+            })?,
+        "creo loop frame boundaries",
+    )?;
     let end = frame_end(data, header_end, section_end);
-    let prototype_end = named_prototype_end(data, header_end, end, class_id)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(end - header_end)
+            .checked_mul(1 + cadmpeg_core::decode::u64_from_index(PROTOTYPE_FIELDS.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo loop prototype scan", u64::MAX, u64::MAX)
+            })?,
+        "creo loop prototype scan",
+    )?;
+    let Some(prototype_end) = named_prototype_end(data, header_end, end, class_id) else {
+        return Ok(None);
+    };
 
-    let max_records = bounded_len(
-        u64::from(declared_count),
-        1,
-        end.saturating_sub(prototype_end),
-    )
-    .unwrap_or(0);
+    let Some(remaining) = end.checked_sub(prototype_end) else {
+        return Ok(None);
+    };
+    let Some(max_records) = bounded_len(u64::from(declared_count), 1, remaining) else {
+        return Ok(Some((
+            LoopArrayFrame {
+                offset,
+                variant,
+                declared_count,
+                class_id,
+                prototype_end,
+                end,
+                overfull: false,
+            },
+            Vec::new(),
+        )));
+    };
     let mut cursor = prototype_end;
     let mut records = Vec::new();
     while cursor < end && records.len() < max_records {
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(end - prefix.body_offset),
+            "creo loop row token walk",
+        )?;
         let Some(close) = row_end(data, prefix.body_offset, end) else {
             break;
         };
+        ctx.reserve_vec(&mut records, 1, "creo loop array frame records")?;
+        let body = ctx.copy_retained(
+            &data[prefix.body_offset..=close],
+            "creo loop array record body",
+        )?;
         records.push(LoopArrayRecord {
             frame_offset: offset,
             lo_id: prefix.lo_id,
@@ -271,20 +314,17 @@ fn parse_frame(
             attributes: prefix.attributes,
             direction: prefix.direction,
             next_lo_ptr: prefix.next_lo_ptr,
-            body: data[prefix.body_offset..=close].to_vec(),
+            body,
             offset: cursor,
             body_offset: prefix.body_offset,
-            end: close + 1,
         });
         cursor = close + 1;
     }
-    let rows = if records.len() == max_records && row_prefix(data, cursor, end).is_some() {
+    let overfull = records.len() == max_records && row_prefix(data, cursor, end).is_some();
+    if overfull {
         records.clear();
-        LoopArrayFrameRows::Overfull
-    } else {
-        LoopArrayFrameRows::Materialized(records.len())
-    };
-    Some((
+    }
+    Ok(Some((
         LoopArrayFrame {
             offset,
             variant,
@@ -292,28 +332,54 @@ fn parse_frame(
             class_id,
             prototype_end,
             end,
-            rows,
+            overfull,
         },
         records,
-    ))
+    )))
 }
 
 /// Retain structurally complete `lo_array` frames and positional rows.
-pub fn scan(data: &[u8]) -> LoopArrayScan {
+pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    while let Some(offset) = find(data, LO_ARRAY_LABEL, search) {
-        search = offset.saturating_add(LO_ARRAY_LABEL.len());
-        let Some((frame, records)) = parse_frame(data, offset, data.len()) else {
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - search),
+            "creo loop array discovery",
+        )?;
+        let Some(offset) = find(data, LO_ARRAY_LABEL, search) else {
+            break;
+        };
+        let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
+            break;
+        };
+        search = next_search;
+        let Some((frame, records)) = parse_frame(ctx, data, offset, data.len())? else {
             continue;
         };
+        ctx.reserve_vec(&mut result.frames, 1, "creo loop array frames")?;
         result.frames.push(frame);
+        ctx.reserve_vec(
+            &mut result.records,
+            records.len(),
+            "creo loop array section records",
+        )?;
         result.records.extend(records);
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    result.frames.sort_by_key(|frame| frame.offset);
-    result.records.sort_by_key(|record| record.offset);
-    result
+    ctx.stable_sort_by(
+        result.frames.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo scan result frames ordering",
+    )?;
+    ctx.stable_sort_by(
+        result.records.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo scan result records ordering",
+    )?;
+    Ok(result)
 }
 
 #[cfg(test)]

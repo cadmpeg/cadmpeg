@@ -2,9 +2,51 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::decode::tests::options_in;
+use crate::test_support::extract_streams;
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::bspline_curve_replacement_partition_stream;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::bspline_surface_replacement_partition_stream;
+use crate::test_support::test_deltas::deltas_bspline_curve_wrapper_stream;
+use crate::test_support::test_deltas::deltas_bspline_surface_wrapper_stream;
+use crate::test_support::test_deltas::forward_trimmed_curve_chain_stream;
+use crate::test_support::test_deltas::mismatched_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::topology_with_escaped_geometry_envelopes;
+use crate::test_support::test_deltas::topology_with_extended_edge_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_edge_curve_reference;
+use crate::test_support::test_deltas::topology_with_extended_face_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_internal_topology_references;
+use crate::test_support::test_deltas::topology_with_fully_extended_geometry_headers;
+use crate::test_support::test_deltas::trimmed_topology_partition_stream;
+use crate::test_support::test_prt::assembly_prt;
+use crate::test_support::test_prt::large_xmt_headers;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_missing_active_body_record;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_prt::prt_with_two_active_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_two_terminal_bodies;
+use crate::test_support::test_prt::prt_with_weak_rmfastload_overlap;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::topology_part_prt;
+use crate::test_support::test_prt::topology_with_missing_tolerances;
+use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
+use crate::test_support::test_streams::inline_descriptor_intersection_curve_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
+
 use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
 use crate::decode::feature_completeness::output_free_local_body_construction;
-use crate::decode::report::append_design_intent_losses;
 
 use crate::framing::node_kind::NodeKind;
 use std::{collections::BTreeSet, io::Cursor};
@@ -13,15 +55,25 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::Exactness;
 
-use crate::test_support::*;
 use crate::NxCodec;
 
-use super::*;
+fn append_design_intent_losses(
+    ir: &cadmpeg_ir::document::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::report::append_design_intent_losses(ctx, ir, losses)
+    })
+    .unwrap();
+}
 
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {
@@ -34,11 +86,15 @@ fn decode_emits_both_intersection_support_pcurves() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].surface.is_some());
-    assert!(context.sides[0].pcurve.is_some());
-    assert!(context.sides[1].surface.is_some());
-    assert!(context.sides[1].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(context.sides()[0].surface.is_some());
+    assert!(context.sides()[0].pcurve.is_some());
+    assert!(context.sides()[1].surface.is_some());
+    assert!(context.sides()[1].pcurve.is_some());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -53,17 +109,27 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].pcurve.is_some());
-    let Some(support) = context.sides[1].pcurve.as_ref() else {
+    assert!(context.sides()[0].pcurve.is_some());
+    let Some(support) = context.sides()[1].pcurve.as_ref() else {
         panic!("completed second support pcurve");
     };
     let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
         panic!("completed second support NURBS pcurve");
     };
-    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(0.0, 10.0)));
+    assert_eq!(
+        nurbs.pole_rows().raw_points().first(),
+        Some(&Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        nurbs.pole_rows().raw_points().last(),
+        Some(&Point2::new(0.0, 10.0))
+    );
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -81,13 +147,15 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
 
     let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization,
         ..
     } = procedural.definition()
     else {
         panic!("typed tolerant intersection");
     };
+    let supports = intersection.supports();
+
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());
     let owner = result
@@ -108,9 +176,13 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(owner))
-        .all(|edge| edge.param_range.is_none()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+        .filter(|edge| edge.curve() == Some(owner))
+        .all(|edge| edge.param_range().is_none()));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -146,12 +218,14 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         .model
         .edges
         .iter()
-        .find(|edge| {
-            edge.curve.as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
-        })
+        .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
         .expect("carrying edge");
-    assert_eq!(edge.param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(edge.param_range(), None);
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -184,7 +258,11 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 
     let second_point = stream
         .windows(4)
@@ -236,7 +314,11 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -293,12 +375,14 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .model
             .edges
             .iter()
-            .find(|edge| {
-                edge.curve.as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
-            })
+            .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
             .expect("carrying edge");
-        assert_eq!(edge.param_range, None);
-        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+        assert_eq!(edge.param_range(), None);
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 }
 
@@ -328,7 +412,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
             .expect("intersection curve")
             .geometry
             .solved_cache(),
-        Some(CurveGeometry::Nurbs(_))
+        Some(SolvedCurveGeometry::Nurbs(_))
     ));
 }
 
@@ -341,7 +425,11 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -358,7 +446,8 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
 #[test]
 fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let mut cur = Cursor::new(topology_part_prt());
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result =
+        EditableDecodeResult::from(NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap());
     let ir = result.ir();
     let annotations = &result.source_fidelity().annotations;
 
@@ -419,24 +508,25 @@ fn decode_transfers_bspline_surface_and_curve() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(surface) => Some(surface),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => Some(surface),
             _ => None,
         })
         .expect("B-spline surface");
-    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points().len(), 4);
-    assert!((surface.control_points()[1].y - 20.0).abs() < 1.0e-9);
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    let poles = surface.poles();
+    assert_eq!(poles.len(), 4);
+    assert!((poles[1].y - 20.0).abs() < 1.0e-9);
     let curve = result
         .ir()
         .model
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(curve) => Some(curve),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve),
             _ => None,
         })
         .expect("B-spline curve");
-    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points().len(), 2);
     assert!((curve.control_points()[1].x - 20.0).abs() < 1.0e-9);
 }
@@ -451,10 +541,14 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
-        SurfaceGeometry::Nurbs(nurbs)
-            if nurbs.control_points().iter().any(|point| point.y == 30.0)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+            if nurbs.poles().iter().any(|point| point.y == 30.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -467,10 +561,14 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
 
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
-        CurveGeometry::Nurbs(nurbs)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.control_points().iter().any(|point| point.y == 10.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -481,9 +579,16 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
     assert_ne!(edge.start, edge.end);
-    assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert_eq!(result.ir().model.coedges.len(), 2);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -491,9 +596,16 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
-    assert_eq!(edge.curve.as_ref(), Some(&result.ir().model.curves[0].id));
-    assert_eq!(edge.param_range, Some([0.25, 0.75]));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(edge.curve(), Some(&result.ir().model.curves[0].id));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -504,8 +616,7 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
     let carrier = edge
-        .curve
-        .as_ref()
+        .curve()
         .and_then(|id| {
             result
                 .ir()
@@ -515,9 +626,16 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
                 .find(|curve| curve.id == *id)
         })
         .expect("edge carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Line { .. }));
-    assert_eq!(edge.param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(matches!(
+        carrier.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+    ));
+    assert_eq!(edge.param_range(), None);
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -531,8 +649,12 @@ fn decode_omits_overflowing_line_trim_range() {
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.edges[0].param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(result.ir().model.edges[0].param_range(), None);
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -543,7 +665,7 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
 }
@@ -556,12 +678,21 @@ fn decode_tracks_extended_face_reference_shift() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
+    assert_eq!(
+        result.ir().model.faces[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.2)
+    );
     assert_eq!(
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -572,9 +703,14 @@ fn decode_tracks_extended_edge_reference_shift() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.3)
+    );
+    assert_eq!(
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
 }
@@ -593,26 +729,37 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
-    assert_eq!(result.ir().model.points[0].position.x, 10.0);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(
+        result.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.1)
+    );
+    assert_eq!(result.ir().model.points[0].position().get().x, 10.0);
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
             .and_then(crate::topology::Node::surface_geometry),
-        Some(SurfaceGeometry::Plane { .. })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
         graph
             .get(NodeKind::Line, 9)
             .and_then(crate::topology::Node::curve_geometry),
-        Some(CurveGeometry::Line { .. })
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -622,11 +769,11 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     assert_eq!(result.ir().model.edges.len(), 1);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
 }
 
@@ -639,13 +786,17 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -660,14 +811,51 @@ fn decode_assembly_reports_external_dependency() {
         .any(|l| l.message.contains("assembly")));
 }
 
+fn directory_retained_bytes(name: &str) -> u64 {
+    cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<crate::container::DirEntry>() + name.len(),
+    )
+}
+
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
-    stream.resize(64, b'.');
+    stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64;
+    // Ten source attributes use conservative B-tree insertion bounds of
+    // 1, 2, 3, 3, 4, 4, 4, 4, 5 and 5 nodes. Each node holds eleven
+    // String pairs, sixteen pointer slots and two alignment paddings.
+    let source_attribute_nodes = 2
+        * 35
+        * cadmpeg_core::decode::u64_from_index(
+            11 * std::mem::size_of::<(String, String)>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<(String, String)>(),
+        );
+    // Geometry and metadata construction each clone three declarations. The
+    // aggregate admission bound follows the service collection ceiling.
+    let declaration_node = cadmpeg_core::decode::u64_from_index(
+        11 * std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<(cadmpeg_core::text::NonBlankString, String)>(),
+    );
+    let declaration_path = u64::from(options.policy.limits.max_collection_items.ilog2()) + 2;
+    let dialect_declarations = (2 * 3 * declaration_path + 3) * declaration_node
+        + 6 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            cadmpeg_core::dialect::DialectMatch,
+        >());
+    // Moving ten named attributes through each source constructor allocates
+    // a second map with the aggregate declaration-path bound.
+    let named_attribute_nodes = 2 * 10 * declaration_path * declaration_node;
+    options.policy.limits.max_retained_bytes = source_attribute_nodes
+        + dialect_declarations
+        + named_attribute_nodes
+        + directory_retained_bytes("/Root/UG_PART/UG_PART")
+        + cadmpeg_core::decode::u64_from_index(stream.len() * 3)
+        - 1;
 
+    // Shared dialect and annotation nodes fit below the budget for a third payload copy.
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect("live stream and final metadata copy fit the retained budget");
@@ -677,22 +865,68 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
 }
 
 #[test]
+fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    stream.resize(64, b'.');
+    let file = prt_with_partition(&stream);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
+        + cadmpeg_core::decode::u64_from_index(stream.len())
+        + cadmpeg_test_support::decode::arena_registry_bytes()
+        - 1;
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
+        .expect_err("directory bytes use part of the retained allowance");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX inflated stream"
+    ));
+}
+
+#[test]
 fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 8192])]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX opaque container payload",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX opaque container payload"
+    ));
+}
+
+#[test]
+fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect_err("opaque payload copy must be budgeted");
-
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
+        .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.context.operation == "retain NX opaque container payload"
+                && limit.operation == "retain NX directory entries"
     ));
 }
 
@@ -700,19 +934,43 @@ fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
 fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
+    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 8192])]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX invalid JPEG preview",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX invalid JPEG preview"
+    ));
+}
+
+#[test]
+fn invalid_preview_with_one_retained_byte_refuses_directory_entry() {
+    use cadmpeg_core::decode::ResourceDimension;
+
     let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect_err("invalid preview copy must be budgeted");
-
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
+        .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.context.operation == "retain NX invalid JPEG preview"
+                && limit.operation == "retain NX directory entries"
     ));
 }
 
@@ -737,7 +995,11 @@ fn decode_retains_every_rmfastload_active_body() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -763,8 +1025,10 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    let graph = crate::topology::Graph::parse(&stream);
-    assert!(topology_body_node_ids(0, &graph).is_empty());
+    crate::test_support::with_decode_context(|ctx| {
+        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
+        assert!(topology_body_node_ids(ctx, 0, &graph).unwrap().is_empty());
+    });
 }
 
 #[test]
@@ -779,7 +1043,11 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
         .unwrap()
         .iter()
         .any(|unknown| unknown.id.as_str() == "nx:container:parasolid#1"));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -813,7 +1081,11 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -832,7 +1104,11 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -952,23 +1228,25 @@ fn decode_retains_unsupported_named_stream_payloads() {
         ("/Root/UG_PART/LastSavedToggleInfoStream", toggle.clone()),
         ("/Root/vendor/private", vendor.clone()),
     ]);
-    let result = NxCodec
-        .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap(),
+    );
     let unknowns = result.ir().native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 4);
     assert_eq!(
         result
             .source_fidelity()
-            .retained_records
-            .iter()
+            .retained_records()
+            .values()
             .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
             .collect::<Vec<_>>(),
         vec![
-            structure.len() as u64,
-            fast_load_jt.len() as u64,
-            toggle.len() as u64,
-            vendor.len() as u64
+            cadmpeg_core::decode::u64_from_index(structure.len()),
+            cadmpeg_core::decode::u64_from_index(fast_load_jt.len()),
+            cadmpeg_core::decode::u64_from_index(toggle.len()),
+            cadmpeg_core::decode::u64_from_index(vendor.len())
         ]
     );
     assert!(unknowns.iter().all(|unknown| {
@@ -989,7 +1267,11 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .iter()
             .any(|loss| loss.message.contains(name)));
     }
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -997,7 +1279,9 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let member = b"0123456789abcdef0123456789abcdef:Off";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
@@ -1018,7 +1302,11 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1026,21 +1314,31 @@ fn container_only_retains_typed_saved_toggle_payload() {
     let member = b"0123456789abcdef0123456789abcdef:On";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[1, 2, 3, 4]);
-    let toggle_len = toggle.len() as u64;
+    let toggle_len = cadmpeg_core::decode::u64_from_index(toggle.len());
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
 
-    let result = NxCodec
-        .decode(
-            &mut Cursor::new(file),
-            &options_in(DecodeMode::Salvage, true),
-        )
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        NxCodec
+            .decode(
+                &mut Cursor::new(file),
+                &options_in(DecodeMode::Salvage, true),
+            )
+            .unwrap(),
+    );
     assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
     assert_eq!(
-        result.source_fidelity().retained_records[0].byte_len(),
+        result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .next()
+            .expect("retained record")
+            .byte_len(),
         toggle_len
     );
     assert!(result
@@ -1054,172 +1352,186 @@ fn container_only_retains_typed_saved_toggle_payload() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, UnresolvedFamily,
+        BooleanOp, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation, UnresolvedFamily,
     };
 
     let mut ir = CadIr::empty();
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("test:feature#{ordinal}")).expect("identity grammar"),
-            ordinal: ordinal as u64,
+            id: FeatureId::mint(format!("test:test:feature#{ordinal}")).expect("identity grammar"),
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: kind.into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: kind.into(),
+                    parameters: Default::default(),
+                }),
+            ),
             native_ref: None,
         });
     }
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#sketch").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 3,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            }),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#incomplete-delete").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#incomplete-delete").expect("identity grammar"),
         ordinal: 10,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DeleteBody {
-            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            }),
+        ),
         native_ref: None,
     });
     for (ordinal, definition) in [
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FreeformSurface,
-        },
-        FeatureDefinition::Unresolved {
+        }),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft,
-        },
+        }),
     ]
     .into_iter()
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("test:feature#unresolved-{ordinal}"))
+            id: FeatureId::mint(format!("test:test:feature#unresolved-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64 + 4,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal) + 4,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#incomplete-block").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#incomplete-block").expect("identity grammar"),
         ordinal: 9,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Block {
-            dimensions: None,
-            placement: None,
-            op: BooleanOp::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Block {
+                dimensions: None,
+                placement: None,
+                op: BooleanOp::Unresolved,
+            }),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#incomplete-sweep").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#incomplete-sweep").expect("identity grammar"),
         ordinal: 11,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-            sections: Vec::new(),
-            path: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            mode: cadmpeg_ir::features::SweepMode::Unresolved,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                    cadmpeg_ir::features::SweepMode::Unresolved {},
+                    cadmpeg_ir::features::SweepSection::Unresolved(None),
+                    Vec::new(),
+                ),
+
+                path: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
         native_ref: None,
     });
     ir.model.configurations.extend([
         DesignConfiguration {
-            id: ConfigurationId::mint("test:configuration#0").expect("identity grammar"),
+            id: ConfigurationId::mint("test:test:configuration#0").expect("identity grammar"),
             ordinal: 0,
             active: true,
             source_index: Some(0),
-            name: "Model".into(),
+            name: Some("Model".to_string()),
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            bodies: Some(Default::default()),
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,
         },
         DesignConfiguration {
-            id: ConfigurationId::mint("test:configuration#1").expect("identity grammar"),
+            id: ConfigurationId::mint("test:test:configuration#1").expect("identity grammar"),
             ordinal: 1,
             active: false,
             source_index: Some(1),
-            name: "Arrangement".into(),
+            name: Some("Arrangement".to_string()),
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,
@@ -1253,23 +1565,26 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[6].message.contains("1 NX sketch history feature"));
     assert!(losses[6].message.contains("1 have no neutral sketch graph"));
 
-    let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
+    let sketch_id = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
-    ir.model.features[2].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-    };
+    ir.model.features[2]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+        }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
 
@@ -1280,92 +1595,115 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
 #[test]
 fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, UnresolvedFamily};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+    };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
-            id: FeatureId::mint("test:feature#active").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#active").expect("identity grammar"),
             ordinal: 0,
             name: Some("active".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body],
-            definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                    position: cadmpeg_ir::features::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    construction: None,
+                }),
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
             native_ref: None,
         },
         Feature {
-            id: FeatureId::mint("test:feature#inactive").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#inactive").expect("identity grammar"),
             ordinal: 1,
             name: Some("inactive".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
-                construction: None,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                    position: cadmpeg_ir::features::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    construction: None,
+                }),
+            ),
             native_ref: None,
         },
         Feature {
-            id: FeatureId::mint("test:feature#inactive-native").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#inactive-native").expect("identity grammar"),
             ordinal: 2,
             name: Some("inactive-native".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "DELETE".into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "DELETE".into(),
+                    parameters: Default::default(),
+                }),
+            ),
             native_ref: None,
         },
         Feature {
-            id: FeatureId::mint("test:feature#inactive-datum-csys").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#inactive-datum-csys").expect("identity grammar"),
             ordinal: 3,
             name: Some("inactive-datum-csys".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumCoordinateSystem,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                    family: UnresolvedFamily::DatumCoordinateSystem,
+                }),
+            ),
             native_ref: None,
         },
         Feature {
-            id: FeatureId::mint("test:feature#inactive-sketch").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#inactive-sketch").expect("identity grammar"),
             ordinal: 4,
             name: Some("inactive-sketch".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                }),
+            ),
             native_ref: None,
         },
     ]);
@@ -1377,45 +1715,60 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
 
 #[test]
 fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
-            id: FeatureId::mint("test:feature#retained-input").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#retained-input").expect("identity grammar"),
             ordinal: 0,
             name: Some("Retained history input".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body.clone()],
-            definition: FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Resolved {
-                    bodies: vec![body],
-                    native: "nx:segment-body-bindings".into(),
-                },
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                            vec![body.clone()],
+                            &cadmpeg_test_support::service_decode_context(),
+                        )
+                        .expect("distinct bodies"),
+                        native: "nx:segment-body-bindings".into(),
+                    },
+                }),
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
             native_ref: None,
         },
         Feature {
-            id: FeatureId::mint("test:feature#unresolved").expect("identity grammar"),
+            id: FeatureId::mint("test:test:feature#unresolved").expect("identity grammar"),
             ordinal: 1,
             name: Some("unresolved".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "DELETE".into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "DELETE".into(),
+                    parameters: Default::default(),
+                }),
+            ),
             native_ref: None,
         },
     ]);
@@ -1436,7 +1789,9 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
 #[test]
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let mut ir = CadIr::empty();
     let mut source_properties = std::collections::BTreeMap::new();
@@ -1445,20 +1800,26 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         "reference".to_string(),
     );
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#local-pattern").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties,
+        dependencies: Default::default(),
+        source_properties: cadmpeg_core::text::named_entries(
+            "test:test:feature#local-pattern",
+            source_properties,
+        )
+        .expect("the fixture states named properties"),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            }),
+        ),
         native_ref: None,
     });
 
@@ -1474,23 +1835,27 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
 
 #[test]
 fn design_intent_losses_accept_pattern_construction_without_body_reference() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let feature = Feature {
-        id: FeatureId::mint("test:feature#pattern-construction").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#pattern-construction").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            }),
+        ),
         native_ref: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1505,9 +1870,10 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         .contains("incomplete neutral construction fields"));
     assert!(losses[0].message.contains("pattern (1)"));
 
-    ir.model.features[0]
-        .source_properties
-        .insert("body_reference.0".into(), "42".into());
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".into(),
+    );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1519,32 +1885,34 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
 #[test]
 fn design_intent_losses_accept_unbound_trim_surface_construction() {
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PathRef, TrimRegion,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("test:feature#construction-trim").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#construction-trim").expect("identity grammar"),
         ordinal: 0,
         name: Some("TRIMMED_SH".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("TRIMMED_SH".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TrimSurface {
-            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#face",
-            )
-            .expect("identity grammar")]),
-            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId::mint(
-                "test:model:entity#edge",
-            )
-            .expect("identity grammar")]),
-            keep: TrimRegion::Inside,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                    "test:model:entity#face",
+                )
+                .expect("identity grammar")]),
+                tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId::mint(
+                    "test:model:entity#edge",
+                )
+                .expect("identity grammar")]),
+                keep: TrimRegion::Inside,
+            }),
+        ),
         native_ref: None,
     });
 
@@ -1552,9 +1920,10 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    ir.model.features[0]
-        .source_properties
-        .insert("body_reference.0".into(), "42".into());
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".into(),
+    );
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1564,7 +1933,9 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 
 #[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+    use cadmpeg_ir::features::{
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
 
     let mut source_properties = std::collections::BTreeMap::new();
     source_properties.insert(
@@ -1572,37 +1943,44 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         "reference".to_string(),
     );
     let mut feature = Feature {
-        id: FeatureId::mint("test:feature#local-pattern").expect("identity grammar"),
+        id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties,
+        dependencies: Default::default(),
+        source_properties: cadmpeg_core::text::named_entries(
+            "test:test:feature#local-pattern",
+            source_properties,
+        )
+        .expect("the fixture states named properties"),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            }),
+        ),
         native_ref: None,
     };
 
     assert!(output_free_local_body_construction(&feature));
 
     feature.source_properties.remove("primary_body_reference");
-    feature
-        .source_properties
-        .insert("body_reference.0".to_string(), "42".to_string());
+    feature.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".to_string(),
+    );
     assert!(!output_free_local_body_construction(&feature));
 
     feature.source_properties.insert(
-        "primary_body_reference".to_string(),
+        cadmpeg_core::nonblank_literal!("primary_body_reference"),
         "reference".to_string(),
     );
     feature.source_properties.insert(
-        "primary_body_segment_use".to_string(),
+        cadmpeg_core::nonblank_literal!("primary_body_segment_use"),
         "segment-use".to_string(),
     );
     assert!(!output_free_local_body_construction(&feature));

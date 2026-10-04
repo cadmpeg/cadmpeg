@@ -5,22 +5,18 @@
 
 use std::fs;
 
-use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-fn cadmpeg() -> Command {
-    Command::cargo_bin("cadmpeg").unwrap()
-}
+mod query_support;
+mod support;
 
-fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf {
-    let path = dir.join(name);
-    fs::write(&path, content).unwrap();
-    path
-}
+use crate::query_support::write;
+use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
+  "ir_version": "6",
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -29,7 +25,7 @@ const CHECK_REPORT: &str = r#"{
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "bounds", "severity": "warning", "message": "negative radius"}
+      {"check": "tolerances", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -52,11 +48,11 @@ const CADIR_DOC: &str = r#"{
 }"#;
 
 const SIDECAR: &str = r#"{
+  "ir_version": "6",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
-    "container_only": false,
-    "geometry_transferred": true,
+    "transfer": {"transfer": "full", "geometry_transferred": true},
     "coverage": {"streams": 7, "segments": 3},
     "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
                          "kind": "metadata_not_transferred"},
@@ -85,6 +81,52 @@ fn summary_detects_all_three_artifact_kinds() {
 }
 
 #[test]
+fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
+    let dir = tempdir().unwrap();
+    for content in [CHECK_REPORT, CADIR_DOC, SIDECAR] {
+        let mut valid: serde_json::Value = serde_json::from_str(content).unwrap();
+        valid["ir_version"] = serde_json::json!(cadmpeg_ir::IR_VERSION);
+        let path = write(dir.path(), "artifact.json", &valid.to_string());
+        let result = cadmpeg()
+            .args(["query", "summary", path.to_str().unwrap(), "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["ir_version"], cadmpeg_ir::IR_VERSION);
+        assert_eq!(report["command"], "query");
+        for version in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(0)),
+            Some(serde_json::json!(false)),
+            Some(serde_json::json!("unsupported")),
+            Some(serde_json::json!({})),
+        ] {
+            let mut wire = valid.clone();
+            match version {
+                Some(version) => {
+                    wire["ir_version"] = version;
+                }
+                None => {
+                    wire.as_object_mut().unwrap().remove("ir_version");
+                }
+            }
+            let path = write(dir.path(), "artifact.json", &wire.to_string());
+            cadmpeg()
+                .args(["query", "summary", path.to_str().unwrap()])
+                .assert()
+                .code(2)
+                .stderr(predicate::str::contains("ir_version"));
+        }
+    }
+}
+
+#[test]
 fn summary_exposes_document_and_decode_dialect_identity() {
     let dir = tempdir().unwrap();
     let cadir = write(
@@ -93,17 +135,18 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         r#"{
           "ir_version": "6",
           "source": {
-            "format": "rhino",
-            "attributes": {},
-            "dialects": {
-              "primary": {
-                "format": "rhino",
-                "dialect": "rhino:archive-80",
-                "declared": {"archive_version": "80"},
-                "admission": "admitted"
-              },
-              "extra": []
-            }
+            "identity": {
+              "classification": "classified",
+              "dialects": {
+                "primary": {
+                  "dialect": "rhino:archive-80",
+                  "declared": {"archive_version": "80"},
+                  "admission": "admitted"
+                },
+                "extra": []
+              }
+            },
+            "attributes": {}
           },
           "model": {},
           "native": {}
@@ -129,24 +172,22 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
+          "ir_version": "6",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
-            "container_only": false,
-            "geometry_transferred": true,
+            "transfer": {"transfer": "full", "geometry_transferred": true},
             "coverage": {},
             "losses": [],
             "dialects": {
               "primary": {
-                "format": "f3d",
                 "dialect": "f3d:archive-2",
                 "declared": {"manifest_version": "2"},
                 "admission": "admitted"
               },
               "extra": [{
-                "format": "acis",
                 "dialect": "acis:sab-22300",
-                "admission": {"unverified": {"using": "acis:sab-22200"}},
+                "admission": {"unverified": {"using": "sab-22200"}},
                 "instance": "member:model.sab"
               }]
             }
@@ -177,6 +218,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
+          "ir_version": "6",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -185,7 +227,6 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
             "message": "unsupported source",
             "dialects": {
               "primary": {
-                "format": "rhino",
                 "dialect": "rhino:unknown",
                 "declared": {"archive_version": "100"},
                 "admission": "refused"
@@ -202,7 +243,6 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
             }],
             "dialects": {
               "primary": {
-                "format": "rhino",
                 "dialect": "rhino:archive-80",
                 "declared": {"archive_version": "80"},
                 "admission": "admitted"
@@ -212,7 +252,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
           },
           "decode_report": null,
           "check_report": null,
-          "export": {"format": "step", "target": "step:ap242-e3"}
+          "export": {"payload": "native", "target": "step:ap242-e3"}
         }"#,
     );
 
@@ -229,7 +269,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         "inspect_dialects\t{\"primary\":",
         "inspect_dialect\trhino:archive-80",
         "inspect_dialect_declared\t{\"archive_version\":\"80\"}",
-        "export_format\tstep",
+        "export_payload\tnative",
         "export_target\tstep:ap242-e3",
     ] {
         assert!(
@@ -272,6 +312,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
+          "ir_version": "6",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -351,7 +392,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .stdout(
             "severity\tcheck\tentity\tmessage\n\
              error\tidentity\te1\tduplicate id\n\
-             warning\tbounds\t\tnegative radius\n",
+             warning\ttolerances\t\tnegative radius\n",
         );
 
     cadmpeg()
@@ -512,7 +553,7 @@ fn a_non_json_file_is_an_operational_error() {
 #[test]
 fn query_projects_a_real_check_report_end_to_end() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("report.json");
@@ -1020,7 +1061,7 @@ fn item_head_conflicts_with_ids_and_fields_conflicts_with_json() {
 #[test]
 fn item_round_trips_counts_dotted_name_on_unit_cube() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
 
@@ -1260,7 +1301,7 @@ fn schema_sidecar_and_json_envelope() {
     assert!(sidecar.status.success());
     let stdout = String::from_utf8_lossy(&sidecar.stdout);
     assert!(stdout.contains("fidelity\tSourceFidelity\tyes"), "{stdout}");
-    assert!(stdout.contains("ir_sha256\tstring\tyes"), "{stdout}");
+    assert!(stdout.contains("ir_sha256\tSha256Digest\tyes"), "{stdout}");
 
     let json = cadmpeg()
         .args(["query", "schema", "--json", "types", "model.faces"])
@@ -1277,20 +1318,22 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "ir_sha256": "abc",
-  "report": {"format": "f3d", "container_only": false, "geometry_transferred": true,
+  "ir_version": "6",
+  "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "report": {"identity": {"classification": "unclassified", "format": "f3d"},
+             "transfer": {"transfer": "full", "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
-    "annotations": {"streams": ["Contents/Config-0"],
-                    "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
+    "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
-    "retained_records": [
-      {"id": "r1", "stream": "Contents/Config-0", "offset": 0, "byte_len": 4,
-       "sha256": "e12e115acf4552b2568b55e93cbd39394c4ef81c82447fafc997882a02d23677", "data": "QUJDRA=="},
-      {"id": "r2", "stream": "Contents/Config-0", "offset": 4, "byte_len": 2,
-       "sha256": "3a4db4ee1e59ce1a0a1b9f56bd6d5506d8c204e2f1d501b7a3a4021e6365e8db", "data": "RUY="},
-      {"id": "r3", "stream": "Other", "offset": 0, "byte_len": 3, "sha256": "z"}
-    ]
+    "retained_records": {
+      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
+             "bytes": {"retention": "inline", "data": "QUJDRA=="}},
+      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
+             "bytes": {"retention": "inline", "data": "RUY="}},
+      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
+             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
+    }
   }
 }"#;
 
@@ -1304,9 +1347,9 @@ fn fidelity_lists_retained_records_with_annotation_counts() {
         .success()
         .stdout(
             "stream\toffset\tbytes\tdata\tid\n\
-             Contents/Config-0\t0\t4\tyes\tr1\n\
-             Contents/Config-0\t4\t2\tyes\tr2\n\
-             Other\t0\t3\tno\tr3\n",
+             Contents/Config-0\t0\t4\tyes\tf3d:source:record#r1\n\
+             Contents/Config-0\t4\t2\tyes\tf3d:source:record#r2\n\
+             Other\t0\t3\tno\tf3d:source:record#r3\n",
         )
         .stderr(predicate::str::contains(
             "annotations: 1 streams, 1 provenance entries, 0 exactness notes",
@@ -1369,7 +1412,7 @@ fn fidelity_refuses_to_overwrite_without_force() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "exists; pass --force to replace it",
+            "exists; pass --force to overwrite",
         ));
     assert_eq!(fs::read(&out).unwrap(), b"precious");
 
@@ -1481,7 +1524,7 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
 #[test]
 fn a_written_report_carries_the_generator_and_summary_prints_it() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("cube.report.json");

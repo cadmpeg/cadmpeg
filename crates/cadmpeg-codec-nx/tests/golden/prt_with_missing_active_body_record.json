@@ -24,7 +24,10 @@
         "faces": [
           {
             "id": "nx:s0:face#300",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#0",
@@ -32,7 +35,10 @@
           },
           {
             "id": "nx:s0:face#301",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#1",
@@ -40,7 +46,10 @@
           },
           {
             "id": "nx:s0:face#302",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#2",
@@ -48,7 +57,10 @@
           },
           {
             "id": "nx:s0:face#303",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#3",
@@ -56,7 +68,10 @@
           },
           {
             "id": "nx:s0:face#304",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#4",
@@ -64,7 +79,10 @@
           },
           {
             "id": "nx:s0:face#305",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#5",
@@ -72,7 +90,10 @@
           },
           {
             "id": "nx:s0:face#306",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#6",
@@ -80,7 +101,10 @@
           },
           {
             "id": "nx:s0:face#307",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#7",
@@ -88,7 +112,10 @@
           },
           {
             "id": "nx:s0:face#308",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#8",
@@ -96,7 +123,10 @@
           },
           {
             "id": "nx:s0:face#309",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#9",
@@ -104,7 +134,10 @@
           },
           {
             "id": "nx:s0:face#310",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#10",
@@ -112,7 +145,10 @@
           },
           {
             "id": "nx:s0:face#311",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#11",
@@ -120,7 +156,10 @@
           },
           {
             "id": "nx:s0:face#312",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#12",
@@ -128,7 +167,10 @@
           },
           {
             "id": "nx:s0:face#313",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#13",
@@ -136,7 +178,10 @@
           },
           {
             "id": "nx:s0:face#314",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#14",
@@ -144,7 +189,10 @@
           },
           {
             "id": "nx:s0:face#315",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#15",
@@ -152,7 +200,10 @@
           },
           {
             "id": "nx:s0:face#316",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#16",
@@ -160,7 +211,10 @@
           },
           {
             "id": "nx:s0:face#317",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#17",
@@ -168,7 +222,10 @@
           },
           {
             "id": "nx:s0:face#318",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#18",
@@ -176,7 +233,10 @@
           },
           {
             "id": "nx:s0:face#319",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#19",
@@ -184,7 +244,10 @@
           },
           {
             "id": "nx:s0:face#320",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#20",
@@ -192,7 +255,10 @@
           },
           {
             "id": "nx:s0:face#321",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#21",
@@ -200,7 +266,10 @@
           },
           {
             "id": "nx:s0:face#322",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#22",
@@ -208,7 +277,10 @@
           },
           {
             "id": "nx:s0:face#323",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#23",
@@ -216,7 +288,10 @@
           },
           {
             "id": "nx:s0:face#324",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#24",
@@ -224,7 +299,10 @@
           },
           {
             "id": "nx:s0:face#325",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#25",
@@ -232,7 +310,10 @@
           },
           {
             "id": "nx:s0:face#326",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#26",
@@ -240,7 +321,10 @@
           },
           {
             "id": "nx:s0:face#327",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#27",
@@ -248,7 +332,10 @@
           },
           {
             "id": "nx:s0:face#328",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#28",
@@ -256,7 +343,10 @@
           },
           {
             "id": "nx:s0:face#329",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#29",
@@ -264,7 +354,10 @@
           },
           {
             "id": "nx:s0:face#330",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#30",
@@ -272,7 +365,10 @@
           },
           {
             "id": "nx:s0:face#331",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#31",
@@ -280,7 +376,10 @@
           },
           {
             "id": "nx:s0:face#332",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#32",
@@ -288,7 +387,10 @@
           },
           {
             "id": "nx:s0:face#333",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#33",
@@ -296,7 +398,10 @@
           },
           {
             "id": "nx:s0:face#334",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#34",
@@ -304,7 +409,10 @@
           },
           {
             "id": "nx:s0:face#335",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#35",
@@ -312,7 +420,10 @@
           },
           {
             "id": "nx:s0:face#336",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#36",
@@ -320,7 +431,10 @@
           },
           {
             "id": "nx:s0:face#337",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#37",
@@ -328,7 +442,10 @@
           },
           {
             "id": "nx:s0:face#338",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#38",
@@ -336,7 +453,10 @@
           },
           {
             "id": "nx:s0:face#339",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#39",
@@ -344,7 +464,10 @@
           },
           {
             "id": "nx:s0:face#340",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#40",
@@ -352,7 +475,10 @@
           },
           {
             "id": "nx:s0:face#341",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#41",
@@ -360,7 +486,10 @@
           },
           {
             "id": "nx:s0:face#342",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#42",
@@ -368,7 +497,10 @@
           },
           {
             "id": "nx:s0:face#343",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#43",
@@ -376,7 +508,10 @@
           },
           {
             "id": "nx:s0:face#344",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#44",
@@ -384,7 +519,10 @@
           },
           {
             "id": "nx:s0:face#345",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#45",
@@ -392,7 +530,10 @@
           },
           {
             "id": "nx:s0:face#346",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#46",
@@ -400,7 +541,10 @@
           },
           {
             "id": "nx:s0:face#347",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#47",
@@ -408,7 +552,10 @@
           },
           {
             "id": "nx:s0:face#348",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#48",
@@ -416,7 +563,10 @@
           },
           {
             "id": "nx:s0:face#349",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#49",
@@ -447,59 +597,209 @@
         "semantic_annotations": [],
         "shells": [
           {
-            "faces": [
-              "nx:s0:face#300",
-              "nx:s0:face#301",
-              "nx:s0:face#302",
-              "nx:s0:face#303",
-              "nx:s0:face#304",
-              "nx:s0:face#305",
-              "nx:s0:face#306",
-              "nx:s0:face#307",
-              "nx:s0:face#308",
-              "nx:s0:face#309",
-              "nx:s0:face#310",
-              "nx:s0:face#311",
-              "nx:s0:face#312",
-              "nx:s0:face#313",
-              "nx:s0:face#314",
-              "nx:s0:face#315",
-              "nx:s0:face#316",
-              "nx:s0:face#317",
-              "nx:s0:face#318",
-              "nx:s0:face#319",
-              "nx:s0:face#320",
-              "nx:s0:face#321",
-              "nx:s0:face#322",
-              "nx:s0:face#323",
-              "nx:s0:face#324",
-              "nx:s0:face#325",
-              "nx:s0:face#326",
-              "nx:s0:face#327",
-              "nx:s0:face#328",
-              "nx:s0:face#329",
-              "nx:s0:face#330",
-              "nx:s0:face#331",
-              "nx:s0:face#332",
-              "nx:s0:face#333",
-              "nx:s0:face#334",
-              "nx:s0:face#335",
-              "nx:s0:face#336",
-              "nx:s0:face#337",
-              "nx:s0:face#338",
-              "nx:s0:face#339",
-              "nx:s0:face#340",
-              "nx:s0:face#341",
-              "nx:s0:face#342",
-              "nx:s0:face#343",
-              "nx:s0:face#344",
-              "nx:s0:face#345",
-              "nx:s0:face#346",
-              "nx:s0:face#347",
-              "nx:s0:face#348",
-              "nx:s0:face#349"
-            ],
             "id": "nx:s0:shell#3",
+            "members": [
+              {
+                "id": "nx:s0:face#300",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#301",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#302",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#303",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#304",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#305",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#306",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#307",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#308",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#309",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#310",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#311",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#312",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#313",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#314",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#315",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#316",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#317",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#318",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#319",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#320",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#321",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#322",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#323",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#324",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#325",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#326",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#327",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#328",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#329",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#330",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#331",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#332",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#333",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#334",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#335",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#336",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#337",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#338",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#339",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#340",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#341",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#342",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#343",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#344",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#345",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#346",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#347",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#348",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#349",
+                "kind": "face"
+              }
+            ],
             "region": "nx:s0:region#4"
           }
         ],
@@ -2415,39 +2715,38 @@
           "rmfastload_active_object_count": "50",
           "rmfastload_hits": "50"
         },
-        "dialects": {
-          "extra": [
-            {
-              "admission": "residual",
-              "declared": {
-                "carrier": "stream@121",
-                "schema": "SCH_TEST_1_9999"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@121",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown",
+                "instance": "stream@121"
               },
-              "dialect": "parasolid:unknown",
-              "format": "parasolid",
-              "instance": "stream@121"
-            },
-            {
-              "admission": "residual",
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@1660",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown",
+                "instance": "stream@1660"
+              }
+            ],
+            "primary": {
+              "admission": "admitted",
               "declared": {
-                "carrier": "stream@1660",
-                "schema": "SCH_TEST_1_9999"
+                "splmsstr_version": "6"
               },
-              "dialect": "parasolid:unknown",
-              "format": "parasolid",
-              "instance": "stream@1660"
+              "dialect": "nx:splmsstr"
             }
-          ],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "splmsstr_version": "6"
-            },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -2458,47 +2757,45 @@
       }
     },
     "report": {
-      "container_only": false,
-      "dialects": {
-        "extra": [
-          {
-            "admission": "residual",
-            "declared": {
-              "carrier": "stream@121",
-              "schema": "SCH_TEST_1_9999"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@121",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "instance": "stream@121"
             },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid",
-            "instance": "stream@121"
-          },
-          {
-            "admission": "residual",
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@1660",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "instance": "stream@1660"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
             "declared": {
-              "carrier": "stream@1660",
-              "schema": "SCH_TEST_1_9999"
+              "splmsstr_version": "6"
             },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid",
-            "instance": "stream@1660"
+            "dialect": "nx:splmsstr"
           }
-        ],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
         }
       },
-      "format": "nx",
-      "geometry_transferred": true,
       "losses": [
         {
           "code": {
             "code": "carrier.analytic-census",
             "kind": "carrier_summary",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced"
           },
           "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 50 analytic surface carrier(s) (50 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 0 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
@@ -2507,7 +2804,9 @@
           "code": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "The Parasolid stream at stream@121 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
@@ -2516,7 +2815,9 @@
           "code": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "The Parasolid stream at stream@1660 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
@@ -2525,7 +2826,11 @@
       "notes": [
         "SPLMSSTR container: file tag 0, footer offset 3418, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
-      ]
+      ],
+      "transfer": {
+        "geometry_transferred": true,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {
@@ -2534,1229 +2839,1200 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:container:parasolid#1": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:s0:body#2": {
-            "entity": "unknown"
+            "entity": "unknown",
+            "scope": "entity"
           },
           "nx:s0:face#300": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#301": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#302": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#303": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#304": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#305": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#306": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#307": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#308": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#309": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#310": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#311": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#312": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#313": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#314": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#315": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#316": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#317": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#318": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#319": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#320": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#321": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#322": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#323": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#324": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#325": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#326": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#327": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#328": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#329": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#330": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#331": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#332": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#333": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#334": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#335": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#336": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#337": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#338": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#339": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#340": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#341": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#342": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#343": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#344": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#345": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#346": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#347": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#348": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#349": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:region#4": {
-            "entity": "byte_exact",
             "fields": {
               "body": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#1": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#10": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#11": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#12": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#13": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#14": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#15": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#16": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#17": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#18": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#19": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#2": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#20": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#21": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#22": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#23": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#24": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#25": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#26": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#27": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#28": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#29": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#3": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#30": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#31": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#32": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#33": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#34": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#35": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#36": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#37": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#38": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#39": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#4": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#40": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#41": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#42": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#43": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#44": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#45": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#46": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#47": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#48": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#49": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#5": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#6": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#7": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#8": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#9": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {
           "nx:container:parasolid#0": {
             "offset": 121,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
             "offset": 1660,
-            "stream": 1,
+            "stream": "nx:container",
             "tag": "partition"
           },
           "nx:s0:body#2": {
             "offset": 94,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "UNRESOLVED_BODY_REFERENCE"
           },
           "nx:s0:face#300": {
             "offset": 134,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#301": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#302": {
             "offset": 212,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#303": {
             "offset": 251,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#304": {
             "offset": 290,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#305": {
             "offset": 329,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#306": {
             "offset": 368,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#307": {
             "offset": 407,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#308": {
             "offset": 446,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#309": {
             "offset": 485,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#310": {
             "offset": 524,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#311": {
             "offset": 563,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#312": {
             "offset": 602,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#313": {
             "offset": 641,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#314": {
             "offset": 680,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#315": {
             "offset": 719,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#316": {
             "offset": 758,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#317": {
             "offset": 797,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#318": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#319": {
             "offset": 875,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#320": {
             "offset": 914,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#321": {
             "offset": 953,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#322": {
             "offset": 992,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#323": {
             "offset": 1031,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#324": {
             "offset": 1070,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#325": {
             "offset": 1109,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#326": {
             "offset": 1148,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#327": {
             "offset": 1187,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#328": {
             "offset": 1226,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#329": {
             "offset": 1265,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#330": {
             "offset": 1304,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#331": {
             "offset": 1343,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#332": {
             "offset": 1382,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#333": {
             "offset": 1421,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#334": {
             "offset": 1460,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#335": {
             "offset": 1499,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#336": {
             "offset": 1538,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#337": {
             "offset": 1577,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#338": {
             "offset": 1616,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#339": {
             "offset": 1655,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#340": {
             "offset": 1694,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#341": {
             "offset": 1733,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#342": {
             "offset": 1772,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#343": {
             "offset": 1811,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#344": {
             "offset": 1850,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#345": {
             "offset": 1889,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#346": {
             "offset": 1928,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#347": {
             "offset": 1967,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#348": {
             "offset": 2006,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:face#349": {
             "offset": 2045,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:region#4": {
             "offset": 118,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
           "nx:s0:shell#3": {
             "offset": 94,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
             "offset": 2084,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
             "offset": 2175,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#10": {
             "offset": 2994,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#11": {
             "offset": 3085,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#12": {
             "offset": 3176,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#13": {
             "offset": 3267,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#14": {
             "offset": 3358,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#15": {
             "offset": 3449,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#16": {
             "offset": 3540,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#17": {
             "offset": 3631,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#18": {
             "offset": 3722,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#19": {
             "offset": 3813,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#2": {
             "offset": 2266,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#20": {
             "offset": 3904,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#21": {
             "offset": 3995,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#22": {
             "offset": 4086,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#23": {
             "offset": 4177,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#24": {
             "offset": 4268,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#25": {
             "offset": 4359,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#26": {
             "offset": 4450,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#27": {
             "offset": 4541,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#28": {
             "offset": 4632,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#29": {
             "offset": 4723,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#3": {
             "offset": 2357,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#30": {
             "offset": 4814,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#31": {
             "offset": 4905,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#32": {
             "offset": 4996,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#33": {
             "offset": 5087,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#34": {
             "offset": 5178,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#35": {
             "offset": 5269,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#36": {
             "offset": 5360,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#37": {
             "offset": 5451,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#38": {
             "offset": 5542,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#39": {
             "offset": 5633,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#4": {
             "offset": 2448,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#40": {
             "offset": 5724,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#41": {
             "offset": 5815,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#42": {
             "offset": 5906,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#43": {
             "offset": 5997,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#44": {
             "offset": 6088,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#45": {
             "offset": 6179,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#46": {
             "offset": 6270,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#47": {
             "offset": 6361,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#48": {
             "offset": 6452,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#49": {
             "offset": 6543,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#5": {
             "offset": 2539,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#6": {
             "offset": 2630,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#7": {
             "offset": 2721,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#8": {
             "offset": 2812,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#9": {
             "offset": 2903,
-            "stream": 0,
+            "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           }
-        },
-        "streams": [
-          "nx:parasolid#0:partition",
-          "nx:container"
-        ]
+        }
       },
-      "retained_records": [
-        {
-          "byte_len": 6634,
-          "data": "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",
-          "id": "nx:container:parasolid#0",
+      "retained_records": {
+        "nx:container:parasolid#0": {
+          "bytes": {
+            "data": "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",
+            "retention": "inline"
+          },
           "offset": 121,
-          "sha256": "762ae6242538d80a70a407ec849f3d242b201ca54aba3168d7f3b8f5baf202dd",
           "stream": "nx:container"
         },
-        {
-          "byte_len": 6634,
-          "data": "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",
-          "id": "nx:container:parasolid#1",
+        "nx:container:parasolid#1": {
+          "bytes": {
+            "data": "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",
+            "retention": "inline"
+          },
           "offset": 1660,
-          "sha256": "706f04bfdcd0672dbe0d7ca5aef03aa07c430722e809c6e980703444cc490155",
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [
-        {
-          "admission": "residual",
-          "declared": {
-            "carrier": "stream@121",
-            "schema": "SCH_TEST_1_9999"
-          },
-          "dialect": "parasolid:unknown",
-          "format": "parasolid",
-          "instance": "stream@121"
-        },
-        {
-          "admission": "residual",
-          "declared": {
-            "carrier": "stream@1660",
-            "schema": "SCH_TEST_1_9999"
-          },
-          "dialect": "parasolid:unknown",
-          "format": "parasolid",
-          "instance": "stream@1660"
-        }
-      ],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
           "file_offset": "121",
           "region": "HEADER"
         },
-        "compressed_size": 3060,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 3060
+        "size": {
+          "form": "exact",
+          "size": 3060
+        }
       },
       {
         "attributes": {
           "file_offset": "3181",
           "region": "HEADER"
         },
-        "compressed_size": 237,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
         "role": "active-body-index",
-        "uncompressed_size": 237
+        "size": {
+          "form": "exact",
+          "size": 237
+        }
       },
       {
         "attributes": {
@@ -3780,11 +4056,10 @@
           "records.vertex": "0",
           "schema": "SCH_TEST_1_9999"
         },
-        "compressed_size": 0,
         "compression": "zlib",
+        "expanded": 6634,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 6634
+        "role": "parasolid-stream"
       },
       {
         "attributes": {
@@ -3808,20 +4083,52 @@
           "records.vertex": "0",
           "schema": "SCH_TEST_1_9999"
         },
-        "compressed_size": 0,
         "compression": "zlib",
+        "expanded": 6634,
         "name": "parasolid#1",
-        "role": "parasolid-stream",
-        "uncompressed_size": 6634
+        "role": "parasolid-stream"
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@121",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "instance": "stream@121"
+          },
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@1660",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "instance": "stream@1660"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
     "losses": [
       {
         "code": {
           "code": "source.kernel-dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "nx"
+          "namespace": "nx",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "The Parasolid stream at stream@121 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"
@@ -3830,7 +4137,9 @@
         "code": {
           "code": "source.kernel-dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "nx"
+          "namespace": "nx",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "The Parasolid stream at stream@1660 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"

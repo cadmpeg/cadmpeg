@@ -5,20 +5,7 @@ use super::{
     Deserialize, IndexRow, LinkedRow, RmCreationDisplayDataEncoding, RmCreationDisplayDataRelation,
     Serialize, TargetRow, CLASS_NAME,
 };
-use crate::om::compact::CompactIndexAtom;
-
-fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
-    CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
-}
-
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
-fn row_indices<const N: usize>(
-    values: [u32; N],
-    raw: [Vec<u8>; N],
-) -> [Result<CompactIndexAtom, String>; N] {
-    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
-}
+use crate::om::compact::{atom, row_indices};
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -55,21 +42,38 @@ enum RmCreationDisplayDataEncodingWire {
 pub(super) struct RmCreationDisplayDataRelationWire {
     id: String,
     ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_first_index"
+    )]
     first_index: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_raw_first_index"
+    )]
     raw_first_index: Option<Vec<u8>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_first_index_source_offset"
+    )]
     first_index_source_offset: Option<u64>,
     class_name: String,
     class_definition: String,
     encoding: RmCreationDisplayDataEncodingWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_object_id"
+    )]
     target_object_id: Option<String>,
     source_entry: String,
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
     fn from(value: RmCreationDisplayDataRelation) -> Self {
         let source_offset = value.encoding.offset();
@@ -150,7 +154,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
         }
         let encoding = match (wire.encoding, wire.first_index, wire.raw_first_index, wire.first_index_source_offset, wire.target_object_id) {
             (RmCreationDisplayDataEncodingWire::Index { indices, raw_indices, index_source_offsets, flag }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), None) => {
-                let [a, b, c, d] = row_indices(indices, raw_indices);
+                let [a, b, c, d] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into(), d?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
                 let flag = crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?;
@@ -160,7 +164,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 RmCreationDisplayDataEncoding::Index(row)
             }
             (RmCreationDisplayDataEncodingWire::Linked { indices, raw_indices, index_source_offsets, flag, target_index, raw_target_index, target_index_source_offset, mode, discriminator }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), target_object_id) => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
                 let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
@@ -171,7 +175,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 RmCreationDisplayDataEncoding::Linked { row, target_object_id }
             }
             (RmCreationDisplayDataEncodingWire::Target { indices, raw_indices, index_source_offsets, target_index, raw_target_index, target_index_source_offset, mode }, None, None, None, target_object_id) => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
                 let row = TargetRow::<(), u64>::new(target, indices, mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
@@ -193,7 +197,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::RmCreationDisplayDataRelation;
 
     #[test]
     fn creation_display_rejects_fields_inconsistent_with_its_row() {
@@ -260,3 +264,13 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_first_index, u32, "first_index");
+cadmpeg_core::named_optional_field!(deserialize_raw_first_index, Vec<u8>, "raw_first_index");
+cadmpeg_core::named_optional_field!(
+    deserialize_first_index_source_offset,
+    u64,
+    "first_index_source_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_target_object_id, String, "target_object_id");

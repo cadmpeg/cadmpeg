@@ -1,5 +1,12 @@
-use super::super::*;
-use super::*;
+use crate::records::SketchInputKind;
+use crate::records::SketchRelationKind;
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::current_referenced_compact_curve_uses_marker_roster;
+use crate::resolved_features::endpoints::extended_selector44_indexed_line;
+use crate::resolved_features::endpoints::extended_terminal_profile_line;
+use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+use crate::resolved_features::SKETCH_MARKER;
 
 #[test]
 fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
@@ -28,18 +35,17 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&7u32.to_le_bytes());
     payload[curve_offset + 104..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         marker("first", 0, SketchInputKind::Point, Some([1.0, 2.0])),
@@ -59,10 +65,16 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -74,10 +86,16 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -92,10 +110,16 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -107,19 +131,31 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
     payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
     payload = compact_104.clone();
@@ -134,10 +170,16 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 

@@ -19,7 +19,6 @@
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
@@ -30,14 +29,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
@@ -48,14 +45,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
@@ -66,28 +61,24 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1",
           "pcurves": [
             {
@@ -98,14 +89,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
           "pcurves": [
             {
@@ -116,14 +105,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
           "pcurves": [
             {
@@ -134,14 +121,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
           "pcurves": [
             {
@@ -152,14 +137,12 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
           "id": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4",
-          "next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
           "pcurves": [
             {
@@ -170,7 +153,6 @@
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
           "sense": "reversed"
         }
@@ -279,52 +261,61 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
+            "param_range": [
+              1.5707963267948963,
+              7.853981633974483
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
-          "param_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
+            "param_range": [
+              0.0,
+              8.12701665379223
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
-          "param_range": [
-            0.0,
-            8.12701665379223
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
+            "param_range": [
+              5.777824796895384,
+              7.853981633974483
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9",
-          "param_range": [
-            5.777824796895384,
-            7.853981633974483
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "tolerance": 1e-7
         }
@@ -332,9 +323,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
-          "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
@@ -342,9 +336,12 @@
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
-          "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
@@ -352,9 +349,12 @@
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
-          "loops": [
-            "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
@@ -382,32 +382,38 @@
       ],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
         },
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
-            "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4"
-          ],
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
+              "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4"
+            ],
+            "kind": "ring"
+          },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
           "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
         }
@@ -428,10 +434,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -446,10 +457,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A2%3A1",
-          "parameter_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                1.5707963267948963,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -464,10 +480,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A3%3A1",
-          "parameter_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                1.5707963267948963,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -482,10 +503,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            8.12701665379223
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.12701665379223
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -500,10 +526,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            8.12701665379223
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.12701665379223
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -518,10 +549,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -541,10 +577,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -559,10 +600,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A1",
-          "parameter_range": [
-            5.777824796895384,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                5.777824796895384,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -577,10 +623,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A2",
-          "parameter_range": [
-            5.777824796895384,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                5.777824796895384,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],
@@ -639,12 +690,21 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14"
-          ],
           "id": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
+          "members": [
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16"
         }
       ],
@@ -781,8 +841,97 @@
           "string_tables": 1
         }
       },
-      "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "f2eaba3c3f1eab601f64c9a18c57804707c5a35bd6a9cc35033f978784919995"
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "applications": "c7ee6e0a53a956a4948d62c8fec53516f9e7e3ac6dda5747519866ec8e6801ad",
+          "byte_coverage": "04780f7f48d7109d1d6a7dd945813d893132a79d0c2fbd24ab2aa604742e2146",
+          "carrier_census": "b4fc9a4c2f317e87e6f18c5c4ab2cdef86f68a5a0bacfc94222162c048b0fea4",
+          "design_census": "5927fb2c6fba155430c6df4da9710912cb46be3fafcd9d3881f7883514d0df32",
+          "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
+          "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "3974446a9a483bc9609de44bcc15d05deb58611d46347cde7795eb47a3d2dddd",
+          "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "logical_ledger": "5c13597a948f4389914998bfe9b9f9dba2685f347e9090b9c7b6b1c61626aace",
+          "objects": "1d3b9b2a93f696114a76553b0443b84a09fb98b44ece4b7303a3066178397424",
+          "physical_ledger": "5850b98598e9e77ec7781c9a65097a0b0d9730109a2894346a828b6581efa43d",
+          "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "properties": "26a7b4002d1dac5554f2834b51bda3515de3b68ce0cf2703a1bc97623a285064",
+          "shape_payloads": "1262fed60df3c2da2a2c606dc18b05b569810f6c74a2133d523379ddb3bf4488",
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+        }
+      },
+      "__arena_values": {
+        "fcstd": {
+          "attachments": [
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#BinaryCarrier",
+              "map_mode": null,
+              "object": "fcstd:native:object#BinaryCarrier",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            }
+          ]
+        }
+      },
+      "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {
@@ -795,20 +944,21 @@
         "physical_ledger_spans": "15",
         "program_version": "1.1R20260414 (Git shallow)"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_version": "1",
-            "program_version": "1.1R20260414 (Git shallow)",
-            "schema_version": "4"
-          },
-          "dialect": "fcstd:schema-4",
-          "format": "fcstd"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "program_version": "1.1R20260414 (Git shallow)",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4"
+          }
         }
-      },
-      "format": "fcstd"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -819,22 +969,21 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_version": "1",
-          "program_version": "1.1R20260414 (Git shallow)",
-          "schema_version": "4"
-        },
-        "dialect": "fcstd:schema-4",
-        "format": "fcstd"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4"
+        }
       }
     },
-    "format": "fcstd",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "SchemaVersion=4",
@@ -844,7 +993,11 @@
       "object count=2",
       "physical ledger spans=15 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

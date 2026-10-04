@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent polyedge-reference construction decoding.
-#![deny(clippy::disallowed_methods)]
 
+use crate::loss::Diagnostics;
+use std::io::{self, Write};
 use std::ops::Range;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
+use serde::ser::{SerializeMap, SerializeSeq};
+use serde::{Serialize, Serializer};
 
 use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::wire::{ExactVec, Uuid};
+use crate::wire::Uuid;
+use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
@@ -27,24 +33,24 @@ const SEGMENT_CLASS: Uuid = Uuid::from_canonical([
 ]);
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Segment<R> {
+pub(crate) struct Segment<R, D = [f64; 2]> {
     pub(crate) reference: R,
     pub(crate) reversed: bool,
-    pub(crate) domain: [f64; 2],
-    pub(crate) proxy_domain: [f64; 2],
+    pub(crate) domain: D,
+    pub(crate) proxy_domain: D,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EdgeDomains {
-    pub(crate) edge: [f64; 2],
-    pub(crate) trim: [f64; 2],
+pub(crate) struct EdgeDomains<D = [f64; 2]> {
+    pub(crate) edge: D,
+    pub(crate) trim: D,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PersistentReference {
     pub(crate) object_id: Uuid,
-    pub(crate) component: [i32; 2],
-    pub(crate) domains: EdgeDomains,
+    component: [i32; 2],
+    domains: EdgeDomains<FiniteVector<2>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,10 +61,12 @@ pub(crate) struct HistoryReference {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PolyEdge<R> {
-    pub(crate) parameters: Vec<f64>,
-    pub(crate) segments: Vec<Segment<R>>,
+pub(crate) struct PolyEdge<R, P = f64, D = [f64; 2]> {
+    pub(crate) parameters: Vec<P>,
+    pub(crate) segments: Vec<Segment<R, D>>,
 }
+
+pub(crate) type PersistentPolyEdge = PolyEdge<PersistentReference, FiniteReal, FiniteVector<2>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryPolyEdge {
@@ -67,7 +75,10 @@ pub(crate) struct HistoryPolyEdge {
 }
 
 fn refused(offset: usize, error: &CodecError) -> FramingError {
-    FramingError::structural(offset, format!("polyedge allocation refused: {error}"))
+    match error {
+        CodecError::ResourceLimit(limit) => FramingError::Resource(*limit),
+        _ => FramingError::structural(offset, format!("polyedge allocation refused: {error}")),
+    }
 }
 
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
@@ -91,9 +102,9 @@ fn req_f64(view: &mut View<'_>) -> Result<f64, FramingError> {
 fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
     let offset = view.position();
     let bytes = view
-        .req_take(16)
-        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))?;
-    Ok(Uuid::from_wire(bytes.try_into().expect("length checked")))
+        .array()
+        .ok_or_else(|| FramingError::structural(offset, "polyedge record truncated"))?;
+    Ok(Uuid::from_wire(bytes))
 }
 
 fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
@@ -126,23 +137,19 @@ fn counted(
             "polyedge count exceeds cap",
         ));
     }
-    let bound = view.counted(count as u64, width).ok_or_else(|| {
-        FramingError::structural(offset, "polyedge count exceeds remaining window")
-    })?;
+    let bound = view
+        .counted(cadmpeg_core::decode::u64_from_index(count), width)
+        .ok_or_else(|| {
+            FramingError::structural(offset, "polyedge count exceeds remaining window")
+        })?;
     Ok((count, bound))
 }
 
-fn interval(view: &mut View<'_>) -> Result<[f64; 2], FramingError> {
+fn interval(view: &mut View<'_>) -> Result<FiniteVector<2>, FramingError> {
     let offset = view.position();
     let value = [req_f64(view)?, req_f64(view)?];
-    if value.iter().all(|value| value.is_finite()) {
-        Ok(value)
-    } else {
-        Err(FramingError::structural(
-            offset,
-            "polyedge interval is not finite",
-        ))
-    }
+    FiniteVector::new(value)
+        .ok_or_else(|| FramingError::structural(offset, "polyedge interval is not finite"))
 }
 
 fn segment(
@@ -150,7 +157,7 @@ fn segment(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Segment<PersistentReference>, FramingError> {
+) -> Result<Segment<PersistentReference, FiniteVector<2>>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
@@ -199,7 +206,7 @@ pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<PolyEdge<PersistentReference>, FramingError> {
+) -> Result<PersistentPolyEdge, FramingError> {
     let data = expand.data();
     let mut body = expand
         .root()
@@ -221,12 +228,19 @@ pub(crate) fn decode(
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
     let mut reserved =
-        ExactVec::<f64>::new(parameter_bound).map_err(|error| refused(body.position(), &error))?;
-    let mut previous: Option<f64> = None;
+        ExactVec::<FiniteReal>::new(expand.ctx(), parameter_bound, "Rhino polyedge parameters")
+            .map_err(|error| refused(body.position(), &error))?;
+    let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
         let value = req_f64(&mut body)?;
-        if !value.is_finite() || previous.is_some_and(|last| value <= last) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(FramingError::structural(
+                offset,
+                "invalid polyedge parameter",
+            ));
+        };
+        if previous.is_some_and(|last| value.get() <= last.get()) {
             return Err(FramingError::structural(
                 offset,
                 "invalid polyedge parameter",
@@ -241,13 +255,22 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ExactVec::<Segment<PersistentReference>>::new(segment_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(
+        expand.ctx(),
+        segment_bound,
+        "Rhino polyedge segments",
+    )
+    .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
-        let class =
-            parse_class_wrapper(data, start..wrapper.next_offset(), archive, &mut Vec::new())?;
+        let class = parse_class_wrapper(
+            expand.ctx(),
+            data,
+            start..wrapper.next_offset(),
+            archive,
+            &mut Diagnostics::new(),
+        )?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
@@ -279,28 +302,95 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn semantic_json(polyedge: &PolyEdge<PersistentReference>) -> Option<String> {
-    let segments = polyedge
-        .segments
-        .iter()
-        .map(|segment| {
-            serde_json::json!({
-                "object_id": segment.reference.object_id.to_string(),
-                "component": segment.reference.component,
-                "edge_domain": segment.reference.domains.edge,
-                "trim_domain": segment.reference.domains.trim,
-                "reversed": segment.reversed,
-                "domain": segment.domain,
-                "proxy_domain": segment.proxy_domain,
-            })
-        })
-        .collect::<Vec<_>>();
-    serde_json::to_string(&serde_json::json!({
-        "kind": "polyedge_reference",
-        "parameters": polyedge.parameters,
-        "segments": segments,
-    }))
-    .ok()
+const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
+
+struct SemanticJson<'a>(&'a PersistentPolyEdge);
+
+impl Serialize for SemanticJson<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("kind", "polyedge_reference")?;
+        map.serialize_entry("parameters", &self.0.parameters)?;
+        map.serialize_entry("segments", &SemanticSegments(&self.0.segments))?;
+        map.end()
+    }
+}
+
+struct SemanticSegments<'a>(&'a [Segment<PersistentReference, FiniteVector<2>>]);
+
+impl Serialize for SemanticSegments<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for segment in self.0 {
+            sequence.serialize_element(&SemanticSegment(segment))?;
+        }
+        sequence.end()
+    }
+}
+
+struct SemanticSegment<'a>(&'a Segment<PersistentReference, FiniteVector<2>>);
+
+impl Serialize for SemanticSegment<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("component", &self.0.reference.component)?;
+        map.serialize_entry("domain", &self.0.domain)?;
+        map.serialize_entry("edge_domain", &self.0.reference.domains.edge)?;
+        map.serialize_entry("object_id", &SemanticUuid(self.0.reference.object_id))?;
+        map.serialize_entry("proxy_domain", &self.0.proxy_domain)?;
+        map.serialize_entry("reversed", &self.0.reversed)?;
+        map.serialize_entry("trim_domain", &self.0.reference.domains.trim)?;
+        map.end()
+    }
+}
+
+struct SemanticUuid(Uuid);
+
+impl Serialize for SemanticUuid {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
+struct SemanticJsonWriter<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    bytes: Vec<u8>,
+    refusal: Option<CodecError>,
+}
+
+impl Write for SemanticJsonWriter<'_, '_> {
+    fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
+        let result =
+            self.ctx
+                .extend_retained_bytes(&mut self.bytes, chunk, SEMANTIC_JSON_OPERATION);
+        if let Err(error) = result {
+            self.refusal = Some(error);
+            return Err(io::ErrorKind::Other.into());
+        }
+        Ok(chunk.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(crate) fn semantic_json(
+    ctx: &DecodeContext<'_>,
+    polyedge: &PersistentPolyEdge,
+) -> Result<Option<String>, CodecError> {
+    let mut writer = SemanticJsonWriter {
+        ctx,
+        bytes: Vec::new(),
+        refusal: None,
+    };
+    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge));
+    if let Some(refusal) = writer.refusal {
+        return Err(refusal);
+    }
+    Ok(serialized
+        .ok()
+        .and_then(|()| String::from_utf8(writer.bytes).ok()))
 }
 
 #[cfg(test)]

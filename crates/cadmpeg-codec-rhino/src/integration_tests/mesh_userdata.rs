@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mesh-owned class-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const OPENNURBS5_APPLICATION: [u8; 16] = [
@@ -11,23 +13,23 @@ const OPENNURBS5_APPLICATION: [u8; 16] = [
 ];
 
 fn mesh_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
-    let mut uuid_body = support::MESH_CLASS.to_vec();
-    uuid_body.extend(crc32fast::hash(&support::MESH_CLASS).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = support::test_dump::crc_chunk(
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
+    let mut uuid_body = crate::test_support::test_dump::MESH_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::MESH_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0002_fffc,
         &support::mesh_payload(3, 5, false, true),
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),
@@ -49,7 +51,7 @@ fn double_userdata(
         body.extend(4_i32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
-        body.extend((points.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         body.extend(
             points
                 .iter()
@@ -58,8 +60,8 @@ fn double_userdata(
         );
         body.extend([0xde, 0xad]);
     }
-    let payload = support::test_dump::crc_chunk(archive, 0x4000_8000, &body);
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    let payload = crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &body);
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::mesh::V5_MESH_DOUBLE_VERTICES.to_wire(),
         Uuid::from_canonical(OPENNURBS5_APPLICATION).to_wire(),
@@ -78,14 +80,12 @@ fn mesh_points() -> [[f64; 3]; 4] {
     ]
 }
 
-fn assert_float_mesh_and_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_float_mesh_and_record(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.tessellations[0].vertices()[1].x, 1.0);
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("mesh object record is retained");
     assert_eq!(retained.data(), Some(record));
 }
@@ -108,9 +108,7 @@ fn current_mesh_double_userdata_reaches_tessellation() {
     );
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("current mesh object record is retained");
     assert_eq!(retained.data(), Some(record.as_slice()));
     assert_valid(&result);
@@ -195,7 +193,7 @@ fn mesh_correspondence_future_payload_retains_parent_mesh_record() {
             "CTtRenderMeshInfoUserData",
         ),
     ] {
-        let userdata = support::test_dump::class_userdata_v2_with_direct_payload(
+        let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
             archive,
             class.to_wire(),
             application,
@@ -204,10 +202,10 @@ fn mesh_correspondence_future_payload_retains_parent_mesh_record() {
             &future_payload,
         );
         let mesh_record = mesh_record(archive, &userdata);
-        let following_point = support::test_dump::object_record_with_payload(
+        let following_point = crate::test_support::test_dump::object_record_with_payload(
             archive,
             1,
-            support::test_dump::POINT_CLASS,
+            crate::test_support::test_dump::POINT_CLASS,
             &support::point_payload([4.0, 5.0, 6.0]),
         );
         let result = decode(support::archive_writer(
@@ -223,9 +221,7 @@ fn mesh_correspondence_future_payload_retains_parent_mesh_record() {
         }));
         let retained = result
             .source_fidelity()
-            .retained_records
-            .iter()
-            .find(|record| record.id() == "rhino:object:record#000000")
+            .retained_record("rhino:object:record#000000")
             .expect("mesh correspondence object record is retained");
         assert_eq!(retained.data(), Some(mesh_record.as_slice()));
         assert_valid(&result);

@@ -7,87 +7,115 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::PcurveGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::{DirectionAboveEpsilon, UnitVector3};
 
-use crate::writer::{real, refs, Emitter, Ref};
+use crate::writer::{refs, Emitter, Ref};
 
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
-pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
-    match surface {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_is_supported(geometry),
-        SurfaceGeometry::Transformed { basis, transform } => {
-            similarity_transform(transform) && surface_is_supported(basis)
-        }
-        SurfaceGeometry::Plane { .. }
-        | SurfaceGeometry::Cylinder { .. }
-        | SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. } => true,
-        SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
-        SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => false,
+/// The affine placements over `surface`, outermost first, and the basis carrier
+/// under them.
+///
+/// `cadmpeg_ir::geometry::PlacedSurface::try_new` refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING), so
+/// the walk reads at most that many placements. It is iterative, so it costs
+/// no stack.
+fn placed_surface(surface: &SolvedSurfaceGeometry) -> (Vec<&Transform>, &SolvedSurfaceGeometry) {
+    let mut placements = Vec::new();
+    let mut geometry = surface;
+    while let SolvedSurfaceGeometry::Transformed(placed) = geometry {
+        placements.push(placed.transform());
+        geometry = placed.basis();
     }
+    (placements, geometry)
+}
+
+pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
+    let (placements, basis) = placed_surface(surface);
+    placements
+        .iter()
+        .all(|transform| similarity_transform(transform).is_some())
+        && match basis {
+            SolvedSurfaceGeometry::Plane(_)
+            | SolvedSurfaceGeometry::Cylinder(_)
+            | SolvedSurfaceGeometry::Cone(_)
+            | SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_) => true,
+            SolvedSurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
+            // `placed_surface` ends the walk at the first carrier that is not a
+            // placement, so the basis is never `Transformed`.
+            SolvedSurfaceGeometry::Transformed(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Unknown { .. } => false,
+        }
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    n.control_points()
-        .iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        && n.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
-        && knots_nondecreasing(n.u_knots())
-        && knots_nondecreasing(n.v_knots())
+    n.pole_weights()
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
-    match curve {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_is_supported(geometry),
-        CurveGeometry::Transformed { basis, transform } => {
-            similarity_transform(transform) && curve_is_supported(basis)
-        }
-        CurveGeometry::Line { .. }
-        | CurveGeometry::Circle { .. }
-        | CurveGeometry::Ellipse { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_) => true,
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
-    }
+    // A composite carrier is emitted from its child graph by the exporter, so it
+    // is supported only in the outermost position.
+    matches!(
+        curve,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    ) || curve.solved().is_some_and(leaf_curve_is_supported)
 }
 
-fn similarity_transform(transform: &Transform) -> bool {
-    if transform
-        .rows()
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-        || transform.rows()[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows()[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows()[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || (transform.rows()[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-    {
-        return false;
+/// The affine placements over `curve`, outermost first, and the basis carrier
+/// under them.
+///
+/// The walk is iterative and bounded exactly as [`placed_surface`] is:
+/// [`leaf_curve_is_supported`] and [`curve`] take their bound here.
+fn placed_curve(curve: &SolvedCurveGeometry) -> (Vec<&Transform>, &SolvedCurveGeometry) {
+    let mut placements = Vec::new();
+    let mut geometry = curve;
+    while let SolvedCurveGeometry::Transformed(placed) = geometry {
+        placements.push(placed.transform());
+        geometry = placed.basis();
     }
+    (placements, geometry)
+}
+
+fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
+    let (placements, basis) = placed_curve(curve);
+    placements
+        .iter()
+        .all(|transform| similarity_transform(transform).is_some())
+        && match basis {
+            SolvedCurveGeometry::Line(_)
+            | SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_)
+            | SolvedCurveGeometry::Parabola(_)
+            | SolvedCurveGeometry::Hyperbola(_)
+            | SolvedCurveGeometry::Degenerate(_)
+            | SolvedCurveGeometry::Nurbs(_)
+            | SolvedCurveGeometry::Polyline(_) => true,
+            // `placed_curve` ends the walk at the first carrier that is not a
+            // placement, so the basis is never `Transformed`.
+            SolvedCurveGeometry::Transformed(_)
+            | SolvedCurveGeometry::Composite { .. }
+            | SolvedCurveGeometry::Unknown { .. } => false,
+        }
+}
+
+struct SimilarityColumns {
+    directions: [DirectionAboveEpsilon; 3],
+    scale: f64,
+}
+
+fn similarity_transform(transform: &Transform) -> Option<SimilarityColumns> {
     let columns = [
         Vector3::new(
             transform.rows()[0][0],
@@ -105,55 +133,68 @@ fn similarity_transform(transform: &Transform) -> bool {
             transform.rows()[2][2],
         ),
     ];
-    let scale = columns[0].norm();
-    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10 * scale.max(1.0);
-    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        && columns
-            .iter()
-            .all(|column| (column.norm() - scale).abs() <= tolerance)
-        && columns[0].dot(columns[1]).abs() <= tolerance * scale
-        && columns[0].dot(columns[2]).abs() <= tolerance * scale
-        && columns[1].dot(columns[2]).abs() <= tolerance * scale
+    let [Some(x), Some(y), Some(z)] = columns.map(DirectionAboveEpsilon::new) else {
+        return None;
+    };
+    let directions = [x, y, z];
+    let scale = x.norm();
+    if !scale.is_finite() || scale <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12 {
+        return None;
+    }
+    let columns = directions.map(|direction| {
+        let v = direction.get();
+        Vector3::new(v.x / scale, v.y / scale, v.z / scale)
+    });
+    (columns
+        .iter()
+        .all(|v| (v.norm() - 1.0).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10)
+        && columns[0].dot(columns[1]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
+        && columns[0].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
+        && columns[1].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10)
+        .then_some(SimilarityColumns { directions, scale })
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.
-pub fn point(e: &mut Emitter, p: Point3) -> Ref {
-    let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
+pub(crate) fn point(e: &mut Emitter, p: Point3) -> Ref {
+    let params = format!("'',({},{},{})", e.real(p.x), e.real(p.y), e.real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
 fn point2(e: &mut Emitter, p: Point2) -> Ref {
-    let params = format!("'',({},{})", real(p.u), real(p.v));
+    let params = format!("'',({},{})", e.real(p.u), e.real(p.v));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
-fn direction2(e: &mut Emitter, v: Point2) -> Ref {
-    let magnitude = (v.u * v.u + v.v * v.v).sqrt();
-    let (x, y) = if magnitude > 0.0 {
-        (v.u / magnitude, v.v / magnitude)
-    } else {
-        (1.0, 0.0)
-    };
-    e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
+fn direction2(e: &mut Emitter, v: Point2) -> Option<Ref> {
+    let unit =
+        cadmpeg_ir::features::FiniteVector3::new(Vector3::new(v.u, v.v, 0.0))?.unit_nonzero()?;
+    Some(e.emit_interned(
+        "DIRECTION",
+        &format!("'',({},{})", e.real(unit.x), e.real(unit.y)),
+    ))
 }
 
 fn similarity_transform_2d(transform: &Transform2) -> bool {
     let first = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
     let second = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = first.u.hypot(first.v);
-    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10 * scale.max(1.0);
-    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12
-        && (second.u.hypot(second.v) - scale).abs() <= tolerance
-        && (first.u * second.u + first.v * second.v).abs() <= tolerance * scale
+    if !scale.is_finite() || scale <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12 {
+        return false;
+    }
+    let first = Point2::new(first.u / scale, first.v / scale);
+    let second = Point2::new(second.u / scale, second.v / scale);
+    (second.u.hypot(second.v) - 1.0).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10
+        && (first.u * second.u + first.v * second.v).abs()
+            <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10
 }
 
-fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref {
+fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Option<Ref> {
     let location = point2(e, location);
-    let direction = direction2(e, x_axis);
-    e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}"))
+    let direction = direction2(e, x_axis)?;
+    Some(e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}")))
 }
 
-fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
+fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<Ref> {
     let origin = point2(
         e,
         Point2::new(transform.rows()[0][2], transform.rows()[1][2]),
@@ -161,76 +202,86 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
     let x = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
     let y = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = x.u.hypot(x.v);
-    let x = direction2(e, x);
-    let y = direction2(e, y);
-    e.emit(
+    let x = direction2(e, x)?;
+    let y = direction2(e, y)?;
+    if !scale.is_finite() {
+        return None;
+    }
+    Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
-        &format!("'',{x},{y},{origin},{}", real(scale)),
-    )
+        &format!("'',{x},{y},{origin},{}", e.real(scale)),
+    ))
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
-pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+///
+/// `Transformed`, `Trimmed` and `Offset` each hold their basis inline in a
+/// `Box`, and each constructor refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING)
+/// carriers over one leaf, so the recursion here is bounded by the carrier.
+/// Each nesting arm emits its own record after the basis record it references,
+/// so the chain is written from the leaf outwards.
+pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
-        PcurveGeometry::Line { origin, direction } => {
+        PcurveGeometry::Line(line_pcurve) => {
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             let point = point2(e, *origin);
-            let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
-            let direction = direction2(e, *direction);
-            let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
+            let magnitude = direction.u.hypot(direction.v);
+            if !magnitude.is_finite() {
+                return None;
+            }
+            let direction = direction2(e, *direction)?;
+            let vector = e.emit("VECTOR", &format!("'',{direction},{}", e.real(magnitude)));
             e.emit("LINE", &format!("'',{point},{vector}"))
         }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            radius,
-            ..
-        } => {
-            let placement = axis2_placement_2d(e, *center, *x_axis);
-            e.emit("CIRCLE", &format!("'',{placement},{}", real(*radius)))
+        PcurveGeometry::Circle(circle_pcurve) => {
+            let center = circle_pcurve.center();
+            let x_axis = circle_pcurve.x_axis();
+            let radius = circle_pcurve.radius();
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
+            e.emit(
+                "CIRCLE",
+                &format!("'',{placement},{}", e.real(radius.get())),
+            )
         }
-        PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            let placement = axis2_placement_2d(e, *center, *x_axis);
+        PcurveGeometry::Ellipse(ellipse_pcurve) => {
+            let center = ellipse_pcurve.center();
+            let x_axis = ellipse_pcurve.x_axis();
+            let major_radius = ellipse_pcurve.major_radius();
+            let minor_radius = ellipse_pcurve.minor_radius();
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
             e.emit(
                 "ELLIPSE",
                 &format!(
                     "'',{placement},{},{}",
-                    real(*major_radius),
-                    real(*minor_radius)
+                    e.real(major_radius.get()),
+                    e.real(minor_radius.get())
                 ),
             )
         }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            focal_distance,
-            ..
-        } => {
-            let placement = axis2_placement_2d(e, *vertex, *x_axis);
+        PcurveGeometry::Parabola(parabola_pcurve) => {
+            let vertex = parabola_pcurve.vertex();
+            let x_axis = parabola_pcurve.x_axis();
+            let focal_distance = parabola_pcurve.focal_distance();
+            let placement = axis2_placement_2d(e, vertex.get(), x_axis.get())?;
             e.emit(
                 "PARABOLA",
-                &format!("'',{placement},{}", real(*focal_distance)),
+                &format!("'',{placement},{}", e.real(focal_distance.get())),
             )
         }
-        PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            let placement = axis2_placement_2d(e, *center, *x_axis);
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
+            let center = hyperbola_pcurve.center();
+            let x_axis = hyperbola_pcurve.x_axis();
+            let major_radius = hyperbola_pcurve.major_radius();
+            let minor_radius = hyperbola_pcurve.minor_radius();
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
             e.emit(
                 "HYPERBOLA",
                 &format!(
                     "'',{placement},{},{}",
-                    real(*major_radius),
-                    real(*minor_radius)
+                    e.real(major_radius.get()),
+                    e.real(minor_radius.get())
                 ),
             )
         }
@@ -238,7 +289,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             let points = nurbs
                 .control_points()
                 .iter()
-                .map(|point| point2(e, *point))
+                .map(|point| point2(e, point.get()))
                 .collect::<Vec<_>>();
             let (knots, multiplicities) = compress_knots(nurbs.knots());
             let base = format!(
@@ -250,14 +301,14 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             let with_knots = format!(
                 "{},{},.UNSPECIFIED.",
                 int_list(&multiplicities),
-                real_list(&knots)
+                real_list(e, &knots)
             );
-            if let Some(weights) = nurbs.weights() {
+            if let Some(weights) = nurbs.pole_rows().weights() {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
                         "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                        real_list(weights)
+                        real_list(e, &weights)
                     ),
                 )
             } else {
@@ -267,56 +318,62 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 )
             }
         }
-        PcurveGeometry::Transformed { basis, transform } => {
+        PcurveGeometry::Transformed(placed) => {
+            let transform = placed.transform();
             if !similarity_transform_2d(transform) {
                 return None;
             }
-            let basis = pcurve(e, basis)?;
-            let operator = transformation_operator_2d(e, *transform);
+            let basis = pcurve(e, placed.basis())?;
+            let operator = transformation_operator_2d(e, *transform)?;
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
-        PcurveGeometry::Trimmed {
-            parameter_range,
-            same_sense,
-            basis,
-        } => {
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let same_sense = trimmed_pcurve.same_sense();
+            let basis = trimmed_pcurve.basis();
             let basis = pcurve(e, basis)?;
-            let sense = if *same_sense { ".T." } else { ".F." };
+            let sense = if same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
                 &format!(
                     "'',{basis},({}),({}),{sense},.PARAMETER.",
-                    real(parameter_range[0]),
-                    real(parameter_range[1])
+                    e.real(parameter_range.endpoints()[0]),
+                    e.real(parameter_range.endpoints()[1])
                 ),
             )
         }
-        PcurveGeometry::Offset { distance, basis } => {
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let distance = offset_pcurve.distance();
+            let basis = offset_pcurve.basis();
             let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
-                &format!("'',{basis},{},.F.", real(*distance)),
+                &format!("'',{basis},{},.F.", e.real(distance.get())),
             )
         }
-        PcurveGeometry::Harmonic { .. }
-        | PcurveGeometry::Hyperbolic { .. }
-        | PcurveGeometry::PolarHarmonic { .. }
+        PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
         | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => return None,
+        | PcurveGeometry::SphericalGreatCircle(_) => return None,
     })
 }
 
-/// Emit or reuse a unit-length `DIRECTION`.
-///
-/// A zero-length vector becomes `(0,0,1)`.
-pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
-    let n = v.norm();
-    let u = if n > 0.0 {
-        Vector3::new(v.x / n, v.y / n, v.z / n)
-    } else {
-        Vector3::new(0.0, 0.0, 1.0)
-    };
-    let params = format!("'',({},{},{})", real(u.x), real(u.y), real(u.z));
+/// Emit a pcurve in the reversed parameter chart of a negative-angle cone.
+/// The half-turn maps each `(u, v)` to `(-u, -v)` without changing the curve's
+/// own parameter or sense.
+pub(crate) fn pcurve_on_reversed_cone(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    let basis = pcurve(e, geometry)?;
+    let reversal = Transform2::affine([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])?;
+    let operator = transformation_operator_2d(e, reversal)?;
+    Some(e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}")))
+}
+
+/// Emit or reuse a unit-length `DIRECTION` from an admitted nonzero vector.
+pub(crate) fn direction(e: &mut Emitter, v: DirectionAboveEpsilon) -> Ref {
+    let normalized = v.normalized();
+    let u = normalized.as_raw();
+    let params = format!("'',({},{},{})", e.real(u.x), e.real(u.y), e.real(u.z));
     e.emit_interned("DIRECTION", &params)
 }
 
@@ -324,14 +381,32 @@ pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
 /// +X reference direction.
 ///
 /// STEP projects the reference direction onto the plane normal to the axis.
-pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector3) -> Ref {
+pub(crate) fn placement(
+    e: &mut Emitter,
+    origin: Point3,
+    axis: UnitVector3,
+    ref_dir: UnitVector3,
+) -> Ref {
     let o = point(e, origin);
-    let a = direction(e, axis);
-    let r = direction(e, ref_dir);
+    let a = direction(e, axis.into());
+    let r = direction(e, ref_dir.into());
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
+/// Emit a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, which states three axis
+/// directions, an origin and one scale: a similarity. Any other transform,
+/// including one with a zero column, is refused through
+/// [`Emitter::refuse_operator`], and the section is not written.
 pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+    let Some(SimilarityColumns {
+        directions: [x, y, z],
+        scale,
+    }) = similarity_transform(&transform)
+    else {
+        e.refuse_operator(transform);
+        // The emitter refuses the whole DATA section, so no operator reference is written.
+        return Ref(0);
+    };
     let origin = point(
         e,
         Point3::new(
@@ -340,216 +415,216 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
             transform.rows()[2][3],
         ),
     );
-    let x = Vector3::new(
-        transform.rows()[0][0],
-        transform.rows()[1][0],
-        transform.rows()[2][0],
-    );
-    let y = Vector3::new(
-        transform.rows()[0][1],
-        transform.rows()[1][1],
-        transform.rows()[2][1],
-    );
-    let z = Vector3::new(
-        transform.rows()[0][2],
-        transform.rows()[1][2],
-        transform.rows()[2][2],
-    );
-    let scale = x.norm();
     let x = direction(e, x);
     let y = direction(e, y);
     let z = direction(e, z);
     e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
-        &format!("'',{x},{y},{origin},{},{z}", real(scale)),
+        &format!("'',{x},{y},{origin},{},{z}", e.real(scale)),
     )
 }
 
+/// The carrier whose values [`surface`] writes into the file for `g`.
+///
+/// [`surface`] emits a `Transformed` carrier as a `SURFACE_REPLICA` over the
+/// record of its basis, so the radii and angles in the file are the basis's.
+/// The export census reads them here.
+pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry {
+    let (_, basis) = placed_surface(g);
+    basis
+}
+
 /// Emit an analytic or NURBS surface carrier.
-pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
+pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+    let (placements, basis) = placed_surface(g);
+    let mut reference = basis_surface(e, basis)?;
+    // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
+    // references the record written for the placement inside it.
+    for transform in placements.iter().rev() {
+        let operator = transformation_operator(e, **transform);
+        reference = e.emit("SURFACE_REPLICA", &format!("'',{reference},{operator}"));
+    }
+    Some(reference)
+}
+
+/// Emit the basis carrier under a chain of affine placements.
+fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => return surface(e, geometry),
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            let pl = placement(e, *origin, *normal, *u_axis);
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            let origin = plane_surface.origin().get();
+            let normal = *plane_surface.frame().axis();
+            let u_axis = *plane_surface.frame().reference();
+            let pl = placement(e, origin, normal, u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let pl = placement(e, *origin, *axis, *ref_direction);
-            e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(*radius)))
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let origin = cylinder_surface.origin().get();
+            let axis = *cylinder_surface.frame().axis();
+            let ref_direction = *cylinder_surface.frame().reference();
+            let radius = cylinder_surface.radius().get();
+            let pl = placement(e, origin, axis, ref_direction);
+            e.emit(
+                "CYLINDRICAL_SURFACE",
+                &format!("'',{pl},{}", e.real(radius)),
+            )
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio: _,
-            half_angle,
-        } => {
-            let pl = placement(e, *origin, *axis, *ref_direction);
+        // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
+        // Reversing the axis and angle maps a negative-angle cone exactly under
+        // the parameter change `(u, v) -> (-u, -v)`.
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let origin = cone_surface.origin().get();
+            let axis = *cone_surface.frame().axis();
+            let ref_direction = *cone_surface.frame().reference();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
+            let written_axis = if half_angle < 0.0 {
+                axis.reversed()
+            } else {
+                axis
+            };
+            let pl = placement(e, origin, written_axis, ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
-                &format!("'',{pl},{},{}", real(*radius), real(*half_angle)),
+                &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle.abs())),
             )
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let pl = placement(e, *center, *axis, *ref_direction);
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let center = sphere_surface.center().get();
+            let axis = *sphere_surface.frame().axis();
+            let ref_direction = *sphere_surface.frame().reference();
+            let radius = sphere_surface.radius().get();
+            let pl = placement(e, center, axis, ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
-                &format!("'',{pl},{}", real(radius.abs())),
+                &format!("'',{pl},{}", e.real(radius.abs())),
             )
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let pl = placement(e, *center, *axis, *ref_direction);
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let center = torus_surface.center().get();
+            let axis = *torus_surface.frame().axis();
+            let ref_direction = *torus_surface.frame().reference();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            let pl = placement(e, center, axis, ref_direction);
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(
                     "'',{pl},{},{}",
-                    real(major_radius.abs()),
-                    real(minor_radius.abs())
+                    e.real(major_radius),
+                    e.real(minor_radius.abs())
                 ),
             )
         }
-        SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
-        SurfaceGeometry::Transformed { basis, transform } => {
-            let parent = surface(e, basis)?;
-            let operator = transformation_operator(e, *transform);
-            e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
-        }
+        SolvedSurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
-        SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => return None,
+        // `placed_surface` ends the walk at the first carrier that is not a
+        // placement, so `Transformed` does not reach this function.
+        SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
-pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
+pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+    let (placements, basis) = placed_curve(g);
+    let mut reference = basis_curve(e, basis)?;
+    // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
+    // references the record written for the placement inside it.
+    for transform in placements.iter().rev() {
+        let operator = transformation_operator(e, **transform);
+        reference = e.emit("CURVE_REPLICA", &format!("'',{reference},{operator}"));
+    }
+    Some(reference)
+}
+
+/// Emit the basis carrier under a chain of affine placements.
+fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => return curve(e, geometry),
-        CurveGeometry::Line {
-            origin,
-            direction: d,
-        } => {
-            let p = point(e, *origin);
+        SolvedCurveGeometry::Line(line_curve) => {
+            let origin = line_curve.origin().get();
+            let d = line_curve.direction();
+            let p = point(e, origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
-            let dir = direction(e, *d);
-            let vec = e.emit("VECTOR", &format!("'',{dir},{}", real(1.0)));
+            let dir = direction(e, d.into());
+            let vec = e.emit("VECTOR", &format!("'',{dir},{}", e.real(1.0)));
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let pl = placement(e, *center, *axis, *ref_direction);
-            e.emit("CIRCLE", &format!("'',{pl},{}", real(*radius)))
+        SolvedCurveGeometry::Circle(circle_curve) => {
+            let center = circle_curve.center().get();
+            let axis = *circle_curve.frame().axis();
+            let ref_direction = *circle_curve.frame().reference();
+            let radius = circle_curve.radius().get();
+            let pl = placement(e, center, axis, ref_direction);
+            e.emit("CIRCLE", &format!("'',{pl},{}", e.real(radius)))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let pl = placement(e, *center, *axis, *major_direction);
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
+            let center = ellipse_curve.center().get();
+            let axis = *ellipse_curve.frame().axis();
+            let major_direction = *ellipse_curve.frame().reference();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "ELLIPSE",
-                &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
+                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
             )
         }
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => {
-            let pl = placement(e, *vertex, *axis, *major_direction);
-            e.emit("PARABOLA", &format!("'',{pl},{}", real(*focal_distance)))
+        SolvedCurveGeometry::Parabola(parabola_curve) => {
+            let vertex = parabola_curve.vertex().get();
+            let axis = *parabola_curve.frame().axis();
+            let major_direction = *parabola_curve.frame().reference();
+            let focal_distance = parabola_curve.focal_distance().get();
+            let pl = placement(e, vertex, axis, major_direction);
+            e.emit("PARABOLA", &format!("'',{pl},{}", e.real(focal_distance)))
         }
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let pl = placement(e, *center, *axis, *major_direction);
+        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
+            let center = hyperbola_curve.center().get();
+            let axis = *hyperbola_curve.frame().axis();
+            let major_direction = *hyperbola_curve.frame().reference();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
+            let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "HYPERBOLA",
-                &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
+                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
             )
         }
-        CurveGeometry::Degenerate { point: collapsed } => {
-            let point = point(e, *collapsed);
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
+            let collapsed = degenerate_curve.point().get();
+            let point = point(e, collapsed);
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
-        CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
-        CurveGeometry::Polyline(polyline) => {
+        SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        SolvedCurveGeometry::Polyline(polyline) => {
             let points = polyline
                 .points()
-                .iter()
-                .map(|position| point(e, *position).to_string())
+                .map(|position| point(e, position.get()).to_string())
                 .collect::<Vec<_>>()
                 .join(",");
             e.emit("POLYLINE", &format!("'',({points})"))
         }
-        CurveGeometry::Transformed { basis, transform } => {
-            let parent = curve(e, basis)?;
-            let operator = transformation_operator(e, *transform);
-            e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
-        }
-        CurveGeometry::Composite { .. } => {
-            unreachable!("composite curves are emitted from their child graph")
-        }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => return None,
+        // `placed_curve` ends the walk at the first carrier that is not a
+        // placement, so `Transformed` does not reach this function. A composite
+        // carrier is emitted from its child graph by the exporter, and an
+        // unknown carrier has no STEP record.
+        SolvedCurveGeometry::Transformed(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => return None,
     })
 }
 
 /// Convert a repeated knot vector into ordered values and multiplicities.
 fn compress_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
-    let mut values = Vec::new();
-    let mut mults = Vec::new();
+    let mut runs: Vec<(f64, usize)> = Vec::new();
     for &k in knots {
-        if let Some(last) = values.last() {
-            if *last == k {
-                *mults
-                    .last_mut()
-                    .expect("invariant: mults and values grow in lockstep") += 1;
-                continue;
-            }
+        match runs.last_mut() {
+            Some((value, multiplicity)) if *value == k => *multiplicity += 1,
+            _ => runs.push((k, 1)),
         }
-        values.push(k);
-        mults.push(1);
     }
-    (values, mults)
+    runs.into_iter().unzip()
 }
 
 fn int_list(xs: &[usize]) -> String {
@@ -564,13 +639,13 @@ fn int_list(xs: &[usize]) -> String {
     out
 }
 
-fn real_list(xs: &[f64]) -> String {
+fn real_list(e: &Emitter, xs: &[f64]) -> String {
     let mut out = String::from("(");
     for (i, x) in xs.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&real(*x));
+        out.push_str(&e.real(*x));
     }
     out.push(')');
     out
@@ -585,7 +660,11 @@ fn closed_flag(periodic: bool) -> &'static str {
 }
 
 fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
-    let pts: Vec<Ref> = n.control_points().iter().map(|p| point(e, *p)).collect();
+    let pts: Vec<Ref> = n
+        .control_points()
+        .iter()
+        .map(|p| point(e, p.get()))
+        .collect();
     let (knots, mults) = compress_knots(n.knots());
     let ctrl = refs(&pts);
     let base = format!(
@@ -593,8 +672,12 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
         n.degree(),
         closed_flag(n.periodic())
     );
-    let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
-    match n.weights() {
+    let with_knots = format!(
+        "{},{},.UNSPECIFIED.",
+        int_list(&mults),
+        real_list(e, &knots)
+    );
+    match n.pole_rows().weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -606,7 +689,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
                  B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() \
                  GEOMETRIC_REPRESENTATION_ITEM() \
                  RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                real_list(w)
+                real_list(e, &w)
             );
             e.emit_raw("B_SPLINE_CURVE_WITH_KNOTS", &body)
         }
@@ -619,15 +702,11 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
-    let u_count = n.u_count() as usize;
-    let v_count = n.v_count() as usize;
-    let mut rows: Vec<String> = Vec::with_capacity(u_count);
-    for i in 0..u_count {
-        let mut row: Vec<Ref> = Vec::with_capacity(v_count);
-        for j in 0..v_count {
-            let idx = i * v_count + j;
-            let p = n.control_points()[idx];
-            row.push(point(e, p));
+    let mut rows: Vec<String> = Vec::new();
+    for grid_row in n.control_grid() {
+        let mut row: Vec<Ref> = Vec::new();
+        for p in grid_row {
+            row.push(point(e, p.get()));
         }
         rows.push(refs(&row));
     }
@@ -646,20 +725,19 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         "{},{},{},{},.UNSPECIFIED.",
         int_list(&u_mults),
         int_list(&v_mults),
-        real_list(&u_knots),
-        real_list(&v_knots)
+        real_list(e, &u_knots),
+        real_list(e, &v_knots)
     );
-    Some(match n.weights() {
+    Some(match n.pole_grid().weights() {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
         ),
         Some(w) => {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
-            let mut wrows: Vec<String> = Vec::with_capacity(u_count);
-            for i in 0..u_count {
-                let slice: Vec<f64> = (0..v_count).map(|j| w[i * v_count + j]).collect();
-                wrows.push(real_list(&slice));
+            let mut wrows: Vec<String> = Vec::new();
+            for row in w {
+                wrows.push(real_list(e, &row));
             }
             let wgrid = format!("({})", wrows.join(","));
             let body = format!(

@@ -2,10 +2,22 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
+    generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
+use crate::test_support::smbh_surfaces_test::{
+    append_revision_surface_tail_discontinuities, append_revision_surface_tail_head,
+    synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
+};
+use crate::test_support::tokens_test::{
+    push_tagged_i64, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_vec,
+};
 
-pub(crate) fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
+fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
     t_pos(bytes, [1.0, -2.0, 3.0]);
@@ -21,8 +33,10 @@ pub(crate) fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
 pub(crate) fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -89,8 +103,10 @@ pub(crate) fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -121,8 +137,10 @@ pub(crate) fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -155,8 +173,10 @@ pub(crate) fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -191,7 +211,7 @@ pub(crate) fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
+fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
     push_u8_string(
         bytes,
         if label == "left" {
@@ -222,8 +242,10 @@ pub(crate) fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
 pub(crate) fn synthetic_full_rolling_ball_with_tail_smbh(name: &str, tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -310,7 +332,7 @@ pub(crate) fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &
     t_ident(bytes, "nullbs");
 }
 
-pub(crate) fn append_generated_variable_blend_value(
+fn append_generated_variable_blend_value(
     bytes: &mut Vec<u8>,
     parameters: [f64; 2],
     radii: [f64; 2],
@@ -327,7 +349,7 @@ pub(crate) fn append_generated_variable_blend_value(
 
 /// An `edge_offset` radius law with no leading sub-discriminator: the
 /// law-domain parameter range and one offset length.
-pub(crate) fn append_generated_variable_blend_edge_offset_value(
+fn append_generated_variable_blend_edge_offset_value(
     bytes: &mut Vec<u8>,
     parameters: [f64; 2],
     offset: f64,
@@ -343,7 +365,7 @@ pub(crate) fn append_generated_variable_blend_edge_offset_value(
 /// An `interp` radius law: the law-domain parameter range, a `(u,radius)` BS2
 /// function, the extension enum, the point count, and one radius point. The
 /// payload ends at that point — nothing gates a trailing scalar pair.
-pub(crate) fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
+fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
     push_u8_string(bytes, "interp");
     push_tagged_i64(bytes, 0x15, 0);
     bytes.push(0x0a);
@@ -367,7 +389,7 @@ pub(crate) fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) 
 
 /// Which radius law the synthetic stream stores as its first blend value.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FirstRadiusLaw {
+enum FirstRadiusLaw {
     TwoEnds,
     Interp,
     /// `edge_offset` with no leading sub-discriminator: two law-domain
@@ -469,7 +491,7 @@ pub(crate) fn synthetic_variable_blend_smbh_with_cache_state(
     )
 }
 
-pub(crate) fn synthetic_variable_blend_smbh_inner(
+fn synthetic_variable_blend_smbh_inner(
     name: &str,
     two_radii: bool,
     cross_section_selector: Option<i64>,
@@ -480,8 +502,10 @@ pub(crate) fn synthetic_variable_blend_smbh_inner(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -589,7 +613,7 @@ pub(crate) fn synthetic_variable_blend_smbh_inner(
     bytes
 }
 
-pub(crate) fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
+fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
     push_u8_string(bytes, kind);
     bytes.push(0x0a);
     t_pos(bytes, [x, 0.0, 0.0]);
@@ -601,8 +625,10 @@ pub(crate) fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: 
 pub(crate) fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,

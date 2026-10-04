@@ -61,7 +61,7 @@ struct IdentityRegistry {
 /// One `[[support]]` row of the capability registry.
 #[derive(Debug, Deserialize)]
 struct SupportRow {
-    dialect: String,
+    dialect: DialectId,
     read: ReadDisposition,
     write: WriteDisposition,
 }
@@ -80,22 +80,32 @@ pub(crate) struct Registries {
     entries: Vec<DialectEntry>,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum RegistryLoadError {
+/// Failure to parse or join the embedded dialect registries.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum RegistryLoadError {
+    /// The identity table is not valid TOML for its declared fields.
     #[error("cannot parse the dialect identity registry: {0}")]
     Identity(#[source] toml::de::Error),
+    /// The support table is not valid TOML for its declared fields.
     #[error("cannot parse the dialect support registry: {0}")]
     Support(#[source] toml::de::Error),
+    /// A dialect has more than one capability row.
     #[error("duplicate support row for dialect {0}")]
-    DuplicateSupport(String),
+    DuplicateSupport(DialectId),
+    /// A capability row names an undeclared dialect.
     #[error("support row for dialect {0} has no identity row")]
-    SupportWithoutIdentity(String),
+    SupportWithoutIdentity(DialectId),
+    /// A declared dialect has no capability row.
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
+    /// A format id or alias has more than one owner.
     #[error("format word {name:?} belongs to both {first:?} and {second:?}")]
     DuplicateFormatName {
+        /// The repeated id or alias.
         name: String,
+        /// Its first registered owner.
         first: String,
+        /// Its second registered owner.
         second: String,
     },
 }
@@ -135,7 +145,7 @@ impl Registries {
     /// forbid. Runtime loading validates only the parse and total join needed
     /// by this view; the Python checkers own fields that the view does not read.
     fn load() -> Result<Self, RegistryLoadError> {
-        Self::join(identity_registry().identity.clone(), SUPPORT_TOML)
+        Self::join(identity_registry()?.identity.clone(), SUPPORT_TOML)
     }
 
     #[cfg(test)]
@@ -149,9 +159,9 @@ impl Registries {
         let identity_ids = identity
             .dialect
             .iter()
-            .map(|row| row.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut dispositions = BTreeMap::new();
+            .map(|row| row.id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let mut dispositions = std::collections::HashMap::new();
         for row in support.support {
             let dialect = row.dialect;
             let disposition = Disposition {
@@ -161,7 +171,7 @@ impl Registries {
             if dispositions.insert(dialect.clone(), disposition).is_some() {
                 return Err(RegistryLoadError::DuplicateSupport(dialect));
             }
-            if !identity_ids.contains(dialect.as_str()) {
+            if !identity_ids.contains(&dialect) {
                 return Err(RegistryLoadError::SupportWithoutIdentity(dialect));
             }
         }
@@ -172,7 +182,7 @@ impl Registries {
                 .into_iter()
                 .map(|row| {
                     let disposition = dispositions
-                        .remove(row.id.as_str())
+                        .remove(&row.id)
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
                     Ok(DialectEntry {
                         disposition,
@@ -193,86 +203,79 @@ impl Registries {
             .filter(move |entry| entry.id.namespace() == format)
     }
 
-    pub(crate) fn rows_all(&self) -> impl Iterator<Item = &DialectEntry> {
+    fn rows_all(&self) -> impl Iterator<Item = &DialectEntry> {
         self.entries.iter()
     }
 }
 
-fn identity_registry() -> &'static IdentityRegistry {
-    static IDENTITIES: OnceLock<IdentityRegistry> = OnceLock::new();
-    IDENTITIES.get_or_init(|| {
-        IdentityRegistry::load().expect(
-            "embedded dialect identity registry invariant failed: the registry must parse and every format word must have one owner",
-        )
-    })
+fn identity_registry() -> Result<&'static IdentityRegistry, RegistryLoadError> {
+    static IDENTITIES: OnceLock<Result<IdentityRegistry, RegistryLoadError>> = OnceLock::new();
+    IDENTITIES
+        .get_or_init(IdentityRegistry::load)
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
-/// The parsed registries, parsed once.
-pub(crate) fn registries() -> &'static Registries {
-    static REGISTRIES: OnceLock<Registries> = OnceLock::new();
-    REGISTRIES.get_or_init(|| {
-        Registries::load().expect(
-            "embedded dialect registry invariant failed: registries must parse, support rows must be unique, and the identity/support join must be total",
-        )
-    })
+/// The parsed registries, including a cached load failure.
+pub(crate) fn registries() -> Result<&'static Registries, RegistryLoadError> {
+    static REGISTRIES: OnceLock<Result<Registries, RegistryLoadError>> = OnceLock::new();
+    REGISTRIES
+        .get_or_init(Registries::load)
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
-pub(crate) fn catalog_of(format: &str) -> Option<TargetCatalog> {
-    Format::from_name(format).map(|format| build_encoder(format).targets())
+pub(crate) fn catalog_of(format: &str) -> Result<Option<TargetCatalog>, RegistryLoadError> {
+    Ok(Format::from_name(format)?.map(|format| build_encoder(format).targets()))
 }
 
-pub(crate) fn is_format_name(name: &str) -> bool {
-    identity_registry().format_names.contains_key(name)
+pub(crate) fn is_format_name(name: &str) -> Result<bool, RegistryLoadError> {
+    Ok(identity_registry()?.format_names.contains_key(name))
 }
 
-pub(crate) fn canonical_format_name(name: &str) -> Option<&'static str> {
-    identity_registry()
+pub(crate) fn canonical_format_name(name: &str) -> Result<Option<&'static str>, RegistryLoadError> {
+    Ok(identity_registry()?
         .format_names
         .get(name)
-        .map(String::as_str)
+        .map(String::as_str))
 }
 
 /// Canonical name and identity aliases for one format.
-pub(crate) fn format_words(format: &str) -> impl Iterator<Item = &'static str> {
-    identity_registry()
+pub(crate) fn format_words(
+    format: &str,
+) -> Result<impl Iterator<Item = &'static str>, RegistryLoadError> {
+    Ok(identity_registry()?
         .identity
         .format
         .get_key_value(format)
         .into_iter()
         .flat_map(|(id, row)| {
             std::iter::once(id.as_str()).chain(row.aliases.iter().map(String::as_str))
-        })
-}
-
-/// Every dialect the identity registry declares for `format`, in registry
-/// order, joined with its capability row.
-///
-/// Empty when `format` names no registry section. Answers from the embedded
-/// tables and reads no file.
-#[must_use]
-pub fn dialects(format: &str) -> Vec<&'static DialectEntry> {
-    let canonical = Format::from_name(format)
-        .map(|format| format.name().as_str())
-        .or_else(|| canonical_format_name(format))
-        .unwrap_or(format);
-    registries().rows_of(canonical).collect()
+        }))
 }
 
 /// The declared disposition for one dialect id, or `None` when the registry
 /// carries no row for it.
 ///
 /// Answers from the embedded tables and reads no file.
-#[must_use]
-pub fn support(dialect: &DialectId) -> Option<Disposition> {
-    registries()
+pub fn support(dialect: &DialectId) -> Result<Option<Disposition>, RegistryLoadError> {
+    Ok(registries()?
         .rows_all()
         .find(|entry| entry.id == *dialect)
-        .map(|entry| entry.disposition)
+        .map(|entry| entry.disposition))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use cadmpeg_core::dialect::DialectId;
+
+    use super::{
+        is_format_name, registries, support, IdentityRegistry, Registries, RegistryLoadError,
+    };
+    use crate::disposition::WriteDisposition;
+    use crate::{build_encoder, Format};
 
     fn expect_err<T, E>(result: Result<T, E>, message: &str) -> E {
         match result {
@@ -304,7 +307,7 @@ mod tests {
             "the unmatched support row is rejected",
         );
         assert!(
-            matches!(error, RegistryLoadError::SupportWithoutIdentity(id) if id == "step:ap214")
+            matches!(error, RegistryLoadError::SupportWithoutIdentity(id) if id.as_str() == "step:ap214")
         );
     }
 
@@ -326,12 +329,14 @@ mod tests {
     fn the_registry_join_rejects_duplicate_support_rows() {
         let error = expect_err(
             Registries::load_from(
-            "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
-            "[[support]]\ndialect = \"step:ap203\"\nread = \"L1\"\nwrite = \"none\"\n\n[[support]]\ndialect = \"step:ap203\"\nread = \"L2\"\nwrite = \"none\"\n",
+                "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
+                "[[support]]\ndialect = \"step:ap203\"\nread = \"L1\"\nwrite = \"none\"\n\n[[support]]\ndialect = \"step:ap203\"\nread = \"L2\"\nwrite = \"none\"\n",
             ),
             "the duplicate support row is rejected",
         );
-        assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
+        assert!(
+            matches!(error, RegistryLoadError::DuplicateSupport(id) if id.as_str() == "step:ap203")
+        );
     }
 
     #[test]
@@ -352,7 +357,7 @@ mod tests {
     /// disjoint from output-format words.
     #[test]
     fn compiled_write_catalogs_match_registry_policy() {
-        let registries = registries();
+        let registries = registries().expect("embedded registry loads");
         let dispositions = registries
             .rows_all()
             .map(|row| (row.id.as_str(), row.disposition))
@@ -382,7 +387,7 @@ mod tests {
                 );
                 for token in target.accepted_tokens() {
                     assert!(
-                        !is_format_name(token),
+                        !is_format_name(token).expect("embedded registry loads"),
                         "{}: accepted target token {token:?} is also an output-format word",
                         target.id
                     );
@@ -409,18 +414,21 @@ mod tests {
         }
     }
 
-    /// `dialects` and `support` answer from the same joined table the renderer
-    /// prints, and neither reads a file.
+    /// `support` answers from the joined table the renderer prints without
+    /// reading a file.
     #[test]
     fn the_lookups_serve_the_embedded_tables() {
-        let registries = registries();
+        let registries = registries().expect("embedded registry loads");
         for entry in registries.rows_all() {
-            assert_eq!(support(&entry.id), Some(entry.disposition), "{}", entry.id);
+            assert_eq!(
+                support(&entry.id).expect("embedded registry loads"),
+                Some(entry.disposition),
+                "{}",
+                entry.id
+            );
         }
         for format in &registries.formats {
-            let rows = dialects(format);
-            let expected = registries.rows_of(format).collect::<Vec<_>>();
-            assert_eq!(rows, expected, "{format}");
+            let rows = registries.rows_of(format).collect::<Vec<_>>();
             assert!(
                 rows.iter().all(|row| row.id.namespace() == format),
                 "{format}"
@@ -428,7 +436,7 @@ mod tests {
         }
 
         let absent = DialectId::parse("test:nonesuch").expect("the absent id is grammatical");
-        assert!(support(&absent).is_none());
-        assert!(dialects("nonesuch").is_empty());
+        assert!(support(&absent).expect("embedded registry loads").is_none());
+        assert!(registries.rows_of("nonesuch").next().is_none());
     }
 }

@@ -4,6 +4,8 @@
 use super::state_index::{OperationStateIndex, StateIndexToken};
 use super::state_link::StateLinkCode;
 use super::state_message::{OperationStateMessage, StateMessage};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StateStatusPayload<S, B> {
@@ -18,7 +20,7 @@ pub(crate) enum StateStatusPayload<S, B> {
     },
 }
 
-impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatusPayload<S, B> {
+impl<S: crate::immutable_text::ImmutableText, B: AsRef<[u8]>> StateStatusPayload<S, B> {
     fn byte_len(&self) -> usize {
         match self {
             Self::Plain => 1,
@@ -36,7 +38,7 @@ pub(crate) struct StateStatus<S, B> {
     pub(crate) payload: StateStatusPayload<S, B>,
 }
 
-impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatus<S, B> {
+impl<S: crate::immutable_text::ImmutableText, B: AsRef<[u8]>> StateStatus<S, B> {
     pub(crate) fn byte_len(&self) -> usize {
         usize::from(self.status_code.byte_len())
             + usize::from(self.object_index.byte_len())
@@ -45,7 +47,10 @@ impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatus<S, B> {
 }
 
 impl StateStatus<&str, &[u8]> {
-    pub(crate) fn into_owned(self) -> StateStatus<String, Vec<u8>> {
+    pub(crate) fn into_owned(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StateStatus<String, Vec<u8>>, CodecError> {
         let payload = match self.payload {
             StateStatusPayload::Plain => StateStatusPayload::Plain,
             StateStatusPayload::Linked {
@@ -56,33 +61,35 @@ impl StateStatus<&str, &[u8]> {
                 object_index,
             },
             StateStatusPayload::Diagnostic(message) => {
-                StateStatusPayload::Diagnostic(message.into_owned())
+                StateStatusPayload::Diagnostic(message.into_owned(ctx)?)
             }
-            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque { raw: raw.to_vec() },
+            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque {
+                raw: ctx.copy_retained(raw, "NX state status opaque payload")?,
+            },
         };
-        StateStatus {
+        Ok(StateStatus {
             status_code: self.status_code,
             object_index: self.object_index,
             payload,
-        }
+        })
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationStateStatus<'a> {
+pub(in crate::om) struct OperationStateStatus<'a> {
     offset: usize,
     body: StateStatus<&'a str, &'a [u8]>,
 }
 
 impl<'a> OperationStateStatus<'a> {
     #[cfg(test)]
-    pub(crate) fn offset(self) -> usize {
+    fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end_offset(self) -> usize {
+    pub(super) fn end_offset(self) -> usize {
         self.offset + self.body.byte_len()
     }
-    pub(crate) fn body(self) -> StateStatus<&'a str, &'a [u8]> {
+    pub(super) fn body(self) -> StateStatus<&'a str, &'a [u8]> {
         self.body
     }
 }
@@ -107,8 +114,8 @@ fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Op
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
         return Some(at + 3);
     }
-    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
-    for cursor in at..search_end.saturating_sub(1) {
+    let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
+    for cursor in at..search_end.checked_sub(1)? {
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             return Some(cursor + 2);
         }

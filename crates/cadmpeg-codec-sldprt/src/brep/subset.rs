@@ -1,78 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded-curve wrappers.
 
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
-use super::{CarrierIndex, CurveCarrier, LEN_TO_MM};
+use super::index::CarrierIndex;
+use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Option<Point3> {
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let last_control = curve.control_points().len().checked_sub(1)?;
-    let domain_start = *curve.knots().get(degree)?;
-    let domain_end = *curve.knots().get(last_control + 1)?;
-    if parameter < domain_start || parameter > domain_end {
-        return None;
-    }
-    let span = if parameter == domain_end {
-        last_control
-    } else {
-        (degree..=last_control).find(|index| {
-            curve.knots()[*index] <= parameter && parameter < curve.knots()[*index + 1]
-        })?
-    };
-    let mut poles = (span - degree..=span)
-        .map(|index| {
-            let point = curve.control_points()[index];
-            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
-            [point.x * weight, point.y * weight, point.z * weight, weight]
-        })
-        .collect::<Vec<_>>();
-    for level in 1..=degree {
-        for local in (level..=degree).rev() {
-            let knot = span - degree + local;
-            let denominator = curve.knots()[knot + degree - level + 1] - curve.knots()[knot];
-            let alpha = if denominator.abs() <= f64::EPSILON {
-                0.0
-            } else {
-                (parameter - curve.knots()[knot]) / denominator
-            };
-            let previous = poles[local - 1];
-            let current = poles[local];
-            poles[local] = std::array::from_fn(|coordinate| {
-                (1.0 - alpha) * previous[coordinate] + alpha * current[coordinate]
-            });
+fn point_at(
+    ctx: &DecodeContext<'_>,
+    curve: &CurveGeometry,
+    parameter: f64,
+) -> Result<Option<Point3>, CodecError> {
+    Ok(match curve {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            Some(Point3::new(
+                origin.x + parameter * direction.x * LEN_TO_MM,
+                origin.y + parameter * direction.y * LEN_TO_MM,
+                origin.z + parameter * direction.z * LEN_TO_MM,
+            ))
         }
-    }
-    let result = poles[degree];
-    (result[3].is_finite() && result[3].abs() > f64::EPSILON).then(|| {
-        Point3::new(
-            result[0] / result[3],
-            result[1] / result[3],
-            result[2] / result[3],
-        )
-    })
-}
-
-fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
-    match curve {
-        CurveGeometry::Line { origin, direction } => Some(Point3::new(
-            origin.x + parameter * direction.x * LEN_TO_MM,
-            origin.y + parameter * direction.y * LEN_TO_MM,
-            origin.z + parameter * direction.z * LEN_TO_MM,
-        )),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x
@@ -83,13 +44,12 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             ))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let center = ellipse_curve.center().get();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             let minor_direction = axis.cross(*major_direction);
             Some(Point3::new(
                 center.x
@@ -103,9 +63,19 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + minor_radius * parameter.sin() * minor_direction.z,
             ))
         }
-        CurveGeometry::Nurbs(curve) => nurbs_point(curve, parameter),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
+            let Ok(degree) = usize::try_from(curve.degree()) else {
+                return Ok(None);
+            };
+            let domain = [curve.knots()[degree], curve.knots()[curve.pole_count()]];
+            if !(domain[0]..=domain[1]).contains(&parameter) {
+                return Ok(None);
+            }
+            super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
+                .map(cadmpeg_ir::features::FinitePoint3::get)
+        }
         _ => None,
-    }
+    })
 }
 
 fn close(left: Point3, right: Point3) -> bool {
@@ -115,9 +85,17 @@ fn close(left: Point3, right: Point3) -> bool {
 }
 
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
-pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<CurveCarrier> {
+pub(super) fn scan(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    carriers: &CarrierIndex,
+) -> Result<Vec<CurveCarrier>, CodecError> {
     let mut out = Vec::new();
-    for off in 0..bytes.len().saturating_sub(2) {
+    let scan_len = u64::try_from(bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("scan Parasolid subset curves", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(scan_len, "scan Parasolid subset curves")?;
+    for off in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
@@ -135,50 +113,70 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<CurveCarrier> {
         let Some(source) = carriers.curve(source_attr) else {
             continue;
         };
-        let geometry = &source.geometry;
-        let values = (0..8)
-            .map(|index| View::f64_be_at(bytes, marker_at + 3 + index * 8))
-            .collect::<Option<Vec<_>>>();
-        let Some(values) = values.filter(|values| values.iter().all(|value| value.is_finite()))
-        else {
+        let geometry = &source.carrier().geometry;
+        let mut values = [cadmpeg_ir::scalar::FiniteReal::ZERO; 8];
+        let mut valid = true;
+        for (index, value) in values.iter_mut().enumerate() {
+            match View::f64_be_at(bytes, marker_at + 3 + index * 8)
+                .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+            {
+                Some(parsed) => *value = parsed,
+                _ => {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if !valid {
             continue;
-        };
+        }
         let start = Point3::new(
-            values[0] * LEN_TO_MM,
-            values[1] * LEN_TO_MM,
-            values[2] * LEN_TO_MM,
+            values[0].get() * LEN_TO_MM,
+            values[1].get() * LEN_TO_MM,
+            values[2].get() * LEN_TO_MM,
         );
         let end = Point3::new(
-            values[3] * LEN_TO_MM,
-            values[4] * LEN_TO_MM,
-            values[5] * LEN_TO_MM,
+            values[3].get() * LEN_TO_MM,
+            values[4].get() * LEN_TO_MM,
+            values[5].get() * LEN_TO_MM,
         );
-        let Some(evaluated_start) = point_at(geometry, values[6]) else {
+        let Some(evaluated_start) = point_at(ctx, geometry, values[6].get())? else {
             continue;
         };
-        let Some(evaluated_end) = point_at(geometry, values[7]) else {
+        let Some(evaluated_end) = point_at(ctx, geometry, values[7].get())? else {
             continue;
         };
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
+        let copied_geometry =
+            geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
+        ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
         out.push(CurveCarrier {
             attr,
             offset: off,
             end: marker_at + 1 + PAYLOAD_LEN,
-            geometry: geometry.clone(),
-            parameter_range: Some([values[6], values[7]]),
+            geometry: copied_geometry,
+            parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
+                values[6], values[7],
+            ])),
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Vector3;
 
-    use super::*;
+    use super::super::index::CarrierIndex;
+    use super::super::CurveCarrier;
+    use super::{point_at, scan, TAG};
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point3;
 
     fn wrapper(end_y: f64, has_ff: bool) -> Vec<u8> {
         let mut bytes = vec![0x00, TAG];
@@ -200,54 +198,271 @@ mod tests {
 
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
-        carriers.curves.insert(
-            10,
-            CurveCarrier {
-                attr: 10,
-                offset: 100,
-                end: 120,
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(0.0, 1.0, 0.0),
-                },
-                parameter_range: None,
-            },
-        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test carrier fits service policy");
         carriers
+            .insert(
+                &ctx,
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 1.0, 0.0),
+                        )
+                        .expect("valid line fixture"),
+                    )),
+                    parameter_range: None,
+                }),
+            )
+            .expect("test carrier fits service policy");
+        carriers
+    }
+
+    fn nurbs_carriers() -> CarrierIndex {
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 0.005, 0.005],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 5.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid NURBS fixture");
+        let mut carriers = CarrierIndex::default();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test carrier fits service policy");
+        carriers
+            .insert(
+                &ctx,
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    parameter_range: None,
+                }),
+            )
+            .expect("test carrier fits service policy");
+        carriers
+    }
+
+    fn subset_limit(cap: u64, operation: &'static str) {
+        let bytes = wrapper(0.005, false);
+        let carriers = nurbs_carriers();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = scan(&ctx, &bytes, &carriers).expect_err("subset collection exceeds its limit");
+        assert!(
+            matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation),
+            "{error:?}"
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        assert_eq!(
+            scan(&ctx, &bytes, &carriers).expect("service scan").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn parasolid_subset_nurbs_lanes_refuse_before_clone() {
+        subset_limit(5, "copy Parasolid subset curve lanes");
+    }
+
+    #[test]
+    fn parasolid_subset_curves_refuse_before_collection() {
+        subset_limit(6, "collect Parasolid subset curves");
+    }
+
+    #[test]
+    fn parasolid_subset_scan_refuses_work_limit() {
+        let bytes = wrapper(0.005, false);
+        let carriers = carriers();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = scan(&ctx, &bytes, &carriers).expect_err("scan work exceeds its limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Parasolid subset curves"
+        ));
+    }
+
+    #[test]
+    fn parasolid_subset_nurbs_evaluation_refuses_scoped_limit() {
+        let bytes = wrapper(0.005, false);
+        let carriers = nurbs_carriers();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
+
+        let quadratic = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 0.005, 0.005, 0.005],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 2.5, 0.0),
+                Point3::new(0.0, 5.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("service storage")
+        .expect("quadratic version of the same line");
+        let mut quadratic_carriers = CarrierIndex::default();
+        quadratic_carriers
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(quadratic)),
+                    parameter_range: None,
+                }),
+            )
+            .unwrap();
+        policy.limits.max_materialized_bytes = 31;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = scan(&ctx, &bytes, &quadratic_carriers).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "IR B-spline basis")
+        );
+        policy.limits.max_materialized_bytes = 32;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert_eq!(scan(&ctx, &bytes, &quadratic_carriers).unwrap().len(), 1);
     }
 
     #[test]
     fn decodes_bounds_that_evaluate_on_the_source_curve() {
-        let decoded = scan(&wrapper(0.005, false), &carriers());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let decoded = scan(&ctx, &wrapper(0.005, false), &carriers()).expect("subset scan");
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
-        assert!(matches!(decoded[0].geometry, CurveGeometry::Line { .. }));
-        assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
+        assert!(matches!(
+            decoded[0].geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ));
+        assert_eq!(
+            decoded[0]
+                .parameter_range
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 0.005])
+        );
     }
 
     #[test]
     fn decodes_optional_ff_header() {
-        assert_eq!(scan(&wrapper(0.005, true), &carriers()).len(), 1);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        assert_eq!(
+            scan(&ctx, &wrapper(0.005, true), &carriers())
+                .expect("subset scan")
+                .len(),
+            1
+        );
     }
 
     #[test]
     fn rejects_bounds_that_do_not_evaluate_on_the_source_curve() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = wrapper(0.005, false);
         bytes[21 + 3 * 8..21 + 4 * 8].copy_from_slice(&0.001f64.to_be_bytes());
-        assert!(scan(&bytes, &carriers()).is_empty());
+        assert!(scan(&ctx, &bytes, &carriers())
+            .expect("subset scan")
+            .is_empty());
     }
 
     #[test]
     fn evaluates_rational_nurbs_in_homogeneous_coordinates() {
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid rational test NURBS");
-        let point = nurbs_point(&curve, 0.5).expect("valid NURBS parameter");
+        let point = point_at(
+            &cadmpeg_test_support::service_decode_context(),
+            &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            0.5,
+        )
+        .expect("evaluation fits resource limits")
+        .expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn numerical_audit_subset_uses_shared_nurbs_evaluation() {
+        for (d, w) in [(1., 1.), (1e-16, 1.), (1., 1e-20)] {
+            let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0., 0., d, d],
+                    vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                    Some(vec![w, w]),
+                    false,
+                )
+                .expect("fixture constructor admission")
+                .unwrap(),
+            ));
+            assert_eq!(
+                point_at(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &curve,
+                    0.75 * d
+                )
+                .expect("evaluation fits resource limits"),
+                Some(Point3::new(0.75, 0., 0.))
+            );
+            assert!(point_at(
+                &cadmpeg_test_support::service_decode_context(),
+                &curve,
+                2. * d
+            )
+            .expect("evaluation fits resource limits")
+            .is_none());
+        }
     }
 }

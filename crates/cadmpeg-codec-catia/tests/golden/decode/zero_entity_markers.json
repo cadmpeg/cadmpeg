@@ -75,7 +75,11 @@
         "preview_images": [],
         "reference_signature_cohorts": [],
         "schema_configuration_row_chains": [],
-        "unknowns": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#container"
+          }
+        ],
         "value_blocks": [],
         "value_schema_selections": [],
         "zero_entity_edge_strides": [],
@@ -147,15 +151,16 @@
         "outer_dir_offset": "0",
         "preview_count": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:zero-entity",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:zero-entity"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -166,7 +171,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -501,22 +505,24 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:zero-entity",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:zero-entity"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "geometry.brep-not-transferred",
           "kind": "geometry_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:zero-entity` (zero-entity a9 03 (no nested container): analytic carriers decoded); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
@@ -525,7 +531,9 @@
         "code": {
           "code": "topology.graph-not-built",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
@@ -536,9 +544,37 @@
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "record-family census: 5 a9 03, 0 e5 0d 03",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {
+        "catia:payload:unknown#container": {
+          "entity": "unknown",
+          "scope": "entity"
+        }
+      },
+      "provenance": {
+        "catia:payload:unknown#container": {
+          "offset": 0,
+          "stream": "catia:CATPart",
+          "tag": "catia:zero-entity"
+        }
+      }
+    },
+    "retained_records": {
+      "catia:payload:unknown#container": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:CATPart"
+      }
+    }
   }
 }

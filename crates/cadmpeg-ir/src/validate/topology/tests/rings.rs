@@ -3,16 +3,16 @@
 
 use crate::examples::unit_cube;
 use crate::ids::{CoedgeId, CurveId, EdgeId};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 
 #[test]
 fn dangling_reference_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Point a coedge's edge at something that does not exist.
     ir.model.coedges[0].edge =
         EdgeId::mint("test:model:entity#does-not-exist").expect("valid identity");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
@@ -22,12 +22,12 @@ fn dangling_reference_is_flagged() {
 
 #[test]
 fn coedge_use_curve_requires_a_resolved_carrier() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: CurveId::mint("missing:model:use-curve#0").expect("valid identity"),
-        parameter_range: [0.0, 1.0],
+        parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
     }));
@@ -39,7 +39,7 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
 
 #[test]
 fn mismatched_partner_edge_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Force a coedge's partner to reference a coedge on a different edge by
     // repointing the partner's edge. Find coedge[0]'s partner and change it.
     let partner_id: CoedgeId = ir.model.coedges[0].radial_next.clone();
@@ -56,7 +56,7 @@ fn mismatched_partner_edge_is_flagged() {
             c.edge = other_edge.clone();
         }
     }
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
             .findings
@@ -69,17 +69,16 @@ fn mismatched_partner_edge_is_flagged() {
 
 #[test]
 fn new_topology_references_are_validated() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.shells[0]
-        .wire_edges
-        .push(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
-    ir.model.shells[0].free_vertices.push(
+        .add_wire_edge(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
+    ir.model.shells[0].add_free_vertex(
         crate::ids::VertexId::mint("test:model:entity#missing-free").expect("valid identity"),
     );
     ir.model.coedges[0].radial_next =
         CoedgeId::mint("test:model:entity#missing-radial").expect("valid identity");
 
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let messages = report
         .findings
         .iter()
@@ -96,7 +95,7 @@ fn new_topology_references_are_validated() {
 
 #[test]
 fn two_member_radial_ring_with_equal_senses_warns() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let other_id = ir.model.coedges[0].radial_next.clone();
     let sense = ir.model.coedges[0].sense;
     ir.model
@@ -106,6 +105,7 @@ fn two_member_radial_ring_with_equal_senses_warns() {
         .unwrap()
         .sense = sense;
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -116,11 +116,10 @@ fn two_member_radial_ring_with_equal_senses_warns() {
 
 #[test]
 fn coedge_backed_edge_cannot_be_a_wire_edge() {
-    let mut ir = unit_cube();
-    ir.model.shells[0]
-        .wire_edges
-        .push(ir.model.coedges[0].edge.clone());
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::WireTopology));
@@ -128,7 +127,7 @@ fn coedge_backed_edge_cannot_be_a_wire_edge() {
 
 #[test]
 fn wire_and_free_topology_negative_cases_are_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
 
     let mut unowned_edge = ir.model.edges[0].clone();
     unowned_edge.id = "synthetic:test:edge#unowned"
@@ -140,9 +139,11 @@ fn wire_and_free_topology_negative_cases_are_reported() {
     duplicate_edge.id = "synthetic:test:edge#duplicate"
         .try_into()
         .expect("valid identity");
-    ir.model.shells[0]
-        .wire_edges
-        .extend([duplicate_edge.id.clone(), duplicate_edge.id.clone()]);
+    {
+        for member in [duplicate_edge.id.clone(), duplicate_edge.id.clone()] {
+            ir.model.shells[0].add_wire_edge(member);
+        }
+    };
     ir.model.edges.push(duplicate_edge);
 
     let mut unowned_vertex = ir.model.vertices[0].clone();
@@ -151,13 +152,14 @@ fn wire_and_free_topology_negative_cases_are_reported() {
         .expect("valid identity");
     ir.model.vertices.push(unowned_vertex);
 
-    ir.model.shells[0]
-        .free_vertices
-        .push(ir.model.edges[0].start.clone());
+    ir.model.shells[0].add_free_vertex(ir.model.edges[0].start.clone());
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     for message in [
         "wire edge must belong to exactly one shell",
         "free vertex must belong to exactly one shell",
@@ -175,24 +177,29 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 
 #[test]
 fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.loops[0].boundary = crate::topology::LoopBoundary::Vertex {
         vertex: vertex.clone(),
         pcurves: Vec::new(),
     };
-    ir.model.shells[0].free_vertices.push(vertex.clone());
+    ir.model.shells[0].add_free_vertex(vertex.clone());
     let mut second_shell = ir.model.shells[0].clone();
     second_shell.id = "synthetic:test:shell#second"
         .try_into()
         .expect("valid identity");
-    second_shell.faces.clear();
-    second_shell.wire_edges.clear();
-    second_shell.free_vertices = vec![vertex];
+    second_shell
+        .edit_topology(|faces, wire_edges, free_vertices| {
+            faces.clear();
+            wire_edges.clear();
+            *free_vertices = vec![vertex];
+        })
+        .unwrap();
     ir.model.regions[0].shells.push(second_shell.id.clone());
     ir.model.shells.push(second_shell);
 
     assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -202,37 +209,28 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
 }
 
 #[test]
-fn empty_shell_is_reported() {
-    let mut ir = unit_cube();
-    ir.model.shells[0].faces.clear();
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    assert!(findings.iter().any(|finding| {
-        finding.check == Check::WireTopology && finding.message == "shell owns no topology"
-    }));
-}
-
-#[test]
 fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
-    let mut ir = unit_cube();
-    ir.model.edges[0].curve = None;
-    ir.model.edges[0].param_range = Some([1.0, 0.0]);
-    let report = validate_neutral(&ir, Vec::new());
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.edges[0].set_curve(None).unwrap();
+    ir.model.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([1.0, 0.0]))
+            .unwrap();
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
     }));
 
-    ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::ParameterDomain
-            && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
-    }));
+    assert!(crate::topology::EdgeCarrier::new(
+        ir.model.edges[0].curve().cloned(),
+        Some([f64::NAN, 0.0])
+    )
+    .is_err());
 }
 
 #[test]
 fn vertex_loop_is_valid_and_exclusive_with_coedges() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
     let vertex_id = ir.model.vertices[0].id.clone();
     let loop_id = crate::ids::LoopId::mint("synthetic:cube:vertex-loop#0").expect("valid identity");
@@ -244,8 +242,55 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
             pcurves: Vec::new(),
         },
     });
-    ir.model.faces[0].loops.push(loop_id.clone());
-    ir.model.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let face_loops = ir.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(loop_id.clone()))
+        .collect();
+    ir.model.faces[0].loops = crate::topology::FaceLoops::unspecified(face_loops);
+    ir.model
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
+}
+
+#[test]
+fn spring_support_reference_findings_name_the_construction() {
+    use crate::geometry::{
+        ProceduralCurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve, SpringSupport,
+    };
+    use crate::ids::{ProceduralCurveId, SurfaceId};
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let owner = ProceduralCurveId::mint("test:model:procedural-curve#spring").unwrap();
+    let missing = SurfaceId::mint("test:model:surface#missing").unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        owner.clone(),
+        ProceduralCurveDefinition::Spring(
+            crate::geometry::curve_payloads::SpringCurvePayload::try_new(
+                SpringLayout::ContextFirst {
+                    supports: [
+                        SpringSupport::Surface(missing.clone()),
+                        SpringSupport::Ranges([[0.0, 1.0]; 2]),
+                    ],
+                    first_pcurve: Box::new(SpringPcurve::Range([0.0, 1.0])),
+                    second_pcurve: None,
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+                1,
+            )
+            .unwrap(),
+        ),
+    ));
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(owner.as_str())
+            && finding.message == format!("references missing surface `{missing}`")
+    }));
 }

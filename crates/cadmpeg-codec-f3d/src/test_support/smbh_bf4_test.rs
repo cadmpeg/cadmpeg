@@ -2,8 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_header_test::bf4_header_prefix;
+use crate::test_support::tokens_test::{
+    push_u8_string, t_dbl, t_end, t_ident, t_pos, t_subident, t_vec,
+};
 
 /// The minimal `BinaryFile4` active model slice: the planar-face graph of
 /// `synthetic_geometry_smbh` with 4-byte integer/ref fields, the ASM-227
@@ -21,8 +25,10 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
 
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -44,12 +50,12 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     tagged_i32(&mut curve, 0x15, 0);
     tagged_i32(&mut curve, 0x04, 2);
     for (knot, multiplicity) in [(0.0, 2), (1.0, 2)] {
-        push_tagged_f64(&mut curve, knot);
+        t_dbl(&mut curve, knot);
         tagged_i32(&mut curve, 0x04, multiplicity);
     }
     for point in [[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [1.0, 0.0, 0.0]] {
         for coordinate in point {
-            push_tagged_f64(&mut curve, coordinate);
+            t_dbl(&mut curve, coordinate);
         }
     }
     t_dbl(&mut curve, 0.0005);

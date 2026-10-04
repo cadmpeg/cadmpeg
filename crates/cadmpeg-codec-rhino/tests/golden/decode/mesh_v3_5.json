@@ -40,21 +40,27 @@
         {
           "channels": [
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAgD8=",
               "flags": 0,
               "item_size": 8,
               "kind": 1380450305
             },
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "/wAA//8AAP//AAD//wAA/w==",
               "flags": 0,
               "item_size": 4,
               "kind": 1380450306
             },
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPw==",
               "flags": 0,
               "item_size": 16,
@@ -62,73 +68,81 @@
             }
           ],
           "id": "rhino:object:tessellation#record-000000-offset-177",
-          "normals": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            }
-          ],
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                0,
+                2,
+                3
+              ],
+              [
+                0,
+                3,
+                1
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                }
+              }
+            ]
+          },
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
-          },
-          "strip_lengths": [],
-          "triangles": [
-            [
-              0,
-              1,
-              2
-            ],
-            [
-              0,
-              2,
-              3
-            ],
-            [
-              0,
-              3,
-              1
-            ]
-          ],
-          "vertices": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 1.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            }
-          ]
+          }
         }
       ],
       "vertices": [],
@@ -202,18 +216,19 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "50"
-          },
-          "dialect": "rhino:archive-50",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "50"
+            },
+            "dialect": "rhino:archive-50"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 0.1,
@@ -224,26 +239,26 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "50"
-        },
-        "dialect": "rhino:archive-50",
-        "format": "rhino"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "50"
+          },
+          "dialect": "rhino:archive-50"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -252,7 +267,8 @@
         "code": {
           "code": "mesh.quad-topology-triangulated",
           "kind": "record_not_typed",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "1 quadrilateral face(s) were triangulated for mesh rhino:object:tessellation#record-000000-offset-177",
         "severity": "warning"
@@ -261,7 +277,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xd37a1d50",
         "severity": "error"
@@ -270,7 +288,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
@@ -280,7 +299,7 @@
           "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino",
-          "strict_floor": null
+          "scope": "namespaced"
         },
         "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 3 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
         "severity": "warning"
@@ -288,25 +307,30 @@
     ],
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "rhino:object:tessellation#record-000000-offset-177": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },
-    "retained_records": [
-      {
-        "byte_len": 566,
-        "data": "cIAAICoCAAAAAAAAcQAAgiAAAAAAAAAA+n8CAAICAAAAAAAA+/8CABQAAAAAAAAA5NTXTkfp0xG/5QAQgwEi8C25G1z8/wIAygEAAAAAAAA1BAAAAAIAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAECAgACAwEwAAAA0rVT6gAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAPwAAAAAwAAAAeLagZwAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8gAAAA9MjM/wAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAAAAQAAAAHKtavAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAl39wIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAilDzYP9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAFAdetM=",
-        "id": "rhino:object:record#000000",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAICoCAAAAAAAAcQAAgiAAAAAAAAAA+n8CAAICAAAAAAAA+/8CABQAAAAAAAAA5NTXTkfp0xG/5QAQgwEi8C25G1z8/wIAygEAAAAAAAA1BAAAAAIAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAECAgACAwEwAAAA0rVT6gAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAPwAAAAAwAAAAeLagZwAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8gAAAA9MjM/wAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAAAAQAAAAHKtavAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAl39wIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAilDzYP9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAFAdetM=",
+          "retention": "inline"
+        },
         "offset": 177,
-        "sha256": "cf42b296e7022ea9a2759850d1b12520737e9f7a4194ba7f788c4094d961f7c2",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }

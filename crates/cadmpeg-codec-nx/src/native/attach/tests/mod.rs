@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
-pub(crate) use super::*;
-
+use crate::native::attach::feature_projection::hole_body_projection;
+use crate::native::attach::feature_projection::simple_hole_operations;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::Length;
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
-pub(crate) fn hole_diameters_for_operations(
+fn hole_diameters_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    hole_body_projection(ir, operations, outputs)
-        .map(|projection| projection.diameters)
-        .unwrap_or_default()
+    crate::test_support::with_decode_context(|ctx| {
+        hole_body_projection(ctx, ir, operations, outputs)
+            .expect("hole witness resource budget")
+            .map(|projection| projection.diameters)
+            .unwrap_or_default()
+    })
 }
 
-pub(crate) fn simple_hole_diameters(
+fn simple_hole_diameters(
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
@@ -28,10 +31,15 @@ pub(crate) fn simple_hole_diameters(
         .enumerate()
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions) else {
-        return BTreeMap::new();
-    };
-    hole_diameters_for_operations(ir, &operations, outputs)
+
+    crate::test_support::with_decode_context(|ctx| {
+        let Some(operations) = simple_hole_operations(ctx, templates, groups, &operation_positions)
+            .expect("simple hole operation resource budget")
+        else {
+            return BTreeMap::new();
+        };
+        hole_diameters_for_operations(ir, &operations, outputs)
+    })
 }
 
 mod blend;
@@ -40,6 +48,7 @@ mod brep;
 mod bridge_curve;
 mod cone;
 mod configuration;
+mod configuration_attachment;
 mod copy_face;
 mod cylinder;
 mod delete_face;
@@ -48,12 +57,16 @@ mod extract_datum_axis;
 mod extract_face;
 mod fill_hole;
 mod holes_offsets_and_attributes;
+mod indexing;
 mod linked_face;
+mod material_assets;
 mod mirror_face;
 mod move_face;
 mod move_object;
 mod operation_sources;
 mod operations_and_holes;
+mod part_attributes;
+mod preview_assets;
 mod shell;
 mod sketches;
 mod sphere;
@@ -63,3 +76,4 @@ mod thread;
 mod through_curve_mesh;
 mod topology_optimization;
 mod trim_body;
+mod unknowns;

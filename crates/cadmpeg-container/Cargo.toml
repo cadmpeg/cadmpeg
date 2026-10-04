@@ -16,5 +16,9 @@ zstd.workspace = true
 crc32fast.workspace = true
 zip.workspace = true
 
+[dev-dependencies]
+# Test-only byte-fixture writers shared with the codec crates.
+cadmpeg-test-support = { workspace = true }
+
 [lints]
 workspace = true

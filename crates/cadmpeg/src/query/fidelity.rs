@@ -12,6 +12,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::application::artifact_store::{FileDestination, OptionalFileDestination};
 use anyhow::{bail, Context, Result};
 use clap::Args;
 
@@ -19,30 +20,28 @@ use super::{detect, print_json, read_input, Artifact};
 
 /// Input selection for `query fidelity`.
 #[derive(Debug, Args)]
-pub struct FidelityArgs {
+#[command(mut_arg("output", |arg| arg.value_name("FILE").requires("stream")),
+    mut_arg("force", |arg| arg.requires("output")))]
+pub(crate) struct FidelityArgs {
     /// Decode sidecar (`<stem>.fidelity.json`), or `-` for standard input.
-    pub file: PathBuf,
+    pub(super) file: PathBuf,
     /// Extract the retained bytes of this source stream instead of
     /// printing the table.
     #[arg(long, value_name = "NAME")]
-    pub stream: Option<String>,
-    /// Write the extracted bytes to this file.
-    #[arg(short = 'o', long, value_name = "FILE", requires = "stream")]
-    pub output: Option<PathBuf>,
-    /// Replace an existing output file.
-    #[arg(long, requires = "output")]
-    pub force: bool,
+    stream: Option<String>,
+    #[command(flatten)]
+    output: OptionalFileDestination,
     /// Stream the extracted bytes to stdout even though they are binary.
     #[arg(long, requires = "stream")]
-    pub binary_stdout: bool,
+    binary_stdout: bool,
     /// Print the projected table as JSON (record metadata, not the bytes).
     #[arg(long, conflicts_with = "stream")]
-    pub json: bool,
+    json: bool,
 }
 
 impl FidelityArgs {
     /// Resolves the flat clap fields into one fidelity operation.
-    pub(crate) fn mode(&self) -> Result<FidelityMode<'_>> {
+    pub(super) fn mode(&self) -> Result<FidelityMode<'_>> {
         let Some(stream) = self.stream.as_deref() else {
             return Ok(if self.json {
                 FidelityMode::Json
@@ -50,11 +49,8 @@ impl FidelityArgs {
                 FidelityMode::Table
             });
         };
-        let sink = if let Some(path) = self.output.as_deref() {
-            Sink::File {
-                path,
-                force: self.force,
-            }
+        let sink = if let Some(file) = self.output.0.as_ref() {
+            Sink::File(file)
         } else if self.binary_stdout {
             Sink::Stdout
         } else {
@@ -69,7 +65,7 @@ impl FidelityArgs {
 
 /// One complete fidelity query operation.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum FidelityMode<'a> {
+pub(in crate::query) enum FidelityMode<'a> {
     Table,
     Json,
     Extract { stream: &'a str, sink: Sink<'a> },
@@ -77,13 +73,13 @@ pub(crate) enum FidelityMode<'a> {
 
 /// Destination for extracted retained bytes.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Sink<'a> {
-    File { path: &'a Path, force: bool },
+pub(in crate::query) enum Sink<'a> {
+    File(&'a FileDestination),
     Stdout,
 }
 
 /// Runs `query fidelity` against one artifact.
-pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
+pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
     let bytes = read_input(file)?;
     match detect(&bytes, file)? {
         Artifact::Sidecar(_) => {}
@@ -106,14 +102,14 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
     let payload = &sidecar.fidelity;
 
     match mode {
-        FidelityMode::Extract { stream, sink } => extract(payload, stream, sink),
+        FidelityMode::Extract { stream, sink } => extract(file, payload, stream, sink),
         FidelityMode::Json => {
             let records: Vec<serde_json::Value> = payload
-                .retained_records
+                .retained_records()
                 .iter()
-                .map(|record| {
+                .map(|(id, record)| {
                     serde_json::json!({
-                        "id": record.id(),
+                        "id": id,
                         "stream": record.stream(),
                         "offset": record.offset(),
                         "byte_len": record.byte_len(),
@@ -129,22 +125,22 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                 },
                 "retained_records": records,
             });
-            print_json("fidelity", value);
+            print_json("fidelity", value)?;
             Ok(())
         }
         FidelityMode::Table => {
             println!("stream\toffset\tbytes\tdata\tid");
-            for record in &payload.retained_records {
+            for (id, record) in payload.retained_records() {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
                     super::cell(record.stream()),
                     record.offset(),
                     record.byte_len(),
                     if record.data().is_some() { "yes" } else { "no" },
-                    super::cell(record.id()),
+                    super::cell(id.as_str()),
                 );
             }
-            if payload.retained_records.is_empty() {
+            if payload.retained_records().is_empty() {
                 eprintln!("(this sidecar retains no source records)");
             }
             eprintln!(
@@ -161,20 +157,28 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
 }
 
 /// Reassembles one stream's retained bytes and writes them byte-exactly.
-fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -> Result<()> {
+fn extract(
+    input: &Path,
+    payload: &cadmpeg_ir::SourceFidelity,
+    stream: &str,
+    sink: Sink<'_>,
+) -> Result<()> {
     const SHOWN: usize = 20;
-    let selected: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
-        .retained_records
+    let selected: Vec<(
+        &cadmpeg_ir::ids::UnknownId,
+        &cadmpeg_ir::RetainedSourceRecord,
+    )> = payload
+        .retained_records()
         .iter()
-        .filter(|record| record.stream() == stream)
+        .filter(|(_, record)| record.stream() == stream)
         .collect();
     if selected.is_empty() {
-        if payload.retained_records.is_empty() {
+        if payload.retained_records().is_empty() {
             bail!("this sidecar retains no source records");
         }
         let mut streams: Vec<&str> = payload
-            .retained_records
-            .iter()
+            .retained_records()
+            .values()
             .map(cadmpeg_ir::RetainedSourceRecord::stream)
             .collect();
         streams.sort_unstable();
@@ -186,12 +190,12 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
             if streams.len() > SHOWN { ", …" } else { "" }
         );
     }
-    let mut matched = Vec::with_capacity(selected.len());
+    let mut matched = Vec::new();
     let mut missing = Vec::new();
-    for record in selected {
+    for (id, record) in selected {
         match record.data() {
-            Some(data) => matched.push((record, data)),
-            None => missing.push(record.id()),
+            Some(data) => matched.push((id, record, data)),
+            None => missing.push(id.as_str()),
         }
     }
     if !missing.is_empty() {
@@ -201,21 +205,16 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
             missing.join(", ")
         );
     }
-    matched.sort_by_key(|(record, _)| record.offset());
+    matched.sort_by_key(|(_, record, _)| record.offset());
     let mut assembled: Vec<u8> = Vec::new();
     let mut expected_offset: Option<u64> = None;
-    for (record, data) in &matched {
+    for (_, record, data) in &matched {
         if let Some(expected) = expected_offset {
             if record.offset() != expected {
                 let extents: Vec<String> = matched
                     .iter()
-                    .map(|(record, _)| {
-                        format!(
-                            "{}+{} ({})",
-                            record.offset(),
-                            record.byte_len(),
-                            record.id()
-                        )
+                    .map(|(id, record, _)| {
+                        format!("{}+{} ({id})", record.offset(), record.byte_len())
                     })
                     .collect();
                 bail!(
@@ -226,23 +225,18 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
                 );
             }
         }
-        expected_offset = Some(record.offset() + record.byte_len());
+        expected_offset = Some(record.end_offset());
         assembled.extend_from_slice(data);
     }
 
     match sink {
-        Sink::File { path, force } => {
-            if path.exists() && !force {
-                bail!("{} exists; pass --force to replace it", path.display());
-            }
-            std::fs::write(path, &assembled).with_context(|| {
-                format!("writing {} bytes to {}", assembled.len(), path.display())
-            })?;
+        Sink::File(destination) => {
+            destination.write(input, &assembled)?;
             eprintln!(
                 "wrote {} bytes from {} record(s) of stream {stream:?} to {}",
                 assembled.len(),
                 matched.len(),
-                path.display()
+                destination.path.display()
             );
             Ok(())
         }

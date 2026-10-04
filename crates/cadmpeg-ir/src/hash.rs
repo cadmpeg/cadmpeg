@@ -2,35 +2,105 @@
 //! Content hashing helpers shared by codecs.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io::Write as _;
+
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
-use crate::native::{Native, NativeNamespace, NativeRecord};
+use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
+
+pub mod digest;
+pub mod finite_json;
+
+use finite_json::{write_canonical_json, CanonicalJsonError};
+
+/// Returns the SHA-256 digest of `bytes`.
+#[must_use]
+pub fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    encode_hex(&Sha256::digest(bytes))
+    LowerHex(&sha256(bytes)).to_string()
 }
 
-/// Returns the lowercase hexadecimal SHA-256 digest of `value`'s canonical
-/// pretty JSON.
-///
-/// The JSON is streamed into the digest, so hashing a document costs a fixed
-/// buffer rather than a serialized copy of it. The bytes hashed are the ones
-/// `serde_json::to_string_pretty` produces, which is what
-/// [`CadIr::to_canonical_json`] returns.
-pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
+/// Hash canonical pretty JSON under the caller's storage, work and depth limits.
+/// The digest buffer is scoped; the returned hexadecimal text is retained.
+pub fn canonical_json_sha256<T: Serialize + ?Sized>(
+    ctx: &DecodeContext<'_>,
+    value: &T,
+    operation: &'static str,
+) -> Result<String, DigestError> {
+    ctx.charge_work(1, operation)
+        .map_err(CanonicalJsonError::from)?;
+    let mut buffer_storage = ctx
+        .reserve_scoped(0, operation)
+        .map_err(CanonicalJsonError::from)?;
+    let mut buffer = Vec::new();
+    buffer_storage
+        .with_storage_limit(|| ctx.reserve_capacity_limit(&mut buffer, 8192, operation))
+        .map_err(|limit| CanonicalJsonError::Resource(limit.into()))?;
     let mut hasher = Sha256::new();
-    let mut writer = std::io::BufWriter::new(DigestWriter(&mut hasher));
-    serde_json::to_writer_pretty(&mut writer, value).expect("canonical JSON serialization");
-    writer.flush().expect("a digest accepts every byte");
+    let mut writer = CanonicalDigestWriter {
+        ctx,
+        hasher: &mut hasher,
+        buffer,
+        refusal: None,
+        operation,
+    };
+    let serialized = write_canonical_json(ctx, &mut writer, value);
+    if let Some(error) = writer.refusal.take() {
+        return Err(CanonicalJsonError::Resource(error).into());
+    }
+    serialized?;
+    if let Err(error) = writer.flush() {
+        if let Some(refusal) = writer.refusal.take() {
+            return Err(CanonicalJsonError::Resource(refusal).into());
+        }
+        return Err(DigestError::Write(error));
+    }
     drop(writer);
-    encode_hex(&hasher.finalize())
+    drop(buffer_storage);
+    ctx.charge_work(32, operation)
+        .map_err(CanonicalJsonError::from)?;
+    let digest =
+        digest::Sha256Digest::from_bytes_for_decode(ctx, hasher.finalize().into(), operation)
+            .map_err(CanonicalJsonError::from)?;
+    Ok(digest.into())
+}
+
+/// A digest could not be computed.
+///
+/// A digested value can carry a raw `f64`. `serde_json` writes a non-finite one
+/// as `null`, so the digest serializes through the same adapter the document
+/// write route uses, which refuses it instead: see [`CanonicalJsonError`].
+#[derive(Debug, thiserror::Error)]
+pub enum DigestError {
+    /// A record the unknown arena cannot state.
+    #[error(transparent)]
+    Record(#[from] NativeConvertError),
+    /// The document has no canonical JSON.
+    #[error(transparent)]
+    CanonicalJson(#[from] CanonicalJsonError),
+    /// The digest sink refused a byte.
+    #[error("digest sink: {0}")]
+    Write(std::io::Error),
+}
+
+impl From<DigestError> for cadmpeg_core::CodecError {
+    fn from(error: DigestError) -> Self {
+        match error {
+            DigestError::Record(error) => error.into(),
+            DigestError::CanonicalJson(CanonicalJsonError::Resource(error)) => error,
+            error => Self::Malformed(error.to_string()),
+        }
+    }
 }
 
 /// The source-attribute key under which a codec records
@@ -50,133 +120,88 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// Covers the document in canonical arena order with two normalizations: the
 /// recorded `document_local_sha256` attribute is dropped, and the `format`
 /// unknown arena is reduced to identities and links with `source_image_id`
-/// excluded. Retained source bytes never reach the digest.
+/// excluded. Retained source bytes never reach the digest. `source` states
+/// the metadata to include, including metadata not assigned to `ir` yet.
+/// Normalization, ordering, serialization and hashing use `ctx`.
 ///
 /// Bitwise SHA-256 for the write path's edit oracle. Not portable across
 /// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
 /// is not transitive). Attributes with these properties use
-/// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
+/// [`crate::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
-pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
-    document_local_sha256_with_source_and_charge(
-        ir,
-        ir.source.as_ref(),
-        format,
-        source_image_id,
-        |_| Ok::<(), std::convert::Infallible>(()),
-    )
-    .expect("canonical JSON serialization")
-}
-
-/// Returns the machine-local content digest of `ir` with source metadata that
-/// its producer has not assigned to the document yet.
-///
-/// The digest covers `source` without its own `document_local_sha256`
-/// attribute. All other normalization is identical to
-/// [`document_local_sha256`].
-pub fn document_local_sha256_with_source(
-    ir: &CadIr,
-    source: &SourceMeta,
-    format: &str,
-    source_image_id: &str,
-) -> String {
-    document_local_sha256_with_source_and_charge(ir, Some(source), format, source_image_id, |_| {
-        Ok::<(), std::convert::Infallible>(())
-    })
-    .expect("canonical JSON serialization")
-}
-
-/// Returns the machine-local document digest while charging each canonical
-/// JSON byte through `charge`.
-///
-/// The charged form keeps the exact normalization and byte stream of
-/// [`document_local_sha256`]. A decoder can therefore apply its work budget
-/// to the real digest cost and refuse before an oversized document spends the
-/// remaining budget on an unbounded whole-document walk.
-pub fn document_local_sha256_with_charge<E>(
-    ir: &CadIr,
-    format: &str,
-    source_image_id: &str,
-    charge: impl FnMut(u64) -> Result<(), E>,
-) -> Result<String, E> {
-    document_local_sha256_with_source_and_charge(
-        ir,
-        ir.source.as_ref(),
-        format,
-        source_image_id,
-        charge,
-    )
-}
-
-fn document_local_sha256_with_source_and_charge<E>(
+pub fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     source: Option<&SourceMeta>,
     format: &str,
     source_image_id: &str,
-    charge: impl FnMut(u64) -> Result<(), E>,
-) -> Result<String, E> {
-    let unknowns = reduced_unknowns(ir, format, source_image_id);
-    let document = NormalizedDocument {
-        ir_version: ir.ir_version(),
-        source: source.map(|source| {
-            let mut source = source.clone();
-            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-            source
-        }),
-        units: CanonicalUnitsWire::default(),
-        tolerances: &ir.tolerances,
-        model: ir.model.sorted(),
-        native: normalized_native(&ir.native, format, &unknowns),
-    };
-    let mut hasher = Sha256::new();
-    let mut writer = std::io::BufWriter::with_capacity(
-        1024 * 1024,
-        ChargingDigestWriter {
-            hasher: &mut hasher,
-            charge,
-            error: None,
-        },
-    );
-    let serialized = serde_json::to_writer_pretty(&mut writer, &document);
-    if let Some(error) = writer.get_mut().error.take() {
-        return Err(error);
-    }
-    serialized.expect("canonical JSON serialization");
-    if writer.flush().is_err() {
-        if let Some(error) = writer.get_mut().error.take() {
-            return Err(error);
-        }
-        panic!("a digest accepts every byte");
-    }
-    drop(writer);
-    Ok(encode_hex(&hasher.finalize()))
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let unknowns =
+        storage.with_storage(|| reduced_unknowns(ctx, ir, format, source_image_id, operation))?;
+    let document = storage.with_storage(|| {
+        Ok::<_, CodecError>(NormalizedDocument {
+            ir_version: ir.ir_version(),
+            source: source
+                .map(|source| source.normalized_digest_copy(ctx, operation))
+                .transpose()?,
+            units: CanonicalUnitsWire::default(),
+            tolerances: &ir.tolerances,
+            model: ir.model.sorted(ctx)?,
+            native: normalized_native(ctx, &ir.native, format, &unknowns, operation)?,
+        })
+    })?;
+    canonical_json_sha256(ctx, &document, operation).map_err(Into::into)
 }
 
-/// Reduce the `format` unknown arena to record identities and links, dropping
-/// `source_image_id`, in canonical order.
-///
-/// Each record is deserialized, filtered, and converted back before the next is
-/// read, so the retained population is never resident in typed and reduced form
-/// at once.
-fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
-    let mut unreadable = false;
-    let mut projected = NativeNamespace::default();
-    projected
-        .set_arena_from(
-            "unknowns",
-            ir.native_unknowns_iter(format)
-                .map_while(|record| record.inspect_err(|_| unreadable = true).ok())
-                .filter(|record| record.id.as_str() != source_image_id),
-        )
-        .expect("unknown records serialize");
-    if unreadable {
-        // Unreadable arenas reduce to empty.
-        return Vec::new();
+fn reduced_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    format: &str,
+    source_image_id: &str,
+    operation: &'static str,
+) -> Result<Vec<NativeRecord>, CodecError> {
+    let mut reduced = Vec::new();
+    admit_digest_key(ctx, ir.native.0.len(), format.len(), operation)?;
+    if let Some(namespace) = ir.native.namespace(format) {
+        admit_digest_key(ctx, namespace.arenas().len(), "unknowns".len(), operation)?;
+        if let Some(records) = namespace.arenas().get("unknowns") {
+            for record in records {
+                let normalized = record.digest_unknown(ctx)?;
+                ctx.charge_work(
+                    u64_from_index(record.id().len())
+                        .checked_add(1)
+                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+                    operation,
+                )?;
+                if record.id() == source_image_id {
+                    continue;
+                }
+                ctx.push_vec(&mut reduced, normalized, operation)?;
+            }
+        }
     }
-    projected
-        .arenas_mut()
-        .remove("unknowns")
-        .expect("the unknown arena was just set")
+    ctx.stable_sort_by(
+        &mut reduced,
+        |left, right| left.id().cmp(right.id()),
+        |value| value.id().len(),
+        "sort reduced digest unknowns",
+    )?;
+    Ok(reduced)
+}
+
+pub(crate) fn admit_digest_key(
+    ctx: &DecodeContext<'_>,
+    entries: usize,
+    longest: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let comparisons = u64_from_index(entries)
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(u64_from_index(longest)))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(comparisons, operation)
 }
 
 /// A document as the semantic digest sees it.
@@ -197,96 +222,220 @@ struct NormalizedDocument<'a> {
 /// unknown arena with `unknowns` and creating that namespace when the document
 /// has none.
 fn normalized_native<'a>(
+    ctx: &DecodeContext<'_>,
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
-) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
-    let mut namespaces = native
-        .0
-        .iter()
-        .map(|(name, namespace)| {
-            let arenas = namespace
-                .arenas()
-                .iter()
-                .map(|(arena, records)| (arena.as_str(), sorted_records(records)))
-                .collect();
-            (name.as_str(), arenas)
-        })
-        .collect::<BTreeMap<_, BTreeMap<_, _>>>();
-    namespaces
-        .entry(format)
-        .or_default()
-        .insert("unknowns", unknowns.iter().collect());
-    namespaces
-}
-
-/// Borrow `records` in canonical identity order.
-fn sorted_records(records: &[NativeRecord]) -> Vec<&NativeRecord> {
-    let mut refs = records.iter().collect::<Vec<_>>();
-    refs.sort_by(|left, right| left.id().cmp(right.id()));
-    refs
-}
-
-/// A sink that feeds every written byte to a digest.
-struct DigestWriter<'a>(&'a mut Sha256);
-
-impl std::io::Write for DigestWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-struct ChargingDigestWriter<'a, F, E> {
-    hasher: &'a mut Sha256,
-    charge: F,
-    error: Option<E>,
-}
-
-impl<F, E> std::io::Write for ChargingDigestWriter<'_, F, E>
-where
-    F: FnMut(u64) -> Result<(), E>,
-{
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = (self.charge)(buf.len() as u64) {
-            self.error = Some(error);
-            return Err(std::io::Error::other("digest work charge rejected"));
+    operation: &'static str,
+) -> Result<BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>, CodecError> {
+    let mut namespaces = BTreeMap::new();
+    let mut longest_namespace = format.len();
+    for (name, namespace) in &native.0 {
+        ctx.charge_work(
+            u64_from_index(format.len())
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            operation,
+        )?;
+        let mut arenas = BTreeMap::new();
+        let mut longest_arena = "unknowns".len();
+        for (arena, records) in namespace.arenas() {
+            ctx.charge_work(
+                u64_from_index(format.len())
+                    .checked_add(9)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+                operation,
+            )?;
+            if name == format && arena == "unknowns" {
+                continue;
+            }
+            longest_arena = longest_arena.max(arena.len());
+            admit_digest_key(ctx, arenas.len(), longest_arena, operation)?;
+            ctx.insert_btree_map(
+                &mut arenas,
+                arena.as_str(),
+                sorted_records(ctx, records)?,
+                operation,
+            )?;
         }
-        self.hasher.update(buf);
-        Ok(buf.len())
+        if name == format {
+            admit_digest_key(ctx, arenas.len(), longest_arena, operation)?;
+            let refs = ctx.collect_vec(unknowns.iter(), operation)?;
+            ctx.insert_btree_map(&mut arenas, "unknowns", refs, operation)?;
+        }
+        longest_namespace = longest_namespace.max(name.len());
+        admit_digest_key(ctx, namespaces.len(), longest_namespace, operation)?;
+        ctx.insert_btree_map(&mut namespaces, name.as_str(), arenas, operation)?;
     }
+    admit_digest_key(ctx, namespaces.len(), longest_namespace, operation)?;
+    if !namespaces.contains_key(format) {
+        let mut arenas = BTreeMap::new();
+        let refs = ctx.collect_vec(unknowns.iter(), operation)?;
+        ctx.insert_btree_map(&mut arenas, "unknowns", refs, operation)?;
+        ctx.insert_btree_map(&mut namespaces, format, arenas, operation)?;
+    }
+    Ok(namespaces)
+}
 
-    fn flush(&mut self) -> std::io::Result<()> {
+fn sorted_records<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [NativeRecord],
+) -> Result<Vec<&'a NativeRecord>, CodecError> {
+    let mut refs = ctx.collect_vec(records.iter(), "borrow digest native arena")?;
+    ctx.stable_sort_by(
+        &mut refs,
+        |left, right| left.id().cmp(right.id()),
+        |value| value.id().len(),
+        "sort digest native arena",
+    )?;
+    Ok(refs)
+}
+
+struct CanonicalDigestWriter<'ctx, 'arena, 'hash> {
+    ctx: &'ctx DecodeContext<'arena>,
+    hasher: &'hash mut Sha256,
+    buffer: Vec<u8>,
+    refusal: Option<CodecError>,
+    operation: &'static str,
+}
+
+impl CanonicalDigestWriter<'_, '_, '_> {
+    fn admit(&mut self, bytes: usize) -> std::io::Result<()> {
+        if let Err(error) = self.ctx.charge_work(u64_from_index(bytes), self.operation) {
+            if self.refusal.is_none() {
+                self.refusal = Some(error);
+            }
+            return Err(std::io::Error::other("canonical digest admission refused"));
+        }
         Ok(())
     }
 }
 
-/// Render a digest as lowercase hexadecimal.
-fn encode_hex(digest: &[u8]) -> String {
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
+impl std::io::Write for CanonicalDigestWriter<'_, '_, '_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.buffer.capacity() - self.buffer.len() {
+            self.flush()?;
+        }
+        if bytes.len() > self.buffer.capacity() {
+            self.admit(bytes.len())?;
+            self.hasher.update(bytes);
+        } else {
+            self.admit(bytes.len())?;
+            self.buffer.extend_from_slice(bytes);
+        }
+        Ok(bytes.len())
     }
-    encoded
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.admit(self.buffer.len())?;
+        self.hasher.update(&self.buffer);
+        self.buffer.clear();
+        Ok(())
+    }
+}
+
+/// Borrowed bytes displayed and serialized as two lowercase hexadecimal digits per byte.
+pub struct LowerHex<'a>(pub &'a [u8]);
+
+impl std::fmt::Display for LowerHex<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for LowerHex<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use super::finite_json::CanonicalJsonError;
     use super::{
-        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
-        sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
+        canonical_json_sha256, document_local_sha256, sha256_hex, DigestError,
+        DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
     };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn a_finite_float_digests() {
+        assert!(canonical_json_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &1.0f64,
+            "canonical hash fixture"
+        )
+        .is_ok());
+        assert!(canonical_json_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &vec![1.0f64, -2.5],
+            "canonical hash fixture"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn a_non_finite_float_has_no_digest() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
+                canonical_json_sha256(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &value,
+                    "canonical hash fixture",
+                )
+            else {
+                panic!("a non-finite float must have no canonical JSON");
+            };
+            assert_eq!(refused.is_nan(), value.is_nan());
+            assert_eq!(refused.is_infinite(), value.is_infinite());
+        }
+    }
+
+    #[test]
+    fn lower_hex_display_and_serialization() {
+        for (bytes, expected) in [
+            (&[][..], ""),
+            (&[0x00, 0x01, 0x0f, 0x10, 0xab, 0xff][..], "00010f10abff"),
+        ] {
+            let hex = super::LowerHex(bytes);
+            assert_eq!(hex.to_string(), expected);
+            assert_eq!(
+                serde_json::to_value(&hex).unwrap(),
+                serde_json::json!(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn a_nested_non_finite_float_has_no_digest() {
+        let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
+        assert!(canonical_json_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &nested,
+            "canonical hash fixture"
+        )
+        .is_ok());
+        let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
+        assert!(matches!(
+            canonical_json_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &nested,
+                "canonical hash fixture"
+            ),
+            Err(DigestError::CanonicalJson(
+                CanonicalJsonError::NonFinite { .. }
+            ))
+        ));
+    }
 
     #[test]
     fn encodes_sha256_as_lowercase_hexadecimal() {
@@ -312,7 +461,11 @@ mod tests {
         }) else {
             panic!("the pinned record literal is a JSON object");
         };
-        NativeRecord::new("pin:test:record#0", fields).expect("valid native identity")
+        NativeRecord::new(
+            crate::ids::Identity::new("pin:test:record#0").expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity")
     }
 
     fn pinned_native() -> Native {
@@ -403,24 +556,25 @@ mod tests {
     #[test]
     fn pins_native_arena_digest() {
         assert_eq!(
-            canonical_json_sha256(&pinned_native()),
+            canonical_json_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &pinned_native(),
+                "canonical hash fixture"
+            )
+            .unwrap(),
             "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
         );
     }
 
-    /// A record carrying the members the unknown reduction keeps (`id`,
-    /// `links`) alongside ones it drops.
+    /// An admitted product projection of a retained source record.
     fn pinned_unknown(id: &str, links: &[&str]) -> NativeRecord {
-        let serde_json::Value::Object(fields) = serde_json::json!({
-            "links": links,
-            "offset": 4096,
-            "byte_len": 12,
-            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-            "data": "AQID"
-        }) else {
-            panic!("the pinned unknown literal is a JSON object");
-        };
-        NativeRecord::new(id, fields).expect("valid native identity")
+        NativeRecord::from(&crate::NativeUnknownRecord {
+            id: UnknownId::mint(id).expect("valid fixture identity"),
+            links: links
+                .iter()
+                .map(|link| crate::ids::Identity::new(*link).expect("valid fixture link"))
+                .collect(),
+        })
     }
 
     fn pinned_document() -> CadIr {
@@ -437,8 +591,98 @@ mod tests {
                 ),
             ],
         );
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         ir
+    }
+
+    /// A document carrying one `pin` unknown record with the given fields.
+    fn pinned_document_with_unknown(fields: serde_json::Map<String, serde_json::Value>) -> CadIr {
+        let mut ir = pinned_document();
+        ir.native.namespace_mut("pin").arenas_mut().insert(
+            "unknowns".into(),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
+                fields,
+            )
+            .expect("valid native identity")],
+        );
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
+        ir
+    }
+
+    /// An arena whose records cannot be read has no digest. Reducing it to
+    /// empty would make it collide with a document that carries no unknown
+    /// records at all, and that digest is the write path's edit oracle.
+    #[test]
+    fn an_unreadable_unknown_arena_has_no_digest() {
+        let source_image = "pin:test:source-image#0";
+        let absent = document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &pinned_document(),
+            pinned_document().source.as_ref(),
+            "pin",
+            source_image,
+            "document-local SHA-256",
+        )
+        .unwrap();
+
+        let mut readable_fields = serde_json::Map::new();
+        readable_fields.insert("links".into(), serde_json::json!([]));
+        let readable_ir = pinned_document_with_unknown(readable_fields);
+        let readable = document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &readable_ir,
+            readable_ir.source.as_ref(),
+            "pin",
+            source_image,
+            "document-local SHA-256",
+        )
+        .unwrap();
+        assert_ne!(readable, absent);
+
+        let mut unreadable_fields = serde_json::Map::new();
+        unreadable_fields.insert("links".into(), serde_json::json!(7));
+        let unreadable = pinned_document_with_unknown(unreadable_fields);
+        assert!(document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &unreadable,
+            unreadable.source.as_ref(),
+            "pin",
+            source_image,
+            "document-local SHA-256"
+        )
+        .is_err());
+        assert!(document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &unreadable,
+            unreadable.source.as_ref(),
+            "pin",
+            source_image,
+            "document-local SHA-256"
+        )
+        .is_err());
+
+        // Source retention fields belong to the sidecar. They cannot be
+        // silently reduced out of a reserved product unknown record.
+        let serde_json::Value::Object(source_fields) = serde_json::json!({
+            "links": [], "offset": 4096, "byte_len": 12,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "data": "AQID"
+        }) else {
+            unreachable!("object fixture")
+        };
+        let raw_source = pinned_document_with_unknown(source_fields);
+        assert!(document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &raw_source,
+            raw_source.source.as_ref(),
+            "pin",
+            source_image,
+            "document-local SHA-256"
+        )
+        .is_err());
     }
 
     /// Pins both digest entry points over one fixed, platform-independent
@@ -447,11 +691,24 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(&ir),
-            "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
+            canonical_json_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                "canonical hash fixture"
+            )
+            .unwrap(),
+            "dfc5790d04d56453ec5d9bd2ce5f221522ea0bdc25acdcf97a9047705f30afc7"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                ir.source.as_ref(),
+                "pin",
+                "pin:test:source-image#0",
+                "document-local SHA-256"
+            )
+            .unwrap(),
             "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
         );
     }
@@ -459,28 +716,117 @@ mod tests {
     #[test]
     fn charged_document_digest_preserves_the_uncharged_digest() {
         let ir = pinned_document();
-        let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0");
-        let mut charged = 0;
-        let actual =
-            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |bytes| {
-                charged += bytes;
-                Ok::<(), ()>(())
-            })
-            .unwrap();
-
+        let expected = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
+        let actual = document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            ir.source.as_ref(),
+            "pin",
+            "pin:test:source-image#0",
+            "document-local SHA-256",
+        )
+        .unwrap();
         assert_eq!(actual, expected);
-        assert!(charged > 0);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(document_local_sha256(&ctx, &ir, ir.source.as_ref(), "pin", "pin:test:source-image#0", "document-local SHA-256"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
     fn charged_document_digest_propagates_a_work_refusal() {
         let ir = pinned_document();
-        let result =
-            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |_| {
-                Err::<(), _>("work limit")
-            });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = document_local_sha256(
+            &ctx,
+            &ir,
+            ir.source.as_ref(),
+            "pin",
+            "pin:test:source-image#0",
+            "document-local SHA-256",
+        )
+        .unwrap_err();
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("digest must return its work refusal");
+        };
+        assert_eq!(
+            original.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
+    }
 
-        assert!(matches!(result, Err("work limit")));
+    #[test]
+    fn document_digest_preserves_every_resource_dimension() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let ir = pinned_document_with_source();
+        for dimension in [
+            ResourceDimension::CollectionItems,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RecursionDepth,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+                _ => panic!("digest uses these dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = document_local_sha256(
+                &ctx,
+                &ir,
+                ir.source.as_ref(),
+                "pin",
+                "pin:test:source-image#0",
+                "document-local SHA-256",
+            )
+            .unwrap_err();
+            let CodecError::ResourceLimit(original) = error else {
+                panic!("digest refusal must stay outside serde");
+            };
+            assert_eq!(original.dimension, dimension);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+            );
+        }
+    }
+
+    #[test]
+    fn document_digest_retains_only_the_completed_hexadecimal_text() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = pinned_document_with_source();
+        let expected = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let actual = document_local_sha256(
+            &ctx,
+            &ir,
+            ir.source.as_ref(),
+            "pin",
+            "pin:test:source-image#0",
+            "document-local SHA-256",
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        ctx.finish_session().unwrap();
     }
 
     /// The pinned document with the source metadata a decoded document carries:
@@ -490,16 +836,19 @@ mod tests {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("pin:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "pin:test"
+                )),
             ),
             [
                 (
-                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
                     "stale".to_owned(),
                 ),
-                ("file_size".to_owned(), "4096".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("file_size"),
+                    "4096".to_owned(),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -515,35 +864,44 @@ mod tests {
     ///
     /// ```text
     ///   "source": {
-    ///     "format": "pin",
+    ///     "identity": {
+    ///       "classification": "classified",
+    ///       "dialects": {
+    ///         "primary": {
+    ///           "dialect": "pin:test",
+    ///           "admission": "admitted"
+    ///         },
+    ///         "extra": []
+    ///       }
+    ///     },
     ///     "attributes": {
     ///       "file_size": "4096"
-    ///     },
-    ///     "dialects": {
-    ///       "primary": {
-    ///         "format": "pin",
-    ///         "dialect": "pin:test",
-    ///         "admission": "admitted"
-    ///       },
-    ///       "extra": []
     ///     }
     ///   },
     /// ```
     ///
-    /// `dialects` is the member the wire format makes unconditional. This is the
-    /// only pin this shape change moves: the other pinned documents carry no
-    /// source metadata, so their normalized form still elides the whole
-    /// `source` member.
+    /// The identity states the format once, in the dialect id its classified
+    /// payload carries. The other
+    /// pinned documents carry no source metadata, so their normalized form still
+    /// elides the whole `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "3c2f8334870f7c44b3de17bda445f4f56003a68e22f6078f11f96ed5109725a9"
+            "28da9611ed9814d3fcd50f95d90199f4dfa0bf578a430e8356d735a428539cb8"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                ir.source.as_ref(),
+                "pin",
+                "pin:test:source-image#0",
+                "document-local SHA-256"
+            )
+            .unwrap(),
             independently_normalized
         );
     }
@@ -554,17 +912,24 @@ mod tests {
         let source = ir.source.take().expect("fixture carries source metadata");
 
         assert_eq!(
-            crate::hash::document_local_sha256_with_source(
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
                 &ir,
-                &source,
+                Some(&source),
                 "pin",
                 "pin:test:source-image#0",
-            ),
-            document_local_sha256(
-                &pinned_document_with_source(),
-                "pin",
-                "pin:test:source-image#0"
+                "document-local SHA-256"
             )
+            .unwrap(),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &pinned_document_with_source(),
+                pinned_document_with_source().source.as_ref(),
+                "pin",
+                "pin:test:source-image#0",
+                "document-local SHA-256"
+            )
+            .unwrap()
         );
     }
 
@@ -576,8 +941,23 @@ mod tests {
         let ir = pinned_document();
         let json = ir.to_canonical_json().unwrap();
         let mut reparsed = CadIr::from_json(&json).unwrap();
-        reparsed.finalize();
-        assert_eq!(canonical_json_sha256(&ir), canonical_json_sha256(&reparsed));
+        reparsed
+            .finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
+        assert_eq!(
+            canonical_json_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                "canonical hash fixture"
+            )
+            .unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &reparsed,
+                "canonical hash fixture"
+            )
+            .unwrap()
+        );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
 
@@ -585,7 +965,9 @@ mod tests {
     /// source image, and hash the serialized string.
     fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
         let mut normalized = ir.clone();
-        normalized.finalize();
+        normalized
+            .finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
             source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
@@ -593,11 +975,17 @@ mod tests {
         });
         let unknowns = ir
             .native_unknowns(format)
-            .unwrap_or_default()
+            .expect("the normalization fixture has admitted product unknowns")
             .into_iter()
             .filter(|record| record.id.as_str() != source_image_id)
             .collect::<Vec<_>>();
-        normalized.set_native_unknowns(format, &unknowns).unwrap();
+        normalized
+            .set_native_unknowns(
+                &cadmpeg_test_support::service_decode_context(),
+                format,
+                &unknowns,
+            )
+            .unwrap();
         crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
     }
 
@@ -606,25 +994,33 @@ mod tests {
     fn local_digest_fixture_with_source_image(
         source_image: UnknownRecord,
     ) -> (CadIr, crate::SourceFidelity) {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "synthetic:test"
+                )),
             ),
             [
                 (
-                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
                     "stale".to_owned(),
                 ),
-                ("active_brep".to_owned(), "body#0".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("active_brep"),
+                    "body#0".to_owned(),
+                ),
             ]
             .into_iter()
             .collect(),
         ));
+        let body_id = ir.model.bodies[0].id.as_str().to_owned();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let mut source_fidelity = crate::SourceFidelity::default();
         source_fidelity
             .attach_native_unknown_records(
@@ -636,18 +1032,21 @@ mod tests {
                         UnknownId::mint("synthetic:model:record#1").expect("valid identity"),
                         8,
                         vec![4, 5],
-                        vec!["cube:body#0".into()],
+                        vec![body_id],
                     ),
-                ],
+                ]
+                .into(),
+                &ctx,
             )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");
         namespace.arenas_mut().insert(
             "records".into(),
-            vec![
-                NativeRecord::new("other:test:record#0", serde_json::Map::new())
-                    .expect("valid native identity"),
-            ],
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("other:test:record#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
         );
         (ir, source_fidelity)
     }
@@ -666,11 +1065,27 @@ mod tests {
         let (ir, _source_fidelity) = local_digest_fixture();
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
-            crate::hash::document_local_sha256(&ir, "synthetic", source_image),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                ir.source.as_ref(),
+                "synthetic",
+                source_image,
+                "document-local SHA-256"
+            )
+            .unwrap(),
             cloned_local_digest(&ir, "synthetic", source_image)
         );
         assert_eq!(
-            crate::hash::document_local_sha256(&ir, "absent", source_image),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                ir.source.as_ref(),
+                "absent",
+                source_image,
+                "document-local SHA-256"
+            )
+            .unwrap(),
             cloned_local_digest(&ir, "absent", source_image)
         );
     }
@@ -679,17 +1094,31 @@ mod tests {
     fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
-        let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image);
+        let hash = document_local_sha256(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            ir.source.as_ref(),
+            "synthetic",
+            source_image,
+            "document-local SHA-256",
+        )
+        .unwrap();
 
         let (mut recorded, _source_fidelity) = local_digest_fixture();
-        recorded
-            .source
-            .as_mut()
-            .unwrap()
-            .attributes
-            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
+        recorded.source.as_mut().unwrap().attributes.insert(
+            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+            hash.clone(),
+        );
         assert_eq!(
-            crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &recorded,
+                recorded.source.as_ref(),
+                "synthetic",
+                source_image,
+                "document-local SHA-256"
+            )
+            .unwrap(),
             hash
         );
 
@@ -698,11 +1127,22 @@ mod tests {
                 UnknownId::mint(source_image).expect("valid identity"),
                 4,
                 vec![9],
-                vec!["cube:body#0".into()],
+                vec![ir.model.bodies[0].id.as_str().to_owned()],
             ));
         assert_eq!(
-            crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
+            document_local_sha256(
+                &cadmpeg_test_support::service_decode_context(),
+                &repacked,
+                repacked.source.as_ref(),
+                "synthetic",
+                source_image,
+                "document-local SHA-256"
+            )
+            .unwrap(),
             hash
         );
     }
 }
+
+#[cfg(test)]
+mod charge_tests;

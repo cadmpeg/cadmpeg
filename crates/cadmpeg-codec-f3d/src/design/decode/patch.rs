@@ -3,8 +3,10 @@
 //! per boundary component.
 
 use super::sketch::IndexedRecordOffsets;
-use crate::records::feature::{DesignPatchContinuity, DesignSurfacePatchBoundary};
-use cadmpeg_core::decode::View;
+use crate::design::decode::scopes::shared_frames::marked_record_reference;
+use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// Payload offset of the record's class level, past the indexed header of a
 /// record whose display name is empty.
@@ -17,22 +19,30 @@ const PAYLOAD: usize = 19;
 /// each settings-bearing `SurfacePatch` scope form. Every reference member is
 /// offered to the record grammar and only the members it closes are kept. The
 /// single-group path form carries no settings record and therefore yields none.
-pub(crate) fn surface_patch_boundaries(
+pub(super) fn surface_patch_boundaries(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     reference_members: &[u32],
-) -> Vec<DesignSurfacePatchBoundary> {
-    reference_members
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, record_index)| {
-            let at = records.first_at_or_after(0, *record_index)?;
-            let mut boundary = exact_surface_patch_boundary(bytes, at)?;
-            boundary.scope_reference_ordinal = u32::try_from(ordinal).ok()?;
-            boundary.record_index = *record_index;
-            Some(boundary)
-        })
-        .collect()
+) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
+    let mut boundaries = Vec::new();
+    for (ordinal, record_index) in reference_members.iter().enumerate() {
+        let Some(mut boundary) = records
+            .first_at_or_after(0, *record_index)
+            .and_then(|at| exact_surface_patch_boundary(bytes, at))
+        else {
+            continue;
+        };
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            continue;
+        };
+        boundary.scope_reference_ordinal = ordinal;
+        boundary.record_index = *record_index;
+
+        ctx.reserve_vec(&mut boundaries, 1, "f3d SurfacePatch boundaries")?;
+        boundaries.push(boundary);
+    }
+    Ok(boundaries)
 }
 
 /// One boundary-settings record read at the indexed header offset `at`.
@@ -52,10 +62,7 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         1 => true,
         _ => return None,
     };
-    let scale = View::f64_le_at(bytes, payload + 11)?;
-    if !scale.is_finite() {
-        return None;
-    }
+    let scale = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, payload + 11)?)?;
     let model_reference = marked_record_reference(bytes, payload + 19)?;
     Some(DesignSurfacePatchBoundary {
         scope_reference_ordinal: 0,
@@ -66,11 +73,4 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         scale,
         model_reference,
     })
-}
-
-fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
-        return None;
-    }
-    View::u32_le_at(bytes, at + 1)
 }

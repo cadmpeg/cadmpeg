@@ -1,34 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
+mod attribute_colors;
+
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_core::container::ContainerRole;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
+};
+use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_rational_pcurve_smbh;
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_compound_loft_smbh, synthetic_cyl_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
+};
+use crate::test_support::zip_test::{
+    f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_manifest_version,
+    f3d_with_smbh_and_protein,
+};
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized Fusion archive should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized Fusion archive should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
 #[test]
 fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     let bytes = f3d_with_smbh(&synthetic_geometry_smbh());
-    assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&F3dCodec, &bytes),
+        Confidence::High
+    );
     let summary = F3dCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("F3D inspection");
@@ -42,7 +66,7 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 
@@ -74,9 +98,11 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         &cadmpeg_core::dialect::Admission::Admitted
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(document), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(document), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(decoded.report().dialects(), inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect(), Some(&inspected));
@@ -102,12 +128,12 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
         saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
-                cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
         }) || result.ir().model.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
         saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
@@ -149,13 +175,19 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = decode(source);
     let mut edited = decoded.ir().clone();
-    edited.model.points[0].position.x = 2.5;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            2.5, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let mut bytes = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("preserved F3D write");
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir().model.points[0].position.x, 2.5);
+    assert_eq!(round_trip.ir().model.points[0].position().get().x, 2.5);
     assert_eq!(
         round_trip.ir().model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
@@ -165,7 +197,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
 
 #[test]
 fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = None;
     drop(f3d_native_mut(&mut ir));
     let mut bytes = Vec::new();
@@ -173,7 +205,10 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
-    assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&F3dCodec, &bytes),
+        Confidence::High
+    );
     let round_trip = decode(bytes);
     assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(round_trip.ir().model.faces.len(), 6);
@@ -199,7 +234,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
         ],
     ));
     assert!(merged.ir().model.bodies[0].id.as_str().contains(&format!(
-        "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
+        "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
     )));
     assert_valid(&merged);
 
@@ -222,19 +257,21 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
 #[test]
 fn container_only_pipeline_retains_native_sections_without_semantic_projection() {
     let bytes = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("container-only F3D decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container-only F3D decode"),
+    );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.bodies.is_empty());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert!(result.ir().native.namespace("f3d").is_some());
 }
 
@@ -270,9 +307,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
     ));
     assert_eq!(
         matched.using(),
-        Some(cadmpeg_core::dialect::DialectId::pinned(
-            "f3d:manifest-3-2-0-0"
-        ))
+        Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
     assert_eq!(matched.declared()["top_level_manifest_version"], "3-3-0-0");
 
@@ -301,7 +336,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 // --------------------------------------------------------------------------
 
 fn plan(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &EditableDecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
@@ -312,10 +347,13 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    plan.report()
-        .target()
-        .expect("an F3D write always names its dialect")
-        .to_string()
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("an F3D write always names its dialect")
+    .to_string()
 }
 
 /// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
@@ -331,10 +369,10 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     let result = decode(source.clone());
     let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
 
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay
-    );
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(named_target(&plan), "f3d:unknown");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -357,7 +395,18 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "f3d");
-    assert_eq!(refusal.requested(), Some("f3d:unknown"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("f3d:unknown")
+    );
     assert!(
         refusal
             .available()
@@ -382,10 +431,10 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     )
     .expect("the catalog row is synthesizable");
 
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -405,10 +454,10 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         TargetRequest::Explicit("3-2-0-0"),
     ] {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
-        assert_eq!(
+        assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::WritePath::VerbatimReplay
-        );
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+        ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
@@ -430,7 +479,15 @@ fn the_patch_path_names_the_preserved_dialect() {
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     let plan = F3dCodec
         .plan(
@@ -438,14 +495,19 @@ fn the_patch_path_names_the_preserved_dialect() {
             TargetRequest::Inherit,
         )
         .expect("an edited archive still preserves its dialect");
-    assert_eq!(plan.report().write_path(), cadmpeg_ir::WritePath::Patched);
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
     assert_eq!(named_target(&plan), "f3d:unknown");
 
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let redecoded = F3dCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .expect("the patched archive decodes");
+    let redecoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .expect("the patched archive decodes"),
+    );
     assert_eq!(
         redecoded
             .report()
@@ -474,30 +536,35 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     ));
     let synthesized = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
 
-    for (label, result, fidelity, expected_path) in [
-        (
-            "replay",
-            &replayed,
-            true,
-            cadmpeg_ir::WritePath::VerbatimReplay,
-        ),
-        (
-            "synthesize",
-            &synthesized,
-            false,
-            cadmpeg_ir::WritePath::Synthesized,
-        ),
+    let replay_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
+        matches!(
+            path,
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+        )
+    };
+    let synthesize_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
+        matches!(
+            path,
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        )
+    };
+    for (label, result, fidelity, path_matches) in [
+        ("replay", &replayed, true, replay_matches),
+        ("synthesize", &synthesized, false, synthesize_matches),
     ] {
         let plan = plan(result, fidelity, TargetRequest::Inherit)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
-        assert_eq!(plan.report().write_path(), expected_path, "{label}");
+        let path = plan.report().write_path();
+        assert!(path_matches(path), "{label}: took the {path} path");
         let claimed = named_target(&plan);
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
 
-        let redecoded = F3dCodec
-            .decode(&mut Cursor::new(written), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
+        let redecoded = EditableDecodeResult::from(
+            F3dCodec
+                .decode(&mut Cursor::new(written), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label} output must decode, got {error}")),
+        );
         let classified = redecoded
             .report()
             .dialects()

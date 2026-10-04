@@ -1,8 +1,11 @@
 //! Compact-legacy 92-byte profile-roster tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
 
 fn profile_payload(native_code: u32, selector: u8, endpoints: [u16; 2], terminal: bool) -> Vec<u8> {
     let length = if terminal {
@@ -34,18 +37,18 @@ fn profile_payload(native_code: u32, selector: u8, endpoints: [u16; 2], terminal
 
 #[test]
 fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
-    let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, Some(9), SketchInputKind::LineOrCircle, None);
     let first = entity(
@@ -100,10 +103,16 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         &zero_object,
     ];
     let endpoint_ids = |payload: &[u8]| {
-        roster_curve_endpoint_markers(payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>()
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            payload,
+            &curve,
+            &markers,
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>()
     };
 
     let roster = profile_payload(1, 0x44, [2, 4], false);
@@ -115,14 +124,35 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert_eq!(endpoint_ids(&roster), ["third", "coordinate-line"]);
 
     let direct = profile_payload(1, 0x44, [4, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(&direct, &curve, &markers).is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &direct,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(endpoint_ids(&direct), ["third", "coordinate-line"]);
 
     let terminal = profile_payload(0, 0x04, [4, 13], true);
-    assert!(coordinate_roster_curve_endpoint_markers(&terminal, &curve, &markers).is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &terminal,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(endpoint_ids(&terminal), ["third", "coordinate-line"]);
 
     let zero_direct = profile_payload(1, 0x44, [0, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(&zero_direct, &curve, &markers).is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &zero_direct,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert!(endpoint_ids(&zero_direct).is_empty());
 }

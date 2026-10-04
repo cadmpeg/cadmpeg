@@ -60,7 +60,10 @@
       "faces": [
         {
           "id": "step:data:face#11-geometric-set-13",
-          "loops": [],
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
           "sense": "forward",
           "shell": "step:data:shell#geometric-set-13",
           "surface": "step:data:surface#11"
@@ -103,10 +106,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#11-geometric-set-13"
-          ],
           "id": "step:data:shell#geometric-set-13",
+          "members": [
+            {
+              "id": "step:data:face#11-geometric-set-13",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#13"
         }
       ],
@@ -165,11 +171,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -180,19 +182,20 @@
         "entity_instances": "13",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -203,27 +206,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -231,7 +235,11 @@
     ],
     "notes": [
       "byte accounting: 283 structural, 695 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

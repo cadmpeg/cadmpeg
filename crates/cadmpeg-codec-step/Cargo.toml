@@ -22,6 +22,7 @@ cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
 encoding_rs = { workspace = true }
 serde_json.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 # Tests and the doctest build `cadmpeg_ir::examples`; the feature keeps those
@@ -31,7 +32,6 @@ cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
 roxmltree.workspace = true
 hdf5-reader.workspace = true
-zip.workspace = true
 
 [lints]
 workspace = true

@@ -26,7 +26,7 @@ impl SketchScaledAtom {
         f64::from_be_bytes(encoded) * SKETCH_FIXED_ATOM_SCALE
     }
 
-    pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
+    fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
         let scalar = Self(raw);
         if scalar.value().to_bits() != value.to_bits() {
             return Err("values must match scaled shifted-binary64 raw_values");
@@ -38,27 +38,29 @@ impl SketchScaledAtom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "MixedWire", into = "MixedWire")]
 pub(crate) struct SketchMixedScalars {
-    pub(crate) fixed: SketchScaledAtom,
-    pub(crate) binary32: ShiftedBinary32,
+    pub(super) fixed: SketchScaledAtom,
+    pub(super) binary32: ShiftedBinary32,
 }
 
 #[derive(Serialize, Deserialize)]
-// Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct MixedWire {
-    fixed_value: f64,
-    binary32_value: f64,
-    fixed_raw_value: [u8; 7],
-    binary32_raw_value: [u8; 4],
+    #[serde(rename = "fixed_value")]
+    fixed: f64,
+    #[serde(rename = "binary32_value")]
+    binary32: f64,
+    #[serde(rename = "fixed_raw_value")]
+    raw_fixed: [u8; 7],
+    #[serde(rename = "binary32_raw_value")]
+    raw_binary32: [u8; 4],
 }
 
 impl From<SketchMixedScalars> for MixedWire {
     fn from(scalars: SketchMixedScalars) -> Self {
         Self {
-            fixed_value: scalars.fixed.value(),
-            binary32_value: scalars.binary32.value(),
-            fixed_raw_value: scalars.fixed.raw(),
-            binary32_raw_value: scalars.binary32.raw(),
+            fixed: scalars.fixed.value(),
+            binary32: scalars.binary32.value().get(),
+            raw_fixed: scalars.fixed.raw(),
+            raw_binary32: scalars.binary32.raw(),
         }
     }
 }
@@ -68,9 +70,9 @@ impl TryFrom<MixedWire> for SketchMixedScalars {
 
     fn try_from(wire: MixedWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            fixed: SketchScaledAtom::from_wire(wire.fixed_value, wire.fixed_raw_value)
+            fixed: SketchScaledAtom::from_wire(wire.fixed, wire.raw_fixed)
                 .map_err(|error| format!("fixed_value/fixed_raw_value: {error}"))?,
-            binary32: ShiftedBinary32::from_wire(wire.binary32_value, &wire.binary32_raw_value)
+            binary32: ShiftedBinary32::from_wire(wire.binary32, wire.raw_binary32)
                 .map_err(|error| format!("binary32_value/binary32_raw_value: {error}"))?,
         })
     }
@@ -142,6 +144,6 @@ impl SketchScalarLaneForm {
 impl super::scalar_run::ScalarFrame for SketchScalarLaneForm {
     type Atom = super::scalar::ShiftedScalar;
     fn prefix_len(self) -> u64 {
-        self.discriminator().len() as u64
+        cadmpeg_core::decode::u64_from_index(self.discriminator().len())
     }
 }

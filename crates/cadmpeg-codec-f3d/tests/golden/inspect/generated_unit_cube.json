@@ -1,52 +1,35 @@
 {
   "container_kind": "zip",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-          "reference_width": "8",
-          "save_format_major": "231",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-8",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "top_level_manifest_version": "3-2-0-0"
-      },
-      "dialect": "f3d:manifest-3-2-0-0",
-      "format": "f3d"
-    }
-  },
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 571
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 4,
       "compression": "stored",
       "name": "Properties.dat",
       "role": "properties",
-      "uncompressed_size": 4
+      "size": {
+        "form": "exact",
+        "size": 4
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 589,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 589
+      "size": {
+        "form": "exact",
+        "size": 589
+      }
     },
     {
       "attributes": {
@@ -58,21 +41,46 @@
         "history_partition_offset": "8627",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "resabs": "0.000001",
+        "resabs": "0.0000001",
         "resnor": "0.0000000001",
         "save_date": "Thu Jan  1 00:00:00 1970",
         "scale": "60",
-        "sha256": "70ccb866093e5428ae50b3a3190f07d411ea2afdb463ed53b19193b8d730c5a1",
+        "sha256": "6c6c05ccc7d61852395fb09ed2a0305429e3b58985b9455f1cd0e6f8c5fd984f",
         "solved_record_len": "8627"
       },
-      "compressed_size": 8640,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 8640
+      "size": {
+        "form": "exact",
+        "size": 8640
+      }
     }
   ],
-  "format": "f3d",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "dialect": "f3d:manifest-3-2-0-0"
+      }
+    }
+  },
   "notes": [
     "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",

@@ -5,12 +5,11 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
+use super::test_bytes::shifted_f64_bytes;
 use std::io::Write;
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-
-use super::*;
 
 pub(crate) fn segment_index_payload() -> Vec<u8> {
     let mut payload = Vec::new();
@@ -165,8 +164,9 @@ pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<
             .try_into()
             .expect("record-area pointer"),
     );
-    payload[pointer_at..pointer_at + 4]
-        .copy_from_slice(&(pointer + field.len() as u32).to_le_bytes());
+    payload[pointer_at..pointer_at + 4].copy_from_slice(
+        &(pointer + u32::try_from(field.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let message_bytes = [
         0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w', b'a', b'r', b'n', b'i', b'n', b'g',
         0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01, 0x00,
@@ -217,7 +217,7 @@ pub(crate) fn composed_feature_history_payload_with_operation_state_statuses() -
     payload.extend_from_slice(&section);
 
     let mut store = composed_offset_store(&[]);
-    let base = payload.len() as u32;
+    let base = u32::try_from(payload.len()).expect("fixture value fits u32");
     let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
     for index in 0..2 {
         let at = index_start + index * 4;
@@ -238,7 +238,7 @@ pub(crate) fn multi_section_feature_history_payload() -> Vec<u8> {
     let late = size_framed_om_section_with_record_area();
     let index_byte_len = 36_u32;
     let early_offset = index_byte_len;
-    let late_offset = early_offset + early.len() as u32;
+    let late_offset = early_offset + u32::try_from(early.len()).expect("fixture value fits u32");
     let mut payload = Vec::new();
     for word in [
         late_offset,
@@ -261,7 +261,7 @@ pub(crate) fn multi_section_feature_history_payload() -> Vec<u8> {
 pub(crate) fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
     let mut payload = segment_om_record_area_payload();
     let mut store = offset_only_indexed_om_section();
-    let base = payload.len() as u32;
+    let base = u32::try_from(payload.len()).expect("fixture value fits u32");
     let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
     for index in 0..4 {
         let at = index_start + index * 4;
@@ -274,19 +274,14 @@ pub(crate) fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
 
 /// Append one feature-history operation record (label header + object-index
 /// slots + typed payload) to a record area under construction.
-pub(crate) fn push_feature_operation(
-    bytes: &mut Vec<u8>,
-    object_indices: &[u8],
-    label: &str,
-    payload: &[u8],
-) {
+fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &str, payload: &[u8]) {
     const HEADER: &[u8] = &[
         0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
     ];
     bytes.extend_from_slice(HEADER);
     bytes.extend_from_slice(object_indices);
     bytes.push(0x03);
-    bytes.push((label.len() + 2) as u8);
+    bytes.push(u8::try_from(label.len() + 2).expect("fixture value fits u8"));
     bytes.extend_from_slice(label.as_bytes());
     bytes.push(0x00);
     bytes.extend_from_slice(payload);
@@ -298,7 +293,9 @@ pub(crate) fn push_feature_operation(
 pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u8>)]) -> Vec<u8> {
     let mut bytes = size_framed_om_section();
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
@@ -307,7 +304,7 @@ pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u
     for (slots, label, payload) in operations {
         push_feature_operation(&mut bytes, slots, label, payload);
     }
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
@@ -315,16 +312,18 @@ pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u
 /// An offset-store indexed OM section carrying `records` as its object-id-less
 /// data blocks. The single product record lives in the control block (index 0)
 /// so the section validates; `records[i]` resolves to `block#{i + 1}`.
-pub(crate) fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
+fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
     let offset_count = records.len() + 2;
     bytes.resize(index_start + offset_count * 4, 0);
-    bytes.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let mut offsets = Vec::with_capacity(offset_count);
     offsets.push(bytes.len());
     bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
@@ -334,8 +333,9 @@ pub(crate) fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     }
     offsets.push(bytes.len());
     for (index, offset) in offsets.iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(*offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(*offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -346,15 +346,74 @@ pub(crate) fn composed_feature_history_payload(
     operations: &[(&[u8], &str, Vec<u8>)],
     store_records: &[&[u8]],
 ) -> Vec<u8> {
-    let mut payload = Vec::new();
+    let mut header = Vec::new();
     for word in [32u32, 9, 11, 1, 1, 24] {
-        payload.extend_from_slice(&word.to_le_bytes());
+        header.extend_from_slice(&word.to_le_bytes());
     }
-    payload.resize(32, 0);
+    header.resize(32, 0);
+    composed_feature_history_payload_with_header(&header, operations, store_records)
+}
+
+/// Compose the same payload under a segment index with twenty-one
+/// feature-history links, one more than the stable sort sorts without scratch.
+///
+/// The first link addresses the operation section. The other twenty address an
+/// operation-free feature-history section appended after the offset store, so
+/// every route yields the records it yields for the plain payload.
+pub(crate) fn composed_feature_history_payload_over_sort_scratch(
+    operations: &[(&[u8], &str, Vec<u8>)],
+    store_records: &[&[u8]],
+) -> Vec<u8> {
+    let section_len = composed_feature_history_section(operations).len();
+    let store_len = composed_offset_store(store_records).len();
+    let header = over_sort_scratch_header(section_len + store_len);
+    let mut payload =
+        composed_feature_history_payload_with_header(&header, operations, store_records);
+    payload.extend_from_slice(&composed_feature_history_section(&[]));
+    payload
+}
+
+/// Wrap one feature-history `section` under the segment index of
+/// [`composed_feature_history_payload_over_sort_scratch`].
+pub(crate) fn feature_history_section_over_sort_scratch(section: &[u8]) -> Vec<u8> {
+    let mut payload = over_sort_scratch_header(section.len());
+    payload.extend_from_slice(section);
+    payload.extend_from_slice(&composed_feature_history_section(&[]));
+    payload
+}
+
+/// Segment index whose first link addresses the section that follows it and
+/// whose other twenty links address the operation-free section `body_len`
+/// bytes after that section starts.
+fn over_sort_scratch_header(body_len: usize) -> Vec<u8> {
+    const ROWS: u32 = 8;
+    let header_len = ROWS * 12;
+    let section = header_len;
+    let empty = header_len + u32::try_from(body_len).expect("fixture value fits u32");
+    let mut header = Vec::new();
+    for row in 0..ROWS {
+        let words = match row {
+            0 => [section, empty, empty],
+            1 => [1, 1, header_len],
+            _ => [empty; 3],
+        };
+        for word in words {
+            header.extend_from_slice(&word.to_le_bytes());
+        }
+    }
+    header
+}
+
+fn composed_feature_history_payload_with_header(
+    header: &[u8],
+    operations: &[(&[u8], &str, Vec<u8>)],
+    store_records: &[&[u8]],
+) -> Vec<u8> {
+    let mut payload = header.to_vec();
     payload.extend_from_slice(&composed_feature_history_section(operations));
 
     let mut store = composed_offset_store(store_records);
-    let base = payload.len() as u32;
+    let base = u32::try_from(payload.len()).expect("fixture value fits u32");
     let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
     let offset_count = store_records.len() + 2;
     for index in 0..offset_count {
@@ -397,7 +456,7 @@ pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
     payload.extend_from_slice(&section);
 
     let mut store = composed_offset_store(&[]);
-    let base = payload.len() as u32;
+    let base = u32::try_from(payload.len()).expect("fixture value fits u32");
     let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
     for index in 0..2 {
         let at = index_start + index * 4;
@@ -408,7 +467,7 @@ pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
     payload
 }
 
-pub(crate) type ComposedInputs = (
+type ComposedInputs = (
     Vec<(&'static [u8], &'static str, Vec<u8>)>,
     Vec<u8>,
     Vec<u8>,
@@ -421,7 +480,7 @@ pub(crate) type ComposedInputs = (
 /// A 31-character lowercase-hex identity (no `f`, so no `0x66` name markers)
 /// shared by the datum-CSYS descriptor in `block3` and the datum-plane
 /// descriptor in `block5`, joining them through `datum_plane_csys_identity_uses`.
-pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
+const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
 
 /// Build the operation list and six offset-store data blocks for the composed
 /// feature-history fixture.
@@ -434,7 +493,7 @@ pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde01234567
 /// Operations: `SKETCH` referencing the named point (object indices 1,2),
 /// `SKETCH` referencing the geometry (6,4), `DATUM_CSYS` (eight refs to 3) and
 /// `DATUM_PLANE`.
-pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
+pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
     let sketch_named = vec![
         0x01, 0x00, 0x01, 0x02, 0xf0, 0x01, 0x00, 0x00, 0xf0, 0x02, 0x01, 0x00, 0x00, 0x00,
     ];
@@ -497,7 +556,10 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         payload.extend_from_slice(&shifted_f64_bytes(38.1));
         payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
         let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
-        payload.extend_from_slice(&[0x04, (template.len() + 2) as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            u8::try_from(template.len() + 2).expect("fixture value fits u8"),
+        ]);
         payload.extend_from_slice(template);
         payload.push(0x00);
         payload
@@ -622,7 +684,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block5.push(0x03); // compact schema index
     block5.extend_from_slice(&[0xff, 0x02, 0x01]); // fixed separator
     block5.extend_from_slice(b"DPd"); // graphic label; pads block to 40 bytes
-    debug_assert_eq!(block5.len(), 40);
+    assert_eq!(block5.len(), 40);
 
     (operations, block1, block2, block3, block4, block5, block6)
 }
@@ -631,21 +693,28 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     let base = 8usize;
     let class_name = b"UGS::EXP_expression";
-    bytes[base] = (class_name.len() + 1) as u8;
+    bytes[base] = u8::try_from(class_name.len() + 1).expect("fixture value fits u8");
     bytes[base + 1..base + 1 + class_name.len()].copy_from_slice(class_name);
     bytes[base + 1 + class_name.len()] = 0x81;
     let field_name = b"m_target";
-    bytes.push((field_name.len() + 1) as u8);
+    bytes.push(u8::try_from(field_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(field_name);
     bytes.push(0x80);
     let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
     let text = b"(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; ";
     let declaration_name = b"p8_CircularPattern_pattern_Circular_Dir_offset_angle";
-    let mut expression = vec![0x04, (declaration_name.len() + 2) as u8];
+    let mut expression = vec![
+        0x04,
+        u8::try_from(declaration_name.len() + 2).expect("fixture value fits u8"),
+    ];
     expression.extend_from_slice(declaration_name);
     expression.push(0);
     expression.extend_from_slice(b"\x04\x05120\0");
-    expression.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    expression.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     expression.extend_from_slice(text);
     expression.push(0);
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
@@ -657,7 +726,12 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     let first = table_end - base;
     let second = first + records[0].len();
     let end = second + records[1].len();
-    for value in [0u32, first as u32, second as u32, end as u32] {
+    for value in [
+        0u32,
+        u32::try_from(first).expect("fixture value fits u32"),
+        u32::try_from(second).expect("fixture value fits u32"),
+        u32::try_from(end).expect("fixture value fits u32"),
+    ] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -672,7 +746,7 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
 pub(crate) fn offset_only_indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
@@ -685,13 +759,18 @@ pub(crate) fn offset_only_indexed_om_section() -> Vec<u8> {
     let second = bytes.len();
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -704,7 +783,7 @@ pub(crate) fn offset_only_indexed_om_section() -> Vec<u8> {
 pub(crate) fn offset_only_indexed_om_section_with_control(control_block: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
@@ -717,13 +796,18 @@ pub(crate) fn offset_only_indexed_om_section_with_control(control_block: &[u8]) 
     let second = bytes.len();
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -742,7 +826,7 @@ pub(crate) fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
 
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
@@ -756,8 +840,9 @@ pub(crate) fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
     bytes.extend_from_slice(&[0xcc; 12]); // column record, no product marker
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -778,7 +863,7 @@ pub(crate) fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
 
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
@@ -792,8 +877,9 @@ pub(crate) fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
     bytes.extend_from_slice(&[0xbb; 8]); // trailing column record, no point payload
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -801,7 +887,7 @@ pub(crate) fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
 pub(crate) fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0x81);
     let index_start = bytes.len();
@@ -816,13 +902,18 @@ pub(crate) fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(b"hostglobalvariables");
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [control, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(offset as u32).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -839,7 +930,7 @@ pub(crate) fn size_framed_om_section() -> Vec<u8> {
     .into_iter()
     .enumerate()
     {
-        bytes.push((name.len() + 1) as u8);
+        bytes.push(u8::try_from(name.len() + 1).expect("fixture value fits u8"));
         bytes.extend_from_slice(name);
         bytes.push(code);
         if index == 0 {
@@ -852,13 +943,13 @@ pub(crate) fn size_framed_om_section() -> Vec<u8> {
         (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
         (b"m_tools".as_slice(), 0x81, [0x03, 0x04]),
     ] {
-        bytes.push((name.len() + 1) as u8);
+        bytes.push(u8::try_from(name.len() + 1).expect("fixture value fits u8"));
         bytes.extend_from_slice(name);
         bytes.push(code);
         bytes.extend_from_slice(&suffix);
     }
     bytes.extend_from_slice(b"unframed UGS::PayloadText");
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
@@ -875,7 +966,7 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
     .into_iter()
     .enumerate()
     {
-        bytes.push((name.len() + 1) as u8);
+        bytes.push(u8::try_from(name.len() + 1).expect("fixture value fits u8"));
         bytes.extend_from_slice(name);
         bytes.push(code);
         if index == 0 {
@@ -888,14 +979,16 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
         (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
         (b"m_tools".as_slice(), 0x81, [0x03, 0x04]),
     ] {
-        bytes.push((name.len() + 1) as u8);
+        bytes.push(u8::try_from(name.len() + 1).expect("fixture value fits u8"));
         bytes.extend_from_slice(name);
         bytes.push(code);
         bytes.extend_from_slice(&suffix);
     }
     bytes.extend_from_slice(b"unframed UGS::PayloadText");
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
@@ -906,7 +999,7 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
         0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
         0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03,
     ]);
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
@@ -914,13 +1007,15 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
 pub(crate) fn size_framed_om_section_with_record_area() -> Vec<u8> {
     let mut bytes = size_framed_om_section();
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
     bytes.extend_from_slice(&44u32.to_le_bytes());
     bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00\x01\x02\x10\x90\x19\x42\xff");
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
@@ -937,7 +1032,7 @@ pub(crate) fn size_framed_om_section_with_repeated_operations(count: usize) -> V
     for _ in 0..count {
         bytes.extend_from_slice(&section[operation..]);
     }
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }

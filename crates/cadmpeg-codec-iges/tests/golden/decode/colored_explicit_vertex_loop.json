@@ -77,9 +77,11 @@
             "r": 0.20000000298023224
           },
           "id": "iges:model:face#D11:D9",
-          "loops": [
-            "iges:model:loop#D11:D7"
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D11:D7"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D11",
           "surface": "iges:model:surface#D3"
@@ -88,14 +90,12 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "outer",
+          "boundary": {
+            "kind": "vertex",
+            "vertex": "iges:model:vertex#D11:D5:1"
+          },
           "face": "iges:model:face#D11:D9",
-          "id": "iges:model:loop#D11:D7",
-          "vertex_uses": [
-            {
-              "vertex": "iges:model:vertex#D11:D5:1"
-            }
-          ]
+          "id": "iges:model:loop#D11:D7"
         }
       ],
       "occurrences": [],
@@ -129,10 +129,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D11:D9"
-          ],
           "id": "iges:model:shell#D11",
+          "members": [
+            {
+              "id": "iges:model:face#D11:D9",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D11"
         }
       ],
@@ -4191,20 +4194,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -4215,22 +4219,21 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "entities=7",
@@ -4246,64 +4249,82 @@
       "external_references=0",
       "references.resolved=1"
     ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D3",
-          "target": "iges:entity:directory#3"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#3"
+          },
+          "source": "D3"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D5",
-          "target": "iges:entity:directory#5"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#5"
+          },
+          "source": "D5"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D7",
-          "target": "iges:entity:directory#7"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#7"
+          },
+          "source": "D7"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D9",
-          "target": "iges:entity:directory#9"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#9"
+          },
+          "source": "D9"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D11",
-          "target": "iges:entity:directory#11"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#11"
+          },
+          "source": "D11"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D13",
-          "target": "iges:entity:directory#13"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#13"
+          },
+          "source": "D13"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 2025,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIENFTlRFUiAgICAgICAwRCAgICAgIDIKICAgICAxOTYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxOTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIFNQSEVSRSAgICAgICAwRCAgICAgIDQKICAgICA1MDIgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICA1MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgUE9MRSAgICAgICAwRCAgICAgIDYKICAgICA1MDggICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICA1MDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICBWTE9PUCAgICAgICAwRCAgICAgIDgKICAgICA1MTAgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICA1MTAgICAgICAgMCAgICAgLTEzICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgRkFDRSAgICAgICAwRCAgICAgMTAKICAgICA1MTQgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTEKICAgICA1MTQgICAgICAgMCAgICAgICAyICAgICAgIDEgICAgICAgMiAgICAgICAgICAgICAgICAgICBTSEVMTCAgICAgICAwRCAgICAgMTIKICAgICAzMTQgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMjAwRCAgICAgMTMKICAgICAzMTQgICAgICAgMCAgICAgICAyICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBDT0xPUiAgICAgICAwRCAgICAgMTQKMTE2LDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTk2LDEsMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNTAyLDEsMCwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKNTA4LDEsMSw1LDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKNTEwLDMsMSwxLDc7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKNTE0LDEsOSwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMzE0LDIwLDQwLDYwLDZIY3VzdG9tOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE0UDAwMDAwMDcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIENFTlRFUiAgICAgICAwRCAgICAgIDIKICAgICAxOTYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxOTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIFNQSEVSRSAgICAgICAwRCAgICAgIDQKICAgICA1MDIgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICA1MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgUE9MRSAgICAgICAwRCAgICAgIDYKICAgICA1MDggICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICA1MDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICBWTE9PUCAgICAgICAwRCAgICAgIDgKICAgICA1MTAgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICA1MTAgICAgICAgMCAgICAgLTEzICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgRkFDRSAgICAgICAwRCAgICAgMTAKICAgICA1MTQgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTEKICAgICA1MTQgICAgICAgMCAgICAgICAyICAgICAgIDEgICAgICAgMiAgICAgICAgICAgICAgICAgICBTSEVMTCAgICAgICAwRCAgICAgMTIKICAgICAzMTQgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMjAwRCAgICAgMTMKICAgICAzMTQgICAgICAgMCAgICAgICAyICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBDT0xPUiAgICAgICAwRCAgICAgMTQKMTE2LDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTk2LDEsMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNTAyLDEsMCwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKNTA4LDEsMSw1LDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKNTEwLDMsMSwxLDc7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKNTE0LDEsOSwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMzE0LDIwLDQwLDYwLDZIY3VzdG9tOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE0UDAwMDAwMDcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "e16cc607a946e9c79a59f9b6da0ec977b3e08235336fe5e54f02cf604675a276",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

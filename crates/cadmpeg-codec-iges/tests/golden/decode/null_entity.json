@@ -960,20 +960,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -984,22 +985,21 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": false,
     "losses": [],
     "notes": [
       "entities=1",
@@ -1007,19 +1007,23 @@
       "parameter_records=1",
       "parameter_tokens=1",
       "external_references=0"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 567,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAgIDAgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICAgTlVMTCAgICAgICAwRCAgICAgIDIKMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAgIDAgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICAgTlVMTCAgICAgICAwRCAgICAgIDIKMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "b818585378b5e775eb851e0b13b67099deab38d48561c0c8ec63ddbd4edbf6ba",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

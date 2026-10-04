@@ -2,6 +2,15 @@
 //! Semantic tests for `RMFastLoad` membership identities.
 
 use super::RmFastLoadObjectId;
+use std::collections::HashMap;
+
+fn assign_with_counts(entries: &mut [RmFastLoadObjectId]) {
+    let mut counts = HashMap::<u32, usize>::new();
+    for entry in entries.iter() {
+        *counts.entry(entry.value).or_default() += 1;
+    }
+    super::assign_rmfastload_object_id_identities(entries, &counts);
+}
 
 #[test]
 fn value_identity_ignores_member_order() {
@@ -12,17 +21,17 @@ fn value_identity_ignores_member_order() {
             .map(|(ordinal, value)| RmFastLoadObjectId {
                 id: format!("nx:test:rmfastload-object-id#{ordinal}"),
                 table: "nx:rmfastload:object-id-table#0".into(),
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 value: *value,
                 stable_identity: None,
-                source_offset: ordinal as u64,
+                source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
             })
             .collect::<Vec<_>>()
     };
     let mut first = make_entries(&[17, 23]);
     let mut reordered = make_entries(&[23, 17]);
-    super::assign_rmfastload_object_id_identities(&mut first);
-    super::assign_rmfastload_object_id_identities(&mut reordered);
+    assign_with_counts(&mut first);
+    assign_with_counts(&mut reordered);
 
     for value in [17, 23] {
         let first_identity = first
@@ -59,6 +68,6 @@ fn duplicate_values_have_no_stable_identity() {
             source_offset: 4,
         },
     ];
-    super::assign_rmfastload_object_id_identities(&mut entries);
+    assign_with_counts(&mut entries);
     assert!(entries.iter().all(|entry| entry.stable_identity.is_none()));
 }

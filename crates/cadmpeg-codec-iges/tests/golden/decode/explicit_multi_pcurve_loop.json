@@ -67,18 +67,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.5,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -87,7 +75,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D19",
           "source_object": {
@@ -100,18 +103,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.5,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -120,7 +111,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.5,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D21",
           "source_object": {
@@ -181,63 +187,75 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D11-end",
           "id": "iges:model:edge#D11",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D11-start"
         },
         {
-          "curve": "iges:model:curve#D13",
+          "carrier": {
+            "curve": "iges:model:curve#D13",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D13-end",
           "id": "iges:model:edge#D13",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D13-start"
         },
         {
-          "curve": "iges:model:curve#D19",
+          "carrier": {
+            "curve": "iges:model:curve#D19",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D19-end",
           "id": "iges:model:edge#D19",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D19-start"
         },
         {
-          "curve": "iges:model:curve#D21",
+          "carrier": {
+            "curve": "iges:model:curve#D21",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D21-end",
           "id": "iges:model:edge#D21",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D21-start"
         },
         {
-          "curve": "iges:model:curve#D7",
+          "carrier": {
+            "curve": "iges:model:curve#D7",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D7-end",
           "id": "iges:model:edge#D7",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D7-start"
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D9-end",
           "id": "iges:model:edge#D9",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D9-start"
         }
       ],
@@ -363,17 +381,34 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D7",
-            "iges:model:edge#D9",
-            "iges:model:edge#D11",
-            "iges:model:edge#D13",
-            "iges:model:edge#D19",
-            "iges:model:edge#D21"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D7",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D9",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D11",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D13",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D19",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D21",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],
@@ -8519,20 +8554,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -8543,28 +8579,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 510 form 1 was not projected: face loop is missing",
         "provenance": {
@@ -8579,7 +8615,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 514 form 2 was not projected: shell face-use tuple is invalid",
         "provenance": {
@@ -8594,7 +8631,9 @@
         "code": {
           "code": "parameter.data-quarantined",
           "kind": "noncanonical_source_syntax",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
         "provenance": {
@@ -8609,7 +8648,8 @@
         "code": {
           "code": "entity.retained-unprojected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 502 form 1 retained without neutral projection",
         "provenance": {
@@ -8624,7 +8664,8 @@
         "code": {
           "code": "entity.retained-unprojected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 504 form 1 retained without neutral projection",
         "provenance": {
@@ -8652,112 +8693,146 @@
       "parameter_tokens=133",
       "external_references=0"
     ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; record was consumed as construction support",
-          "source": "D3",
-          "target": "iges:entity:directory#3"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; record was consumed as construction support",
+            "target": "iges:entity:directory#3"
+          },
+          "source": "D3"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D5",
-          "target": "iges:entity:directory#5"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#5"
+          },
+          "source": "D5"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D7",
-          "target": "iges:entity:directory#7"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#7"
+          },
+          "source": "D7"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D9",
-          "target": "iges:entity:directory#9"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#9"
+          },
+          "source": "D9"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D11",
-          "target": "iges:entity:directory#11"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#11"
+          },
+          "source": "D11"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D13",
-          "target": "iges:entity:directory#13"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#13"
+          },
+          "source": "D13"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D15",
-          "target": "iges:entity:directory#15"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#15"
+          },
+          "source": "D15"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D17",
-          "target": "iges:entity:directory#17"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#17"
+          },
+          "source": "D17"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D19",
-          "target": "iges:entity:directory#19"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#19"
+          },
+          "source": "D19"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D21",
-          "target": "iges:entity:directory#21"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#21"
+          },
+          "source": "D21"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D23",
-          "target": "iges:entity:directory#23"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#23"
+          },
+          "source": "D23"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D25",
-          "target": "iges:entity:directory#25"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#25"
+          },
+          "source": "D25"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D27",
-          "target": "iges:entity:directory#27"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#27"
+          },
+          "source": "D27"
         },
         {
-          "disposition": "retained",
-          "note": "quarantined parameter data retained; tokens were not recovered",
-          "source": "D23:parameter",
-          "target": "iges:quarantine:parameter#23"
+          "outcome": {
+            "disposition": "retained",
+            "note": "quarantined parameter data retained; tokens were not recovered",
+            "target": "iges:quarantine:parameter#23"
+          },
+          "source": "D23:parameter"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 3807,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBMT0NBVElPTiAgICAgICAwRCAgICAgIDIKICAgICAxMjMgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMjMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIE5PUk1BTCAgICAgICAwRCAgICAgIDQKICAgICAxOTAgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICAxOTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgU1VSRkFDRSAgICAgICAwRCAgICAgIDYKICAgICAxMTAgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMSAgICAgICAwRCAgICAgIDgKICAgICAxMTAgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMiAgICAgICAwRCAgICAgMTAKICAgICAxMTAgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTEKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMyAgICAgICAwRCAgICAgMTIKICAgICAxMTAgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTMKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFNCAgICAgICAwRCAgICAgMTQKICAgICA1MDIgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTUKICAgICA1MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICBWRVJUSUNFUyAgICAgICAwRCAgICAgMTYKICAgICA1MDQgICAgICAgOSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAxRCAgICAgMTcKICAgICA1MDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICBFREdFUyAgICAgICAwRCAgICAgMTgKICAgICAxMjYgICAgICAxMCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTkKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMSAgICAgICAwRCAgICAgMjAKICAgICAxMjYgICAgICAxMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMjEKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMiAgICAgICAwRCAgICAgMjIKICAgICA1MDggICAgICAxMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMjMKICAgICA1MDggICAgICAgMCAgICAgICAwICAgICAgIDIgICAgICAgMSAgICAgICAgICAgICAgICAgICAgTE9PUCAgICAgICAwRCAgICAgMjQKICAgICA1MTAgICAgICAxNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMjUKICAgICA1MTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgRkFDRSAgICAgICAwRCAgICAgMjYKICAgICA1MTQgICAgICAxNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMjcKICAgICA1MTQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMiAgICAgICAgICAgICAgICAgICBTSEVMTCAgICAgICAwRCAgICAgMjgKMTE2LDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTIzLDAsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTkwLDEsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTEwLDAsMCwwLDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTEwLDEsMCwwLDEsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKMTEwLDEsMSwwLDAsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMTEwLDAsMSwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKNTAyLDQsMCwwLDAsMSwwLDAsMSwxLDAsMCwxLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDgKNTA0LDQsNywxNSwxLDE1LDIsOSwxNSwyLDE1LDMsMTEsMTUsMywxNSw0LDEzLDE1LDQsMTUsMTsgICAgICAgICAgICAgIDE3UCAgICAgIDkKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAsMCwwLDAuNSwwLDAsMCwxLDAsMCwxOyAgICAgICAgICAgICAgICAgIDE5UCAgICAgMTAKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAuNSwwLDAsMSwwLDAsMCwxLDAsMCwxOyAgICAgICAgICAgICAgICAgIDIxUCAgICAgMTEKNTA4LDUsMCwxNywxLDEsMiwxLDE5LDAsMjEsMSwxNSwyLDAsMCwwLDE3LDIsMSwwLDAsMTcsMywxLDAsMCwxNyAgICAgIDIzUCAgICAgMTIKLDQsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIzUCAgICAgMTMKNTEwLDUsMSwxLDIzOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDI1UCAgICAgMTQKNTE0LDEsMjUsMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDI3UCAgICAgMTUKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDI4UDAwMDAwMTUgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBMT0NBVElPTiAgICAgICAwRCAgICAgIDIKICAgICAxMjMgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMjMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIE5PUk1BTCAgICAgICAwRCAgICAgIDQKICAgICAxOTAgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICAxOTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgU1VSRkFDRSAgICAgICAwRCAgICAgIDYKICAgICAxMTAgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMSAgICAgICAwRCAgICAgIDgKICAgICAxMTAgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMiAgICAgICAwRCAgICAgMTAKICAgICAxMTAgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTEKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMyAgICAgICAwRCAgICAgMTIKICAgICAxMTAgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTMKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFNCAgICAgICAwRCAgICAgMTQKICAgICA1MDIgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTUKICAgICA1MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICBWRVJUSUNFUyAgICAgICAwRCAgICAgMTYKICAgICA1MDQgICAgICAgOSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAxRCAgICAgMTcKICAgICA1MDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICBFREdFUyAgICAgICAwRCAgICAgMTgKICAgICAxMjYgICAgICAxMCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTkKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMSAgICAgICAwRCAgICAgMjAKICAgICAxMjYgICAgICAxMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMjEKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMiAgICAgICAwRCAgICAgMjIKICAgICA1MDggICAgICAxMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMjMKICAgICA1MDggICAgICAgMCAgICAgICAwICAgICAgIDIgICAgICAgMSAgICAgICAgICAgICAgICAgICAgTE9PUCAgICAgICAwRCAgICAgMjQKICAgICA1MTAgICAgICAxNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMjUKICAgICA1MTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICAgRkFDRSAgICAgICAwRCAgICAgMjYKICAgICA1MTQgICAgICAxNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMjcKICAgICA1MTQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMiAgICAgICAgICAgICAgICAgICBTSEVMTCAgICAgICAwRCAgICAgMjgKMTE2LDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTIzLDAsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTkwLDEsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTEwLDAsMCwwLDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTEwLDEsMCwwLDEsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKMTEwLDEsMSwwLDAsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMTEwLDAsMSwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKNTAyLDQsMCwwLDAsMSwwLDAsMSwxLDAsMCwxLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDgKNTA0LDQsNywxNSwxLDE1LDIsOSwxNSwyLDE1LDMsMTEsMTUsMywxNSw0LDEzLDE1LDQsMTUsMTsgICAgICAgICAgICAgIDE3UCAgICAgIDkKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAsMCwwLDAuNSwwLDAsMCwxLDAsMCwxOyAgICAgICAgICAgICAgICAgIDE5UCAgICAgMTAKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAuNSwwLDAsMSwwLDAsMCwxLDAsMCwxOyAgICAgICAgICAgICAgICAgIDIxUCAgICAgMTEKNTA4LDUsMCwxNywxLDEsMiwxLDE5LDAsMjEsMSwxNSwyLDAsMCwwLDE3LDIsMSwwLDAsMTcsMywxLDAsMCwxNyAgICAgIDIzUCAgICAgMTIKLDQsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIzUCAgICAgMTMKNTEwLDUsMSwxLDIzOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDI1UCAgICAgMTQKNTE0LDEsMjUsMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDI3UCAgICAgMTUKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDI4UDAwMDAwMTUgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "2f0a2fba6d203624977f20ccc64a75708d12d838a1af34d075bd88ff058f409b",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

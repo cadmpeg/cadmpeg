@@ -4,24 +4,17 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::report::decode::DecodeReport;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{
-    owned_test_file, OwnedTestEntity, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
-};
+use crate::test_support::test_cards::{CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::{decode, strict_options};
 use crate::IgesCodec;
 
 /// Authored coordinates of the single Type 116 point in every fixture here.
 const COORDINATES: [f64; 3] = [11.5, -3.25, 7.0];
-
-fn strict_options() -> DecodeOptions {
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    options
-}
 
 fn framing_losses(report: &DecodeReport) -> usize {
     report
@@ -44,15 +37,13 @@ fn point_file() -> Vec<u8> {
     }])
 }
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
-}
-
 fn decoded_position(result: &cadmpeg_ir::codec::DecodeResult) -> [f64; 3] {
     let point = &result.ir().model.points[0];
-    [point.position.x, point.position.y, point.position.z]
+    [
+        point.position().get().x,
+        point.position().get().y,
+        point.position().get().z,
+    ]
 }
 
 /// Drop every line terminator, leaving one uninterrupted 80-column stride.
@@ -110,7 +101,10 @@ fn a_line_carrying_two_cards_divides_into_cards_with_one_framing_loss() {
 fn a_terminator_free_card_stride_decodes_its_authored_coordinates() {
     let bytes = stride(&point_file());
     assert_eq!(bytes.len() % 80, 0);
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::High
+    );
 
     let result = decode(bytes);
 

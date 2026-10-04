@@ -25,9 +25,12 @@
 //!   a fixed offset to the wrong version was invisible.
 //!
 //! After validation the test emits one `src/layout.rs` per mapped table: a
-//! module of `usize` offset constants per byte-layout record, a `*_VALUE`
-//! constant for each field that declares `value`, and a `token` module of tag
-//! constants. Records that declare a `[[record.discrepancy]]` are listed in a
+//! module of `usize` offset constants per byte-layout record, `*_VALUE`
+//! constants for stated field values, and a `token` module of tag constants.
+//! Only items read by the owning crate's Rust sources are emitted. Items read
+//! only by tests carry `cfg(test)`. Imports and paths determine the read set;
+//! comments, literals and the generated file do not contribute reads.
+//! Records that declare a `[[record.discrepancy]]` are listed in a
 //! comment and omitted. `UPDATE_LAYOUT_CODE=1` rewrites the checked-in files;
 //! a table edit without regeneration fails the byte-for-byte comparison.
 //! Parsing functions are not generated.
@@ -137,7 +140,7 @@ struct Record {
     /// A version word *inside* a record is not a dialect. Key only on
     /// discriminants the document declares once, document-wide.
     #[serde(default)]
-    pub(crate) dialects: Vec<String>,
+    dialects: Vec<String>,
     /// Parser source paths. A locator, not a substring check.
     #[serde(default, deserialize_with = "deserialize_one_or_many")]
     parsed_by: Vec<String>,
@@ -383,7 +386,7 @@ fn rust_byte_array(bytes: &[u8]) -> String {
                 0 => out.push_str("\\0"),
                 b'\\' => out.push_str("\\\\"),
                 b'"' => out.push_str("\\\""),
-                _ => out.push(b as char),
+                _ => out.push(char::from(b)),
             }
         }
         out.push('"');
@@ -475,12 +478,24 @@ fn decode_field_value(raw: &toml::Value, ty: &str, width: Option<u64>) -> Result
         "f32" | "f64" => {
             let n = raw
                 .as_float()
-                .or_else(|| raw.as_integer().map(|i| i as f64))
+                .or_else(|| {
+                    raw.as_integer()
+                        .and_then(cadmpeg_core::convert::f64_from_i64)
+                })
                 .ok_or_else(|| "float value required".to_string())?;
             Ok(format!("{element} = {n:?}"))
         }
         _ => Err(format!("value is not supported on type `{ty}`")),
     }
+}
+
+#[test]
+fn layout_field_refuses_inexact_real_integer() {
+    let inexact = toml::Value::Integer((1_i64 << 53) + 1);
+    assert_eq!(
+        decode_field_value(&inexact, "f64", None),
+        Err("float value required".to_string())
+    );
 }
 
 /// A part of a format that has no tabulatable layout, with the reason.
@@ -1412,7 +1427,7 @@ fn generated_layout_code_matches_the_tables() {
             "{}: format must match the mapping key",
             table.display()
         );
-        let rendered = match emit_layout_rs(&file) {
+        let rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);

@@ -5,14 +5,20 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 
-use crate::test_support::*;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::bridge_owned;
+use crate::test_support::parasolid::entity51;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::owned_triangle_with_kind;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::untyped_triangle;
 use crate::SldprtCodec;
 
 #[test]
 fn decode_builds_valid_topology_and_plane() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
     let result = SldprtCodec
@@ -33,11 +39,10 @@ fn decode_builds_valid_topology_and_plane() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
 
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            let origin = plane_surface.origin();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(u_axis.x, 1.0);
@@ -50,11 +55,12 @@ fn decode_builds_valid_topology_and_plane() {
         .model
         .points
         .iter()
-        .map(|p| p.position.x)
+        .map(|p| p.position().get().x)
         .collect();
     assert!(xs.contains(&1000.0));
 
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
     assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
     assert!(result
@@ -62,7 +68,7 @@ fn decode_builds_valid_topology_and_plane() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
+        .all(|edge| edge.curve().is_none()));
 }
 
 #[test]
@@ -143,7 +149,7 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
         .model
         .shells
         .iter()
-        .all(|shell| shell.faces.len() == 1));
+        .all(|shell| shell.faces().len() == 1));
 }
 
 #[test]

@@ -1,6 +1,5 @@
 //! `a5a8` family record decoders.
 
-pub mod records;
-
-#[cfg(test)]
-mod tests;
+/// Checked A8 knot lanes.
+mod knot_lane;
+pub(crate) mod records;

@@ -3,11 +3,15 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_formula_relation, standard_catpart_with_typed_formula_inputs,
+};
 use crate::CatiaCodec;
 
 #[test]
@@ -45,9 +49,8 @@ fn native_namespace_types_and_validates_formula_relations() {
         [crate::native::CatiaRelationParameterDependency {
             source_offset: 0,
             symbol: "#1_ /2".to_string(),
-            candidates: vec![crate::native::CatiaEntityReference::from_parts(
+            candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
                 parameter_entity.entity_id,
-                false,
                 Some(parameter_entity.id.clone()),
                 native
                     .object_graphs
@@ -199,9 +202,8 @@ fn formula_relation_resolves_bare_expression_symbols() {
         [crate::native::CatiaRelationParameterDependency {
             source_offset: 0,
             symbol: "#1_".to_string(),
-            candidates: vec![crate::native::CatiaEntityReference::from_parts(
+            candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
                 native.entity_records[2].entity_id,
-                false,
                 Some(native.entity_records[2].id.clone()),
                 native.object_graphs[0]
                     .records
@@ -235,39 +237,45 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode formula with null output");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT.as_str()
+        ),
         0
     );
 }

@@ -1,19 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent};
-use crate::decode::holes::extrusion_extent_and_direction;
+use super::generated_cap_plane_extent;
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
+
+fn service_generated_cap_plane_extent(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service cap planes admitted")
+}
+
+fn service_feature_plane_equations(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<Vec<([f64; 3], [f64; 3])>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::feature_plane_equations(ctx, scan, ir, source_carriers, feature_id).map(|result| {
+            result.map(|planes| {
+                planes
+                    .into_iter()
+                    .map(|plane| (plane.origin, plane.normal))
+                    .collect::<Vec<_>>()
+            })
+        })
+    })
+    .expect("service resources")
+}
+
+fn service_generated_arc_cylinder_extent(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)
+    })
+    .expect("service resources")
+}
 
 fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
     (
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(8.0),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -30,18 +75,21 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     }
 }
 
 fn plane_surface(id: u32, z: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     }
 }
@@ -50,49 +98,261 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
     crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
-        offset: id as usize,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     }
+}
+
+fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces.rows.push(plane_row(31));
+    scan.planes.outlines.push(plane_outline(31, 2.0));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::feature_plane_equations(
+        &ctx,
+        &scan,
+        &CadIr::empty(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917,
+    )
+    .map(|result| {
+        result.map(|planes| {
+            planes
+                .into_iter()
+                .map(|plane| (plane.origin, plane.normal))
+                .collect::<Vec<_>>()
+        })
+    })
+    .expect_err("next plane collection exceeds limit")
+}
+
+#[test]
+fn feature_outline_planes_refuse_collection_limit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces.rows.push(plane_row(31));
+    scan.planes.outlines.push(plane_outline(31, 2.0));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error =
+        super::feature_outline_planes(&ctx, &scan, 917).expect_err("outline plane exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo feature outline planes")
+    );
+}
+
+#[test]
+fn feature_plane_id_nodes_refuse_collection_limit() {
+    assert!(matches!(feature_plane_limit_error(0),
+        cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo feature plane ID nodes"));
+}
+
+#[test]
+fn feature_local_plane_nodes_refuse_collection_limit() {
+    assert!(matches!(feature_plane_limit_error(1),
+        cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo feature local plane nodes"));
+}
+
+#[test]
+fn feature_plane_equations_refuse_collection_limit() {
+    assert!(matches!(feature_plane_limit_error(2),
+        cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo feature plane equations"));
+}
+
+#[test]
+fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            7,
+            29,
+            vec![crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 33,
+                payload: crate::feature::entity::entry_payload(200, Some(11), None, None),
+                prefixed: false,
+                offset: 0,
+                end_offset: 0,
+            }],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([33]),
+    );
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 33,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 33,
+    });
+    let definition = crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(7),
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::segment_rows::SegmentRow::Ordinary(
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
+                    directions: [None; 3],
+                    center_id: Some(3),
+                    arc_orientation: Some(0),
+                    vertical_horizontal: None,
+                    radius_ref: Some(4),
+                    radius2_ref: None,
+                    external_id: 11,
+                    body: Vec::new(),
+                    offset: 0,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        7,
+        Some(7),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        0,
+    )
+    .expect("section transform");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::generated_arc_cylinder_extent(
+        &ctx,
+        &scan,
+        &CadIr::empty(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform,
+    )
+    .expect_err("source ID node exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo generated arc cylinder ID nodes")
+    );
+}
+
+#[test]
+fn available_positional_cylinder_frames_refuse_collection_limit() {
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [0.0; 3],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        0.75,
+        Some(2.0),
+    )
+    .expect("cylinder frame");
+    let parameters = [crate::surface::SurfaceParameterRecord {
+        surface_id: 1,
+        body: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Cylinder {
+                frame,
+                split_bounds: None,
+            },
+        ),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    }];
+    let ids = std::collections::BTreeSet::from([1]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
+        .expect_err("frame item exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo available positional cylinder frames")
+    );
 }
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.75,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                origin,
+                axis,
+                Vector3::new(1.0, 0.0, 0.0),
+                0.75,
+            )
+            .expect("valid CylinderSurface fixture"),
+        )),
         source_object: None,
     }
 }
 
 #[test]
 fn generated_table_cap_classes_use_placed_cap_planes() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::entity::FeatureEntityTable::new(
+            7,
+            29,
+            vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32, 33]),
     );
     for id in [31, 32, 33] {
@@ -103,33 +363,39 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             reversed: id == 31,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.positional_frames.extend([
         crate::surface::OutlinePlane {
             surface_id: 31,
             origin: [4.0, -2.0, 2.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 31,
         },
         crate::surface::OutlinePlane {
             surface_id: 32,
             origin: [4.0, -2.0, 8.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 32,
         },
     ]);
 
     assert_eq!(
-        generated_cap_plane_extent(&scan, &CadIr::empty(), 7,),
+        service_generated_cap_plane_extent(
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+        ),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -141,7 +407,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
 
 #[test]
 fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes
         .outlines
@@ -152,22 +418,40 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
 
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        service_feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
     );
 
     ir.model.surfaces[1] = plane_surface(32, 9.0);
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    assert!(service_feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 
     ir.model.surfaces[1] = Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     };
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        service_feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
@@ -176,7 +460,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
 
 #[test]
 fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_frames() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     let mut ir = CadIr::empty();
     ir.model
@@ -184,7 +468,13 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
 
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        service_feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
@@ -193,7 +483,7 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
 
 #[test]
 fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes.outlines.extend([
         plane_outline(31, 2.0),
@@ -204,44 +494,59 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
     ir.model
         .surfaces
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    assert!(service_feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 
     scan.planes.outlines.remove(1);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 2.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    assert!(service_feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 }
 
 #[test]
 fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
-    let entry = crate::feature::FeatureEntityTableEntry {
+    let entry = crate::feature::entity::FeatureEntityTableEntry {
         entity_id: 33,
-        class_id: 200,
-        payload: crate::feature::entry_payload(200, Some(11), None, None),
+        payload: crate::feature::entity::entry_payload(200, Some(11), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
-        is_surface: false,
     };
-    let frame = crate::surface::PositionalCylinderFrame {
-        origin: [0.0, 4.0, 0.0],
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 0.75,
-        length: Some(34.0),
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [0.0, 4.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        0.75,
+        Some(34.0),
+    )
+    .expect("valid positional cylinder frame");
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
-            entries: vec![entry],
-            offset: 0,
-        }
+        crate::feature::entity::FeatureEntityTable::new(
+            7,
+            29,
+            vec![entry],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([33]),
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -261,7 +566,6 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
                     frame,
@@ -272,7 +576,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             offset: 0,
             body_offset: 0,
         });
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(7),
@@ -281,12 +585,12 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
                 center_id: Some(3),
                 arc_orientation: Some(0),
@@ -311,15 +615,15 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         saved_section: None,
         offset: 0,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        feature_id: Some(7),
-        origin: frame.origin,
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: frame.axis,
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        7,
+        Some(7),
+        frame.frame().origin(),
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        0,
+    )
+    .expect("valid section frame");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(
         33,
@@ -330,7 +634,8 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(34.0),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -338,13 +643,25 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         [0.0, 1.0, 0.0],
     ));
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        service_generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
 
     ir.model.surfaces.clear();
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        service_generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
     ir.model.surfaces.push(cylinder_surface(
@@ -353,49 +670,113 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         Vector3::new(0.0, 1.0, 0.0),
     ));
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        service_generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(1.0, 4.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(0.0, 4.0, 0.0), Vector3::new(0.0, -1.0, 0.0));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 0.75,
-    };
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            0.75,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 0.8,
-    };
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.8,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(0.0, 4.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
     ir.model.surfaces.push(ir.model.surfaces[0].clone());
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(service_generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
     ir.model.surfaces.pop();
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Unknown { record: None };
+    ir.model.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        service_generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
 }

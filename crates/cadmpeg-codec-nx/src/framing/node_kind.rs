@@ -6,7 +6,7 @@ use crate::layout::token;
 /// Supported fixed-record node kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-pub enum NodeKind {
+pub(crate) enum NodeKind {
     /// Body record.
     Body = token::BODY,
     /// Shell record.
@@ -59,8 +59,33 @@ pub enum NodeKind {
 
 impl NodeKind {
     /// Parasolid record tag byte.
-    pub const fn code(self) -> u8 {
-        self as u8
+    pub(crate) const fn code(self) -> u8 {
+        match self {
+            NodeKind::Body => token::BODY,
+            NodeKind::Shell => token::SHELL,
+            NodeKind::Face => token::FACE,
+            NodeKind::Loop => token::LOOP,
+            NodeKind::Edge => token::EDGE,
+            NodeKind::Fin => token::FIN,
+            NodeKind::Vertex => token::VERTEX,
+            NodeKind::Region => token::REGION,
+            NodeKind::Point => token::POINT,
+            NodeKind::Line => token::LINE,
+            NodeKind::Circle => token::CIRCLE,
+            NodeKind::Ellipse => token::ELLIPSE,
+            NodeKind::Intersection => 38,
+            NodeKind::Plane => token::PLANE,
+            NodeKind::Cylinder => token::CYLINDER,
+            NodeKind::Cone => token::CONE,
+            NodeKind::Sphere => token::SPHERE,
+            NodeKind::Torus => token::TORUS,
+            NodeKind::BlendSurface => token::BLEND_SURF,
+            NodeKind::OffsetSurface => token::OFFSET_SURF,
+            NodeKind::BSurface => token::B_SURFACE,
+            NodeKind::TrimmedCurve => token::TRIMMED_CURVE,
+            NodeKind::BCurve => token::B_CURVE,
+            NodeKind::SpCurve => token::SP_CURVE,
+        }
     }
 }
 

@@ -1,19 +1,36 @@
-use super::*;
+use super::pmi_id;
+use super::Entity;
+use super::Reference;
+use super::RelatedObject;
+use super::ROOT_CLASS;
+use cadmpeg_ir::pmi::PmiAnnotation;
+use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiQuantity;
+use cadmpeg_ir::pmi::PmiValue;
+use std::collections::BTreeMap;
 
 mod identity;
 mod nominals;
 mod parsing;
 
+fn length(value: f64) -> Option<PmiValue> {
+    pmi_value(value, PmiQuantity::Length)
+}
+
+fn pmi_value(value: f64, quantity: PmiQuantity) -> Option<PmiValue> {
+    PmiValue::new(value, quantity)
+}
+
 fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue> {
-    let PmiDefinition::Dimension { nominal, .. } = &annotations
+    let PmiDefinition::Dimension(relation) = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id(id))
+        .find(|annotation| annotation.id == pmi_id(id).unwrap())
         .expect("dimension annotation")
         .definition
     else {
         panic!("dimension definition");
     };
-    *nominal
+    relation.nominal().copied()
 }
 
 fn reference(id: &str, class: &str) -> Reference {
@@ -143,32 +160,42 @@ fn neutral_feature(
         ordinal,
         name: Some(name.into()),
         suppressed: None,
-        dependencies,
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+            dependencies,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(format!("sldprt:history:feature#{id}")),
     }
 }
 
 fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length};
+    use cadmpeg_ir::features::{holes::HoleKind, FeatureDefinition, FeatureOperation};
 
-    FeatureDefinition::Hole {
+    FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: None,
         direction: None,
         placements: None,
-        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-        exit_kind: None,
-        diameter: Some(Length(diameter)),
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
+            None,
+            Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
+        )
+        .unwrap(),
+
         extent: None,
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
-    }
+    })
 }
+
+mod depth;

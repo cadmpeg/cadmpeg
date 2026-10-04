@@ -7,7 +7,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::global::GlobalTable;
-use crate::test_support::*;
+use crate::test_support::test_owned::{
+    owned_test_file_with_global_and_directory_fields, OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 use super::super::{
@@ -28,7 +30,7 @@ fn v4_flow_associativity_requires_entity_use_flag_three() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, use_flag, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, use_flag, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -116,7 +118,7 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 2, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, 2, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -152,7 +154,7 @@ fn v4_flow_uses_only_the_v4_target_classes() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, 0, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,

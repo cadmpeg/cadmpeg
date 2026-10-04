@@ -9,6 +9,7 @@ use cadmpeg_ir::Exactness;
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
 /// `(header_name, payload)` sections joined by the `#\n` terminator rule.
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 pub(crate) fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let sections = sections
         .iter()
@@ -69,12 +70,12 @@ pub(crate) fn allfeatur_row(
         feature_id, header[0], header[1], 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6,
     ];
     if schema_class < 0x80 {
-        row.push(schema_class as u8);
+        row.push(u8::try_from(schema_class).expect("fixture value fits u8"));
     } else {
         assert!(schema_class <= 0x3fff);
         row.extend_from_slice(&[
-            0x80 | ((schema_class >> 8) as u8),
-            (schema_class & 0xff) as u8,
+            0x80 | (u8::try_from(schema_class >> 8).expect("fixture value fits u8")),
+            u8::try_from(schema_class & 0xff).expect("fixture value fits u8"),
         ]);
     }
     row.push(0xe1);
@@ -189,7 +190,9 @@ pub(crate) fn unix_compress_literals(payload: &[u8]) -> Vec<u8> {
     for (index, value) in payload.iter().copied().enumerate() {
         for bit in 0..9 {
             let offset = index * 9 + bit;
-            packed[offset / 8] |= (((u16::from(value) >> bit) & 1) as u8) << (offset % 8);
+            packed[offset / 8] |= (u8::try_from((u16::from(value) >> bit) & 1)
+                .expect("fixture value fits u8"))
+                << (offset % 8);
         }
     }
     stream.extend_from_slice(&packed);
@@ -243,16 +246,294 @@ pub(crate) fn assert_unknown_visible_surface(surfaces: &[cadmpeg_ir::geometry::S
         .expect("retained unresolved visible surface");
     assert!(matches!(
         surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(_)
+        })
     ));
 }
 
 /// A complete legacy layout for tests of layout-dependent projection.
 pub(crate) fn legacy_layout() -> crate::container::Layout {
-    crate::container::scan_bytes(
+    crate::container::scan_bytes_ok(
         b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n#END_OF_P_OBJECT\n#Pro/ENGINEER\n"
             .as_slice(),
     )
     .framing
     .layout
+}
+
+/// Stable synthetic byte offset for a legacy object identifier.
+pub(crate) fn fixture_offset(id: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut hash);
+    let word = hash.finish();
+    #[cfg(target_pointer_width = "32")]
+    let word = word & u64::from(u32::MAX);
+    usize::try_from(word).expect("fixture offset word fits pointer width")
+}
+
+/// Legacy object record placed at [`fixture_offset`] of `id`.
+pub(crate) fn object(
+    id: &str,
+    name: &str,
+    parent: Option<&str>,
+    mut payload: crate::legacy::ObjectPayload,
+) -> crate::legacy::ObjectRecord {
+    if let crate::legacy::ObjectPayload::Array { elements, .. } = &mut payload {
+        for element in elements {
+            *element = crate::legacy::object_node_id(fixture_offset(element));
+        }
+    }
+    crate::legacy::ObjectRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: parent.map(fixture_offset),
+        depth: 0,
+        payload,
+        offset: fixture_offset(id),
+    }
+}
+
+/// Append an `FC05` world-token scalar to a generated payload.
+pub(crate) fn world(payload: &mut Vec<u8>, value: f64) {
+    let raw = value.to_be_bytes();
+    payload.push(match raw[0] {
+        0x40 => 0x46,
+        0xc0 => 0x2d,
+        _ => panic!("generated FC05 value must use a world-token exponent"),
+    });
+    payload.extend_from_slice(&raw[1..]);
+}
+
+/// Check every retained boundary on the route at one byte below its next need.
+/// Each run owns a fresh caller context; the service run keeps the caller's assertions.
+pub(crate) fn assert_retained_boundaries<T>(
+    operations: &[&str],
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("byte need fits");
+                assert!(need > cap);
+                if operations.contains(&resource.operation) {
+                    policy.limits.max_retained_bytes = need - 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    assert!(
+                        matches!(run(&ctx), Err(CodecError::ResourceLimit(ref below))
+                        if below.dimension == ResourceDimension::RetainedBytes
+                            && below.operation == resource.operation)
+                    );
+                    seen.insert(resource.operation);
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => {
+                assert!(
+                    operations.iter().all(|operation| seen.contains(operation)),
+                    "missing retained boundary: {operations:?} vs {seen:?}"
+                );
+                return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
+            }
+        }
+    }
+    panic!("retained route did not finish within boundary bound");
+}
+
+/// Build a closed graph for the ring used by a synthetic geometry fixture.
+pub(crate) fn closed_loop(
+    face_id: Option<std::num::NonZeroU32>,
+    half_edges: Vec<crate::topology::HalfEdgeId>,
+) -> crate::topology::Loop {
+    let graph = half_edges
+        .iter()
+        .zip(half_edges.iter().cycle().skip(1))
+        .map(|(id, next)| crate::topology::HalfEdge {
+            id: *id,
+            face_id,
+            next: Some(*next),
+        })
+        .collect::<Vec<_>>();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::topology::Loop::new(ctx, face_id, half_edges, &graph)
+    })
+    .expect("ring admission")
+    .expect("valid closed ring fixture")
+}
+
+/// Check work refusal propagation at each named boundary of an owner route.
+pub(crate) fn assert_work_boundaries<T>(
+    operations: &[&str],
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("work need fits");
+                assert!(need > cap);
+                if operations.contains(&resource.operation) {
+                    policy.limits.max_work_units = need - 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    assert!(
+                        matches!(run(&ctx), Err(CodecError::ResourceLimit(ref below))
+                        if below.dimension == ResourceDimension::WorkUnits
+                            && below.operation == resource.operation)
+                    );
+                    seen.insert(resource.operation);
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => {
+                assert!(
+                    operations.iter().all(|operation| seen.contains(operation)),
+                    "missing work boundary: {operations:?} vs {seen:?}"
+                );
+                return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
+            }
+        }
+    }
+    panic!("work route did not finish within boundary bound");
+}
+
+/// Find the last named refusal after admitting each preceding resource boundary.
+pub(crate) fn last_refusal_at<T>(
+    input: &[u8],
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    let mut last = None;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            _ => panic!("unsupported test boundary dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, dimension);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("resource need");
+                assert!(need > cap);
+                if resource.operation == operation {
+                    match dimension {
+                        ResourceDimension::WorkUnits => policy.limits.max_work_units = need - 1,
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = need - 1;
+                        }
+                        ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = need - 1;
+                        }
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = need - 1;
+                        }
+                        _ => panic!("unsupported test boundary dimension"),
+                    }
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+                    match run(&ctx) {
+                        Err(CodecError::ResourceLimit(below)) => {
+                            assert_eq!(below.dimension, dimension);
+                            assert_eq!(below.operation, operation);
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(&below));
+                            last = Some(CodecError::ResourceLimit(below));
+                        }
+                        _ => panic!("named boundary must refuse one unit below its need"),
+                    }
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => return last.expect("route reaches the named resource boundary"),
+        }
+    }
+    panic!("route did not finish within boundary bound");
+}
+
+/// Admit preceding element-storage charges and select the named refusal limit.
+/// With no operation, return the first limit that admits the unchanged fixture.
+pub(crate) fn allocation_limit_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: Option<&str>,
+    run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> u64 {
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    for _ in 0..4096 {
+        match run(cap) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, dimension);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("resource need");
+                assert!(need > cap);
+                if operation == Some(resource.operation) {
+                    let below = need - 1;
+                    assert!(
+                        matches!(run(below), Err(CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == dimension && refusal.operation == resource.operation
+                            && refusal.used.checked_add(refusal.additional) == Some(need))
+                    );
+                    return below;
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
+            Ok(_) => {
+                assert!(operation.is_none(), "fixture did not reach {operation:?}");
+                return cap;
+            }
+        }
+    }
+    panic!("fixture did not finish within the resource boundary bound");
+}
+
+/// An admitted empty container for owner tests that supply their own rows.
+pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(build_prt("test", &[]));
+    scan.framing.data = Vec::new().into();
+    scan
 }

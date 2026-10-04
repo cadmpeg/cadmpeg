@@ -1,0 +1,2791 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Parameter-space curves, NURBS payloads, and source parameterization.
+
+use super::nurbs::{
+    admit_finite_weight, admit_weight, KnotVector, NurbsCurve, NurbsError, PoleValue,
+    StandardNurbsAdmission,
+};
+use super::{FitTolerance, MAX_GEOMETRY_NESTING};
+use crate::ids::PcurveId;
+use crate::math::{Point2, Point3};
+use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use crate::topology::ParameterInterval;
+use crate::transform::Transform2;
+use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+use cadmpeg_core::CodecError;
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+mod construction;
+pub mod evaluator;
+mod scaling_admitted;
+
+fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
+    let axis = axis.get();
+    axis.u.hypot(axis.v) > 0.0
+}
+
+/// One rational pole in parameter space: its position and its weight.
+// A source states a raw position; a `PcurveNurbs` holds the admitted row,
+// whose position is a `FinitePoint2`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WeightedPole2<P = Point2> {
+    /// Pole position in parameter space.
+    pub point: P,
+    /// Rational weight at this pole.
+    pub weight: NonZeroReal,
+}
+
+/// The poles of a parameter-space NURBS curve.
+// A source states raw positions; a `PcurveNurbs` holds the admitted poles,
+// whose positions are `FinitePoint2` values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum PcurveNurbsPoles<P = Point2> {
+    /// A polynomial pcurve: its poles carry no weight.
+    Polynomial {
+        /// Poles in parameter order.
+        points: Vec<P>,
+    },
+    /// A rational pcurve: every pole carries its weight.
+    Rational {
+        /// Pole rows in parameter order.
+        points: Vec<WeightedPole2<P>>,
+    },
+}
+
+impl PcurveNurbsPoles {
+    /// Edit every pole position, keeping the prior positions on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_points(
+        &mut self,
+        edit: impl FnMut(&mut Point2) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        let mut candidate = self.clone();
+        candidate.apply_points(edit)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Edit every pole position in place, keeping every accepted edit.
+    ///
+    /// A refusal leaves the lane partly edited, so the caller owns the copy
+    /// that states the prior positions.
+    fn apply_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point2) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        match self {
+            Self::Polynomial { points } => {
+                for point in points.iter_mut() {
+                    edit(point)?;
+                }
+            }
+            Self::Rational { points } => {
+                for pole in points.iter_mut() {
+                    edit(&mut pole.point)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PcurveNurbsPoles<FinitePoint2> {
+    /// The poles with raw positions, for a reader that edits or writes them.
+    #[must_use]
+    pub fn to_raw(&self) -> PcurveNurbsPoles {
+        let Ok(raw) = self
+            .clone()
+            .try_map_points(|point| Ok::<_, std::convert::Infallible>(point.get()));
+        raw
+    }
+
+    /// Raw pole positions in parameter order, for a reader that computes with
+    /// or writes them.
+    #[must_use]
+    pub fn raw_points(&self) -> Vec<Point2> {
+        self.points().into_iter().map(FinitePoint2::get).collect()
+    }
+}
+
+impl<P> PcurveNurbsPoles<P> {
+    /// Pair a source's pole lane with its weight lane. A store admits the
+    /// positions it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is zero or non-finite, naming its index.
+    pub fn from_lanes(
+        ctx: &DecodeContext<'_>,
+        points: Vec<P>,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
+            ctx,
+            points,
+            weights,
+            &mut None,
+            |index, weight| admit_weight(ctx, "pcurve poles", index, weight),
+        ))
+    }
+
+    /// Pair parameter poles with finite weights, checking lane length and nonzero weights.
+    pub fn from_finite_lanes(
+        ctx: &DecodeContext<'_>,
+        points: Vec<P>,
+        weights: Option<Vec<FiniteReal>>,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
+            ctx,
+            points,
+            weights,
+            &mut None,
+            |index, weight| admit_finite_weight(ctx, "pcurve poles", index, weight),
+        ))
+    }
+
+    /// Pair a pole lane with an admitted weight lane. The weight type states
+    /// the weight contract; a store admits the positions it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both
+    /// counts.
+    pub fn from_checked_lanes(
+        ctx: &DecodeContext<'_>,
+        points: Vec<P>,
+        weights: Option<Vec<NonZeroReal>>,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
+            ctx,
+            points,
+            weights,
+            &mut None,
+            |_, weight| Ok(weight),
+        ))
+    }
+
+    /// Count poles.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        match self {
+            Self::Polynomial { points } => points.len(),
+            Self::Rational { points } => points.len(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial pcurve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight.get()).collect())
+            }
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { points } => points.reverse(),
+            Self::Rational { points } => points.reverse(),
+        }
+    }
+
+    /// Map every pole position in parameter order, keeping the weights.
+    fn try_map_points<Q, E>(
+        self,
+        mut point: impl FnMut(P) -> Result<Q, E>,
+    ) -> Result<PcurveNurbsPoles<Q>, E> {
+        Ok(match self {
+            Self::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                points: points.into_iter().map(point).collect::<Result<_, E>>()?,
+            },
+            Self::Rational { points } => PcurveNurbsPoles::Rational {
+                points: points
+                    .into_iter()
+                    .map(|pole| {
+                        Ok(WeightedPole2 {
+                            point: point(pole.point)?,
+                            weight: pole.weight,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+        })
+    }
+}
+
+impl<P: Copy> PcurveNurbsPoles<P> {
+    /// One admitted pole in parameter order.
+    #[must_use]
+    pub fn point_at(&self, index: usize) -> Option<P> {
+        match self {
+            Self::Polynomial { points } => points.get(index).copied(),
+            Self::Rational { points } => points.get(index).map(|pole| pole.point),
+        }
+    }
+
+    /// One rational weight, absent for a polynomial pcurve or invalid index.
+    #[must_use]
+    pub fn weight_at(&self, index: usize) -> Option<f64> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => points.get(index).map(|pole| pole.weight.get()),
+        }
+    }
+
+    /// Pole positions in parameter order.
+    #[must_use]
+    pub fn points(&self) -> Vec<P> {
+        match self {
+            Self::Polynomial { points } => points.clone(),
+            Self::Rational { points } => points.iter().map(|pole| pole.point).collect(),
+        }
+    }
+}
+
+impl PoleValue<FinitePoint2> for Point2 {
+    fn admit(self) -> Option<FinitePoint2> {
+        FinitePoint2::new(self)
+    }
+}
+
+impl PoleValue<FinitePoint2> for FinitePoint2 {
+    const RETAINS_POLE_STORAGE: bool = true;
+    fn admit(self) -> Option<FinitePoint2> {
+        Some(self)
+    }
+    fn admit_pcurve_poles<E>(
+        poles: PcurveNurbsPoles<Self>,
+        _convert: impl FnOnce(PcurveNurbsPoles<Self>) -> Result<PcurveNurbsPoles<FinitePoint2>, E>,
+    ) -> Result<PcurveNurbsPoles<FinitePoint2>, E> {
+        Ok(poles)
+    }
+}
+
+impl PoleValue<FiniteReal> for f64 {
+    fn admit(self) -> Option<FiniteReal> {
+        FiniteReal::new(self)
+    }
+}
+
+impl PoleValue<FiniteReal> for FiniteReal {
+    fn admit(self) -> Option<FiniteReal> {
+        Some(self)
+    }
+}
+
+/// Parameter-space line with a finite origin and nonzero direction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LinePcurveWire")]
+pub struct LinePcurve {
+    origin: FinitePoint2,
+    direction: NonzeroPoint2,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct LinePcurveWire {
+    /// Parameter-space line origin.
+    origin: Point2,
+    /// Parameter-space line direction.
+    direction: Point2,
+}
+
+impl LinePcurve {
+    /// Unit-u line through the parameter-space origin.
+    pub const U_AXIS: Self = Self {
+        origin: FinitePoint2::ZERO,
+        direction: NonzeroPoint2::U_AXIS,
+    };
+
+    /// Build a line from admitted parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    #[must_use]
+    pub const fn new(origin: FinitePoint2, direction: NonzeroPoint2) -> Self {
+        Self { origin, direction }
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(origin: Point2, direction: Point2) -> Result<Self, &'static str> {
+        let origin = FinitePoint2::new(origin).ok_or("LinePcurve.origin must be finite")?;
+        let direction = NonzeroPoint2::new(direction)
+            .ok_or("LinePcurve.direction must be finite with squared norm greater than epsilon")?;
+        Ok(Self { origin, direction })
+    }
+
+    /// Borrow the admitted origin. A caller that passes it on keeps the
+    /// finiteness guarantee and performs no new admission.
+    #[must_use]
+    pub const fn origin(&self) -> &FinitePoint2 {
+        &self.origin
+    }
+
+    /// Borrow the admitted direction. A caller that passes it on keeps the
+    /// finite nonzero guarantee and performs no new admission.
+    #[must_use]
+    pub const fn direction(&self) -> &NonzeroPoint2 {
+        &self.direction
+    }
+}
+
+impl TryFrom<LinePcurveWire> for LinePcurve {
+    type Error = &'static str;
+    fn try_from(wire: LinePcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.origin, wire.direction)
+    }
+}
+
+/// Polar harmonic curve with finite coefficients and nonzero radial variation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PolarHarmonicPcurveWire")]
+pub struct PolarHarmonicPcurve {
+    radial_center: FinitePoint2,
+    radial_cos: FinitePoint2,
+    radial_sin: FinitePoint2,
+    axial_origin: FiniteReal,
+    axial_cos: FiniteReal,
+    axial_sin: FiniteReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PolarHarmonicPcurveWire {
+    /// Constant radial coefficient.
+    radial_center: Point2,
+    /// Cosine radial coefficient.
+    radial_cos: Point2,
+    /// Sine radial coefficient.
+    radial_sin: Point2,
+    /// Constant axial coefficient.
+    axial_origin: f64,
+    /// Cosine axial coefficient.
+    axial_cos: f64,
+    /// Sine axial coefficient.
+    axial_sin: f64,
+}
+
+impl PolarHarmonicPcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        radial_center: Point2,
+        radial_cos: Point2,
+        radial_sin: Point2,
+        axial_origin: f64,
+        axial_cos: f64,
+        axial_sin: f64,
+    ) -> Result<Self, &'static str> {
+        if !(radial_cos.u.hypot(radial_cos.v) > 0.0 || radial_sin.u.hypot(radial_sin.v) > 0.0) {
+            return Err("PolarHarmonicPcurve.radial_cos/radial_sin must not both be zero");
+        }
+        let radial_center = FinitePoint2::new(radial_center)
+            .ok_or("PolarHarmonicPcurve.radial_center must be finite")?;
+        let radial_cos =
+            FinitePoint2::new(radial_cos).ok_or("PolarHarmonicPcurve.radial_cos must be finite")?;
+        let radial_sin =
+            FinitePoint2::new(radial_sin).ok_or("PolarHarmonicPcurve.radial_sin must be finite")?;
+        let axial_origin = FiniteReal::new(axial_origin)
+            .ok_or("PolarHarmonicPcurve.axial_origin must be finite")?;
+        let axial_cos =
+            FiniteReal::new(axial_cos).ok_or("PolarHarmonicPcurve.axial_cos must be finite")?;
+        let axial_sin =
+            FiniteReal::new(axial_sin).ok_or("PolarHarmonicPcurve.axial_sin must be finite")?;
+        Ok(Self {
+            radial_center,
+            radial_cos,
+            radial_sin,
+            axial_origin,
+            axial_cos,
+            axial_sin,
+        })
+    }
+
+    /// Return the radial center.
+    #[must_use]
+    pub const fn radial_center(&self) -> &FinitePoint2 {
+        &self.radial_center
+    }
+
+    /// Return the radial cos.
+    #[must_use]
+    pub const fn radial_cos(&self) -> &FinitePoint2 {
+        &self.radial_cos
+    }
+
+    /// Return the radial sin.
+    #[must_use]
+    pub const fn radial_sin(&self) -> &FinitePoint2 {
+        &self.radial_sin
+    }
+
+    /// Return the axial origin.
+    #[must_use]
+    pub const fn axial_origin(&self) -> FiniteReal {
+        self.axial_origin
+    }
+
+    /// Return the axial cos.
+    #[must_use]
+    pub const fn axial_cos(&self) -> FiniteReal {
+        self.axial_cos
+    }
+
+    /// Return the axial sin.
+    #[must_use]
+    pub const fn axial_sin(&self) -> FiniteReal {
+        self.axial_sin
+    }
+}
+
+impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
+    type Error = &'static str;
+    fn try_from(wire: PolarHarmonicPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.radial_center,
+            wire.radial_cos,
+            wire.radial_sin,
+            wire.axial_origin,
+            wire.axial_cos,
+            wire.axial_sin,
+        )
+    }
+}
+
+/// Spherical great-circle chart with finite coefficients and nonzero azimuth rate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SphericalGreatCirclePcurveWire")]
+pub struct SphericalGreatCirclePcurve {
+    azimuth_origin: FiniteReal,
+    azimuth_rate: FiniteReal,
+    plane_phase: FiniteReal,
+    plane_slope: FiniteReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SphericalGreatCirclePcurveWire {
+    /// Azimuth at the parameter origin.
+    azimuth_origin: f64,
+    /// Azimuth change for one unit of parameter.
+    azimuth_rate: f64,
+    /// Phase of the great-circle plane.
+    plane_phase: f64,
+    /// Slope of the great-circle plane.
+    plane_slope: f64,
+}
+
+impl SphericalGreatCirclePcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        azimuth_origin: f64,
+        azimuth_rate: f64,
+        plane_phase: f64,
+        plane_slope: f64,
+    ) -> Result<Self, &'static str> {
+        if azimuth_rate == 0.0 {
+            return Err("SphericalGreatCirclePcurve.azimuth_rate must be nonzero");
+        }
+        let azimuth_origin = FiniteReal::new(azimuth_origin)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_origin must be finite")?;
+        let azimuth_rate = FiniteReal::new(azimuth_rate)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_rate must be finite")?;
+        let plane_phase = FiniteReal::new(plane_phase)
+            .ok_or("SphericalGreatCirclePcurve.plane_phase must be finite")?;
+        let plane_slope = FiniteReal::new(plane_slope)
+            .ok_or("SphericalGreatCirclePcurve.plane_slope must be finite")?;
+        Ok(Self {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        })
+    }
+
+    /// Return the azimuth origin.
+    #[must_use]
+    pub const fn azimuth_origin(&self) -> FiniteReal {
+        self.azimuth_origin
+    }
+
+    /// Return the azimuth rate.
+    #[must_use]
+    pub const fn azimuth_rate(&self) -> FiniteReal {
+        self.azimuth_rate
+    }
+
+    /// Return the plane phase.
+    #[must_use]
+    pub const fn plane_phase(&self) -> FiniteReal {
+        self.plane_phase
+    }
+
+    /// Return the plane slope.
+    #[must_use]
+    pub const fn plane_slope(&self) -> FiniteReal {
+        self.plane_slope
+    }
+
+    /// The same great circle traversed as `reflection - t`. The azimuth
+    /// origin moves to `azimuth_origin + azimuth_rate * reflection` and the
+    /// rate changes sign. The negated rate stays finite and nonzero and the
+    /// plane is kept, so only the moved origin is checked. The result is
+    /// absent when the moved origin is not finite.
+    #[must_use]
+    pub fn reflected(&self, reflection: f64) -> Option<Self> {
+        let azimuth_origin =
+            FiniteReal::new(self.azimuth_origin.get() + self.azimuth_rate.get() * reflection)?;
+        Some(Self {
+            azimuth_origin,
+            azimuth_rate: self.azimuth_rate.negated(),
+            plane_phase: self.plane_phase,
+            plane_slope: self.plane_slope,
+        })
+    }
+}
+
+impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {
+    type Error = &'static str;
+    fn try_from(wire: SphericalGreatCirclePcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.azimuth_origin,
+            wire.azimuth_rate,
+            wire.plane_phase,
+            wire.plane_slope,
+        )
+    }
+}
+
+/// Parameter-space circle with a positive radius and finite nonzero axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CirclePcurveWire")]
+pub struct CirclePcurve {
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    radius: PositiveReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct CirclePcurveWire {
+    /// Parameter-space circle center.
+    center: Point2,
+    /// First parameter-space axis.
+    x_axis: Point2,
+    /// Second parameter-space axis.
+    y_axis: Point2,
+    /// Circle radius in parameter space.
+    radius: f64,
+}
+
+impl CirclePcurve {
+    /// Build from admitted finite axes and a positive radius. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        radius: f64,
+    ) -> Result<Self, &'static str> {
+        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+            return Err("CirclePcurve.x_axis must be nonzero");
+        }
+        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+            return Err("CirclePcurve.y_axis must be nonzero");
+        }
+        let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("CirclePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("CirclePcurve.y_axis must be finite")?;
+        let radius =
+            PositiveReal::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        })
+    }
+
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("CirclePcurve.center must be finite")?;
+        let radius = PositiveReal::new(self.radius.get() * scale)
+            .ok_or("CirclePcurve.radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            radius,
+            ..self
+        })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
+    }
+
+    /// Return the radius.
+    #[must_use]
+    pub const fn radius(&self) -> PositiveReal {
+        self.radius
+    }
+}
+
+impl TryFrom<CirclePcurveWire> for CirclePcurve {
+    type Error = &'static str;
+    fn try_from(wire: CirclePcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.center, wire.x_axis, wire.y_axis, wire.radius)
+    }
+}
+
+/// Parameter-space ellipse with positive radii and finite nonzero axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "EllipsePcurveWire")]
+pub struct EllipsePcurve {
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct EllipsePcurveWire {
+    /// Parameter-space ellipse center.
+    center: Point2,
+    /// First parameter-space axis.
+    x_axis: Point2,
+    /// Second parameter-space axis.
+    y_axis: Point2,
+    /// Major semiaxis radius in parameter space.
+    major_radius: f64,
+    /// Minor semiaxis radius in parameter space.
+    minor_radius: f64,
+}
+
+impl EllipsePcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        major_radius: f64,
+        minor_radius: f64,
+    ) -> Result<Self, &'static str> {
+        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+            return Err("EllipsePcurve.x_axis must be nonzero");
+        }
+        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+            return Err("EllipsePcurve.y_axis must be nonzero");
+        }
+        let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("EllipsePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("EllipsePcurve.y_axis must be finite")?;
+        let major_radius = PositiveReal::new(major_radius)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(minor_radius)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("EllipsePcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(self.major_radius.get() * scale)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(self.minor_radius.get() * scale)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            ..self
+        })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> PositiveReal {
+        self.major_radius
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> PositiveReal {
+        self.minor_radius
+    }
+
+    /// The same ellipse traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
+}
+
+impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
+    type Error = &'static str;
+    fn try_from(wire: EllipsePcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.center,
+            wire.x_axis,
+            wire.y_axis,
+            wire.major_radius,
+            wire.minor_radius,
+        )
+    }
+}
+
+/// Harmonic parameter-space curve with finite coefficients and nonzero variation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HarmonicPcurveWire")]
+pub struct HarmonicPcurve {
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HarmonicPcurveWire {
+    /// Constant parameter-space coefficient.
+    center: Point2,
+    /// Cosine parameter-space coefficient.
+    cosine: Point2,
+    /// Sine parameter-space coefficient.
+    sine: Point2,
+}
+
+impl HarmonicPcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
+        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+            return Err("HarmonicPcurve.cosine/sine must not both be zero");
+        }
+        let center = FinitePoint2::new(center).ok_or("HarmonicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HarmonicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HarmonicPcurve.sine must be finite")?;
+        Ok(Self {
+            center,
+            cosine,
+            sine,
+        })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
+    }
+
+    /// Return the cosine.
+    #[must_use]
+    pub const fn cosine(&self) -> &FinitePoint2 {
+        &self.cosine
+    }
+
+    /// Return the sine.
+    #[must_use]
+    pub const fn sine(&self) -> &FinitePoint2 {
+        &self.sine
+    }
+}
+
+impl TryFrom<HarmonicPcurveWire> for HarmonicPcurve {
+    type Error = &'static str;
+    fn try_from(wire: HarmonicPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.center, wire.cosine, wire.sine)
+    }
+}
+
+/// Parameter-space parabola with a positive focal distance and finite nonzero axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ParabolaPcurveWire")]
+pub struct ParabolaPcurve {
+    vertex: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    focal_distance: PositiveReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct ParabolaPcurveWire {
+    /// Parameter-space parabola vertex.
+    vertex: Point2,
+    /// First parameter-space axis.
+    x_axis: Point2,
+    /// Second parameter-space axis.
+    y_axis: Point2,
+    /// Distance from the vertex to the focus, in parameter space.
+    focal_distance: f64,
+}
+
+impl ParabolaPcurve {
+    /// Build from admitted finite axes and a positive focal distance. Only
+    /// the two nonzero axis conditions remain to check.
+    pub fn from_parts(
+        vertex: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        focal_distance: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        vertex: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        focal_distance: f64,
+    ) -> Result<Self, &'static str> {
+        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+            return Err("ParabolaPcurve.x_axis must be nonzero");
+        }
+        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+            return Err("ParabolaPcurve.y_axis must be nonzero");
+        }
+        let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("ParabolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("ParabolaPcurve.y_axis must be finite")?;
+        let focal_distance = PositiveReal::new(focal_distance)
+            .ok_or("ParabolaPcurve.focal_distance must be positive and finite")?;
+        Ok(Self {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        })
+    }
+
+    /// Return the vertex.
+    #[must_use]
+    pub const fn vertex(&self) -> &FinitePoint2 {
+        &self.vertex
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
+    }
+
+    /// Return the focal distance.
+    #[must_use]
+    pub const fn focal_distance(&self) -> PositiveReal {
+        self.focal_distance
+    }
+
+    /// The same parabola traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
+}
+
+impl TryFrom<ParabolaPcurveWire> for ParabolaPcurve {
+    type Error = &'static str;
+    fn try_from(wire: ParabolaPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.vertex, wire.x_axis, wire.y_axis, wire.focal_distance)
+    }
+}
+
+/// Parameter-space hyperbola with positive radii and finite nonzero axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HyperbolaPcurveWire")]
+pub struct HyperbolaPcurve {
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HyperbolaPcurveWire {
+    /// Parameter-space hyperbola center.
+    center: Point2,
+    /// First parameter-space axis.
+    x_axis: Point2,
+    /// Second parameter-space axis.
+    y_axis: Point2,
+    /// Transverse semiaxis radius in parameter space.
+    major_radius: f64,
+    /// Conjugate semiaxis radius in parameter space.
+    minor_radius: f64,
+}
+
+impl HyperbolaPcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        center: Point2,
+        x_axis: Point2,
+        y_axis: Point2,
+        major_radius: f64,
+        minor_radius: f64,
+    ) -> Result<Self, &'static str> {
+        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+            return Err("HyperbolaPcurve.x_axis must be nonzero");
+        }
+        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+            return Err("HyperbolaPcurve.y_axis must be nonzero");
+        }
+        let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("HyperbolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("HyperbolaPcurve.y_axis must be finite")?;
+        let major_radius = PositiveReal::new(major_radius)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(minor_radius)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("HyperbolaPcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(self.major_radius.get() * scale)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(self.minor_radius.get() * scale)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            ..self
+        })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
+    }
+
+    /// Return the x axis.
+    #[must_use]
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
+    }
+
+    /// Return the y axis.
+    #[must_use]
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
+    }
+
+    /// Return the major radius.
+    #[must_use]
+    pub const fn major_radius(&self) -> PositiveReal {
+        self.major_radius
+    }
+
+    /// Return the minor radius.
+    #[must_use]
+    pub const fn minor_radius(&self) -> PositiveReal {
+        self.minor_radius
+    }
+
+    /// The same hyperbola traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
+}
+
+impl TryFrom<HyperbolaPcurveWire> for HyperbolaPcurve {
+    type Error = &'static str;
+    fn try_from(wire: HyperbolaPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.center,
+            wire.x_axis,
+            wire.y_axis,
+            wire.major_radius,
+            wire.minor_radius,
+        )
+    }
+}
+
+/// Hyperbolic parameter-space curve with finite coefficients and nonzero variation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HyperbolicPcurveWire")]
+pub struct HyperbolicPcurve {
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HyperbolicPcurveWire {
+    /// Constant parameter-space coefficient.
+    center: Point2,
+    /// Hyperbolic-cosine parameter-space coefficient.
+    cosine: Point2,
+    /// Hyperbolic-sine parameter-space coefficient.
+    sine: Point2,
+}
+
+impl HyperbolicPcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
+        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+            return Err("HyperbolicPcurve.cosine/sine must not both be zero");
+        }
+        let center = FinitePoint2::new(center).ok_or("HyperbolicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HyperbolicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HyperbolicPcurve.sine must be finite")?;
+        Ok(Self {
+            center,
+            cosine,
+            sine,
+        })
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
+    }
+
+    /// Return the cosine.
+    #[must_use]
+    pub const fn cosine(&self) -> &FinitePoint2 {
+        &self.cosine
+    }
+
+    /// Return the sine.
+    #[must_use]
+    pub const fn sine(&self) -> &FinitePoint2 {
+        &self.sine
+    }
+}
+
+impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
+    type Error = &'static str;
+    fn try_from(wire: HyperbolicPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.center, wire.cosine, wire.sine)
+    }
+}
+
+/// Parameter-space trim with a finite ordered interval.
+///
+/// `parameter_range` is stated in the basis's own parameter space and is the
+/// carrier's declared domain: the trimmed pcurve exists on that interval and a
+/// coedge use range over it is checked against it. Equal endpoints state no
+/// interval, and the basis's parameterization governs instead.
+///
+/// The trim reparameterizes nothing, so
+/// [`pcurve_uv`](crate::eval::pcurve_uv) hands `t` to the basis unchanged. It
+/// does so at every `t`, inside the interval and outside it, because pcurve
+/// evaluation is total: it extrapolates past any declared domain, a NURBS
+/// carrier's knot interval included. A declared domain and an evaluable
+/// parameter are two different questions, and this carrier answers only the
+/// first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TrimmedPcurveWire")]
+pub struct TrimmedPcurve {
+    #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
+    parameter_range: ParameterInterval,
+    #[serde(default = "crate::default_true")]
+    same_sense: bool,
+    basis: Box<PcurveGeometry>,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct TrimmedPcurveWire {
+    /// Native parameter interval retained from the basis.
+    parameter_range: [f64; 2],
+    /// Whether the trim follows increasing basis parameters.
+    #[serde(default = "crate::default_true")]
+    same_sense: bool,
+    /// Curve this curve trims.
+    basis: Box<PcurveGeometry>,
+}
+
+impl TrimmedPcurve {
+    /// Build from finite endpoints, checking their order and the basis depth.
+    pub fn from_finite_parts(
+        parameter_range: [FiniteReal; 2],
+        same_sense: bool,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
+        let parameter_range = ParameterInterval::from_finite_endpoints(parameter_range.into())
+            .map_err(|_| "TrimmedPcurve.parameter_range must be finite and ordered")?;
+        let depth = nesting_depth_over(&basis)
+            .ok_or("TrimmedPcurve.basis nests past the admitted inline basis depth")?;
+        Ok(Self {
+            parameter_range,
+            same_sense,
+            basis,
+            depth,
+        })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        parameter_range: [f64; 2],
+        same_sense: bool,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
+        let first = FiniteReal::new(parameter_range[0])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        let last = FiniteReal::new(parameter_range[1])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        Self::from_finite_parts([first, last], same_sense, basis)
+    }
+
+    /// Return the parameter range.
+    #[must_use]
+    pub const fn parameter_range(&self) -> ParameterInterval {
+        self.parameter_range
+    }
+
+    /// Return the same sense.
+    #[must_use]
+    pub const fn same_sense(&self) -> bool {
+        self.same_sense
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
+    }
+}
+
+impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
+    type Error = &'static str;
+    fn try_from(wire: TrimmedPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.parameter_range, wire.same_sense, wire.basis)
+    }
+}
+
+/// Parameter-space offset with a finite signed distance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "OffsetPcurveWire")]
+pub struct OffsetPcurve {
+    distance: FiniteReal,
+    basis: Box<PcurveGeometry>,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct OffsetPcurveWire {
+    /// Signed parameter-space offset distance.
+    distance: f64,
+    /// Curve this curve is offset from.
+    basis: Box<PcurveGeometry>,
+}
+
+impl OffsetPcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
+        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        Self::from_finite_parts(distance, basis)
+    }
+
+    /// Build from a finite distance, checking only the basis depth.
+    pub fn from_finite_parts(
+        distance: FiniteReal,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
+        let depth = nesting_depth_over(&basis)
+            .ok_or("OffsetPcurve.basis nests past the admitted inline basis depth")?;
+        Ok(Self {
+            distance,
+            basis,
+            depth,
+        })
+    }
+
+    /// Return the distance.
+    #[must_use]
+    pub const fn distance(&self) -> FiniteReal {
+        self.distance
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
+    }
+}
+
+impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
+    type Error = &'static str;
+    fn try_from(wire: OffsetPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.distance, wire.basis)
+    }
+}
+
+/// The shape of a parameter-space (u, v) curve on a surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PcurveGeometry {
+    /// A straight line in parameter space.
+    Line(LinePcurve),
+    /// Polar angle and axial coordinate of a first-order harmonic spatial curve.
+    PolarHarmonic(PolarHarmonicPcurve),
+    /// Polar angle and axial coordinate obtained from a rational NURBS vector.
+    PolarNurbs {
+        /// Checked polar NURBS payload.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(flatten, with = "PolarPcurveNurbsWire"))]
+        nurbs: PolarPcurveNurbs,
+    },
+    /// Great-circle locus in a sphere's azimuth/latitude parameter chart.
+    SphericalGreatCircle(SphericalGreatCirclePcurve),
+    /// Full circle in parameter space.
+    Circle(CirclePcurve),
+    /// Full ellipse in parameter space.
+    Ellipse(EllipsePcurve),
+    /// General first-order harmonic curve in parameter space.
+    Harmonic(HarmonicPcurve),
+    /// Parabola in parameter space.
+    Parabola(ParabolaPcurve),
+    /// Hyperbola in parameter space.
+    Hyperbola(HyperbolaPcurve),
+    /// General first-order hyperbolic curve in parameter space.
+    Hyperbolic(HyperbolicPcurve),
+    /// A free-form NURBS curve in parameter space (control points are (u, v)).
+    Nurbs {
+        /// Checked parameter-space NURBS payload.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(flatten))]
+        nurbs: PcurveNurbs,
+    },
+    /// Affine replica of a parent pcurve in the same parameter space.
+    Transformed(PlacedPcurve),
+    /// Parameter restriction of an exact basis pcurve.
+    Trimmed(TrimmedPcurve),
+    /// Signed planar offset of an exact basis pcurve.
+    Offset(OffsetPcurve),
+}
+
+/// One paired radial and axial pole of a polar parameter-space NURBS.
+// A source states raw values; a `PolarPcurveNurbs` holds the admitted row,
+// whose radial pole is a `FinitePoint2` and whose axial pole is a
+// `FiniteReal`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct PolarNurbsPole<P = Point2, S = f64> {
+    /// Euclidean radial-plane pole.
+    pub radial: P,
+    /// Axial pole value.
+    pub axial: S,
+}
+
+/// Checked polar parameter-space NURBS payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolarPcurveNurbs {
+    degree: u32,
+    knots: KnotVector,
+    poles: PolarNurbsPoles<FinitePoint2, FiniteReal>,
+    periodic: bool,
+}
+
+/// One rational polar pole: its radial and axial halves and its weight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
+    /// Euclidean radial-plane pole.
+    pub radial: P,
+    /// Axial pole value.
+    pub axial: S,
+    /// Rational weight at this pole.
+    pub weight: NonZeroReal,
+}
+
+/// The poles of a polar parameter-space NURBS curve.
+// A source states raw values; a `PolarPcurveNurbs` holds the admitted poles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum PolarNurbsPoles<P = Point2, S = f64> {
+    /// A polynomial polar curve: its poles carry no weight.
+    Polynomial {
+        /// Poles in parameter order.
+        poles: Vec<PolarNurbsPole<P, S>>,
+    },
+    /// A rational polar curve: every pole carries its weight.
+    Rational {
+        /// Pole rows in parameter order.
+        poles: Vec<WeightedPolarNurbsPole<P, S>>,
+    },
+}
+
+impl PolarNurbsPoles<FinitePoint2, FiniteReal> {
+    /// The poles with raw radial and axial values, for a reader that writes
+    /// them.
+    #[must_use]
+    pub fn to_raw(&self) -> PolarNurbsPoles {
+        let Ok(raw) = self.clone().try_map_poles(|radial, axial| {
+            Ok::<_, std::convert::Infallible>((radial.get(), axial.get()))
+        });
+        raw
+    }
+}
+
+impl<P, S> PolarNurbsPoles<P, S> {
+    /// Pair a source's pole lane with its weight lane. A store admits the
+    /// poles it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is zero or non-finite, naming its index.
+    pub fn from_lanes(
+        ctx: &DecodeContext<'_>,
+        poles: Vec<PolarNurbsPole<P, S>>,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::pair_polar_lanes(
+            ctx,
+            poles,
+            weights,
+            &mut None,
+            |index, weight| admit_weight(ctx, "polar poles", index, weight),
+        ))
+    }
+
+    /// Pair a pole lane with an admitted weight lane. The weight type states
+    /// the weight contract; a store admits the poles it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both
+    /// counts.
+    pub fn from_checked_lanes(
+        ctx: &DecodeContext<'_>,
+        poles: Vec<PolarNurbsPole<P, S>>,
+        weights: Option<Vec<NonZeroReal>>,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::pair_polar_lanes(
+            ctx,
+            poles,
+            weights,
+            &mut None,
+            |_, weight| Ok(weight),
+        ))
+    }
+
+    /// Count poles.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        match self {
+            Self::Polynomial { poles } => poles.len(),
+            Self::Rational { poles } => poles.len(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial curve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { poles } => Some(poles.iter().map(|pole| pole.weight.get()).collect()),
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { poles } => poles.reverse(),
+            Self::Rational { poles } => poles.reverse(),
+        }
+    }
+
+    /// Map the radial and axial halves of every pole in parameter order,
+    /// keeping the weights.
+    fn try_map_poles<Q, T, E>(
+        self,
+        mut pole: impl FnMut(P, S) -> Result<(Q, T), E>,
+    ) -> Result<PolarNurbsPoles<Q, T>, E> {
+        Ok(match self {
+            Self::Polynomial { poles } => PolarNurbsPoles::Polynomial {
+                poles: poles
+                    .into_iter()
+                    .map(|row| {
+                        let (radial, axial) = pole(row.radial, row.axial)?;
+                        Ok(PolarNurbsPole { radial, axial })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+            Self::Rational { poles } => PolarNurbsPoles::Rational {
+                poles: poles
+                    .into_iter()
+                    .map(|row| {
+                        let (radial, axial) = pole(row.radial, row.axial)?;
+                        Ok(WeightedPolarNurbsPole {
+                            radial,
+                            axial,
+                            weight: row.weight,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+        })
+    }
+}
+
+impl<P: Copy, S: Copy> PolarNurbsPoles<P, S> {
+    /// Paired radial and axial poles in parameter order.
+    #[must_use]
+    pub fn poles(&self) -> Vec<PolarNurbsPole<P, S>> {
+        match self {
+            Self::Polynomial { poles } => poles.clone(),
+            Self::Rational { poles } => poles
+                .iter()
+                .map(|pole| PolarNurbsPole {
+                    radial: pole.radial,
+                    axial: pole.axial,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl PolarPcurveNurbs {
+    /// Copy the admitted knot and pole lanes through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
+        let poles = match &self.poles {
+            PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
+                poles: super::copy_decode_slice(poles, ctx, operation)?,
+            },
+            PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
+                poles: super::copy_decode_slice(poles, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
+    /// Build a polar NURBS from its pole rows.
+    ///
+    /// A pole is one row carrying its radial and axial halves together, so
+    /// there are no two lists to pair up and no length to compare. Raw pole
+    /// values are admitted through the caller policy. Each radial and axial
+    /// value is converted together.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole or knot count that does not follow from the degree, a
+    /// zero degree, a non-finite raw pole value and then a non-finite or
+    /// decreasing knot.
+    pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, K: super::nurbs::KnotValue>(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        poles: PolarNurbsPoles<P, S>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::build_polar(
+            ctx, degree, knots, poles, periodic,
+        ))
+    }
+
+    /// Polynomial degree shared by every component.
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Expanded knot vector.
+    pub fn knots(&self) -> &KnotVector {
+        &self.knots
+    }
+
+    /// Build a polar NURBS from a source's pole and weight lanes.
+    pub fn from_lanes<
+        P: PoleValue<FinitePoint2>,
+        S: PoleValue<FiniteReal>,
+        K: super::nurbs::KnotValue,
+    >(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        poles: Vec<PolarNurbsPole<P, S>>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish((|| {
+            let mut storage = if weights.is_some() {
+                Some(ctx.reserve_scoped(0, "IR polar paired poles")?)
+            } else {
+                None
+            };
+            let poles = construction::pair_polar_lanes(
+                ctx,
+                poles,
+                weights,
+                &mut storage,
+                |index, weight| admit_weight(ctx, "polar poles", index, weight),
+            )?;
+            construction::build_polar(ctx, degree, knots, poles, periodic)
+        })())
+    }
+
+    /// Build a polar NURBS from admitted knots, a pole lane and an admitted weight lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole value.
+    pub fn from_checked_lanes<
+        P: PoleValue<FinitePoint2>,
+        S: PoleValue<FiniteReal>,
+        K: super::nurbs::KnotValue,
+    >(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        poles: Vec<PolarNurbsPole<P, S>>,
+        weights: Option<Vec<NonZeroReal>>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish((|| {
+            let mut storage = if weights.is_some() {
+                Some(ctx.reserve_scoped(0, "IR polar paired poles")?)
+            } else {
+                None
+            };
+            let poles =
+                construction::pair_polar_lanes(ctx, poles, weights, &mut storage, |_, weight| {
+                    Ok(weight)
+                })?;
+            construction::build_polar(ctx, degree, knots, poles, periodic)
+        })())
+    }
+
+    /// Paired radial and axial poles.
+    pub fn poles(&self) -> Vec<PolarNurbsPole<FinitePoint2, FiniteReal>> {
+        self.poles.poles()
+    }
+
+    /// Radial-plane poles in parameter order.
+    #[must_use]
+    pub fn radial_control_points(&self) -> Vec<FinitePoint2> {
+        self.poles().into_iter().map(|pole| pole.radial).collect()
+    }
+
+    /// Axial pole values in parameter order.
+    #[must_use]
+    pub fn axial_control_values(&self) -> Vec<FiniteReal> {
+        self.poles().into_iter().map(|pole| pole.axial).collect()
+    }
+
+    /// Pole rows, with the curve's rational form and admitted values.
+    pub const fn pole_rows(&self) -> &PolarNurbsPoles<FinitePoint2, FiniteReal> {
+        &self.poles
+    }
+
+    /// Rational weights in pole order.
+    pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
+        match &self.poles {
+            PolarNurbsPoles::Polynomial { .. } => None,
+            PolarNurbsPoles::Rational { poles } => {
+                Some(poles.iter().map(|pole| pole.weight).collect())
+            }
+        }
+    }
+
+    /// Whether the NURBS parameterization is periodic.
+    pub const fn periodic(&self) -> bool {
+        self.periodic
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PolarPcurveNurbsWire {
+    degree: u32,
+    knots: Vec<f64>,
+    poles: PolarNurbsPoles,
+    #[serde(default)]
+    periodic: bool,
+}
+
+impl Serialize for PolarPcurveNurbs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PolarPcurveNurbsWire {
+            degree: self.degree,
+            knots: self.knots.to_vec(),
+            poles: self.poles.to_raw(),
+            periodic: self.periodic,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolarPcurveNurbs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = PolarPcurveNurbsWire::deserialize(deserializer)?;
+        construction::build_polar(
+            &StandardNurbsAdmission,
+            wire.degree,
+            wire.knots,
+            wire.poles,
+            wire.periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Checked two-dimensional NURBS payload for pcurves and sketch curves.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveNurbs {
+    degree: u32,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    knots: KnotVector,
+    #[cfg_attr(feature = "schema", schemars(with = "PcurveNurbsPoles"))]
+    poles: PcurveNurbsPoles<FinitePoint2>,
+    #[serde(default)]
+    periodic: bool,
+}
+
+impl PcurveNurbs {
+    /// Copy the admitted knot and pole lanes through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+            PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
+    /// Map admitted pole positions in place without allocating storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first mapper refusal. Earlier positions keep their edits.
+    pub fn try_map_control_points_in_place<E>(
+        &mut self,
+        mut map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, E>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
+        ctx.charge_work(count, "IR pcurve in-place pole edit")?;
+        Ok((|| {
+            match &mut self.poles {
+                PcurveNurbsPoles::Polynomial { points } => {
+                    for point in points {
+                        *point = map(*point)?;
+                    }
+                }
+                PcurveNurbsPoles::Rational { points } => {
+                    for pole in points {
+                        pole.point = map(pole.point)?;
+                    }
+                }
+            }
+            Ok(())
+        })())
+    }
+
+    /// Scale every pole position in place, charging one unit of work per pole.
+    ///
+    /// A non-finite result refuses with the poles scaled so far left in place,
+    /// so the caller discards the curve on refusal.
+    pub(crate) fn scale_points(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), NurbsError>, CodecError> {
+        fn scale_point(
+            ctx: &DecodeContext<'_>,
+            point: &mut FinitePoint2,
+            scale: PositiveReal,
+        ) -> Result<Result<(), NurbsError>, CodecError> {
+            ctx.charge_work(1, "IR sketch NURBS unit scaling work")?;
+            let raw = point.get();
+            let Some(scaled) =
+                FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get()))
+            else {
+                return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
+                    "control_points contains a non-finite point",
+                    "IR NURBS refusal text",
+                )?)));
+            };
+            *point = scaled;
+            Ok(Ok(()))
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points {
+                    if let Err(error) = scale_point(ctx, point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points {
+                    if let Err(error) = scale_point(ctx, &mut pole.point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    /// Build a parameter-space NURBS with consistent cardinalities.
+    ///
+    /// Raw pole positions are admitted; admitted positions are kept, so a
+    /// producer that holds them tests only the degree, the cardinalities and
+    /// the knots.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole or knot count that does not follow from the degree, a
+    /// zero degree, a non-finite raw pole coordinate and then a non-finite or
+    /// decreasing knot.
+    pub fn new<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        poles: PcurveNurbsPoles<P>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish(construction::build_pcurve(
+            ctx, degree, knots, poles, periodic,
+        ))
+    }
+
+    /// Lift each two-dimensional pole into model space, keeping its weight.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a lifted pole with a non-finite coordinate.
+    pub fn lift(&self, mut lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
+        let points: Vec<Point3> = self
+            .poles
+            .points()
+            .into_iter()
+            .map(|point| lift(point.get()))
+            .collect();
+        let poles = super::nurbs::pair_curve_lanes(
+            &StandardNurbsAdmission,
+            points,
+            self.weights(),
+            &mut None,
+            |_, weight| Ok(weight),
+        )?;
+        super::nurbs::build_curve(
+            &StandardNurbsAdmission,
+            self.degree,
+            self.knots.clone(),
+            poles,
+            self.periodic,
+        )
+    }
+
+    /// Curve degree.
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Full knot vector.
+    pub fn knots(&self) -> &KnotVector {
+        &self.knots
+    }
+
+    /// Build a parameter-space NURBS from a source's pole and weight lanes.
+    pub fn from_lanes<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        control_points: Vec<P>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish((|| {
+            let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
+                Some(ctx.reserve_scoped(0, "IR pcurve paired poles")?)
+            } else {
+                None
+            };
+            let poles = construction::pair_pcurve_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut storage,
+                |index, weight| admit_weight(ctx, "pcurve poles", index, weight),
+            )?;
+            construction::build_pcurve(ctx, degree, knots, poles, periodic)
+        })())
+    }
+
+    /// Build from finite knot, pole, and weight lanes. Only relationships and
+    /// the nonzero weight condition are checked.
+    pub fn from_finite_lanes(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: Vec<FiniteReal>,
+        control_points: Vec<FinitePoint2>,
+        weights: Option<Vec<FiniteReal>>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish((|| {
+            let mut storage = None;
+            let poles = construction::pair_pcurve_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut storage,
+                |index, weight| admit_finite_weight(ctx, "pcurve poles", index, weight),
+            )?;
+            construction::build_pcurve(ctx, degree, knots, poles, periodic)
+        })())
+    }
+
+    /// Build a parameter-space NURBS from admitted knots, a pole lane and an
+    /// admitted weight lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole coordinate.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
+        ctx: &DecodeContext<'_>,
+        degree: u32,
+        knots: K,
+        control_points: Vec<P>,
+        weights: Option<Vec<NonZeroReal>>,
+        periodic: bool,
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        super::nurbs::admitted::finish((|| {
+            let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
+                Some(ctx.reserve_scoped(0, "IR pcurve paired poles")?)
+            } else {
+                None
+            };
+            let poles = construction::pair_pcurve_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut storage,
+                |_, weight| Ok(weight),
+            )?;
+            construction::build_pcurve(ctx, degree, knots, poles, periodic)
+        })())
+    }
+
+    /// Poles in parameter order, with the pcurve's rational form and admitted
+    /// positions.
+    pub const fn pole_rows(&self) -> &PcurveNurbsPoles<FinitePoint2> {
+        &self.poles
+    }
+
+    /// Control points in parameter order.
+    #[must_use]
+    pub fn control_points(&self) -> Vec<FinitePoint2> {
+        self.poles.points()
+    }
+
+    /// Replace every admitted pole position when the supplied lane has the same cardinality.
+    ///
+    /// The check precedes mutation. Pole weights and knots stay in place.
+    pub fn replace_admitted_control_points(
+        &mut self,
+        positions: &[FinitePoint2],
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        let count = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => points.len(),
+            PcurveNurbsPoles::Rational { points } => points.len(),
+        };
+        if positions.len() != count {
+            return Ok(false);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "IR pcurve pole replacement",
+        )?;
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (point, position) in points.iter_mut().zip(positions) {
+                    *point = *position;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (pole, position) in points.iter_mut().zip(positions) {
+                    pole.point = *position;
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// Map pole positions in order after every result passes admission.
+    /// The map must return the same result for the same index and position.
+    /// Pole weights and knots stay in place.
+    pub fn try_map_control_points<E>(
+        &mut self,
+        map: impl Fn(usize, FinitePoint2) -> Result<FinitePoint2, E>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
+        ctx.charge_work(count, "IR pole edit validation")?;
+        ctx.charge_work(count, "IR pole edit mutation")?;
+        Ok((|| {
+            match &self.poles {
+                PcurveNurbsPoles::Polynomial { points } => {
+                    for (index, point) in points.iter().copied().enumerate() {
+                        map(index, point)?;
+                    }
+                }
+                PcurveNurbsPoles::Rational { points } => {
+                    for (index, pole) in points.iter().enumerate() {
+                        map(index, pole.point)?;
+                    }
+                }
+            }
+            match &mut self.poles {
+                PcurveNurbsPoles::Polynomial { points } => {
+                    for (index, point) in points.iter_mut().enumerate() {
+                        *point = map(index, *point)?;
+                    }
+                }
+                PcurveNurbsPoles::Rational { points } => {
+                    for (index, pole) in points.iter_mut().enumerate() {
+                        pole.point = map(index, pole.point)?;
+                    }
+                }
+            }
+            Ok(())
+        })())
+    }
+
+    /// Rational weights in pole order.
+    pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
+        match &self.poles {
+            PcurveNurbsPoles::Polynomial { .. } => None,
+            PcurveNurbsPoles::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight).collect())
+            }
+        }
+    }
+
+    /// Whether the parameter-space curve is periodic.
+    pub const fn periodic(&self) -> bool {
+        self.periodic
+    }
+
+    /// Reverse poles, weights, and the signed knot parameterization together.
+    pub fn reverse_parameterization(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.poles.count() / 2),
+            "IR signed pole reversal",
+        )?;
+        self.knots.reverse_negated(ctx)?;
+        self.poles.reverse();
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for PcurveNurbs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            degree: u32,
+            knots: Vec<f64>,
+            poles: PcurveNurbsPoles,
+            #[serde(default)]
+            periodic: bool,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        construction::build_pcurve(
+            &StandardNurbsAdmission,
+            wire.degree,
+            wire.knots,
+            wire.poles,
+            wire.periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+/// The depth a new nesting carrier over `basis` would hold, or `None` when
+/// that is past [`MAX_GEOMETRY_NESTING`].
+///
+/// A pcurve nests through three wrappers rather than one: [`PlacedPcurve`],
+/// [`TrimmedPcurve`] and [`OffsetPcurve`] each hold one inline basis, and the
+/// admitted depth counts all three together. Each stores its own depth, so
+/// this reads one field.
+fn nesting_depth_over(basis: &PcurveGeometry) -> Option<usize> {
+    basis
+        .nesting_depth()
+        .checked_add(1)
+        .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+}
+
+/// Affine replica of a parent pcurve in the same parameter space.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`PcurveGeometry`] value nests past the
+/// bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedPcurveWire")]
+pub struct PlacedPcurve {
+    basis: Box<PcurveGeometry>,
+    transform: Transform2,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedPcurveWire {
+    /// Exact parent pcurve and its parameterization.
+    basis: Box<PcurveGeometry>,
+    /// Two-dimensional affine map from parent coordinates to replica coordinates.
+    transform: Transform2,
+}
+
+impl PlacedPcurve {
+    /// Place a basis pcurve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<PcurveGeometry>,
+        transform: Transform2,
+    ) -> Result<Self, &'static str> {
+        let depth = nesting_depth_over(&basis)
+            .ok_or("PlacedPcurve.basis nests past the admitted inline basis depth")?;
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform2 {
+        &self.transform
+    }
+}
+
+impl TryFrom<PlacedPcurveWire> for PlacedPcurve {
+    type Error = &'static str;
+    fn try_from(wire: PlacedPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
+    }
+}
+
+/// Refusal while staging or scaling chart coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PcurveCoordinateScaleError {
+    /// A changed coordinate failed the carrier invariant.
+    #[error("{0}")]
+    Invalid(String),
+    /// Storage or work exceeded the operation limit.
+    #[error("resource refusal: {0:?}")]
+    Resource(cadmpeg_core::decode::ResourceLimit),
+}
+impl From<CodecError> for PcurveCoordinateScaleError {
+    fn from(error: CodecError) -> Self {
+        match error {
+            CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            CodecError::Malformed(message) => Self::Invalid(message),
+            error => Self::Invalid(error.to_string()),
+        }
+    }
+}
+
+impl PcurveGeometry {
+    /// Copy a decoded parameter curve through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::PolarHarmonic(value) => Self::PolarHarmonic(*value),
+            Self::PolarNurbs { nurbs } => Self::PolarNurbs {
+                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::SphericalGreatCircle(value) => Self::SphericalGreatCircle(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Harmonic(value) => Self::Harmonic(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Hyperbolic(value) => Self::Hyperbolic(*value),
+            Self::Nurbs { nurbs } => Self::Nurbs {
+                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedPcurve {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Trimmed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Trimmed(TrimmedPcurve {
+                    parameter_range: value.parameter_range,
+                    same_sense: value.same_sense,
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    depth: value.depth,
+                })
+            }
+            Self::Offset(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Offset(OffsetPcurve {
+                    distance: value.distance,
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    depth: value.depth,
+                })
+            }
+        })
+    }
+
+    /// Nesting carriers enclosing the leaf of this carrier's inline chain.
+    #[must_use]
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Trimmed(trimmed) => trimmed.depth,
+            Self::Offset(offset) => offset.depth,
+            Self::Line(_)
+            | Self::PolarHarmonic(_)
+            | Self::PolarNurbs { .. }
+            | Self::SphericalGreatCircle(_)
+            | Self::Circle(_)
+            | Self::Ellipse(_)
+            | Self::Harmonic(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Hyperbolic(_)
+            | Self::Nurbs { .. } => 0,
+        }
+    }
+
+    /// Scale chart coordinates atomically without changing the curve parameterization.
+    pub fn try_scale_coordinates(
+        &mut self,
+        scales: [f64; 2],
+    ) -> Result<(), PcurveCoordinateScaleError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .map_err(PcurveCoordinateScaleError::from)?;
+        let (candidate, storage) = ctx
+            .with_scoped_storage("stage pcurve coordinate scale", || {
+                self.try_clone_for_decode(&ctx, "stage pcurve coordinate scale")
+            })
+            .map_err(PcurveCoordinateScaleError::from)?;
+        let candidate = match candidate
+            .scaled_coordinates_owned(&ctx, scales)
+            .map_err(PcurveCoordinateScaleError::from)?
+        {
+            Ok(candidate) => candidate,
+            Err(message) => {
+                return Err(PcurveCoordinateScaleError::Invalid(
+                    ctx.copy_retained_text(message, "pcurve coordinate scale refusal")
+                        .map_err(PcurveCoordinateScaleError::from)?,
+                ))
+            }
+        };
+        storage.commit().map_err(PcurveCoordinateScaleError::from)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Returns the origin and direction of a line-valued pcurve.
+    ///
+    /// Trimming and affine replicas preserve a line's parameterization. An
+    /// offset does not preserve it because the offset is evaluated from the
+    /// basis tangent, so it is deliberately excluded.
+    pub fn line_parameters(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(Point2, Point2)>, ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("pcurve line parameter nesting")?;
+        ctx.charge_work_limit(1, "pcurve line parameter visit")?;
+        Ok(match self {
+            Self::Line(line_pcurve) => {
+                let origin = line_pcurve.origin().as_raw();
+                let direction = line_pcurve.direction().as_raw();
+                Some((*origin, *direction))
+            }
+            Self::Transformed(placed) => {
+                let Some((origin, direction)) = placed.basis().line_parameters(ctx)? else {
+                    return Ok(None);
+                };
+                let transform = placed.transform();
+                Some((
+                    transform.apply_point(origin),
+                    transform.apply_vector(direction),
+                ))
+            }
+            Self::Trimmed(trimmed_pcurve) => {
+                let basis = trimmed_pcurve.basis();
+                basis.line_parameters(ctx)?
+            }
+            Self::PolarHarmonic(_) => None,
+            Self::PolarNurbs { .. } => None,
+            Self::SphericalGreatCircle(_) => None,
+            Self::Circle(_) => None,
+            Self::Ellipse(_) => None,
+            Self::Harmonic(_) => None,
+            Self::Parabola(_) => None,
+            Self::Hyperbola(_) => None,
+            Self::Hyperbolic(_) => None,
+            Self::Nurbs { .. } => None,
+            Self::Offset(_) => None,
+        })
+    }
+}
+
+/// A pcurve carrier: the 2D image of a coedge in its face's surface parameter
+/// space. Referenced by a coedge; the owning surface establishes whether a
+/// parameter dimension is a length (relevant to unit scaling, see [F3D spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#5-topology-records)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Pcurve {
+    /// Arena id.
+    pub id: PcurveId,
+    /// Parameter-space shape.
+    pub geometry: PcurveGeometry,
+    /// Source parameterization metadata.
+    #[serde(default)]
+    pub metadata: PcurveMetadata,
+}
+
+impl Pcurve {
+    /// Native wrapper reversal, when the source stores one.
+    pub fn wrapper_reversed(&self) -> Option<bool> {
+        self.metadata.wrapper_reversed()
+    }
+
+    /// Four ASM booleans following an inline subtype scope.
+    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
+        self.metadata.native_tail_flags()
+    }
+
+    /// Directed native parameter interval on which this pcurve is evaluated.
+    pub fn parameter_range(&self) -> Option<FiniteVector<2>> {
+        self.metadata.parameter_range()
+    }
+
+    /// Parameter-space fit tolerance following a solved UV cache.
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
+        self.metadata.fit_tolerance()
+    }
+}
+
+/// Source-specific pcurve parameterization metadata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum PcurveMetadata {
+    /// An ASM inline `exp_par_cur` record and its complete native tail.
+    AsmInline {
+        /// Complete inline record fields.
+        form: PcurveInlineForm,
+    },
+    /// Metadata that does not assert the ASM inline-record contract.
+    General {
+        /// Optional fields carried without an inline-record claim.
+        #[serde(default)]
+        form: PcurveGeneralForm,
+    },
+}
+
+impl Default for PcurveMetadata {
+    fn default() -> Self {
+        Self::General {
+            form: PcurveGeneralForm::default(),
+        }
+    }
+}
+
+impl PcurveMetadata {
+    /// The refusal of a parameter range with a non-finite endpoint.
+    pub const NON_FINITE_PARAMETER_RANGE: &'static str =
+        "pcurve parameter_range endpoints must be finite";
+    /// The refusal of a fit tolerance that is not finite and non-negative.
+    pub const INVALID_FIT_TOLERANCE: &'static str =
+        "pcurve fit_tolerance must be finite and non-negative";
+
+    /// Construct metadata without an ASM inline-record claim from admitted
+    /// fields.
+    #[must_use]
+    pub const fn general(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<FiniteVector<2>>,
+        fit_tolerance: Option<FitTolerance>,
+    ) -> Self {
+        Self::General {
+            form: PcurveGeneralForm::new(wrapper_reversed, parameter_range, fit_tolerance),
+        }
+    }
+
+    /// Native wrapper reversal, when the source stores one.
+    pub fn wrapper_reversed(&self) -> Option<bool> {
+        match self {
+            Self::AsmInline { form: inline } => Some(inline.wrapper_reversed),
+            Self::General { form: general } => general.wrapper_reversed,
+        }
+    }
+
+    /// Four ASM booleans following an inline subtype scope.
+    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
+        match self {
+            Self::AsmInline { form: inline } => Some(inline.native_tail_flags),
+            Self::General { .. } => None,
+        }
+    }
+
+    /// Directed native parameter interval on which this pcurve is evaluated.
+    pub fn parameter_range(&self) -> Option<FiniteVector<2>> {
+        match self {
+            Self::AsmInline { form: inline } => Some(inline.parameter_range),
+            Self::General { form: general } => general.parameter_range,
+        }
+    }
+
+    /// Parameter-space fit tolerance following a solved UV cache.
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
+        match self {
+            Self::AsmInline { form: inline } => Some(inline.fit_tolerance()),
+            Self::General { form: general } => general.fit_tolerance(),
+        }
+    }
+}
+
+fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<FiniteVector<2>, &'static str> {
+    FiniteVector::new(range).ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+}
+
+fn admit_pcurve_fit_tolerance(value: f64) -> Result<FitTolerance, &'static str> {
+    FitTolerance::try_new(value).map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
+}
+
+/// The fields carried together by an ASM inline `exp_par_cur` record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PcurveInlineFormWire")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveInlineForm {
+    /// Parameterization wrapper reversal.
+    pub wrapper_reversed: bool,
+    /// Four native booleans following the inline subtype scope.
+    pub native_tail_flags: [bool; 4],
+    #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
+    parameter_range: FiniteVector<2>,
+    fit_tolerance: FitTolerance,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PcurveInlineFormWire {
+    /// Parameterization wrapper reversal.
+    wrapper_reversed: bool,
+    /// Four native booleans following the inline subtype scope.
+    native_tail_flags: [bool; 4],
+    /// Directed native parameter interval.
+    parameter_range: [f64; 2],
+    /// Parameter-space fit tolerance.
+    fit_tolerance: f64,
+}
+
+impl TryFrom<PcurveInlineFormWire> for PcurveInlineForm {
+    type Error = &'static str;
+    fn try_from(wire: PcurveInlineFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.wrapper_reversed,
+            wire.native_tail_flags,
+            wire.parameter_range,
+            wire.fit_tolerance,
+        )
+    }
+}
+
+impl PcurveInlineForm {
+    /// Construct inline metadata from admitted fields.
+    #[must_use]
+    pub const fn new(
+        wrapper_reversed: bool,
+        native_tail_flags: [bool; 4],
+        parameter_range: FiniteVector<2>,
+        fit_tolerance: FitTolerance,
+    ) -> Self {
+        Self {
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range,
+            fit_tolerance,
+        }
+    }
+
+    /// Admit inline metadata read from the wire, refusing a non-finite
+    /// endpoint and then a tolerance that is not finite and non-negative.
+    pub(crate) fn try_new(
+        wrapper_reversed: bool,
+        native_tail_flags: [bool; 4],
+        parameter_range: [f64; 2],
+        fit_tolerance: f64,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::new(
+            wrapper_reversed,
+            native_tail_flags,
+            admit_pcurve_parameter_range(parameter_range)?,
+            admit_pcurve_fit_tolerance(fit_tolerance)?,
+        ))
+    }
+
+    /// Parameter-space fit tolerance.
+    #[must_use]
+    pub const fn fit_tolerance(&self) -> FitTolerance {
+        self.fit_tolerance
+    }
+
+    /// Replace the fit tolerance.
+    pub fn set_fit_tolerance(&mut self, value: FitTolerance) {
+        self.fit_tolerance = value;
+    }
+
+    /// Directed native parameter interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> FiniteVector<2> {
+        self.parameter_range
+    }
+}
+
+/// Pcurve metadata with no ASM inline-record contract.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PcurveGeneralFormWire")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveGeneralForm {
+    /// Source wrapper reversal, when stored independently of an ASM tail.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_wrapper_reversed"
+    )]
+    pub wrapper_reversed: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_range"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<[f64; 2]>"))]
+    parameter_range: Option<FiniteVector<2>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fit_tolerance: Option<FitTolerance>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PcurveGeneralFormWire {
+    /// Source wrapper reversal, when stored independently of an ASM tail.
+    #[serde(default, deserialize_with = "deserialize_wrapper_reversed")]
+    wrapper_reversed: Option<bool>,
+    /// Directed native parameter interval.
+    #[serde(default, deserialize_with = "deserialize_parameter_range")]
+    parameter_range: Option<[f64; 2]>,
+    /// Parameter-space fit tolerance.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_pcurve_general_form_wire_fit_tolerance"
+    )]
+    fit_tolerance: Option<f64>,
+}
+
+impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
+    type Error = &'static str;
+    fn try_from(wire: PcurveGeneralFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.wrapper_reversed,
+            wire.parameter_range,
+            wire.fit_tolerance,
+        )
+    }
+}
+
+impl PcurveGeneralForm {
+    /// Construct general metadata from admitted fields.
+    #[must_use]
+    pub const fn new(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<FiniteVector<2>>,
+        fit_tolerance: Option<FitTolerance>,
+    ) -> Self {
+        Self {
+            wrapper_reversed,
+            parameter_range,
+            fit_tolerance,
+        }
+    }
+
+    /// Admit general metadata read from the wire, refusing a non-finite
+    /// endpoint and then a tolerance that is not finite and non-negative.
+    pub(crate) fn try_new(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<[f64; 2]>,
+        fit_tolerance: Option<f64>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::new(
+            wrapper_reversed,
+            parameter_range
+                .map(admit_pcurve_parameter_range)
+                .transpose()?,
+            fit_tolerance.map(admit_pcurve_fit_tolerance).transpose()?,
+        ))
+    }
+
+    /// Parameter-space fit tolerance.
+    #[must_use]
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
+        self.fit_tolerance
+    }
+
+    /// Replace or clear the fit tolerance.
+    pub fn set_fit_tolerance(&mut self, value: Option<FitTolerance>) {
+        self.fit_tolerance = value;
+    }
+
+    /// Directed native parameter interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> Option<FiniteVector<2>> {
+        self.parameter_range
+    }
+}
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");
+cadmpeg_core::named_optional_field!(deserialize_parameter_range, [f64; 2], "parameter_range");
+cadmpeg_core::named_optional_field!(
+    deserialize_pcurve_general_form_wire_fit_tolerance,
+    f64,
+    "fit_tolerance"
+);
+
+#[cfg(test)]
+mod tests;
+
+mod identity_rewrite;

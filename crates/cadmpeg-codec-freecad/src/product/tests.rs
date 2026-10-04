@@ -1,13 +1,238 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
+use cadmpeg_test_support::assembly;
+
 use crate::native;
-use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
-use crate::test_support::*;
+use crate::product::{
+    list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
+    RealWidth,
+};
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
+
+mod graph_diagnostic_tests;
+mod property_diagnostic_tests;
+
+#[test]
+fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
+    let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("fcstd:native:object#Gear".into()),
+        subelements: Vec::new(),
+    })
+    .expect("valid target")
+    .expect("target is present");
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD model identity", |ctx| {
+        super::neutral_link_target(ctx, &target)
+    });
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    let target = super::neutral_link_target(&ctx, &target)
+        .expect("admitted target")
+        .expect("local reference");
+    assert!(
+        matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
+        if definition.as_str() == "fcstd:model:product_definition#Gear:definition")
+    );
+}
+
+#[test]
+fn product_record_collection_refuses_at_caller_limit() {
+    let object = native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
+        type_name: "App::Part".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product records")
+    );
+}
+
+#[test]
+fn product_native_identity_refuses_at_retained_limit() {
+    let object = native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
+        type_name: "App::Part".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<native::ProductNodeRecord>()
+            + native::native_id("product", object.name()).len(),
+    ) - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native identity")
+    );
+}
+
+fn resource_product_container() -> native::ProductNodeRecord {
+    native::ProductNodeRecord {
+        id: "fcstd:native:product#Part".into(),
+        object: "fcstd:native:object#Part".into(),
+        node: native::ProductNode::Part(native::ContainerNode {
+            members: Vec::new(),
+            local_transform: None,
+            placement_property: None,
+        }),
+    }
+}
+
+#[test]
+fn product_definition_identity_refuses_at_retained_limit() {
+    let record = resource_product_container();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()
+            + native::model_id("product_definition", &record.object, "definition").len(),
+    ) - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity")
+    );
+}
+
+#[test]
+fn product_container_identity_refuses_at_retained_limit() {
+    let record = resource_product_container();
+    let definition_len = native::model_id("product_definition", &record.object, "definition").len();
+    let container_len = native::model_id("occurrence", &record.object, "container").len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()
+            + 4 * std::mem::size_of::<cadmpeg_ir::products::Occurrence>()
+            + definition_len
+            + record.object.len()
+            + container_len,
+    ) - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity")
+    );
+}
+
+#[test]
+fn product_element_identity_refuses_at_retained_limit() {
+    let array = native::LinkArray::try_new(None, Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        .expect("scalar link array");
+    let record = native::ProductNodeRecord {
+        id: "fcstd:native:product#Link".into(),
+        object: "fcstd:native:object#Link".into(),
+        node: native::ProductNode::Occurrence(Box::new(native::LinkOccurrence {
+            members: Vec::new(),
+            prototype: None,
+            external_document: None,
+            local_transform: None,
+            placement_property: None,
+            array,
+            link_transform: None,
+            linked_subelements: Vec::new(),
+            claim_child: None,
+            copy_on_change: None,
+            scale: None,
+        })),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        native::model_id("occurrence", &record.object, "instance").len(),
+    ) - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity")
+    );
+}
+
+#[test]
+fn product_body_prefix_refuses_at_retained_limit() {
+    let property = native::PropertyRecord {
+        id: "fcstd:native:property#Part:Shape".into(),
+        owner: "fcstd:native:object#Part".into(),
+        name: "Shape".into(),
+        type_name: "Part::PropertyPartShape".into(),
+        family: native::PropertyFamily::Unknown,
+        status: None,
+        body: native::PropertyBody::Transient,
+        order: 0,
+        xml: native::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
+    };
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Part:Shape".into(),
+        property: property.id.clone(),
+        entry: "shape.brp".into(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        // Owner lookup (four buckets), its property vector, the property-owner lookup,
+        // and four body-owner slots are live before the scoped body prefix.
+        4 * std::mem::size_of::<(&str, Vec<&native::PropertyRecord>)>()
+            + 35
+            + 4 * std::mem::size_of::<&native::PropertyRecord>()
+            + 4 * std::mem::size_of::<(&str, &str)>()
+            + 35
+            + 4 * std::mem::size_of::<(String, &str)>()
+            + native::model_id("body", &payload.id, "").len(),
+    ) - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity")
+    );
+}
 
 #[test]
 pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
@@ -82,12 +307,24 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         occurrence.prototype(),
         Some("fcstd:native:object#Prototype")
     );
-    assert_eq!(occurrence.local_transform().expect("placement")[0][3], 4.0);
+    assert_eq!(
+        occurrence.local_transform().expect("placement").rows()[0][3],
+        4.0
+    );
     assert_eq!(occurrence.element_count(), Some(2));
     assert_eq!(occurrence.link_transform(), Some(true));
     assert_eq!(occurrence.element_transforms().len(), 2);
-    assert_eq!(occurrence.element_transforms()[1][0][3], 4.0);
-    assert_eq!(occurrence.element_scales(), &[[1.0; 3], [2.0; 3]]);
+    assert_eq!(occurrence.element_transforms()[1].rows()[0][3], 4.0);
+    assert_eq!(
+        occurrence
+            .element_scales()
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            .collect::<Vec<_>>(),
+        &[[1.0; 3], [2.0; 3]]
+    );
+    assert_eq!(occurrence.element_visibility(), [true, false]);
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -128,31 +365,36 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[0].id)
+        assembly::resolved_transform(&graph, &link_occurrences[0].id)
             .unwrap()
             .rows()[0][3],
         115.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[1].id)
+        assembly::resolved_transform(&graph, &link_occurrences[1].id)
             .unwrap()
             .rows()[0][3],
         118.0
     );
-    assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
-    assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
+    assert_eq!(
+        link_occurrences[0]
+            .scale
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [2.0, 3.0, 4.0]
+    );
+    assert_eq!(
+        link_occurrences[1]
+            .scale
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [4.0, 6.0, 8.0]
+    );
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
-    assert_eq!(first_link.linked_subelements, ["Face1"]);
+    assert_eq!(first_link.linked_subelements(), ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);
     assert_eq!(link_occurrences[1].visible, None);
-    assert!(first_link.element_component.is_some());
-    assert_eq!(first_link.claim_child, Some(true));
-    let copy_on_change = first_link
-        .copy_on_change
-        .as_ref()
-        .expect("copy-on-change state");
+    assert!(first_link.element_component().is_some());
+    assert_eq!(first_link.claim_child(), Some(true));
+    let copy_on_change = first_link.copy_on_change().expect("copy-on-change state");
     assert_eq!(copy_on_change.policy, cadmpeg_ir::CopyOnChangePolicy::Owned);
     assert!(copy_on_change.source.is_some());
     assert!(copy_on_change.group.is_some());
@@ -175,7 +417,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         Some("Hardened drive gear")
     );
     assert_eq!(prototype.part_number.as_deref(), Some("GEAR-42"));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
@@ -183,6 +425,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
@@ -261,7 +504,7 @@ fn projects_direct_string_metadata_and_part_number_precedence() {
         Some("ID-ONLY-42")
     );
     assert_eq!(definition("EmptyId").part_number, None);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -302,12 +545,12 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
         .expect("properties");
     assert_eq!(properties.len(), 5);
     assert!(properties.iter().any(|property| {
-        property.name == "Description" && property.raw_xml.contains("<Wrapper>")
+        property.name == "Description" && property.xml.text().contains("<Wrapper>")
     }));
     assert!(properties.iter().any(|property| {
         property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -352,12 +595,12 @@ fn selects_the_active_link_placement_carrier() {
             .iter()
             .find(|node| node.object.ends_with(name))
             .and_then(native::ProductNodeRecord::local_transform)
-            .map(|matrix| matrix[0][3])
+            .map(|matrix| matrix.rows()[0][3])
             .expect("link placement")
     };
     assert_eq!(x("Propagating"), 2.0);
     assert_eq!(x("LocalOnly"), 30.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -392,7 +635,7 @@ fn accepts_axis_angle_placement_values() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -400,7 +643,7 @@ fn accepts_axis_angle_placement_values() {
     assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -435,7 +678,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -443,7 +686,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
     assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -478,7 +721,7 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
@@ -518,12 +761,12 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!(matrix[2][2].abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -767,6 +1010,37 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
 }
 
 #[test]
+fn rejects_nonfinite_product_scale_at_source_admission() {
+    for (property, name) in [
+        (
+            r#"<Property name="Scale" type="App::PropertyFloat"><Float value="NaN"/></Property>"#,
+            "Scale",
+        ),
+        (
+            r#"<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="1" valueY="Infinity" valueZ="3"/></Property>"#,
+            "ScaleVector",
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="1"><Object name="Occurrence"><Properties Count="1">
+{property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("nonfinite product scale");
+        assert!(error
+            .to_string()
+            .contains(&format!("invalid finite value for {name}")));
+    }
+}
+
+#[test]
 fn link_group_retains_element_list_on_the_native_wire() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="App::LinkGroup" name="Group"/><Object type="Part::Feature" name="Member"/></Objects>
@@ -809,10 +1083,27 @@ fn link_group_retains_element_list_on_the_native_wire() {
 #[test]
 fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(matches!(
-        product_record_index(&records),
+        product_record_index(&ctx, &records),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn product_record_index_refuses_at_caller_limit() {
+    let records = [node("A", &[]), node("B", &[])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(matches!(product_record_index(&ctx, &records),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product record index"));
 }
 
 #[test]
@@ -948,27 +1239,24 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Inner").id)
+        assembly::resolved_transform(&graph, &occurrence("Inner").id)
             .unwrap()
             .rows()[0][3],
         8.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Outer").id)
+        assembly::resolved_transform(&graph, &occurrence("Outer").id)
             .unwrap()
             .rows()[0][3],
         20.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Override").id)
+        assembly::resolved_transform(&graph, &occurrence("Override").id)
             .unwrap()
             .rows()[0][3],
         14.0
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -1003,18 +1291,135 @@ fn transfers_external_product_paths_and_targets() {
     let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
-    assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
-    assert_eq!(document.as_document_id(), None);
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+            _ => None,
+        }),
+        Some("parts/widget.FCStd")
+    );
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                Some(document_id.as_str()),
+            _ => None,
+        }),
+        None
+    );
     assert_eq!(object.as_deref(), Some("Body"));
-    assert!(!document.is_missing());
+    assert!(!matches!(
+        document,
+        cadmpeg_ir::products::ExternalDocument::Missing {}
+    ));
 
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
     let mut wire = serde_json::to_value(result.ir()).expect("document wire");
     let document = &mut wire["model"]["occurrences"][0]["prototype"]["document"];
     document["path"] = serde_json::json!("also-a-path.FCStd");
     document["document_id"] = serde_json::json!("also-an-id");
     assert!(serde_json::from_value::<cadmpeg_ir::CadIr>(wire).is_err());
+}
+
+#[test]
+fn preserves_external_copy_on_change_targets_when_local_names_collide() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Box"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Box"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="4">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="other.FCStd" name="MissingBox"/></Property>
+<Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+<Property name="LinkCopyOnChangeSource" type="App::PropertyXLink"><XLink file="other.FCStd" name="Box"/></Property>
+<Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Box"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
+            &DecodeOptions::default(),
+        )
+        .expect("external copy-on-change target");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
+    let properties = namespace
+        .arena_as::<native::PropertyRecord>("properties")
+        .expect("properties");
+    let source = properties
+        .iter()
+        .find(|property| property.name == "LinkCopyOnChangeSource")
+        .expect("copy source property")
+        .links()[0]
+        .as_ref()
+        .expect("copy source link");
+    assert_eq!(source.document_name(), Some("other.FCStd"));
+    assert_eq!(source.object(), Some("Box"));
+    let prototype = properties
+        .iter()
+        .find(|property| property.name == "LinkedObject")
+        .expect("prototype property")
+        .links()[0]
+        .as_ref()
+        .expect("prototype link");
+    assert_eq!(prototype.document_name(), Some("other.FCStd"));
+    assert_eq!(prototype.object(), Some("MissingBox"));
+
+    let nodes = namespace
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    assert_eq!(occurrence.prototype(), Some("MissingBox"));
+    assert_eq!(
+        occurrence
+            .external_document()
+            .map(crate::native::ExternalDocument::as_str),
+        Some("other.FCStd")
+    );
+    let copy = occurrence
+        .occurrence()
+        .and_then(|node| node.copy_on_change.as_ref())
+        .expect("copy-on-change");
+    assert_eq!(
+        copy.source
+            .as_ref()
+            .and_then(|target| target.document_name()),
+        Some("other.FCStd")
+    );
+    assert_eq!(
+        copy.source.as_ref().and_then(|target| target.object()),
+        Some("Box")
+    );
+    assert_eq!(
+        copy.group.as_ref().and_then(|target| target.object()),
+        Some("fcstd:native:object#Box")
+    );
+
+    let neutral_occurrence = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Occurrence"))
+        })
+        .expect("neutral occurrence");
+    let copy = neutral_occurrence
+        .link
+        .as_ref()
+        .and_then(|link| link.copy_on_change())
+        .expect("neutral copy-on-change");
+    assert!(matches!(
+        &copy.source,
+        Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
+            if (match &document { cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()), _ => None }) == Some("other.FCStd") && object == "Box"
+    ));
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -1061,7 +1466,10 @@ fn restores_shadowed_link_subelement_name() {
         .iter()
         .find(|property| property.name == "Support")
         .expect("support");
-    assert_eq!(support.links()[0].subelements, ["Face7"]);
+    assert_eq!(
+        support.links()[0].as_ref().expect("link").subelements(),
+        ["Face7"]
+    );
 }
 
 #[test]
@@ -1103,7 +1511,13 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert!(product_cycle_nodes(&nodes).is_empty());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(product_cycle_nodes(&ctx, &nodes)
+        .expect("cycle analysis")
+        .is_empty());
 }
 
 #[test]
@@ -1113,5 +1527,303 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert_eq!(
+        product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"),
+        HashSet::from(["B", "C"])
+    );
+}
+
+#[test]
+fn product_cycle_graph_refuses_at_caller_limit() {
+    let records = [node("A", &["B"]), node("B", &[])];
+    let nodes = records
+        .iter()
+        .map(|record| (record.object.as_str(), record))
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(matches!(product_cycle_nodes(&ctx, &nodes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product reverse graph"));
+}
+
+#[test]
+fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
+    for width in [RealWidth::Single, RealWidth::Double] {
+        let mut bytes = vec![0xff; 9];
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        for value in [2.0_f32, -3.0, 4.0] {
+            match width {
+                RealWidth::Single => bytes.extend_from_slice(&value.to_le_bytes()),
+                RealWidth::Double => bytes.extend_from_slice(&f64::from(value).to_le_bytes()),
+            }
+        }
+        let end = bytes.len();
+        bytes.push(0xff);
+        let view = View::over_retained(&bytes).child(9, end).unwrap();
+        let rows = list_layout::<3>(view, "ScaleList")
+            .unwrap()
+            .map(|row| {
+                row.into_iter()
+                    .map(read_real)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows, [[2.0, -3.0, 4.0]]);
+        assert!(list_layout::<3>(
+            View::over_retained(&bytes).child(9, end - 1).unwrap(),
+            "ScaleList"
+        )
+        .is_err());
+    }
+    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
+}
+
+#[test]
+fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
+    // A present zero `ElementCount` requires every array-valued field to be
+    // empty and the link retains its single scalar occurrence. The cardinality
+    // the node carries states that directly: it is `Scalar`, distinct from an
+    // array of one element, and no arithmetic turns the stated zero into a one.
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("scalar link");
+    let records = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let [occurrence] = records.as_slice() else {
+        panic!("one link occurrence")
+    };
+    assert_eq!(occurrence.element_count(), Some(0));
+    assert_eq!(
+        occurrence.element_cardinality(),
+        Some(native::LinkArrayCardinality::Scalar)
+    );
+    assert_ne!(
+        occurrence.element_cardinality(),
+        Some(native::LinkArrayCardinality::Elements(
+            std::num::NonZeroU64::MIN
+        ))
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert_eq!(
+        super::occurrence_count(&ctx, occurrence)
+            .expect("count")
+            .get(),
+        1
+    );
+
+    // A stated zero with a populated carrier is an inconsistent link array.
+    let populated = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Prototype"/><Object type="Part::Feature" name="ElementA"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object><Object name="ElementA"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="ElementA"/></LinkList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(populated)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("inconsistent link-array counts");
+    assert!(
+        error.to_string().contains("inconsistent link-array counts"),
+        "{error}"
+    );
+}
+
+#[test]
+fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="abc"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("product decode rejects the malformed enum integer");
+    assert!(
+        error.to_string().contains("invalid enumeration Integer"),
+        "{error}"
+    );
+}
+
+#[test]
+fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="0"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for _ in 0..2 {
+        placements.extend(
+            [1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+    }
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("PlacementList", &placements),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("product decode rejects inconsistent visibility cardinality");
+    assert!(
+        error.to_string().contains("inconsistent link-array counts"),
+        "{error}"
+    );
+}
+
+#[test]
+fn visibility_cardinality_matches_when_element_count_is_absent() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="01"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for _ in 0..2 {
+        placements.extend(
+            [1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("PlacementList", &placements),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("matching populated carriers remain legal without ElementCount");
+    let native = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<serde_json::Value>("product_nodes")
+        .expect("product nodes");
+    let occurrence = native
+        .iter()
+        .find(|record| record["kind"] == "occurrence")
+        .expect("link occurrence");
+    assert_eq!(
+        occurrence["element_visibility"],
+        serde_json::json!([true, false])
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    assert!(FcstdCodec
+        .validate_native(&ctx, result.ir())
+        .expect("validation fits service policy")
+        .is_empty());
+}
+
+#[test]
+fn preserves_unknown_numeric_copy_on_change_index() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="99"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("an unknown numeric enumeration index is source-valid");
+    let records = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert_eq!(records[0].copy_on_change(), Some("99"));
+    let occurrence = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Occurrence"))
+        })
+        .expect("link occurrence");
+    assert_eq!(
+        occurrence
+            .link
+            .as_ref()
+            .expect("link state")
+            .copy_on_change()
+            .expect("copy-on-change state")
+            .policy,
+        cadmpeg_ir::CopyOnChangePolicy::Native("99".into())
+    );
+    let restored = cadmpeg_ir::CadIr::from_json(
+        &serde_json::to_string(result.ir()).expect("CADIR serialization"),
+    )
+    .expect("complete CADIR admission");
+    let restored_records = restored
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert_eq!(restored_records[0].copy_on_change(), Some("99"));
 }

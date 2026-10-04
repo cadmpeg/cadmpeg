@@ -16,11 +16,21 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use std::collections::{HashMap, HashSet};
+use self::index::scan_carriers;
+use self::spline::patch_nurbs_curve;
 
-use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
+    SphereSurface, TorusSurface,
+};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::layout::compact_analytic_header as analytic;
 
@@ -31,29 +41,28 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 mod attrib;
 mod blend;
 pub(crate) mod entity;
+pub(crate) mod evaluation;
+mod index;
 mod intersection;
 mod offset;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
 pub(crate) mod topology;
-pub(crate) mod typed;
+mod typed;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
-pub(crate) const LEN_TO_MM: f64 = 1000.0;
+const LEN_TO_MM: f64 = 1000.0;
 
-pub use self::graph::{decode, decode_bodies, Brep};
-pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
-pub(crate) use self::topology::patch_point;
-
-mod graph;
+pub(crate) mod feature_source;
+pub(crate) mod graph;
 
 /// The native persistent identity shared by B-rep face attributes and display
 /// tessellation references.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PersistentFaceIdentity {
     /// Native history-feature object identifier.
-    pub(crate) feature_source_id: u32,
+    pub(crate) feature_source_id: feature_source::FeatureSourceId,
     /// Face identity local to the producing feature.
     pub(crate) local_id: u32,
     /// Optional signed path fields stored as their native u32 bit patterns.
@@ -68,9 +77,16 @@ fn norm3(v: &[f64]) -> f64 {
     Vector3::from([v[0], v[1], v[2]]).norm()
 }
 
-fn unit(v: &[f64]) -> Vector3 {
-    let original = Vector3::from([v[0], v[1], v[2]]);
-    original.unit().unwrap_or(original)
+/// The unit direction of a stored vector, absent when the vector is not
+/// finite or its length is within `f64::EPSILON` of zero.
+fn direction(v: &[f64]) -> Option<UnitVector3> {
+    UnitVector3::normalized(Vector3::from([v[0], v[1], v[2]]))
+}
+
+/// The frame of two stored directions, absent when either direction is
+/// degenerate or the two are not perpendicular.
+fn frame(axis: &[f64], reference: &[f64]) -> Option<OrthonormalFrame3> {
+    OrthonormalFrame3::from_units(direction(axis)?, direction(reference)?)
 }
 
 // ---- compact analytic carriers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)) -----------------------------------
@@ -81,15 +97,15 @@ fn unit(v: &[f64]) -> Vector3 {
 /// marker:u8(0x2b|0x2d) values:f64[n]`; deltas replace each reference with a
 /// `[hi][lo][01]` triple ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)). Offsets below are measured from the
 /// tag byte; the optional `0xff` shifts everything after it by one.
-pub(crate) mod tag {
-    pub const LINE: u8 = 0x1e;
-    pub const CIRCLE: u8 = 0x1f;
-    pub const ELLIPSE: u8 = 0x20;
-    pub const PLANE: u8 = 0x32;
-    pub const CYLINDER: u8 = 0x33;
-    pub const CONE: u8 = 0x34;
-    pub const SPHERE: u8 = 0x35;
-    pub const TORUS: u8 = 0x36;
+mod tag {
+    pub(super) const LINE: u8 = 0x1e;
+    pub(super) const CIRCLE: u8 = 0x1f;
+    pub(super) const ELLIPSE: u8 = 0x20;
+    pub(super) const PLANE: u8 = 0x32;
+    pub(super) const CYLINDER: u8 = 0x33;
+    pub(super) const CONE: u8 = 0x34;
+    pub(super) const SPHERE: u8 = 0x35;
+    pub(super) const TORUS: u8 = 0x36;
 }
 
 const COMPACT_REF_COUNT: usize = 5;
@@ -142,7 +158,8 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
         tag::CYLINDER => values[6] > 0.0,
         tag::CONE => {
             values[6] >= 0.0
-                && values[7].abs() > f64::EPSILON
+                && values[7] > f64::EPSILON
+                && values[7] < 1.0
                 && values[8] > 0.0
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs()
                     <= EPS_BREP_VALID_CARRIER_SCALARS_E9
@@ -162,158 +179,20 @@ pub(crate) enum Carrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CurveCarrier {
-    pub attr: u16,
-    pub offset: usize,
-    pub end: usize,
-    pub geometry: CurveGeometry,
-    pub parameter_range: Option<[f64; 2]>,
+    attr: u16,
+    offset: usize,
+    pub(crate) end: usize,
+    pub(crate) geometry: CurveGeometry,
+    parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct SurfaceCarrier {
-    pub attr: u16,
-    pub offset: usize,
-    pub end: usize,
-    pub geometry: SurfaceGeometry,
-    pub orientation_reversed: bool,
-}
-
-impl SurfaceCarrier {
-    pub fn frame(&self) -> Option<(Vector3, Vector3)> {
-        match &self.geometry {
-            SurfaceGeometry::Plane { normal, u_axis, .. } => {
-                Some((*u_axis, cross(*normal, *u_axis)))
-            }
-            SurfaceGeometry::Cylinder {
-                axis,
-                ref_direction,
-                ..
-            }
-            | SurfaceGeometry::Cone {
-                axis,
-                ref_direction,
-                ..
-            }
-            | SurfaceGeometry::Sphere {
-                axis,
-                ref_direction,
-                ..
-            }
-            | SurfaceGeometry::Torus {
-                axis,
-                ref_direction,
-                ..
-            } => Some((*ref_direction, *axis)),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct CarrierIndex {
-    curves: HashMap<u16, CurveCarrier>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
-    /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
-    /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
-    /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
-    /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
-    /// Curve attrs whose geometry is a derived cache, not an exact carrier.
-    derived_curves: HashSet<u16>,
-    /// Support metadata carried by surface-intersection curves.
-    intersection_support_data: HashMap<u16, intersection::IntersectionSupportData>,
-}
-
-impl CarrierIndex {
-    fn insert(&mut self, carrier: Carrier) {
-        match carrier {
-            Carrier::Curve(carrier) => {
-                self.curves.insert(carrier.attr, carrier);
-            }
-            Carrier::Surface(carrier) => {
-                self.surfaces.insert(carrier.attr, carrier);
-            }
-        }
-    }
-
-    pub(crate) fn curve(&self, attr: u16) -> Option<&CurveCarrier> {
-        self.curves.get(&attr)
-    }
-
-    pub(crate) fn curve_attrs(&self) -> HashSet<u16> {
-        self.curves.keys().copied().collect()
-    }
-
-    pub(crate) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
-        self.surfaces.get(&attr)
-    }
-
-    /// Swept/spun surface construction carried by one attribute.
-    pub(crate) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
-        self.sweeps.get(&attr)
-    }
-
-    /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(crate) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
-        self.blends.get(&attr)
-    }
-
-    /// Exact offset-surface construction carried by `attr`.
-    pub(crate) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
-        self.offsets.get(&attr)
-    }
-
-    /// Zero-offset surface pair carried by `attr`.
-    pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
-        self.blend_support_pairs.get(&attr)
-    }
-
-    /// Whether a curve attr holds a derived solved cache rather than an
-    /// exact carrier.
-    pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
-        self.derived_curves.contains(&attr)
-    }
-
-    /// Support metadata carried by one surface-intersection curve.
-    fn intersection_support_data(
-        &self,
-        attr: u16,
-    ) -> Option<&intersection::IntersectionSupportData> {
-        self.intersection_support_data.get(&attr)
-    }
-
-    pub(crate) fn merge_missing(&mut self, other: Self) {
-        for (attr, carrier) in other.curves {
-            if let std::collections::hash_map::Entry::Vacant(entry) = self.curves.entry(attr) {
-                if other.derived_curves.contains(&attr) {
-                    self.derived_curves.insert(attr);
-                }
-                if let Some(support_data) = other.intersection_support_data.get(&attr) {
-                    self.intersection_support_data
-                        .insert(attr, support_data.clone());
-                }
-                entry.insert(carrier);
-            }
-        }
-        for (attr, carrier) in other.surfaces {
-            self.surfaces.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.sweeps {
-            self.sweeps.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blends {
-            self.blends.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.offsets {
-            self.offsets.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blend_support_pairs {
-            self.blend_support_pairs.entry(attr).or_insert(carrier);
-        }
-    }
+    attr: u16,
+    offset: usize,
+    pub(crate) end: usize,
+    pub(crate) geometry: SurfaceGeometry,
+    orientation_reversed: bool,
 }
 
 fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
@@ -355,15 +234,19 @@ fn parse_carrier_at_marker(
     let end = values_at.checked_add(n.checked_mul(8)?)?;
     let mut view = View::over_retained(body);
     view.seek(values_at)?;
-    let vals = view.read_counted(n as u64, 8, View::f64_be)?;
+    let mut storage = [0_f64; 12];
+    let vals = storage.get_mut(..n)?;
+    for value in vals.iter_mut() {
+        *value = view.f64_be()?;
+    }
     if vals.iter().any(|value| !value.is_finite()) {
         return None;
     }
-    if !valid_carrier_frame(tt, &vals) || !valid_carrier_scalars(tt, &vals) {
+    if !valid_carrier_frame(tt, vals) || !valid_carrier_scalars(tt, vals) {
         return None;
     }
 
-    decode_carrier_values(tt, &vals, attr, off, end)
+    decode_carrier_values(tt, vals, attr, off, end)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -387,11 +270,6 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
     let carrier = candidates.next()?;
     candidates.next().is_none().then_some(carrier)
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    let c = a.cross(b);
-    c.unit().unwrap_or(c)
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
@@ -422,151 +300,152 @@ fn decode_carrier_values(
         })
     };
     let g = match tt {
-        tag::LINE => curve(CurveGeometry::Line {
-            origin: scale_point(&v[0..3]),
-            direction: unit(&v[3..6]),
-        }),
-        tag::CIRCLE => curve(CurveGeometry::Circle {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            ref_direction: unit(&v[6..9]),
-            radius: v[9] * LEN_TO_MM,
-        }),
-        tag::ELLIPSE => curve(CurveGeometry::Ellipse {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            major_direction: unit(&v[6..9]),
-            major_radius: v[9] * LEN_TO_MM,
-            minor_radius: v[10] * LEN_TO_MM,
-        }),
-        tag::PLANE => surface(SurfaceGeometry::Plane {
-            origin: scale_point(&v[0..3]),
-            normal: unit(&v[3..6]),
-            u_axis: unit(&v[6..9]),
-        }),
-        tag::CYLINDER => surface(SurfaceGeometry::Cylinder {
-            origin: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            ref_direction: unit(&v[7..10]),
-            radius: v[6] * LEN_TO_MM,
-        }),
+        tag::LINE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                direction(&v[3..6])?,
+            ),
+        ))),
+        tag::CIRCLE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            CircleCurve::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+                PositiveLength::new(v[9] * LEN_TO_MM)?,
+            ),
+        ))),
+        tag::ELLIPSE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+            EllipseCurve::try_from_parts(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+                PositiveLength::new(v[9] * LEN_TO_MM)?,
+                PositiveLength::new(v[10] * LEN_TO_MM)?,
+            )
+            .ok()?,
+        ))),
+        tag::PLANE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+            ),
+        ))),
+        tag::CYLINDER => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[7..10])?,
+                PositiveLength::new(v[6] * LEN_TO_MM)?,
+            ),
+        ))),
         tag::CONE => {
-            // origin(3) axis(3) radius sin cos refdir(3): half-angle from the
-            // stored sine, which satisfies sin^2+cos^2=1 in the observed sample.
-            let sin = v[7];
-            return Some(surface(SurfaceGeometry::Cone {
-                origin: scale_point(&v[0..3]),
-                axis: unit(&v[3..6]),
-                ref_direction: unit(&v[9..12]),
-                radius: v[6] * LEN_TO_MM,
-                ratio: 1.0,
-                half_angle: sin.abs().clamp(0.0, 1.0).asin(),
-            }));
+            // origin(3) axis(3) radius sin cos refdir(3). Admission requires
+            // a positive sine below one and a positive cosine.
+            let half_angle = v[7].asin();
+            return Some(surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cone(ConeSurface::new(
+                    FinitePoint3::new(scale_point(&v[0..3]))?,
+                    frame(&v[3..6], &v[9..12])?,
+                    NonNegativeLength::new(v[6] * LEN_TO_MM)?,
+                    PositiveReal::ONE,
+                    Angle::new(half_angle)?,
+                )),
+            )));
         }
-        tag::SPHERE => surface(SurfaceGeometry::Sphere {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[4..7]),
-            ref_direction: unit(&v[7..10]),
-            radius: v[3] * LEN_TO_MM,
-        }),
+        tag::SPHERE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            SphereSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[4..7], &v[7..10])?,
+                NonZeroLength::new(v[3] * LEN_TO_MM)?,
+            ),
+        ))),
         tag::TORUS => {
-            return Some(surface(SurfaceGeometry::Torus {
-                center: scale_point(&v[0..3]),
-                axis: unit(&v[3..6]),
-                ref_direction: unit(&v[8..11]),
-                major_radius: v[6].abs() * LEN_TO_MM,
-                minor_radius: v[7] * LEN_TO_MM,
-            }));
+            return Some(surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Torus(TorusSurface::new(
+                    FinitePoint3::new(scale_point(&v[0..3]))?,
+                    frame(&v[3..6], &v[8..11])?,
+                    PositiveLength::new(v[6].abs() * LEN_TO_MM)?,
+                    NonZeroLength::new(v[7] * LEN_TO_MM)?,
+                )),
+            )));
         }
         _ => return None,
     };
     Some(g)
 }
 
-/// Scan the whole stream body for compact analytic carriers, keyed by attribute
-/// id. A later occurrence in one stream replaces an earlier occurrence at the
-/// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
-/// the partition carrier remains authoritative and a deltas carrier fills only
-/// an absent identity.
-pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
-    let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            if let Some(c) = parse_carrier(body, i) {
-                out.insert(c);
-            }
-        }
-        i += 1;
-    }
-    for (attr, carrier) in spline::scan_curve_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.curves.insert(attr, carrier);
-    }
-    for (attr, carrier) in spline::scan_surface_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.surfaces.insert(attr, carrier);
-    }
-    for carrier in subset::scan(body, &out) {
-        out.curves.insert(carrier.attr, carrier);
-    }
-    out.sweeps = sweep::scan_sweep_carriers(body);
-    (out.blends, out.blend_support_pairs) = blend::scan(body);
-    out.offsets = offset::scan(body);
-    for (attr, intersection) in intersection::scan_intersection_carriers(body) {
-        debug_assert_eq!(attr, intersection.carrier.attr);
-        if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
-            entry.insert(intersection.carrier);
-            out.derived_curves.insert(attr);
-            out.intersection_support_data
-                .insert(attr, intersection.support_data);
-        }
-    }
-    out
-}
-
 /// Return the typed curve carried by one stream-local attribute.
-pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
-    Some(scan_carriers(body).curve(attr)?.geometry.clone())
+pub(crate) fn curve_by_attr(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    attr: u16,
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    carriers
+        .curve(attr)
+        .map(|indexed| {
+            indexed
+                .carrier()
+                .geometry
+                .try_clone_for_decode(ctx, "SLDPRT patch curve geometry copy")
+        })
+        .transpose()
 }
 
 /// Replace the scalar run of one compact analytic carrier.
-pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
-    let carriers = scan_carriers(body);
-    let Some(carrier) = carriers.curve(attr) else {
-        return false;
+pub(crate) fn patch_compact_values(
+    ctx: &DecodeContext<'_>,
+    body: &mut [u8],
+    attr: u16,
+    values: &[f64],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    let Some(indexed) = carriers.curve(attr) else {
+        return Ok(false);
     };
-    let Some(start) = carrier.end.checked_sub(values.len() * 8) else {
-        return false;
+    let carrier = indexed.carrier();
+    let Some(size) = values.len().checked_mul(8) else {
+        return Ok(false);
+    };
+    let Some(start) = carrier.end.checked_sub(size) else {
+        return Ok(false);
     };
     let Some(bytes) = body.get_mut(start..carrier.end) else {
-        return false;
+        return Ok(false);
     };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(size),
+        "patch SLDPRT compact values",
+    )?;
     for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
         slot.copy_from_slice(&value.to_be_bytes());
     }
-    true
+    Ok(true)
 }
 
 /// Patch one stream-local NURBS curve without changing its storage shape.
 pub(crate) fn patch_nurbs_by_attr(
+    ctx: &DecodeContext<'_>,
     body: &mut [u8],
     attr: u16,
-    new: &cadmpeg_ir::geometry::NurbsCurve,
-) -> bool {
-    let carriers = scan_carriers(body);
-    let Some(carrier) = carriers.curve(attr) else {
-        return false;
+    new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    let Some(indexed) = carriers.curve(attr) else {
+        return Ok(false);
     };
-    let CurveGeometry::Nurbs(old) = &carrier.geometry else {
-        return false;
+    let carrier = indexed.carrier();
+    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
+        return Ok(false);
     };
-    patch_nurbs_curve(body, carrier.offset, old, new, 0.001).is_some()
+    Ok(patch_nurbs_curve(ctx, body, carrier.offset, old, new, 0.001)?.is_some())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::index::scan_carriers;
+    use super::{parse_carrier, tag, Carrier};
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::Vector3;
 
     fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut bytes = vec![0, tag];
@@ -633,12 +512,38 @@ mod tests {
             let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).unwrap() else {
                 panic!("expected surface carrier");
             };
-            assert_eq!(carrier.frame(), Some((reference, expected_v)));
+            let frame = match carrier.geometry.solved() {
+                Some(SolvedSurfaceGeometry::Plane(plane)) => {
+                    let (normal, u_axis) = (plane.frame().axis(), plane.frame().reference());
+                    Some((*u_axis.as_raw(), normal.as_raw().cross(*u_axis.as_raw())))
+                }
+                Some(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some((
+                    *cylinder.frame().reference().as_raw(),
+                    *cylinder.frame().axis().as_raw(),
+                )),
+                Some(SolvedSurfaceGeometry::Sphere(sphere)) => Some((
+                    *sphere.frame().reference().as_raw(),
+                    *sphere.frame().axis().as_raw(),
+                )),
+                Some(SolvedSurfaceGeometry::Torus(torus)) => Some((
+                    *torus.frame().reference().as_raw(),
+                    *torus.frame().axis().as_raw(),
+                )),
+                _ => None,
+            };
+            assert_eq!(frame, Some((reference, expected_v)));
         }
     }
 
     #[test]
     fn scan_does_not_skip_overlapping_carrier_starts() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         bytes.truncate(60);
         bytes.extend(compact_carrier(
@@ -647,7 +552,7 @@ mod tests {
             &[1.0, 2.0, 3.0, 0.0, 0.0, 1.0],
         ));
 
-        let carriers = scan_carriers(&bytes);
+        let carriers = scan_carriers(&ctx, &bytes).expect("carrier scan");
 
         assert!(carriers.curve(7).is_some());
         assert!(carriers.curve(8).is_some());
@@ -671,31 +576,14 @@ mod tests {
             };
             assert_eq!(carrier.attr, 7);
             assert_eq!(carrier.end, bytes.len());
-            let CurveGeometry::Line { origin, direction } = carrier.geometry else {
+            let Some(SolvedCurveGeometry::Line(line_curve)) = carrier.geometry.solved() else {
                 panic!("expected line");
             };
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
             assert_eq!(direction, Vector3::new(1.0, 0.0, 0.0));
         }
-    }
-
-    #[test]
-    fn merge_retains_zero_offset_blend_support_pairs() {
-        let mut base = CarrierIndex::default();
-        let mut delta = CarrierIndex::default();
-        delta.blend_support_pairs.insert(
-            9,
-            blend::SupportPairCarrier {
-                supports: [11, 12],
-                intersection: 13,
-            },
-        );
-
-        base.merge_missing(delta);
-
-        let pair = base.blend_support_pair(9).expect("support pair");
-        assert_eq!(pair.supports, [11, 12]);
-        assert_eq!(pair.intersection, 13);
     }
 
     #[test]
@@ -712,17 +600,15 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } = carrier.geometry
-        else {
+        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
             panic!("expected cone");
         };
+        let origin = cone_surface.origin().get();
+        let axis = *cone_surface.frame().axis().as_raw();
+        let ref_direction = *cone_surface.frame().reference().as_raw();
+        let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
         assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -744,16 +630,14 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } = carrier.geometry
-        else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
+        let center = torus_surface.center().get();
+        let axis = *torus_surface.frame().axis().as_raw();
+        let ref_direction = *torus_surface.frame().reference().as_raw();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -802,14 +686,11 @@ mod tests {
         let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("spindle torus") else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } = carrier.geometry
-        else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
     }
@@ -827,14 +708,11 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } = carrier.geometry
-        else {
+        let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
@@ -896,6 +774,65 @@ mod tests {
         }
     }
 
+    /// A stored cone sine outside the unit interval is not a CONE record: the
+    /// unit identity in `valid_carrier_scalars` refuses it, so it never reaches
+    /// `asin`.
+    #[test]
+    fn a_cone_sine_outside_the_unit_interval_is_not_a_cone_record() {
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 2.0, 1.0, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
+
+    /// A stored cone sine inside the unit interval is its own arcsine.
+    #[test]
+    fn a_cone_sine_inside_the_unit_interval_is_its_own_arcsine() {
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.6, 0.8, 1.0, 0.0, 0.0],
+        );
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        else {
+            panic!("expected surface carrier");
+        };
+        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
+            panic!("expected cone");
+        };
+
+        assert_eq!(cone_surface.half_angle().get(), 0.6_f64.asin());
+    }
+
+    #[test]
+    fn a_cone_sine_just_above_one_is_refused() {
+        let sine = 1.0 + 4.0e-10;
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0,
+            ],
+        );
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn a_negative_cone_sine_is_refused_without_changing_its_chart() {
+        let root_half = std::f64::consts::FRAC_1_SQRT_2;
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0,
+            ],
+        );
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
+
     #[test]
     fn rejects_invalid_cone_angle_pair() {
         let bytes = compact_carrier(
@@ -907,3 +844,6 @@ mod tests {
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 }
+
+#[cfg(test)]
+mod patch_tests;

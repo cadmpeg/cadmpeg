@@ -3,11 +3,12 @@
 
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
-use super::{id, AsmBrep};
-use crate::ids::IdFormat;
+use super::{id, AsmBrep, Carriers};
+use crate::ids::{brep_id, IdFormat};
 use crate::sab::Record;
-use cadmpeg_ir::geometry::CurveGeometry;
-use std::collections::{HashMap, HashSet};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::ids::{AttributeId, ProceduralCurveId, ProceduralSurfaceId};
+use std::collections::HashMap;
 
 /// Provenance tag for a source record or a synthetic procedural entity.
 pub enum AnnotationTag {
@@ -53,56 +54,80 @@ pub struct AnnotationRecord {
 
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
-pub(crate) fn emit_annotation_records(
+pub(super) fn emit_annotation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
+    carriers: &Carriers,
     stream: &str,
-    format: IdFormat<'_>,
-) {
-    let curve_geometries = out
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let emitted_ids = out
-        .bodies
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
-        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
-        .chain(out.points.iter().map(|entity| entity.id.as_str()))
-        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
-        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
-        .collect::<HashSet<_>>();
-    let attribute_ids = out
-        .attributes
-        .iter()
-        .map(|attribute| attribute.id.as_str())
-        .collect::<HashSet<_>>();
-    let unknown_ids = out
-        .unknowns
-        .iter()
-        .map(|unknown| unknown.id().as_str())
-        .collect::<HashSet<_>>();
-    let procedural_ids = out
-        .procedural_surfaces
-        .iter()
-        .map(|(_, entity)| entity.id.as_str())
-        .chain(
-            out.procedural_curves
+    format: IdFormat,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut index_storage = ctx.reserve_scoped(0, "ASM annotation indices")?;
+    let curve_geometries = index_storage.with_storage(|| {
+        ctx.collect_hash_map(
+            out.curves
                 .iter()
-                .map(|(_, entity)| entity.id.as_str()),
+                .map(|curve| (curve.id.as_str(), &curve.geometry)),
+            "ASM annotation curve geometry index",
         )
-        .collect::<HashSet<_>>();
+    })?;
+    let emitted_ids = index_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            out.bodies
+                .iter()
+                .map(|entity| entity.id.as_str())
+                .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+                .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+                .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+                .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+                .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+                .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+                .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+                .chain(out.points.iter().map(|entity| entity.id.as_str()))
+                .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+                .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+                .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
+            "ASM annotation emitted IDs",
+        )
+    })?;
+    let attribute_ids = index_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            out.attributes.iter().map(|attribute| attribute.id.as_str()),
+            "ASM annotation attribute IDs",
+        )
+    })?;
+    let unknown_ids = index_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            out.unknowns.iter().map(|unknown| unknown.id().as_str()),
+            "ASM annotation unknown IDs",
+        )
+    })?;
+    let procedural_ids = index_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            out.procedural_surfaces
+                .iter()
+                .map(|(_, entity)| entity.id.as_str())
+                .chain(
+                    out.procedural_curves
+                        .iter()
+                        .map(|(_, entity)| entity.id.as_str()),
+                ),
+            "ASM annotation procedural IDs",
+        )
+    })?;
     for record in records {
-        let entity_id = id(format, record.index as i64);
+        let entity_id = id(
+            format,
+            i64::try_from(record.index).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "ASM record index",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(record.index),
+                )
+            })?,
+        )
+        .into_string();
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {
@@ -120,10 +145,10 @@ pub(crate) fn emit_annotation_records(
                 }
                 "straight" => derived_fields.push("geometry.direction"),
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
-                    Some(CurveGeometry::Circle { .. }) => {
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
                         derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                     }
-                    Some(CurveGeometry::Ellipse { .. }) => {
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
                         derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
                     }
                     _ => {}
@@ -140,85 +165,98 @@ pub(crate) fn emit_annotation_records(
                     }
                 }
             }
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
-                stream: stream.to_owned(),
-                offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields,
             });
         }
-        let attribute_id = format!("{format}:brep:attribute#{}", record.index);
+        let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
         if attribute_ids.contains(attribute_id.as_str()) {
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
-                stream: stream.to_owned(),
-                offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }
-        let unknown_id = unknown_record_id(record, format);
+        let unknown_id = unknown_record_id(ctx, record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
-                id: unknown_id,
-                stream: stream.to_owned(),
-                offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                id: unknown_id.into_string(),
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }
         for (synthetic_id, tag) in [
             (
-                format!("{format}:brep:procedural_surface#{}", record.index),
+                brep_id!(
+                    format,
+                    ProceduralSurfaceId,
+                    "procedural_surface",
+                    record.index
+                )
+                .into_string(),
                 AnnotationTag::ProceduralSurface,
             ),
             (
-                format!("{format}:brep:procedural_curve#{}", record.index),
+                brep_id!(format, ProceduralCurveId, "procedural_curve", record.index).into_string(),
                 AnnotationTag::ProceduralCurve,
             ),
         ] {
             if procedural_ids.contains(synthetic_id.as_str()) {
+                ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
-                    stream: stream.to_owned(),
-                    offset: record.offset as u64,
+                    stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
+                    offset: cadmpeg_core::decode::u64_from_index(record.offset),
                     tag,
                     derived_fields: Vec::new(),
                 });
             }
         }
     }
-    let procedural_surface_prefix = format!("{format}:brep:procedural_surface#");
-    for (entity_id, tag) in out
-        .surfaces
+    for (index, entity_id, tag) in carriers
+        .procedural_support_sources
         .iter()
-        .map(|entity| (entity.id.as_str(), AnnotationTag::ProceduralSupport))
+        .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralSupport))
         .chain(
-            out.curves
+            carriers
+                .procedural_curve_child_sources
                 .iter()
-                .map(|entity| (entity.id.as_str(), AnnotationTag::ProceduralCurveChild)),
+                .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralCurveChild)),
         )
     {
-        if !entity_id.starts_with(&procedural_surface_prefix) {
-            continue;
-        }
-        let Some(index) = entity_id
-            .split_once('#')
-            .and_then(|(_, suffix)| suffix.split(':').next())
-            .and_then(|value| value.parse::<usize>().ok())
-        else {
-            continue;
-        };
-        let Some(record) = records.get(index) else {
-            continue;
-        };
+        let record = by_index.get(index).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "synthetic entity {entity_id} source record {index} is missing"
+            ))
+        })?;
+        ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
         out.annotation_records.push(AnnotationRecord {
-            id: entity_id.to_owned(),
-            stream: stream.to_owned(),
-            offset: record.offset as u64,
+            id: ctx.copy_retained_text(entity_id, "ASM synthetic annotation id")?,
+            stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
+            offset: cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             derived_fields: Vec::new(),
         });
     }
+    Ok(())
 }
+
+#[cfg(test)]
+mod tests;

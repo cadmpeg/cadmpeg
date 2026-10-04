@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native class-0x5b/0x5c frames and their byte-string wire projection.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
 use serde::{Deserialize, Serialize};
 
 /// Record class of a consolidated B-family class-`0x5b` or class-`0x5c` frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum CatiaClass5b5c {
+pub(crate) enum CatiaClass5b5c {
     /// Class `0x5b`.
     Class5b,
     /// Class `0x5c`.
@@ -36,24 +38,24 @@ impl TryFrom<u8> for CatiaClass5b5c {
 }
 
 /// Complete consolidated class-`0x5b` or class-`0x5c` source-local control record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Class5b5cWire", into = "Class5b5cWire")]
-pub struct CatiaConsolidatedClass5b5cRecord {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Class5b5cWire")]
+pub(crate) struct CatiaConsolidatedClass5b5cRecord {
     /// Stable native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Complete framed record.
-    pub frame: ConsolidatedRawFrame<u64>,
+    pub(super) frame: ConsolidatedRawFrame<u64>,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: u64,
+    pub(super) source_index: u64,
     /// Logical offset within the bounded record source.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
     /// Record class.
-    pub class: CatiaClass5b5c,
+    pub(super) class: CatiaClass5b5c,
 }
 
 impl CatiaConsolidatedClass5b5cRecord {
     fn byte_len(&self) -> u64 {
-        4 + u64::from(u8::from(self.frame.width)) + self.frame.payload.len() as u64
+        4 + u64::from(u8::from(self.frame.width())) + u64_from_index(self.frame.payload.len())
     }
 }
 
@@ -72,6 +74,43 @@ struct Class5b5cWire {
     payload: Vec<u8>,
 }
 
+#[derive(Serialize)]
+struct Class5b5cWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    source_index: u64,
+    source_offset: u64,
+    byte_len: u64,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
+    class: CatiaClass5b5c,
+    header_token: u32,
+    #[serde(with = "cadmpeg_ir::bytes")]
+    payload: &'a [u8],
+}
+
+impl Serialize for CatiaConsolidatedClass5b5cRecord {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Class5b5cWireRef {
+            id: &self.id,
+            byte_offset: self.frame.pos,
+            source_index: self.source_index,
+            source_offset: self.source_offset,
+            byte_len: self.byte_len(),
+            width: self.frame.width(),
+            flag: self.frame.flag,
+            class: self.class,
+            header_token: self.frame.header_token(),
+            payload: &self.frame.payload,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaConsolidatedClass5b5cRecord> for Class5b5cWire {
     fn from(record: CatiaConsolidatedClass5b5cRecord) -> Self {
         Self {
@@ -80,10 +119,10 @@ impl From<CatiaConsolidatedClass5b5cRecord> for Class5b5cWire {
             byte_offset: record.frame.pos,
             source_index: record.source_index,
             source_offset: record.source_offset,
-            width: record.frame.width,
+            width: record.frame.width(),
             flag: record.frame.flag,
             class: record.class,
-            header_token: record.frame.header_token,
+            header_token: record.frame.header_token(),
             payload: record.frame.payload,
         }
     }
@@ -94,13 +133,13 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
     fn try_from(wire: Class5b5cWire) -> Result<Self, Self::Error> {
         let record = Self {
             id: wire.id,
-            frame: ConsolidatedRawFrame {
-                pos: wire.byte_offset,
-                width: wire.width,
-                flag: wire.flag,
-                header_token: wire.header_token,
-                payload: wire.payload,
-            },
+            frame: ConsolidatedRawFrame::new(
+                wire.byte_offset,
+                wire.width,
+                wire.flag,
+                wire.header_token,
+                wire.payload,
+            )?,
             source_index: wire.source_index,
             source_offset: wire.source_offset,
             class: wire.class,
@@ -114,19 +153,63 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CatiaClass5b5c, CatiaConsolidatedClass5b5cRecord, Class5b5cWire};
+    use crate::wire::records::ConsolidatedFrameFlag;
+    use crate::wire::records::ConsolidatedFrameWidth;
+    use crate::wire::records::ConsolidatedRawFrame;
 
+    #[test]
+    fn class5b5c_borrowed_wire_preserves_json_bytes() {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_class5b5c_stream(),
+        );
+        for record in &native.consolidated_class5b5c_records {
+            let owned: Class5b5cWire = record.clone().into();
+            assert_eq!(
+                serde_json::to_vec(record).expect("borrowed control JSON"),
+                serde_json::to_vec(&owned).expect("owned control JSON")
+            );
+        }
+        assert!(!native.consolidated_class5b5c_records.is_empty());
+    }
+
+    #[test]
+    fn class5b5c_retained_limit_refuses_json_record() {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_class5b5c_stream(),
+        );
+        let record: &CatiaConsolidatedClass5b5cRecord = native
+            .consolidated_class5b5c_records
+            .first()
+            .expect("control record");
+        let arena_name = "consolidated_class5b5c_records";
+        let json_len = serde_json::to_vec(record).expect("control JSON").len();
+        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace.set_arena(ctx, arena_name, std::slice::from_ref(record))
+        });
+        let error = refused.expect_err("record exceeds retained-byte limit");
+        assert!(error.to_string().contains("RetainedBytes"), "{error}");
+        crate::test_support::with_service_context(|ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace
+                .set_arena(ctx, arena_name, std::slice::from_ref(record))
+                .expect("service profile admits control record");
+        });
+    }
     #[test]
     fn frame_wire_preserves_byte_payload_and_checks_derived_length() {
         let record = CatiaConsolidatedClass5b5cRecord {
             id: "catia:consolidated:class5b5c-record#0".to_owned(),
-            frame: ConsolidatedRawFrame {
-                pos: 42,
-                width: ConsolidatedFrameWidth::Two,
-                flag: ConsolidatedFrameFlag::Flag03,
-                header_token: 5,
-                payload: vec![0, 0, 0],
-            },
+            frame: ConsolidatedRawFrame::new(
+                42,
+                ConsolidatedFrameWidth::Two,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                vec![0, 0, 0],
+            )
+            .expect("checked fixture frame"),
             source_index: 0,
             source_offset: 42,
             class: CatiaClass5b5c::Class5b,

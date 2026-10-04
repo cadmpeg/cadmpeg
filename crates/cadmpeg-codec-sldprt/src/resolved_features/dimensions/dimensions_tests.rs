@@ -1,25 +1,34 @@
 //! Tests for the `dimensions` module.
 
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::*;
+use super::{
+    compact_radial_circle_index, dimensioned_relation_carrier,
+    project_relation_point_dimensioned_circles, radial_dimension_radius, DimensionedCurveNative,
+};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
     SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ParameterId, ParameterValue,
+    },
+    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn declared_entity_handle_precedes_generic_operand_resolution() {
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -27,18 +36,23 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         entity_index: 0,
         entity_ref: Some("wrong".into()),
     };
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index,
-        local_id,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let wrong = marker("wrong", 5, Some(1), Some(1), Some([0.100, 0.100]));
     let center = marker("center", 10, Some(50), Some(49), Some([0.010, 0.020]));
@@ -77,56 +91,63 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("declared entity-handle carrier");
 
-    assert_eq!(carrier.marker.id, "center");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.marker.id(), "center");
+    assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
     let mut terminal_lane = lane.clone();
-    terminal_lane.sketch_entities[2].local_id = None;
+    terminal_lane.sketch_entities[2] = terminal_lane.sketch_entities[2]
+        .with_test_identity(terminal_lane.sketch_entities[2].object_index(), None);
     let terminal_markers = terminal_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let terminal_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&terminal_lane),
         &terminal_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("terminal radial address carrier");
-    assert_eq!(terminal_carrier.marker.id, "center");
-    assert_eq!(terminal_carrier.center, [0.010, 0.020]);
+    assert_eq!(terminal_carrier.marker.id(), "center");
+    assert_eq!(terminal_carrier.center(), [0.010, 0.020]);
 
-    terminal_lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    terminal_lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     let circular_radial_markers = terminal_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let circular_radial_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&terminal_lane),
         &circular_radial_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("terminal circular radial address carrier");
-    assert_eq!(circular_radial_carrier.marker.id, "center");
-    assert_eq!(circular_radial_carrier.center, [0.010, 0.020]);
+    assert_eq!(circular_radial_carrier.marker.id(), "center");
+    assert_eq!(circular_radial_carrier.center(), [0.010, 0.020]);
 
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.sketch_entities.extend([
@@ -142,39 +163,43 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut direct_lane = ambiguous_lane;
-    direct_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+    direct_lane.sketch_entities[0].reclassify(SketchInputKind::LineOrCircle);
     let direct_markers = direct_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let direct_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&direct_lane),
         &direct_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("explicit circular marker remains a carrier");
-    assert_eq!(direct_carrier.marker.id, "wrong");
+    assert_eq!(direct_carrier.marker.id(), "wrong");
     assert_eq!(direct_carrier.construction, Some(false));
 }
 
 #[test]
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
-    let kind = FeatureInputOperandKind::Native(0x80f7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80f7).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -182,18 +207,22 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         entity_index: 0,
         entity_ref: None,
     };
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index,
-        local_id,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -232,18 +261,20 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("indexed radial point carrier");
-    assert_eq!(carrier.marker.id, "center");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.marker.id(), "center");
+    assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
     let mut ambiguous_lane = lane.clone();
@@ -254,37 +285,42 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut mismatched_lane = lane;
-    mismatched_lane.sketch_entities[1].object_index = Some(99);
+    mismatched_lane.sketch_entities[1] = mismatched_lane.sketch_entities[1]
+        .with_test_identity(Some(99), mismatched_lane.sketch_entities[1].local_id());
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 }
 
 #[test]
 fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
-    let kind = FeatureInputOperandKind::Native(0x836e);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -292,18 +328,23 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         entity_index: 1,
         entity_ref: None,
     };
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: Some(object_index),
-        local_id: Some(local_id),
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(object_index), Some(local_id));
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -344,59 +385,68 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("indexed circle-dimension pair");
-    assert_eq!(carrier.marker.id, "center-1");
-    assert_eq!(carrier.center, [0.010, 0.010]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.marker.id(), "center-1");
+    assert_eq!(carrier.center(), [0.010, 0.010]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
 
     let mut first_pair = operand;
     first_pair.entity_index = 0;
     let first_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &first_pair,
         5.0,
     )
+    .unwrap()
     .expect("first indexed circle-dimension pair");
-    assert_eq!(first_carrier.marker.id, "center-0");
+    assert_eq!(first_carrier.marker.id(), "center-0");
 
     let mut out_of_range = first_pair.clone();
     out_of_range.entity_index = 2;
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &out_of_range,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut mismatched_lane = lane.clone();
-    mismatched_lane.sketch_entities[3].object_index = Some(99);
+    mismatched_lane.sketch_entities[3] = mismatched_lane.sketch_entities[3]
+        .with_test_identity(Some(99), mismatched_lane.sketch_entities[3].local_id());
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
         &first_pair,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut odd_lane = lane.clone();
@@ -404,48 +454,61 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let odd_markers = odd_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&odd_lane),
         &odd_markers,
         "feature",
         &first_pair,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut missing_center_id_lane = lane.clone();
-    missing_center_id_lane.sketch_entities[2].local_id = Some(0);
+    missing_center_id_lane.sketch_entities[2] = missing_center_id_lane.sketch_entities[2]
+        .with_test_identity(
+            missing_center_id_lane.sketch_entities[2].object_index(),
+            Some(0),
+        );
     let missing_center_id_markers = missing_center_id_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&missing_center_id_lane),
         &missing_center_id_markers,
         "feature",
         &first_pair,
         5.0,
     )
+    .unwrap()
     .is_none());
 }
 
 #[test]
 fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: Some(object_index),
-        local_id: Some(local_id),
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(object_index), Some(local_id));
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = |kind| FeatureInputLane {
         id: "lane".into(),
@@ -486,11 +549,16 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
     };
 
     for kind in [
-        FeatureInputOperandKind::Native(0x80d4),
-        FeatureInputOperandKind::Native(0x80d5),
-        FeatureInputOperandKind::Native(0x80dd),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80dd).unwrap()),
     ] {
-        let strict_point_tag = matches!(kind, FeatureInputOperandKind::Native(0x80d4 | 0x80d5));
+        let strict_point_tag = matches!(
+            kind,
+            FeatureInputOperandKind::Native(
+                NativeOperandTag::TAG_80D4 | NativeOperandTag::TAG_80D5
+            )
+        );
         let operand = FeatureInputOperand {
             offset: 100,
             reference_ref: "reference".into(),
@@ -505,59 +573,67 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
         )
+        .unwrap()
         .expect("explicit point center identity");
-        assert_eq!(carrier.marker.id, "center");
-        assert_eq!(carrier.center, [0.010, 0.020]);
-        assert!(carrier.curve.is_none());
+        assert_eq!(carrier.marker.id(), "center");
+        assert_eq!(carrier.center(), [0.010, 0.020]);
+        assert!(carrier.curve().is_none());
         assert_eq!(carrier.construction, Some(false));
 
         if strict_point_tag {
             let mut wrong_marker_kind_lane = lane.clone();
-            wrong_marker_kind_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+            wrong_marker_kind_lane.sketch_entities[0].reclassify(SketchInputKind::LineOrCircle);
             let wrong_marker_kind = wrong_marker_kind_lane
                 .sketch_entities
                 .iter()
-                .map(|marker| (marker.id.as_str(), marker))
+                .map(|marker| (marker.id(), marker))
                 .collect::<HashMap<_, _>>();
             assert!(dimensioned_relation_carrier(
+                &cadmpeg_test_support::service_decode_context(),
                 std::slice::from_ref(&wrong_marker_kind_lane),
                 &wrong_marker_kind,
                 "feature",
                 &operand,
                 5.0,
             )
+            .unwrap()
             .is_none());
         }
 
         let mut wrong_address = operand.clone();
         wrong_address.entity_index = 1;
         assert!(dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &wrong_address,
             5.0,
         )
+        .unwrap()
         .is_none());
 
         let mut unreferenced = operand.clone();
         unreferenced.entity_ref = None;
         assert!(dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &unreferenced,
             5.0,
         )
+        .unwrap()
         .is_none());
 
         let mut wrong_feature_lane = lane.clone();
@@ -565,60 +641,50 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let wrong_feature_markers = wrong_feature_lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&wrong_feature_lane),
             &wrong_feature_markers,
             "feature",
             &operand,
             5.0,
         )
+        .unwrap()
         .is_none());
 
-        let mut nonfinite_lane = lane.clone();
-        nonfinite_lane.sketch_entities[0].coordinates_m = Some([f64::NAN, 0.020]);
-        let nonfinite_markers = nonfinite_lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id.as_str(), marker))
-            .collect::<HashMap<_, _>>();
-        assert!(dimensioned_relation_carrier(
-            std::slice::from_ref(&nonfinite_lane),
-            &nonfinite_markers,
-            "feature",
-            &operand,
-            5.0,
-        )
-        .is_none());
+        assert!(cadmpeg_ir::units::FiniteVector::new([f64::NAN, 0.020]).is_none());
 
         let mut second_lane = lane.clone();
         second_lane.id = "lane-2".into();
         second_lane.classes[0].parent = "lane-2".into();
         second_lane.references[0].parent = "lane-2".into();
         for marker in &mut second_lane.sketch_entities {
-            marker.parent = "lane-2".into();
+            marker.set_test_parent("lane-2");
         }
         let lanes = [lane, second_lane];
         let duplicate_owner_markers = lanes
             .iter()
             .flat_map(|lane| lane.sketch_entities.iter())
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             &lanes,
             &duplicate_owner_markers,
             "feature",
             &operand,
             5.0,
         )
+        .unwrap()
         .is_none());
     }
 }
 
 #[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
-    let kind = FeatureInputOperandKind::Native(0x88e7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x88e7).unwrap());
     let operand = FeatureInputOperand {
         offset: 150,
         reference_ref: "reference".into(),
@@ -663,18 +729,23 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         payload[offset + 8..offset + 12].fill(0);
     }
     let marker =
-        |id: &str, offset, kind, object_index, local_id, coordinates_m| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: u32::try_from(offset).unwrap(),
-            offset,
-            object_index,
-            local_id,
-            kind,
-            state_value: Some(1.0),
-            coordinates_m,
-            links: None,
+        |id: &str, offset, kind, object_index, local_id, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                u32::try_from(offset).unwrap(),
+                offset,
+                kind,
+            );
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
         };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -740,7 +811,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             ),
             marker(
                 "slot",
-                slot_offset as u64,
+                u64_from_index(slot_offset),
                 SketchInputKind::from_handle_code(1),
                 Some(1),
                 Some(1),
@@ -751,19 +822,21 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         7.0,
     )
+    .unwrap()
     .expect("slot handle dimension carrier");
-    assert_eq!(carrier.marker.id, "slot");
-    assert_eq!(carrier.center, [0.016, 0.020]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.marker.id(), "slot");
+    assert_eq!(carrier.center(), [0.016, 0.020]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(true));
 
     let mut ambiguous_lane = lane.clone();
@@ -780,15 +853,17 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         7.0,
     )
+    .unwrap()
     .is_none());
 
     let mut mismatched_center_lane = lane.clone();
@@ -796,15 +871,17 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let mismatched_center_markers = mismatched_center_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_center_lane),
         &mismatched_center_markers,
         "feature",
         &operand,
         7.0,
     )
+    .unwrap()
     .is_none());
 
     let mut mismatched_slot_lane = lane;
@@ -812,15 +889,17 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let mismatched_slot_markers = mismatched_slot_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_slot_lane),
         &mismatched_slot_markers,
         "feature",
         &operand,
         7.0,
     )
+    .unwrap()
     .is_none());
 }
 
@@ -828,7 +907,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 
-    let kind = FeatureInputOperandKind::Native(0x69bd);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x69bd).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -838,9 +917,9 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     };
     let marker_offset = 4u64;
     let record_len = arc_handle::LEN;
-    let mut native_payload = vec![0; marker_offset as usize + record_len + SKETCH_MARKER.len()];
-    native_payload[..marker_offset as usize].copy_from_slice(&11u32.to_le_bytes());
-    let offset = marker_offset as usize;
+    let offset = usize::try_from(marker_offset).unwrap();
+    let mut native_payload = vec![0; offset + record_len + SKETCH_MARKER.len()];
+    native_payload[..offset].copy_from_slice(&11u32.to_le_bytes());
     native_payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     native_payload[offset + arc_handle::HEADER..offset + arc_handle::SHARED_SELECTOR].fill(0xff);
     native_payload[offset + arc_handle::SHARED_SELECTOR..offset + arc_handle::NATIVE_KIND]
@@ -881,18 +960,22 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         .copy_from_slice(&12u32.to_le_bytes());
     native_payload[offset + record_len..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = SketchInputEntity {
-        id: "carrier".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: marker_offset,
-        object_index: Some(11),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some([0.01, 0.02]),
-        links: None,
+    let marker = {
+        let marker_id: String = "carrier".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            marker_offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(Some(11), None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.02]);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -928,56 +1011,58 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("explicit short arc-handle point carrier");
-    assert_eq!(carrier.marker.id, "carrier");
-    assert_eq!(carrier.center, [0.01, 0.02]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.marker.id(), "carrier");
+    assert_eq!(carrier.center(), [0.01, 0.02]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
 
     let mut unrelated_lane = lane.clone();
-    unrelated_lane.sketch_entities.push(SketchInputEntity {
-        id: "other".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 1,
-        offset: 1000,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some([0.03, 0.04]),
-        links: None,
+    unrelated_lane.sketch_entities.push({
+        let marker_id: String = "other".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 1, 1000, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.03, 0.04]);
+        constructed_marker.links = None;
+        constructed_marker
     });
     let unrelated_markers = unrelated_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let mut unrelated_operand = operand;
     unrelated_operand.entity_ref = Some("other".into());
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&unrelated_lane),
         &unrelated_markers,
         "feature",
         &unrelated_operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 }
 
 #[test]
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
-    let kind = FeatureInputOperandKind::Native(0x8452);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8452).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -985,18 +1070,21 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         entity_index: 0,
         entity_ref: None,
     };
-    let marker = |id: &str, offset, marker_kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: marker_kind,
-        state_value: None,
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, marker_kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            marker_kind,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = |circular_kind| FeatureInputLane {
         id: "lane".into(),
@@ -1038,21 +1126,23 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
         )
+        .unwrap()
         .expect("unlinked declared entity-handle carrier");
 
-        assert_eq!(carrier.marker.id, "circular");
-        assert_eq!(carrier.center, [0.010, 0.020]);
+        assert_eq!(carrier.marker.id(), "circular");
+        assert_eq!(carrier.center(), [0.010, 0.020]);
         assert!(matches!(
-            carrier.curve,
+            carrier.curve(),
             Some(DimensionedCurveNative::Circle {
                 center: [0.010, 0.020]
             })
@@ -1065,15 +1155,17 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let missing_witness_markers = missing_witness_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&missing_witness_lane),
         &missing_witness_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let point_operand = FeatureInputOperand {
@@ -1084,17 +1176,19 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let point_markers = point_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let point_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&point_lane),
         &point_markers,
         "feature",
         &point_operand,
         5.0,
     )
+    .unwrap()
     .expect("point-resolved entity handle carrier");
-    assert_eq!(point_carrier.marker.id, "circular");
+    assert_eq!(point_carrier.marker.id(), "circular");
 
     let mut ambiguous_lane = lane(SketchInputKind::Arc);
     ambiguous_lane.sketch_entities.extend([
@@ -1104,21 +1198,23 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 }
 
 #[test]
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
-    let kind = FeatureInputOperandKind::Native(0x8263);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8263).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1126,18 +1222,21 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         entity_index: 0,
         entity_ref: Some("arc-radial".into()),
     };
-    let marker = |id: &str, offset, marker_kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: marker_kind,
-        state_value: None,
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, marker_kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            marker_kind,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -1189,33 +1288,31 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
             marker("other-radial", 40, SketchInputKind::Point, [0.103, 0.004]),
         ],
     };
-    lane.sketch_entities[0].object_index = Some(50);
-    lane.sketch_entities[0].local_id = Some(49);
-    lane.sketch_entities[1].object_index = Some(49);
-    lane.sketch_entities[1].local_id = Some(0);
-    lane.sketch_entities[2].object_index = Some(70);
-    lane.sketch_entities[2].local_id = Some(69);
-    lane.sketch_entities[3].object_index = Some(69);
-    lane.sketch_entities[3].local_id = Some(0);
+    lane.sketch_entities[0] = lane.sketch_entities[0].with_test_identity(Some(50), Some(49));
+    lane.sketch_entities[1] = lane.sketch_entities[1].with_test_identity(Some(49), Some(0));
+    lane.sketch_entities[2] = lane.sketch_entities[2].with_test_identity(Some(70), Some(69));
+    lane.sketch_entities[3] = lane.sketch_entities[3].with_test_identity(Some(69), Some(0));
     let markers_by_id = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .expect("declared curve child pair");
 
-    assert_eq!(carrier.marker.id, "arc");
-    assert_eq!(carrier.center, [0.0, 0.0]);
+    assert_eq!(carrier.marker.id(), "arc");
+    assert_eq!(carrier.center(), [0.0, 0.0]);
     assert!(matches!(
-        carrier.curve,
+        carrier.curve(),
         Some(DimensionedCurveNative::Circle { center: [0.0, 0.0] })
     ));
 
@@ -1224,17 +1321,19 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let unbound_markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let unbound_carrier = dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &unbound_markers,
         "feature",
         &unbound_operand,
         5.0,
     )
+    .unwrap()
     .expect("scoped child declaration remains authoritative without operand identity");
-    assert_eq!(unbound_carrier.marker.id, "arc");
+    assert_eq!(unbound_carrier.marker.id(), "arc");
 
     let mut multiple_declared = lane.clone();
     multiple_declared.classes.push(FeatureInputClass {
@@ -1247,50 +1346,57 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let multiple_markers = multiple_declared
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&multiple_declared),
         &multiple_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 
     let mut mismatched_declared = lane;
-    mismatched_declared.sketch_entities[1].coordinates_m = Some([0.004, 0.0]);
+    mismatched_declared.sketch_entities[1].coordinates_m =
+        cadmpeg_ir::units::FiniteVector::new([0.004, 0.0]);
     let mismatched_markers = mismatched_declared
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_declared),
         &mismatched_markers,
         "feature",
         &operand,
         5.0,
     )
+    .unwrap()
     .is_none());
 }
 
 #[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
+    const EPS_FRAME: f64 = 1.0e-8;
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
-    let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, 1.0e-8)
+    let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, EPS_FRAME)
         .expect("axis-aligned sketch has a marker transform");
     let arc = super::DimensionedArcNative {
         center: [0.0, 0.0],
@@ -1299,19 +1405,27 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         endpoints: Some(["start".into(), "end".into()]),
     };
 
-    let (geometry, endpoint_refs) =
-        super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
-            .expect("valid dimensioned arc");
-    assert_eq!(endpoint_refs, vec!["end", "start"]);
-    let SketchGeometry::Arc {
+    let arc = super::transformed_dimensioned_arc(
+        &cadmpeg_test_support::service_decode_context(),
+        transform,
+        &arc,
+        1000.0,
+        EPS_FRAME,
+    )
+    .expect("endpoint copy resources")
+    .expect("valid dimensioned arc");
+    assert_eq!(arc.endpoint_refs, vec!["end", "start"]);
+    let SketchGeometryDefinition::Arc {
         start_angle,
         end_angle,
+        radius,
         ..
-    } = geometry
+    } = arc.geometry.definition()
     else {
         panic!("dimensioned carrier should remain an arc");
     };
-    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    assert!((radius.get() - arc.radius).abs() < 1.0e-9);
+    let sweep = (end_angle.get() - start_angle.get()).rem_euclid(std::f64::consts::TAU);
     assert!(sweep <= std::f64::consts::PI + 1.0e-9);
 }
 
@@ -1407,18 +1521,22 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload
     };
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: offset as u32,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset: u64, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            kind,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let center = marker("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
     let radial = marker("radial", 20, SketchInputKind::Point, Some([0.005, 0.0]));
@@ -1445,22 +1563,24 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         let markers_by_id = lane
             .sketch_entities
             .iter()
-            .map(|marker| (marker.id.as_str(), marker))
+            .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let operand = FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x83fe),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
             entity_index: 0,
-            entity_ref: Some(center.id.clone()),
+            entity_ref: Some(center.id().to_string()),
         };
         let carrier = dimensioned_relation_carrier(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
         )
+        .unwrap()
         .expect("dimensioned carrier");
         assert_eq!(carrier.construction, Some(construction));
     }
@@ -1469,14 +1589,14 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
-        id: ParameterId::mint("radial").expect("identity grammar"),
-        owner: Some(FeatureId::mint("sketch").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#radial").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#sketch").expect("identity grammar")),
         ordinal: 0,
         name: "radial".into(),
         expression: String::new(),
         display,
-        value: Some(ParameterValue::Length(Length(value))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(value).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1499,9 +1619,13 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
 
 #[test]
 fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service())
+            .unwrap();
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature_ref = "feature";
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let marker_id = "marker";
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
@@ -1520,7 +1644,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x829a),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
             entity_ref: Some(marker_id.into()),
         }],
@@ -1539,18 +1663,17 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![SketchInputEntity {
-            id: marker_id.into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature_ref.into()),
-            ordinal: 0,
-            offset: 10,
-            object_index: Some(0),
-            local_id: Some(0),
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.001, 0.002]),
-            links: None,
+        sketch_entities: vec![{
+            let marker_id: String = marker_id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some(feature_ref.into());
+            constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
+            constructed_marker.links = None;
+            constructed_marker
         }],
     };
     let feature = Feature {
@@ -1558,114 +1681,126 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            }),
+        ),
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let center = SketchEntity::new(
-        SketchEntityId("center".into()),
+        SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some(marker_id.into()));
     let mut entities = vec![center];
 
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
-        entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle { center, radius: Length(2.0) })
-            if *center == Point2::new(1.0, 2.0)
+        entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle { center, radius: actual_radius })
+            if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
     ));
     assert_eq!(entities[1].geometry_ref.as_deref(), Some("relation"));
 
     let mut ambiguous = entities[..1].to_vec();
     ambiguous.push(
         SketchEntity::new(
-            SketchEntityId("second-center".into()),
+            SketchEntityId::mint("synthetic:test:id#second-center").unwrap(),
             entities[0].sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 2.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some(marker_id.into())),
     );
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut ambiguous,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert_eq!(ambiguous.len(), 2);
 
     let mut missing = entities[..1].to_vec();
     let mut missing_lane = lane.clone();
     missing_lane.relation_instances[0].operands[0].entity_ref = None;
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut missing,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&missing_lane),
-    );
+    )
+    .unwrap();
     assert_eq!(missing.len(), 1);
 
     let mut implicit_lane = lane.clone();
     implicit_lane.relation_instances[0].operands[0].entity_ref = None;
     implicit_lane.sketch_entities.extend([
-        SketchInputEntity {
-            id: "implicit-center".into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature_ref.into()),
-            ordinal: 1,
-            offset: 20,
-            object_index: Some(1),
-            local_id: Some(0),
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.0, 0.0]),
-            links: None,
+        {
+            let marker_id: String = "implicit-center".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 1, 20, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some(feature_ref.into());
+            constructed_marker = constructed_marker.with_test_identity(Some(1), Some(0));
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+            constructed_marker.links = None;
+            constructed_marker
         },
-        SketchInputEntity {
-            id: "implicit-relation".into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature_ref.into()),
-            ordinal: 2,
-            offset: 25,
-            object_index: Some(1),
-            local_id: None,
-            kind: SketchInputKind::Relation(SketchRelationKind::Distance),
-            state_value: Some(1.0),
-            coordinates_m: None,
-            links: crate::records::SketchInputLinks::new(
+        {
+            let marker_id: String = "implicit-relation".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                2,
+                25,
+                SketchInputKind::Relation(SketchRelationKind::Distance),
+            );
+            constructed_marker.feature_ref = Some(feature_ref.into());
+            constructed_marker = constructed_marker.with_test_identity(Some(1), None);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m = None;
+            constructed_marker.links = crate::records::SketchInputLinks::new(
                 0,
                 vec![
                     SketchInputLink {
@@ -1677,61 +1812,53 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
                         entity_ref: "implicit-center".into(),
                     },
                 ],
-            ),
+            );
+            constructed_marker
         },
-        SketchInputEntity {
-            id: "implicit-radial".into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature_ref.into()),
-            ordinal: 3,
-            offset: 30,
-            object_index: Some(2),
-            local_id: None,
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.002, 0.0]),
-            links: None,
+        {
+            let marker_id: String = "implicit-radial".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 3, 30, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some(feature_ref.into());
+            constructed_marker = constructed_marker.with_test_identity(Some(2), None);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.002, 0.0]);
+            constructed_marker.links = None;
+            constructed_marker
         },
     ]);
     let mut implicit_entities = vec![SketchEntity::new(
-        SketchEntityId("implicit-center".into()),
+        SketchEntityId::mint("synthetic:test:id#implicit-center").unwrap(),
         entities[0].sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(3.0, 4.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("implicit-center".into()))];
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut implicit_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&implicit_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        implicit_entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle { center, radius: Length(2.0) })
-            if *center == Point2::new(3.0, 4.0)
+        implicit_entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle { center, radius: actual_radius })
+            if (*center == Point2::new(3.0, 4.0)) && actual_radius.get() == 2.0
     ));
 }
 
 #[test]
-fn arc_dimension_center_requires_one_matching_radial_witness() {
-    let marker = |id: &str, offset: u64, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
-    };
-    let center = marker("center", 10, SketchInputKind::Arc, Some([0.1, 0.2]));
-    let radial = marker("radial", 20, SketchInputKind::Point, Some([0.103, 0.2]));
+fn point_dimension_projection_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &policy).unwrap();
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -1746,215 +1873,22 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![center.clone(), radial],
-    };
-
-    assert!(matches!(
-        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0),
-        Some(DimensionedCurveNative::Circle { center: [u, v] })
-            if [u, v] == [0.1, 0.2]
-    ));
-
-    let mut ambiguous_lane = lane;
-    ambiguous_lane.sketch_entities.push(marker(
-        "second-radial",
-        30,
-        SketchInputKind::ConstrainedPoint,
-        Some([0.1, 0.203]),
-    ));
-    assert!(dimensioned_arc_native_geometry(
-        std::slice::from_ref(&ambiguous_lane),
-        &ambiguous_lane.sketch_entities[0],
-        3.0
-    )
-    .is_none());
-}
-
-#[test]
-fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
-    let marker = |id: &str, offset: u64, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
-    };
-    let center = SketchInputEntity {
-        id: "center".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 1,
-        offset: 10,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Arc,
-        state_value: Some(1.0),
-        coordinates_m: Some([0.0, 0.0]),
-        links: crate::records::SketchInputLinks::new(
+        sketch_entities: vec![SketchInputEntity::new(
+            "marker",
+            "lane",
             0,
-            vec![
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "start".into(),
-                },
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "end".into(),
-                },
-            ],
-        ),
+            0,
+            SketchInputKind::Point,
+        )],
     };
-    let start = marker("start", 20, [0.003, 0.0]);
-    let end = marker("end", 30, [0.0, 0.003]);
-    let lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: Vec::new(),
-        classes: Vec::new(),
-        names: Vec::new(),
-        scalars: Vec::new(),
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: vec![center.clone(), start, end],
-    };
-
-    let Some(DimensionedCurveNative::Arc(arc)) =
-        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0)
-    else {
-        panic!("two endpoints should define a bounded arc");
-    };
-    assert_eq!(arc.center, [0.0, 0.0]);
-    assert_eq!(arc.start, [0.003, 0.0]);
-    assert_eq!(arc.end, [0.0, 0.003]);
-    assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
-
-    let mut invalid_end = lane.sketch_entities[2].clone();
-    invalid_end.coordinates_m = Some([0.0, 0.004]);
-    let invalid_lane = FeatureInputLane {
-        sketch_entities: vec![center, lane.sketch_entities[1].clone(), invalid_end],
-        ..lane
-    };
-    assert!(dimensioned_arc_native_geometry(
-        std::slice::from_ref(&invalid_lane),
-        &invalid_lane.sketch_entities[0],
-        3.0
-    )
-    .is_none());
-}
-
-#[test]
-fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
-    let marker = |ordinal: u32, object_index: u32, coordinates_m: [f64; 2]| SketchInputEntity {
-        id: format!("marker-{ordinal}"),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset: u64::from(ordinal) * 100,
-        object_index: Some(object_index),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
-    };
-    let markers = [
-        marker(0, 2, [0.0, 0.0]),
-        marker(1, 1, [0.021, 0.0]),
-        marker(2, 7, [-0.012, 0.012]),
-        marker(3, 6, [-0.0095, 0.012]),
-        marker(4, 9, [-0.012, -0.012]),
-        marker(5, 8, [-0.0095, -0.012]),
-        marker(6, 11, [0.012, -0.012]),
-        marker(7, 10, [0.0145, -0.012]),
-        marker(8, 13, [0.012, 0.012]),
-        marker(9, 12, [0.0145, 0.012]),
-    ];
-    let roster = markers.iter().collect::<Vec<_>>();
-
-    let pairs = terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.0025)
-        .expect("terminal one-based address and repeated radius");
-    assert_eq!(pairs.len(), 4);
-    assert_eq!(
-        pairs
-            .iter()
-            .map(|(center, radial)| (center.object_index, radial.object_index))
-            .collect::<Vec<_>>(),
-        vec![
-            (Some(7), Some(6)),
-            (Some(9), Some(8)),
-            (Some(11), Some(10)),
-            (Some(13), Some(12)),
-        ]
-    );
-    assert!(terminal_repeated_radial_circle_pairs(roster.len() - 1, &roster, 0.0025).is_none());
-    assert!(terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.003).is_none());
-}
-
-#[test]
-fn extended_terminal_radial_record_carries_a_one_based_roster_address() {
-    let mut payload = vec![0; 112];
-    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
-    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[56..58].copy_from_slice(&12u16.to_le_bytes());
-    payload[58..60].copy_from_slice(&12u16.to_le_bytes());
-    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
-    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[72..76].copy_from_slice(&(-1i32).to_le_bytes());
-    payload[76..78].copy_from_slice(&11u16.to_le_bytes());
-    for at in (78..94).step_by(4) {
-        payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
-    }
-
-    assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
-        Some(12)
-    );
-    payload[58..60].copy_from_slice(&13u16.to_le_bytes());
-    assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
-        None
-    );
-}
-
-#[test]
-fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
-    let mut payload = vec![0; 112 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
-    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
-    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[64..66].copy_from_slice(&7u16.to_le_bytes());
-    payload[66..68].copy_from_slice(&7u16.to_le_bytes());
-    payload[68..72].copy_from_slice(&1u32.to_le_bytes());
-    payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[80..84].copy_from_slice(&1u32.to_le_bytes());
-    payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-
-    assert_eq!(extended_radial_circle_index(&payload, 0), Some(7));
-    payload[66..68].copy_from_slice(&8u16.to_le_bytes());
-    assert_eq!(extended_radial_circle_index(&payload, 0), None);
+    let error =
+        project_relation_point_dimensioned_circles(&ctx, &mut Vec::new(), &[], &[], &[lane])
+            .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 mod direct_circle_carrier;
 mod duplicate_link_arc;
 mod point_identity;
 mod point_projection;
+mod radial_geometry_tests;

@@ -3,26 +3,28 @@
 
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
-pub const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
-pub const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
+pub(crate) const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
+pub(crate) const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReferencePair {
+pub(crate) struct ReferencePair {
     tokens: [PayloadIndexToken; 2],
     offset: usize,
     wrapped: bool,
 }
 
 impl ReferencePair {
-    pub fn references(self) -> [(PayloadIndexToken, usize); 2] {
+    pub(crate) fn references(self) -> [(PayloadIndexToken, usize); 2] {
         [
             (self.tokens[0], self.offset),
             (self.tokens[1], self.offset + self.tokens[0].raw().len()),
         ]
     }
 
-    pub fn wrapped(self) -> bool {
+    pub(crate) fn wrapped(self) -> bool {
         self.wrapped
     }
 
@@ -56,20 +58,23 @@ impl ReferencePair {
 }
 
 /// Decode both pairs without discarding their tagged token encodings.
-pub fn simple_hole_repeated_scalar_lane_block_references(
+pub(crate) fn simple_hole_repeated_scalar_lane_block_references(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<[ReferencePair; 2]> {
-    let scalars = super::simple_hole_repeated_scalar_lane(record)?;
+) -> Result<Option<[ReferencePair; 2]>, CodecError> {
+    let Some(scalars) = super::simple_hole_repeated_scalar_lane(ctx, record)? else {
+        return Ok(None);
+    };
     let [first, second] = scalars.last().witness_offsets;
-    Some([
-        ReferencePair::read(record, first, FIRST_PREFIX)?,
-        ReferencePair::read(record, second, SECOND_PREFIX)?,
-    ])
+    Ok(ReferencePair::read(record, first, FIRST_PREFIX)
+        .zip(ReferencePair::read(record, second, SECOND_PREFIX))
+        .map(|(first, second)| [first, second]))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{ReferencePair, FIRST_PREFIX};
 
     #[test]
     fn reference_pairs_derive_positions_from_exact_tagged_widths() {

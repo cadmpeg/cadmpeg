@@ -4,12 +4,12 @@
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{format_identity, PmiId};
+use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
 };
 
-use crate::entity_table::{RangeInterval, RangeIntervalSlot};
+use crate::entity_table::RangeIntervalSlot;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
 
@@ -25,48 +25,67 @@ use crate::native::{CatiaNative, CatiaRangeInterval};
 /// lane; an unresolved source target is deliberately left empty rather than
 /// guessed from an incoming class.
 pub(crate) fn transfer_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
-    graph_scope: Option<&HashSet<String>>,
+    graph_scope: &crate::decode::ModelingGraphScope,
     transferred_sketch_ranges: &HashSet<String>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for entity in native.entity_records.iter().filter(|entity| {
-        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-    }) {
+    for entity in native
+        .entity_records
+        .iter()
+        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
+    {
         if transferred_sketch_ranges.contains(&entity.object_record) {
             continue;
         }
         let Some(definition) = dimension_definition(entity) else {
             continue;
         };
-        let id = pmi_id(entity.byte_offset);
-        if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
+        let id = pmi_id(ctx, entity.byte_offset)?;
+        let mut duplicate = false;
+        for annotation in &ir.model.pmi {
+            let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "catia_pmi_duplicate_search")?;
+            if annotation.id == id {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate {
             continue;
         }
-        ir.model.pmi.push(PmiAnnotation {
-            id,
-            name: None,
-            visible: None,
-            targets: Vec::new(),
-            definition,
-        });
+        ctx.charge_entities(1, "admit CATIA PMI dimension")?;
+        ctx.push_vec(
+            &mut ir.model.pmi,
+            PmiAnnotation {
+                id,
+                name: None,
+                visible: None,
+                targets: Vec::new(),
+                definition,
+            },
+            "catia_pmi_dimensions",
+        )?;
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
-fn pmi_id(source_offset: u64) -> PmiId {
-    PmiId::mint(
-        format_identity(
-            "catia",
-            "model",
-            "pmi",
-            format!("entity-record-{source_offset:010}"),
-        )
-        .expect("CATIA PMI source offset produces a valid identity"),
-    )
-    .expect("identity grammar")
+fn pmi_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source_offset: u64,
+) -> Result<PmiId, cadmpeg_core::CodecError> {
+    let value = ctx.format_retained(
+        format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
+        "catia_pmi_dimension_id",
+    )?;
+    PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
@@ -111,71 +130,50 @@ fn range_only_dimension_definition(
         _ => return None,
     };
     let nominal = finite_length(range.nominal.as_ref()?.bits)?;
-    let (Some(lower_deviation), Some(upper_deviation)) = deviations(&range.interval)? else {
+    let [RangeIntervalSlot::Binary64 { bits: lower, .. }, RangeIntervalSlot::Binary64 { bits: upper, .. }] =
+        range.interval.slots.as_ref()?
+    else {
         return None;
     };
-    Some(PmiDefinition::Dimension {
-        dimension,
-        nominal: Some(nominal),
-        tolerance: Some(DimensionTolerance::PlusMinus {
-            lower: lower_deviation,
-            upper: upper_deviation,
-        }),
-    })
-}
-
-fn deviations(interval: &RangeInterval) -> Option<(Option<PmiValue>, Option<PmiValue>)> {
-    let Some([lower, upper]) = interval.slots.as_ref() else {
-        return Some((None, None));
-    };
-    let lower = match slot_value(lower) {
-        DeviationSlot::Unset => None,
-        DeviationSlot::Finite(value) => Some(value),
-        DeviationSlot::Invalid => return None,
-    };
-    let upper = match slot_value(upper) {
-        DeviationSlot::Unset => None,
-        DeviationSlot::Finite(value) => Some(value),
-        DeviationSlot::Invalid => return None,
-    };
-    Some((lower, upper))
-}
-
-enum DeviationSlot {
-    Unset,
-    Finite(PmiValue),
-    Invalid,
-}
-
-fn slot_value(slot: &RangeIntervalSlot) -> DeviationSlot {
-    match slot {
-        RangeIntervalSlot::Binary64 { bits, .. } => {
-            finite_length(*bits).map_or(DeviationSlot::Invalid, DeviationSlot::Finite)
-        }
-        RangeIntervalSlot::Unset { .. } => DeviationSlot::Unset,
-    }
+    let lower_deviation = finite_length(*lower)?;
+    let upper_deviation = finite_length(*upper)?;
+    Some(PmiDefinition::Dimension(
+        cadmpeg_ir::pmi::PmiDimension::new(
+            dimension,
+            Some(nominal),
+            Some(DimensionTolerance::PlusMinus {
+                lower: lower_deviation,
+                upper: upper_deviation,
+            }),
+        )
+        .ok()?,
+    ))
 }
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
     let value = f64::from_bits(bits);
-    value.is_finite().then_some(PmiValue {
-        value,
-        quantity: PmiQuantity::Length,
-    })
+    PmiValue::new(value, PmiQuantity::Length)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+    use super::transfer_dimensions;
+    use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
     use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
+    use crate::native::CatiaNative;
+    use crate::native::CatiaRangeInterval;
     use crate::native::{
         CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,
         CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityReference,
         CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource,
         CatiaRangeNominal, CatiaRangeNominalFraming,
     };
+    use crate::test_support::with_service_context;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::pmi::DimensionKind;
+    use cadmpeg_ir::pmi::DimensionTolerance;
     use cadmpeg_ir::pmi::PmiDefinition;
+    use std::collections::HashSet;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
         CatiaEntitySchemaValue {
@@ -273,9 +271,8 @@ mod tests {
         };
         range.incoming_references = vec![CatiaEntityIncomingReference {
             object_record: "catia:object#owner".to_string(),
-            source_entity: Some(CatiaEntityReference::from_parts(
+            source_entity: Some(CatiaEntityReference::resolved_or_unresolved(
                 2,
-                false,
                 Some("catia:entity#owner".to_string()),
                 None,
             )),
@@ -295,10 +292,55 @@ mod tests {
         };
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            )
+            .expect("service profile admits the source dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
+    }
+
+    #[test]
+    fn pmi_duplicate_search_refuses_work() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("first dimension");
+        // The formatted identity charges its length twice (measure, then append); the
+        // scan then charges both ids.
+        let id_work = 2 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
+            .expect("identity length fits u64");
+        crate::test_support::with_work_limit(id_work, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+            .expect_err("duplicate scan consumes work") else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_pmi_duplicate_search");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        assert_eq!(ir.model.pmi.len(), 1);
     }
 
     #[test]
@@ -313,7 +355,14 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            )
+            .expect("service profile admits two dimensions")),
             2
         );
         let dimensions = ir
@@ -321,26 +370,96 @@ mod tests {
             .pmi
             .iter()
             .map(|annotation| match &annotation.definition {
-                PmiDefinition::Dimension {
-                    dimension,
-                    nominal: Some(nominal),
-                    tolerance:
-                        Some(DimensionTolerance::PlusMinus {
-                            lower: lower_deviation,
-                            upper: upper_deviation,
-                        }),
-                    ..
-                } => (
-                    dimension,
-                    nominal.value,
-                    lower_deviation.value,
-                    upper_deviation.value,
-                ),
+                PmiDefinition::Dimension(relation) => {
+                    let nominal = relation.nominal().expect("dimension nominal");
+                    let Some(DimensionTolerance::PlusMinus {
+                        lower: lower_deviation,
+                        upper: upper_deviation,
+                    }) = relation.tolerance()
+                    else {
+                        panic!("dimension tolerance");
+                    };
+                    (
+                        relation.kind(),
+                        nominal.value.get(),
+                        lower_deviation.value.get(),
+                        upper_deviation.value.get(),
+                    )
+                }
                 _ => panic!("dimension annotation"),
             })
             .collect::<Vec<_>>();
         assert_eq!(dimensions[0], (&DimensionKind::Diameter, 12.7, -0.1, 0.2));
         assert_eq!(dimensions[1], (&DimensionKind::Size, 12.7, -0.1, 0.2));
+    }
+
+    #[test]
+    fn pmi_dimension_entity_limit_refuses_before_second_dimension() {
+        let diameter = range_only_entity("DiameterThread");
+        let mut size = range_only_entity("FeatureRSUR");
+        size.byte_offset = 1;
+        let native = CatiaNative {
+            entity_records: vec![diameter, size],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root fits service input limit");
+        let error = transfer_dimensions(
+            &ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+            &HashSet::new(),
+        )
+        .expect_err("two dimensions exceed one entity");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA PMI dimension")
+        );
+        assert_eq!(ir.model.pmi.len(), 1);
+    }
+
+    #[test]
+    fn pmi_dimension_identity_refuses_retained_limit() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_pmi_dimension_id")
+        );
+        assert!(ir.model.pmi.is_empty());
+        let admitted = with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("service profile admits dimension");
+        assert_eq!(admitted, 1);
+        assert_eq!(
+            ir.model.pmi[0].id.as_str(),
+            "catia:model:pmi#entity-record-0000000000"
+        );
     }
 
     #[test]
@@ -406,7 +525,14 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new()
+            )
+            .expect("service profile admits the source dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());

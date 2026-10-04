@@ -10,20 +10,21 @@ pub(crate) enum CurveDescriptorReferences {
 }
 
 impl CurveDescriptorReferences {
-    pub(crate) fn multiplicities(self) -> u32 {
+    pub(super) fn multiplicities(self) -> u32 {
         match self {
             Self::Compact([multiplicities, _]) => multiplicities,
             Self::Status([_, multiplicities, _]) => multiplicities.into(),
         }
     }
 
-    pub(crate) fn knots(self) -> u32 {
+    pub(super) fn knots(self) -> u32 {
         match self {
             Self::Compact([_, knots]) => knots,
             Self::Status([_, _, knots]) => knots.into(),
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn values(self) -> Vec<u32> {
         match self {
             Self::Compact(references) => references.to_vec(),

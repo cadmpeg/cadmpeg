@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-pattern search and printable-string extraction.
+use std::num::NonZeroUsize;
 
-/// One byte of a search pattern: a fixed value or a `??` wildcard.
-pub type PatternByte = Option<u8>;
+mod pattern;
+use pattern::{Pattern, PatternByte};
 
 /// Parses a hexadecimal search pattern.
 ///
@@ -14,20 +15,15 @@ pub type PatternByte = Option<u8>;
 /// Returns a message when the pattern is empty, holds a character that is
 /// neither a hexadecimal digit nor `?`, mixes a digit with `?` inside one pair,
 /// or ends on a half byte.
-pub fn parse_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
+pub(super) fn parse_pattern(text: &str) -> Result<Pattern, String> {
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if chars.is_empty() {
-        return Err(
-            "empty pattern; expected hexadecimal byte pairs such as `4d5a??00`".to_string(),
-        );
-    }
     if !chars.len().is_multiple_of(2) {
         return Err(format!(
             "pattern `{text}` has {} hexadecimal digits; byte patterns need an even count",
             chars.len()
         ));
     }
-    let mut pattern = Vec::with_capacity(chars.len() / 2);
+    let mut pattern = Vec::new();
     for pair in chars.chunks(2) {
         let (high, low) = (pair[0], pair[1]);
         match (high, low) {
@@ -45,12 +41,12 @@ pub fn parse_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
             }
         }
     }
-    Ok(pattern)
+    Pattern::new(pattern)
 }
 
 fn hex_digit(c: char, text: &str) -> Result<u8, String> {
     c.to_digit(16)
-        .map(|value| value as u8)
+        .and_then(|value| u8::try_from(value).ok())
         .ok_or_else(|| format!("pattern `{text}`: `{c}` is not a hexadecimal digit or `?`"))
 }
 
@@ -59,16 +55,13 @@ fn hex_digit(c: char, text: &str) -> Result<u8, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty or holds a non-ASCII character.
-pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
-    if text.is_empty() {
-        return Err("empty ASCII search term".to_string());
-    }
+pub(super) fn ascii_pattern(text: &str) -> Result<Pattern, String> {
     if !text.is_ascii() {
         return Err(format!(
             "`{text}` is not ASCII; use --encoding utf16le or --encoding hex for other encodings"
         ));
     }
-    Ok(text.bytes().map(Some).collect())
+    Pattern::new(text.bytes().map(Some).collect()).map_err(|_| "empty ASCII search term".into())
 }
 
 /// Encodes a search term as UTF-16LE code units.
@@ -76,48 +69,52 @@ pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty.
-pub fn utf16le_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
-    if text.is_empty() {
-        return Err("empty UTF-16LE search term".to_string());
-    }
-    Ok(text
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .map(Some)
-        .collect())
+pub(super) fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
+    Pattern::new(
+        text.encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .map(Some)
+            .collect(),
+    )
+    .map_err(|_| "empty UTF-16LE search term".into())
 }
 
 /// Returns every offset in `haystack` where `pattern` matches, in order.
 ///
 /// `limit` caps the number of reported offsets; `None` reports all of them. The
 /// match is byte exact except at wildcard positions.
-pub fn find_all(haystack: &[u8], pattern: &[PatternByte], limit: Option<usize>) -> Vec<u64> {
+pub(super) fn find_all(
+    haystack: &[u8],
+    pattern: &Pattern,
+    limit: Option<NonZeroUsize>,
+) -> Vec<u64> {
     let mut hits = Vec::new();
-    if pattern.is_empty() || haystack.len() < pattern.len() {
+    if haystack.len() < pattern.len() {
         return hits;
     }
     // Anchoring on a fixed byte lets `memchr` skip most of the file when the
     // pattern does not start with a wildcard.
-    let anchor = pattern.iter().position(Option::is_some);
+    let anchor = pattern
+        .bytes()
+        .iter()
+        .enumerate()
+        .find_map(|(index, byte)| byte.map(|byte| (index, byte)));
     let last_start = haystack.len() - pattern.len();
     let mut start = 0usize;
     while start <= last_start {
         let candidate = match anchor {
-            Some(index) => {
-                let byte = pattern[index].expect("anchor position holds a fixed byte");
-                match memchr::memchr(byte, &haystack[start + index..]) {
-                    Some(found) => start + found,
-                    None => break,
-                }
-            }
+            Some((index, byte)) => match memchr::memchr(byte, &haystack[start + index..]) {
+                Some(found) => start + found,
+                None => break,
+            },
             None => start,
         };
         if candidate > last_start {
             break;
         }
-        if matches_at(haystack, candidate, pattern) {
-            hits.push(candidate as u64);
-            if limit.is_some_and(|max| hits.len() >= max) {
+        if matches_at(haystack, candidate, pattern.bytes()) {
+            hits.push(cadmpeg_core::decode::u64_from_index(candidate));
+            if limit.is_some_and(|max| hits.len() >= max.get()) {
                 break;
             }
         }
@@ -135,7 +132,7 @@ fn matches_at(haystack: &[u8], at: usize, pattern: &[PatternByte]) -> bool {
 
 /// Concrete character encoding of one extracted string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StringEncoding {
+pub(in crate::inspect) enum StringEncoding {
     /// A run of printable single-byte ASCII.
     Ascii,
     /// A run of printable ASCII widened to UTF-16LE code units.
@@ -144,7 +141,7 @@ pub enum StringEncoding {
 
 impl StringEncoding {
     /// Returns the label printed next to each extracted string.
-    pub const fn label(self) -> &'static str {
+    pub(super) const fn label(self) -> &'static str {
         match self {
             Self::Ascii => "ascii",
             Self::Utf16le => "utf16le",
@@ -154,7 +151,7 @@ impl StringEncoding {
 
 /// Character encodings selected for one string-extraction scan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum StringScan {
+pub(super) enum StringScan {
     /// Runs of printable single-byte ASCII.
     Ascii,
     /// Runs of printable ASCII widened to UTF-16LE code units.
@@ -165,13 +162,13 @@ pub enum StringScan {
 
 /// One printable run found in a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FoundString {
+pub(in crate::inspect) struct FoundString {
     /// Offset of the first byte of the run.
-    pub offset: u64,
+    pub(super) offset: u64,
     /// Encoding the run was read in.
-    pub encoding: StringEncoding,
+    pub(super) encoding: StringEncoding,
     /// The decoded text.
-    pub text: String,
+    pub(super) text: String,
 }
 
 /// Extracts printable runs of at least `min_len` characters.
@@ -181,8 +178,12 @@ pub struct FoundString {
 /// the results are sorted by offset, so a UTF-16LE run is also visible as the
 /// ASCII characters interleaved with its zero bytes only when those characters
 /// themselves form a long enough ASCII run.
-pub fn extract_strings(bytes: &[u8], min_len: usize, encoding: StringScan) -> Vec<FoundString> {
-    let min_len = min_len.max(1);
+pub(super) fn extract_strings(
+    bytes: &[u8],
+    min_len: NonZeroUsize,
+    encoding: StringScan,
+) -> Vec<FoundString> {
+    let min_len = min_len.get();
     let mut found = match encoding {
         StringScan::Ascii => ascii_runs(bytes, min_len),
         StringScan::Utf16le => utf16le_runs(bytes, min_len),
@@ -209,10 +210,10 @@ fn ascii_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
             if run.is_empty() {
                 start = index;
             }
-            run.push(*byte as char);
+            run.push(char::from(*byte));
         } else if long_enough(&run, min_len) {
             out.push(FoundString {
-                offset: start as u64,
+                offset: cadmpeg_core::decode::u64_from_index(start),
                 encoding: StringEncoding::Ascii,
                 text: std::mem::take(&mut run),
             });
@@ -222,7 +223,7 @@ fn ascii_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
     }
     if long_enough(&run, min_len) {
         out.push(FoundString {
-            offset: start as u64,
+            offset: cadmpeg_core::decode::u64_from_index(start),
             encoding: StringEncoding::Ascii,
             text: run,
         });
@@ -240,13 +241,13 @@ fn utf16le_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
             if run.is_empty() {
                 start = index;
             }
-            run.push(bytes[index] as char);
+            run.push(char::from(bytes[index]));
             index += 2;
             continue;
         }
         if long_enough(&run, min_len) {
             out.push(FoundString {
-                offset: start as u64,
+                offset: cadmpeg_core::decode::u64_from_index(start),
                 encoding: StringEncoding::Utf16le,
                 text: std::mem::take(&mut run),
             });
@@ -257,7 +258,7 @@ fn utf16le_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
     }
     if long_enough(&run, min_len) {
         out.push(FoundString {
-            offset: start as u64,
+            offset: cadmpeg_core::decode::u64_from_index(start),
             encoding: StringEncoding::Utf16le,
             text: run,
         });
@@ -271,7 +272,7 @@ fn long_enough(run: &str, min_len: usize) -> bool {
 }
 
 /// Escapes a decoded string for single-line output.
-pub fn escape(text: &str) -> String {
+pub(super) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     for c in text.chars() {
         match c {
@@ -286,18 +287,29 @@ pub fn escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::pattern::Pattern;
+    use super::{
+        ascii_pattern, escape, extract_strings, find_all, parse_pattern, utf16le_pattern,
+        StringScan,
+    };
+    use std::num::NonZeroUsize;
 
     #[test]
     fn parses_patterns_with_and_without_wildcards() {
-        assert_eq!(parse_pattern("4d5a"), Ok(vec![Some(0x4d), Some(0x5a)]));
-        assert_eq!(parse_pattern("4d 5a"), Ok(vec![Some(0x4d), Some(0x5a)]));
+        assert_eq!(
+            parse_pattern("4d5a"),
+            Pattern::new(vec![Some(0x4d), Some(0x5a)])
+        );
+        assert_eq!(
+            parse_pattern("4d 5a"),
+            Pattern::new(vec![Some(0x4d), Some(0x5a)])
+        );
         assert_eq!(
             parse_pattern("4d??00"),
-            Ok(vec![Some(0x4d), None, Some(0x00)])
+            Pattern::new(vec![Some(0x4d), None, Some(0x00)])
         );
-        assert_eq!(parse_pattern("AB"), Ok(vec![Some(0xab)]));
-        assert_eq!(parse_pattern("????"), Ok(vec![None, None]));
+        assert_eq!(parse_pattern("AB"), Pattern::new(vec![Some(0xab)]));
+        assert_eq!(parse_pattern("????"), Pattern::new(vec![None, None]));
     }
 
     #[test]
@@ -309,10 +321,13 @@ mod tests {
 
     #[test]
     fn encodes_text_search_terms() {
-        assert_eq!(ascii_pattern("Hi"), Ok(vec![Some(b'H'), Some(b'i')]));
+        assert_eq!(
+            ascii_pattern("Hi"),
+            Pattern::new(vec![Some(b'H'), Some(b'i')])
+        );
         assert_eq!(
             utf16le_pattern("Hi"),
-            Ok(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)])
+            Pattern::new(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)])
         );
         assert!(ascii_pattern("").is_err());
         assert!(ascii_pattern("é").is_err());
@@ -332,7 +347,10 @@ mod tests {
         let haystack = b"ax1ay1az1";
         let pattern = parse_pattern("61??31").unwrap();
         assert_eq!(find_all(haystack, &pattern, None), vec![0, 3, 6]);
-        assert_eq!(find_all(haystack, &pattern, Some(2)), vec![0, 3]);
+        assert_eq!(
+            find_all(haystack, &pattern, NonZeroUsize::new(2)),
+            vec![0, 3]
+        );
     }
 
     #[test]
@@ -353,7 +371,7 @@ mod tests {
     #[test]
     fn extracts_maximal_ascii_runs_over_the_minimum_length() {
         let bytes = b"\x00abcd\x00ef\x00longer-name\x00";
-        let found = extract_strings(bytes, 4, StringScan::Ascii);
+        let found = extract_strings(bytes, NonZeroUsize::new(4).unwrap(), StringScan::Ascii);
         let texts: Vec<&str> = found.iter().map(|item| item.text.as_str()).collect();
         assert_eq!(texts, ["abcd", "longer-name"]);
         assert_eq!(found[0].offset, 1);
@@ -368,7 +386,7 @@ mod tests {
             bytes.push(0);
         }
         bytes.push(0xff);
-        let found = extract_strings(&bytes, 4, StringScan::Utf16le);
+        let found = extract_strings(&bytes, NonZeroUsize::new(4).unwrap(), StringScan::Utf16le);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].text, "Part1");
         assert_eq!(found[0].offset, 1);
@@ -382,7 +400,7 @@ mod tests {
             bytes.push(c);
             bytes.push(0);
         }
-        let found = extract_strings(&bytes, 4, StringScan::Both);
+        let found = extract_strings(&bytes, NonZeroUsize::new(4).unwrap(), StringScan::Both);
         let pairs: Vec<(u64, &str)> = found
             .iter()
             .map(|item| (item.offset, item.text.as_str()))

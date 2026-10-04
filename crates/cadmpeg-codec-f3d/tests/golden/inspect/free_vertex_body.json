@@ -1,44 +1,25 @@
 {
   "container_kind": "zip",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "reference_width": "8",
-          "save_format_major": "231",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-8",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "top_level_manifest_version": "3-2-0-0"
-      },
-      "dialect": "f3d:manifest-3-2-0-0",
-      "format": "f3d"
-    }
-  },
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 571
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 589,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 589
+      "size": {
+        "form": "exact",
+        "size": 589
+      }
     },
     {
       "attributes": {
@@ -57,14 +38,39 @@
         "sha256": "18085dcac7abd2fd5ed7b0574696cdf1232942aa7f4db4d9e6e24d58e6aa1f99",
         "solved_record_len": "566"
       },
-      "compressed_size": 579,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 579
+      "size": {
+        "form": "exact",
+        "size": 579
+      }
     }
   ],
-  "format": "f3d",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "dialect": "f3d:manifest-3-2-0-0"
+      }
+    }
+  },
   "notes": [
     "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",

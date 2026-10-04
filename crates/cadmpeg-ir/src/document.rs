@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -10,23 +10,26 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{
-    de::DeserializeOwned, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+    ser::{SerializeMap, SerializeSeq, SerializeStruct},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
+use cadmpeg_core::CodecError;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
 use crate::features::{
-    DesignConfiguration, DesignConfigurationReadWire, DesignParameter, Feature,
-    FeatureInputTopology, FeatureReadWire, FeatureResultTopology, FeatureWriteWire,
+    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
+    FeatureRowWire, FeatureWriteWire,
 };
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
-    ProceduralSurfaceReadWire, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
+    ProceduralSurfaceRow, Surface, SurfaceGeometry,
 };
+use crate::hash::finite_json::CanonicalJsonError;
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
@@ -42,9 +45,126 @@ use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
+use cadmpeg_core::text::NonBlankString;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-struct FeatureRegenerationParents(BTreeMap<crate::features::FeatureId, crate::features::FeatureId>);
+pub mod admission;
+use admission::ModelAdmission;
+
+pub(crate) mod census;
+pub(crate) mod feature_parents;
+
+struct UnknownProjection<T>(T);
+
+impl<T: Borrow<NativeUnknownRecord>> Serialize for UnknownProjection<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.borrow().serialize(serializer)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FeatureRegenerationParents(
+    BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
+);
+
+impl FeatureRegenerationParents {
+    pub(crate) fn equivalent(
+        &self,
+        other: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        let operation = "compare model checkpoint parents";
+        ctx.charge_work(1, operation)?;
+        if self.0.len() != other.0.len() {
+            return Ok(false);
+        }
+        for ((left_child, left_parent), (right_child, right_parent)) in self.0.iter().zip(&other.0)
+        {
+            let bytes = left_child
+                .as_str()
+                .len()
+                .checked_add(left_parent.as_str().len())
+                .and_then(|bytes| bytes.checked_add(2))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(u64_from_index(bytes), operation)?;
+            if left_child != right_child || left_parent != right_parent {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Admit the nodes rebuilt when two nonempty parent tables are merged.
+    pub(crate) fn reserve_append(
+        &self,
+        incoming: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        if !self.0.is_empty() && !incoming.0.is_empty() {
+            let count = self.0.len().checked_add(incoming.0.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "append feature regeneration parents",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            let mut longest = 0;
+            for (len, (child, _)) in self.0.iter().chain(incoming.0.iter()).enumerate() {
+                ctx.charge_work(1, "append feature regeneration parent scan")?;
+                longest = longest.max(child.as_str().len());
+                ctx.admit_btree_node_storage::<crate::features::FeatureId, crate::features::FeatureId>(len, "append feature regeneration parents")?;
+                ctx.charge_collection_items(1, "append feature regeneration parents")?;
+                ctx.charge_work(1, "append feature regeneration parents")?;
+            }
+            let work = count
+                .checked_add(1)
+                .and_then(|count| {
+                    longest
+                        .checked_add(std::mem::size_of::<(
+                            crate::features::FeatureId,
+                            crate::features::FeatureId,
+                        )>())
+                        .and_then(|bytes| count.checked_mul(bytes))
+                })
+                .and_then(|work| work.checked_mul(4))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "append feature regeneration parent moves",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(
+                u64_from_index(work),
+                "append feature regeneration parent moves",
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        ctx.charge_work(1, operation)?;
+        let mut parents = BTreeMap::new();
+        for (child, parent) in &self.0 {
+            let work = u64_from_index(child.as_str().len())
+                .checked_add(1)
+                .and_then(|length| {
+                    length.checked_mul(u64_from_index(parents.len()).checked_add(1)?)
+                })
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, operation)?;
+            let child = child.try_clone_for_decode(ctx, operation)?;
+            let parent = parent.try_clone_for_decode(ctx, operation)?;
+            ctx.charge_work(1, operation)?;
+            ctx.insert_btree_map(&mut parents, child, parent, operation)?;
+        }
+        Ok(Self(parents))
+    }
+}
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -58,14 +178,14 @@ macro_rules! arena_registry {
             edges: Edge, "Edge arena.", [];
             vertices: Vertex, "Vertex arena.", [];
             points: Point, "Point arena.", [];
-            surfaces: Surface, "Surface arena.", [];
-            curves: Curve, "Curve arena.", [];
+            surfaces: Surface, "Surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Surface>"))];
+            curves: Curve, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
             subds: SubdSurface, "Subdivision surface arena.", [];
             pcurves: Pcurve, "Pcurve arena.", [];
-            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [];
-            procedural_curves: ProceduralCurve, "Procedural curve arena.", [];
+            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
+            procedural_curves: ProceduralCurve, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
             assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            features: Feature, "Feature arena.", [];
+            features: Feature, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
             feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             feature_result_topologies: FeatureResultTopology, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
@@ -104,7 +224,10 @@ impl Serialize for SurfaceWire<'_> {
     {
         let mut state = serializer.serialize_struct("Surface", 3)?;
         state.serialize_field("id", &self.0.id)?;
-        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        match self.0.geometry.solved_cache() {
+            Some(cache) => state.serialize_field("geometry", cache)?,
+            None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
         }
@@ -121,7 +244,10 @@ impl Serialize for CurveWire<'_> {
     {
         let mut state = serializer.serialize_struct("Curve", 3)?;
         state.serialize_field("id", &self.0.id)?;
-        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        match self.0.geometry.solved_cache() {
+            Some(cache) => state.serialize_field("geometry", cache)?,
+            None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
         }
@@ -145,17 +271,7 @@ impl Serialize for ProceduralSurfaceWire<'_> {
                 self.procedural.id
             ))
         })?;
-        let mut state = serializer.serialize_struct("ProceduralSurface", 5)?;
-        state.serialize_field("id", &self.procedural.id)?;
-        state.serialize_field("surface", owner)?;
-        state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
-            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
-        }
-        if let Some(record_bounds) = self.procedural.record_bounds {
-            state.serialize_field("record_bounds", &record_bounds)?;
-        }
-        state.end()
+        ProceduralSurfaceRow::new(owner.clone(), self.procedural).serialize(serializer)
     }
 }
 
@@ -175,14 +291,7 @@ impl Serialize for ProceduralCurveWire<'_> {
                 self.procedural.id
             ))
         })?;
-        let mut state = serializer.serialize_struct("ProceduralCurve", 4)?;
-        state.serialize_field("id", &self.procedural.id)?;
-        state.serialize_field("curve", owner)?;
-        state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
-            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
-        }
-        state.end()
+        ProceduralCurveRow::new(owner.clone(), self.procedural).serialize(serializer)
     }
 }
 
@@ -226,7 +335,9 @@ macro_rules! model_write_value {
         $model
             .features
             .iter()
-            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
+            .map(|feature| {
+                FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id))
+            })
             .collect()
     };
     ($model:expr, $field:ident) => {
@@ -235,10 +346,9 @@ macro_rules! model_write_value {
 }
 
 macro_rules! model_read_type {
-    (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceReadWire> };
-    (procedural_curves, $ty:ty) => { Vec<ProceduralCurveReadWire> };
-    (configurations, $ty:ty) => { Vec<DesignConfigurationReadWire> };
-    (features, $ty:ty) => { Vec<FeatureReadWire> };
+    (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceRow> };
+    (procedural_curves, $ty:ty) => { Vec<ProceduralCurveRow> };
+    (features, $ty:ty) => { Vec<FeatureRowWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
 }
 
@@ -247,9 +357,6 @@ macro_rules! model_read_value {
         Vec::new()
     };
     ($wire:expr, procedural_curves) => {
-        Vec::new()
-    };
-    ($wire:expr, configurations) => {
         Vec::new()
     };
     ($wire:expr, features) => {
@@ -261,6 +368,7 @@ macro_rules! model_read_value {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FeatureRegenerationEdge {
     child: crate::features::FeatureId,
     parent: crate::features::FeatureId,
@@ -276,60 +384,100 @@ macro_rules! sorted_model_type {
 }
 
 macro_rules! sorted_model_value {
-    ($model:expr, surfaces) => {
-        sorted_refs(&$model.surfaces)
-            .into_iter()
-            .map(SurfaceWire)
-            .collect()
+    ($model:expr, $ctx:expr, surfaces) => {
+        sorted_rows($ctx, &$model.surfaces, |value| Ok(SurfaceWire(value)))?
     };
-    ($model:expr, curves) => {
-        sorted_refs(&$model.curves)
-            .into_iter()
-            .map(CurveWire)
-            .collect()
+    ($model:expr, $ctx:expr, curves) => {
+        sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))?
     };
-    ($model:expr, procedural_surfaces) => {
-        sorted_refs(&$model.procedural_surfaces)
-            .into_iter()
-            .map(|procedural| ProceduralSurfaceWire {
+    ($model:expr, $ctx:expr, procedural_surfaces) => {
+        sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
+            admit_owner_scan(
+                $ctx,
+                &$model.surfaces,
+                procedural.id.as_str(),
+                "find digest procedural owner",
+            )?;
+            Ok(ProceduralSurfaceWire {
                 owner: $model.procedural_surface_owner(&procedural.id),
                 procedural,
             })
-            .collect()
+        })?
     };
-    ($model:expr, procedural_curves) => {
-        sorted_refs(&$model.procedural_curves)
-            .into_iter()
-            .map(|procedural| ProceduralCurveWire {
+    ($model:expr, $ctx:expr, procedural_curves) => {
+        sorted_rows($ctx, &$model.procedural_curves, |procedural| {
+            admit_owner_scan(
+                $ctx,
+                &$model.curves,
+                procedural.id.as_str(),
+                "find digest procedural owner",
+            )?;
+            Ok(ProceduralCurveWire {
                 owner: $model.procedural_curve_owner(&procedural.id),
                 procedural,
             })
-            .collect()
+        })?
     };
-    ($model:expr, features) => {
-        sorted_refs(&$model.features)
-            .into_iter()
-            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
-            .collect()
+    ($model:expr, $ctx:expr, features) => {
+        sorted_rows($ctx, &$model.features, |feature| {
+            let count =
+                cadmpeg_core::decode::u64_from_index($model.feature_regeneration_parents.0.len());
+            $ctx.charge_work(
+                count
+                    .checked_mul(cadmpeg_core::decode::u64_from_index(
+                        feature.id.as_str().len(),
+                    ))
+                    .ok_or_else(|| {
+                        $ctx.refuse_codec_limit(
+                            "find digest feature parent",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "find digest feature parent",
+            )?;
+            Ok(FeatureWriteWire::new(
+                feature,
+                $model.feature_regeneration_parent(&feature.id),
+            ))
+        })?
     };
-    ($model:expr, $field:ident) => {
-        sorted_refs(&$model.$field)
+    ($model:expr, $ctx:expr, $field:ident) => {
+        sorted_rows($ctx, &$model.$field, Ok)?
     };
 }
 
 macro_rules! declare_model {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub struct Model {
             $(
-                $(#[cfg_attr(feature = "schema", $attribute)])*
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
-            #[cfg_attr(feature = "schema", schemars(skip))]
-            feature_regeneration_parents: FeatureRegenerationParents,
+            pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
+        }
+
+        #[cfg(feature = "schema")]
+        impl JsonSchema for Model {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                "Model".into()
+            }
+
+            fn schema_id() -> std::borrow::Cow<'static, str> {
+                concat!(module_path!(), "::Model").into()
+            }
+
+            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                let mut schema = ModelReadWire::json_schema(generator);
+                schema.ensure_object().remove("additionalProperties");
+                schema.ensure_object().insert(
+                    "description".into(),
+                    "Format-neutral entity arenas connected by typed IDs.".into(),
+                );
+                schema
+            }
         }
 
         #[derive(Serialize)]
@@ -341,9 +489,14 @@ macro_rules! declare_model {
         }
 
         #[derive(Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[cfg_attr(feature = "schema", schemars(rename = "Model"))]
+        #[serde(deny_unknown_fields)]
         struct ModelReadWire {
             $(
                 $(#[$attribute])*
+                $($(#[$schema_attr])*)?
+                #[doc = $doc]
                 $field: model_read_type!($field, $ty),
             )*
         }
@@ -353,9 +506,7 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                let _scope = crate::topology::TopologyWireScope::new(
-                    &self.faces, &self.loops, &self.coedges,
-                );
+                feature_parents::validate_reconstructed(&[self]).map_err(serde::ser::Error::custom)?;
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -368,58 +519,41 @@ macro_rules! declare_model {
             where
                 D: Deserializer<'de>,
             {
-                let _scope = crate::topology::TopologyWireScope::new(&[], &[], &[]);
                 let mut wire = ModelReadWire::deserialize(deserializer)?;
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
-                let configurations = std::mem::take(&mut wire.configurations);
                 let feature_wires = std::mem::take(&mut wire.features);
-                let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
-                    .into_iter()
-                    .map(FeatureReadWire::into_parts)
-                    .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
                     feature_regeneration_parents: FeatureRegenerationParents::default(),
                 };
-                model.features = features;
-                reconcile_feature_parents(&mut model, feature_parents)
-                    .map_err(serde::de::Error::custom)?;
+                for wire in feature_wires {
+                    let (feature, parent) = wire.into_parts();
+                    if let Some(parent) = parent {
+                        model.feature_regeneration_parents.0.insert(feature.id.clone(), parent);
+                    }
+                    model.features.push(feature);
+                }
+                feature_parents::validate_reconstructed(&[&model]).map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
-                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
-                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
-                        "procedural surface wire is missing surface",
-                    ))?;
+                    let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_surface(owner, procedural)
+                        .add_procedural_surface(&crate::document::admission::StandardAdmission, &owner, procedural)
+                        .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in procedural_curves {
-                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
-                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
-                        "procedural curve wire is missing curve",
-                    ))?;
+                    let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_curve(owner, procedural)
+                        .add_procedural_curve(&crate::document::admission::StandardAdmission, &owner, procedural)
+                        .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
-                for wire in configurations {
-                    model
-                        .configurations
-                        .push(wire.into_configuration().map_err(serde::de::Error::custom)?);
-                }
-                crate::topology::rebind_face_loop_roles(&mut model.faces)
-                    .map_err(serde::de::Error::custom)?;
                 Ok(model)
             }
         }
 
         impl Model {
-            /// Arena field names in canonical order.
-            pub fn arena_names() -> &'static [&'static str] {
-                &[$(stringify!($field)),*]
-            }
-
             /// Returns the identity at one canonical arena slot.
             pub(crate) fn identity_at(
                 &self,
@@ -440,27 +574,20 @@ macro_rules! declare_model {
                 0 $(+ self.$field.len())*
             }
 
-            /// Visits every typed identity reference in canonical arena order.
-            pub fn visit_references(
-                &self,
-                visitor: &mut dyn FnMut(crate::schema::Reference),
-            ) {
-                $(for entity in &self.$field {
-                    crate::schema::EntitySchema::visit_references(entity, visitor);
-                })*
-                for parent in self.feature_regeneration_parents.0.values() {
-                    visitor(crate::schema::Reference {
-                        target: parent.as_str().to_owned(),
-                    });
-                }
+            /// Moves every arena and feature-parent relation from another model.
+            pub(crate) fn append(&mut self, mut other: Self) {
+                $(self.$field.append(&mut other.$field);)*
+                self.feature_regeneration_parents.0
+                    .append(&mut other.feature_regeneration_parents.0);
             }
 
             /// Sort each arena lexicographically by its entity identity.
-            pub fn finalize(&mut self) {
-                $(self.$field.sort_by(|left, right| {
+            pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+                $(ctx.stable_sort_by(&mut self.$field, |left, right| {
                     crate::schema::EntitySchema::identity(left)
                         .cmp(crate::schema::EntitySchema::identity(right))
-                });)*
+                }, |entity| crate::schema::EntitySchema::identity(entity).len(), "finalize model arena")?;)*
+                Ok(())
             }
 
             /// Append every arena of `other` onto the matching arena of this
@@ -471,24 +598,22 @@ macro_rules! declare_model {
             /// editing any call site. One entity is handed to `rewrite` at a
             /// time, which bounds a rewriting caller's transient storage by the
             /// largest single entity rather than by the whole model.
+            /// Append rewritten arenas after charging every destination entry.
             pub fn extend_rewritten<R: EntityRewrite>(
-                &mut self,
-                other: Self,
-                rewrite: &mut R,
-            ) -> Result<(), R::Error> {
-                let _scope = crate::topology::TopologyWireScope::new(
-                    &other.faces, &other.loops, &other.coedges,
-                );
+                &mut self, ctx: &DecodeContext<'_>, other: Self, rewrite: &mut R, operation: &'static str,
+            ) -> Result<(), ModelRewriteError<R::Error>> {
                 $(
-                    self.$field.reserve(other.$field.len());
+                    ctx.reserve_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                     for entity in other.$field {
-                        self.$field.push(rewrite.rewrite(entity)?);
+                        ctx.charge_work_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
+                        ctx.charge_collection_items_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
+                        self.$field.push(rewrite.rewrite(entity).map_err(ModelRewriteError::Rewrite)?);
                     }
                 )*
                 for (child, parent) in other.feature_regeneration_parents.0 {
-                    let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent })?;
-                    self.feature_regeneration_parents.0
-                        .insert(edge.child, edge.parent);
+                    ctx.charge_work_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
+                    let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent }).map_err(ModelRewriteError::Rewrite)?;
+                    ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, edge.child, edge.parent, operation).map_err(ModelRewriteError::Resource)?;
                 }
                 Ok(())
             }
@@ -497,12 +622,32 @@ macro_rules! declare_model {
 }
 
 macro_rules! assert_entity_schemas {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         const _: fn() = || {
             fn assert_schema<T: crate::schema::EntitySchema>() {}
             $(assert_schema::<$ty>();)*
         };
     };
+}
+
+/// Refusal while rewriting or admitting model storage.
+#[derive(Debug, thiserror::Error)]
+pub enum ModelRewriteError<E> {
+    /// The entity rewriter refused its input.
+    #[error("{0}")]
+    Rewrite(E),
+    /// The destination storage exceeded its resource limit.
+    #[error("resource refusal: {0:?}")]
+    Resource(CodecError),
+}
+
+impl From<ModelRewriteError<CodecError>> for CodecError {
+    fn from(error: ModelRewriteError<CodecError>) -> Self {
+        match error {
+            ModelRewriteError::Rewrite(error) => error,
+            ModelRewriteError::Resource(error) => error,
+        }
+    }
 }
 
 /// Per-entity rewrite applied by [`Model::extend_rewritten`].
@@ -511,84 +656,102 @@ pub trait EntityRewrite {
     type Error;
 
     /// Rewrite one arena entity.
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error>;
+    fn rewrite<T: crate::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, Self::Error>;
 }
 
 macro_rules! declare_model_view {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Every model arena borrowed in canonical identity order.
         #[derive(Serialize)]
-        #[serde(remote = "Self")]
         pub(crate) struct SortedModel<'a> {
             $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
             #[serde(skip)]
-            owner: &'a Model,
-        }
-
-        impl Serialize for SortedModel<'_> {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                crate::topology::with_topology_serialization(
-                    &self.owner.faces, &self.owner.loops, &self.owner.coedges,
-                    || Self::serialize(self, serializer),
-                )
-            }
+            _storage: cadmpeg_core::decode::ScopedReservation<'a>,
         }
 
         impl Model {
-            /// Borrow every arena in canonical identity order.
-            pub(crate) fn sorted(&self) -> SortedModel<'_> {
-                SortedModel {
-                    $($field: sorted_model_value!(self, $field),)*
-                    owner: self,
+            /// Borrow every arena after admitting its order and temporary storage.
+            pub(crate) fn sorted<'a>(&'a self, ctx: &'a DecodeContext<'_>) -> Result<SortedModel<'a>, CodecError> {
+                if let Err(error) = feature_parents::validate(ctx, &[self])? {
+                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "digest feature parent diagnostic")?));
                 }
+                let mut storage = ctx.reserve_scoped(0, "sorted digest model")?;
+                let value = storage.with_storage(|| Ok::<_, CodecError>(( $(sorted_model_value!(self, ctx, $field),)* )))?;
+                let ($($field,)*) = value;
+                Ok(SortedModel { $($field,)* _storage: storage })
             }
         }
     };
 }
 
-fn sorted_refs<T: crate::schema::EntitySchema>(entities: &[T]) -> Vec<&T> {
-    let mut refs = entities.iter().collect::<Vec<_>>();
-    refs.sort_by(|left, right| left.identity().cmp(right.identity()));
-    refs
+fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
+    ctx: &DecodeContext<'_>,
+    entities: &'a [T],
+    mut project: impl FnMut(&'a T) -> Result<U, CodecError>,
+) -> Result<Vec<U>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "digest arena order")?;
+    let mut refs =
+        storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
+    ctx.stable_sort_by(
+        &mut refs,
+        |left, right| left.identity().cmp(right.identity()),
+        |value| value.identity().len(),
+        "sort digest arena",
+    )?;
+    let result = ctx.try_collect_vec(
+        refs.into_iter().map(&mut project),
+        "digest arena projection",
+    );
+    drop(storage);
+    result
+}
+
+fn admit_owner_scan<T>(
+    ctx: &DecodeContext<'_>,
+    owners: &[T],
+    identity: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(owners.len())
+        .checked_mul(
+            cadmpeg_core::decode::u64_from_index(identity.len())
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+        )
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
 }
 
 macro_rules! declare_arena_name {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Name of a registered model arena.
         ///
-        /// Variant identifiers match the `arena_registry!` field names so a
-        /// new arena cannot be counted or diffed under a string the registry
-        /// does not declare.
+        /// Values use the `arena_registry!` field names so a new arena is
+        /// counted and diffed under its declared wire key.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[allow(non_camel_case_types)]
-        pub enum ArenaName {
-            $(
-                #[doc = $doc]
-                $field,
-            )*
-        }
+        pub struct ArenaName(&'static str);
 
         impl ArenaName {
             /// Every registered arena, in registry order.
-            pub const ALL: &'static [Self] = &[$(Self::$field),*];
+            pub const ALL: &'static [Self] = &[$(Self(stringify!($field))),*];
+
+            pub(crate) const fn registered(name: &'static str) -> Self {
+                Self(name)
+            }
 
             /// Registry field name, which is also the CADIR JSON object key.
             #[must_use]
             pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$field => stringify!($field),)*
-                }
+                self.0
             }
 
             /// Parse a registry field name.
             #[must_use]
-            // This registry lookup returns an optional arena name rather than a parse error.
-            #[allow(clippy::should_implement_trait)]
-            pub fn from_str(name: &str) -> Option<Self> {
-                match name {
-                    $(stringify!($field) => Some(Self::$field),)*
-                    _ => None,
-                }
+            pub fn parse(name: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|arena| arena.as_str() == name)
             }
         }
 
@@ -609,10 +772,175 @@ macro_rules! declare_arena_name {
 /// The IR schema version this build produces and accepts.
 pub const IR_VERSION: &str = "6";
 
+/// The current IR wire version. Every value writes [`IR_VERSION`].
+/// Deserialization refuses any other version.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct IrVersion;
+
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
 arena_registry!(declare_arena_name);
+
+/// Borrowed geometry and topology arenas for an embedded semantic record.
+pub struct GeometrySnapshot<'a> {
+    model: &'a Model,
+    kind: &'a str,
+}
+
+impl Model {
+    /// Admit parent validation and owner scans for a borrowed geometry serialization view.
+    pub fn geometry_snapshot<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        kind: &'a str,
+    ) -> Result<GeometrySnapshot<'a>, CodecError> {
+        if let Err(error) = feature_parents::validate(ctx, &[self])? {
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "geometry snapshot parent diagnostic",
+            )?));
+        }
+        for procedural in &self.procedural_surfaces {
+            ctx.charge_work(1, "geometry snapshot procedural scan")?;
+            admit_owner_scan(
+                ctx,
+                &self.surfaces,
+                procedural.id.as_str(),
+                "find geometry snapshot procedural owner",
+            )?;
+        }
+        for procedural in &self.procedural_curves {
+            ctx.charge_work(1, "geometry snapshot procedural scan")?;
+            admit_owner_scan(
+                ctx,
+                &self.curves,
+                procedural.id.as_str(),
+                "find geometry snapshot procedural owner",
+            )?;
+        }
+        Ok(GeometrySnapshot { model: self, kind })
+    }
+}
+
+struct SurfaceRows<'a>(&'a [Surface]);
+
+impl Serialize for SurfaceRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for surface in self.0 {
+            sequence.serialize_element(&SurfaceWire(surface))?;
+        }
+        sequence.end()
+    }
+}
+
+struct CurveRows<'a>(&'a [Curve]);
+
+impl Serialize for CurveRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for curve in self.0 {
+            sequence.serialize_element(&CurveWire(curve))?;
+        }
+        sequence.end()
+    }
+}
+
+struct ProceduralSurfaceRows<'a>(&'a Model);
+
+impl Serialize for ProceduralSurfaceRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        struct Row<'a> {
+            owner: &'a SurfaceId,
+            procedural: &'a ProceduralSurface,
+        }
+        impl Serialize for Row<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 4)?;
+                state.serialize_field("id", &self.procedural.id)?;
+                state.serialize_field("surface", self.owner)?;
+                state.serialize_field("definition", self.procedural.definition())?;
+                if let Some(bounds) = self.procedural.record_bounds() {
+                    state.serialize_field("record_bounds", &bounds)?;
+                }
+                state.end()
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_surfaces.len()))?;
+        for procedural in &self.0.procedural_surfaces {
+            let owner = self
+                .0
+                .procedural_surface_owner(&procedural.id)
+                .ok_or_else(|| {
+                    serde::ser::Error::custom(format_args!(
+                        "procedural surface {} has no unique owning surface",
+                        procedural.id
+                    ))
+                })?;
+            sequence.serialize_element(&Row { owner, procedural })?;
+        }
+        sequence.end()
+    }
+}
+
+struct ProceduralCurveRows<'a>(&'a Model);
+
+impl Serialize for ProceduralCurveRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        struct Row<'a> {
+            owner: &'a CurveId,
+            procedural: &'a ProceduralCurve,
+        }
+        impl Serialize for Row<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
+                state.serialize_field("id", &self.procedural.id)?;
+                state.serialize_field("curve", self.owner)?;
+                state.serialize_field("definition", self.procedural.definition())?;
+                state.end()
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_curves.len()))?;
+        for procedural in &self.0.procedural_curves {
+            let owner = self
+                .0
+                .procedural_curve_owner(&procedural.id)
+                .ok_or_else(|| {
+                    serde::ser::Error::custom(format_args!(
+                        "procedural curve {} has no unique owning curve",
+                        procedural.id
+                    ))
+                })?;
+            sequence.serialize_element(&Row { owner, procedural })?;
+        }
+        sequence.end()
+    }
+}
+
+impl Serialize for GeometrySnapshot<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let model = self.model;
+        let mut map = serializer.serialize_map(Some(16))?;
+        map.serialize_entry("bodies", &model.bodies)?;
+        map.serialize_entry("coedges", &model.coedges)?;
+        map.serialize_entry("curves", &CurveRows(&model.curves))?;
+        map.serialize_entry("edges", &model.edges)?;
+        map.serialize_entry("faces", &model.faces)?;
+        map.serialize_entry("kind", self.kind)?;
+        map.serialize_entry("loops", &model.loops)?;
+        map.serialize_entry("pcurves", &model.pcurves)?;
+        map.serialize_entry("points", &model.points)?;
+        map.serialize_entry("procedural_curves", &ProceduralCurveRows(model))?;
+        map.serialize_entry("procedural_surfaces", &ProceduralSurfaceRows(model))?;
+        map.serialize_entry("regions", &model.regions)?;
+        map.serialize_entry("shells", &model.shells)?;
+        map.serialize_entry("surfaces", &SurfaceRows(&model.surfaces))?;
+        map.serialize_entry("tessellations", &model.tessellations)?;
+        map.serialize_entry("vertices", &model.vertices)?;
+        map.end()
+    }
+}
 
 const SURFACES_UNKNOWN_GEOMETRY: &str = "surfaces_unknown_geometry";
 
@@ -657,7 +985,7 @@ impl CensusKey {
     #[must_use]
     pub fn from_wire(value: impl Into<String>) -> Self {
         let value = value.into();
-        if let Some(name) = ArenaName::from_str(&value) {
+        if let Some(name) = ArenaName::parse(&value) {
             return Self::model(name);
         }
         if value == SURFACES_UNKNOWN_GEOMETRY {
@@ -763,82 +1091,19 @@ impl JsonSchema for CensusKey {
     }
 }
 
-fn reconcile_feature_parents(
-    model: &mut Model,
-    wire_parents: Vec<Option<crate::features::FeatureId>>,
-) -> Result<(), String> {
-    use crate::features::FeatureDefinition;
-    use std::collections::HashMap;
-
-    let indices = model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let mut tree_parents = HashMap::<crate::features::FeatureId, crate::features::FeatureId>::new();
-    for parent in &model.features {
-        let FeatureDefinition::TreeNode {
-            children,
-            active_child,
-            ..
-        } = &parent.definition
-        else {
-            continue;
-        };
-        if active_child
-            .as_ref()
-            .is_some_and(|active| !children.contains(active))
-        {
-            return Err(format!(
-                "feature `{}` has an active child outside its child list",
-                parent.id
-            ));
-        }
-        for child in children {
-            if let Some(previous) = tree_parents.insert(child.clone(), parent.id.clone()) {
-                return Err(format!(
-                    "feature `{child}` has two tree parents `{previous}` and `{}`",
-                    parent.id
-                ));
-            }
-        }
-    }
-
-    for (child_index, wire_parent) in wire_parents.into_iter().enumerate() {
-        let child_id = model.features[child_index].id.clone();
-        let Some(parent_id) = wire_parent else {
-            if let Some(parent) = tree_parents.get(&child_id) {
-                return Err(format!(
-                    "tree child `{child_id}` is missing its serialized parent `{parent}`"
-                ));
-            }
-            continue;
-        };
-        let Some(&parent_index) = indices.get(&parent_id) else {
-            return Err(format!(
-                "feature `{child_id}` names missing parent `{parent_id}`"
-            ));
-        };
-        if model.features[parent_index].ordinal >= model.features[child_index].ordinal {
-            return Err(format!(
-                "parent feature `{parent_id}` does not precede child `{child_id}`"
-            ));
-        }
-        if let Some(existing) = tree_parents.get(&child_id) {
-            if existing != &parent_id {
-                return Err(format!(
-                    "tree child `{child_id}` names parent `{parent_id}` but is owned by `{existing}`"
-                ));
-            }
-            continue;
-        }
-        model
-            .feature_regeneration_parents
-            .0
-            .insert(child_id, parent_id);
-    }
-    Ok(())
+#[derive(Debug, thiserror::Error)]
+enum RegenerationParentError<'a> {
+    #[error("tree child `{0}` already has a structural parent")]
+    TreeChild(&'a crate::features::FeatureId),
+    #[error("missing child feature `{0}`")]
+    MissingChild(&'a crate::features::FeatureId),
+    #[error("missing parent feature `{0}`")]
+    MissingParent(&'a crate::features::FeatureId),
+    #[error("parent feature `{parent}` does not precede child `{child}`")]
+    NotPreceding {
+        child: &'a crate::features::FeatureId,
+        parent: &'a crate::features::FeatureId,
+    },
 }
 
 impl Model {
@@ -848,8 +1113,9 @@ impl Model {
         child: &crate::features::FeatureId,
     ) -> Option<&crate::features::FeatureId> {
         self.features.iter().find_map(|candidate| {
-            let crate::features::FeatureDefinition::TreeNode { children, .. } =
-                &candidate.definition
+            let crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::TreeNode { children, .. },
+            ) = candidate.evaluation.definition()
             else {
                 return None;
             };
@@ -857,7 +1123,19 @@ impl Model {
         })
     }
 
-    /// Legacy parent projection: structural owner or regeneration predecessor.
+    pub(crate) fn has_feature_regeneration_parents(&self) -> bool {
+        !self.feature_regeneration_parents.0.is_empty()
+    }
+
+    /// Regeneration predecessor of a feature that no tree node owns.
+    pub fn feature_regeneration_parent(
+        &self,
+        child: &crate::features::FeatureId,
+    ) -> Option<&crate::features::FeatureId> {
+        self.feature_regeneration_parents.0.get(child)
+    }
+
+    /// Structural owner, or the regeneration predecessor when no tree owns it.
     pub fn feature_parent(
         &self,
         child: &crate::features::FeatureId,
@@ -866,35 +1144,97 @@ impl Model {
             .or_else(|| self.feature_regeneration_parents.0.get(child))
     }
 
-    /// Set a regeneration predecessor without asserting structural tree membership.
+    fn validate_regeneration_parent<'a>(
+        &self,
+        child: &'a crate::features::FeatureId,
+        parent: &'a crate::features::FeatureId,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
+        const OPERATION: &str = "install decoded feature regeneration parent";
+        let admission = ctx;
+        for candidate in &self.features {
+            ctx.charge_work(1, OPERATION)?;
+            if let crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::TreeNode { children, .. },
+            ) = candidate.evaluation.definition()
+            {
+                for member in children {
+                    ctx.charge_work(1, OPERATION)?;
+                    if admission.equal(member.as_str(), child.as_str(), OPERATION)? {
+                        return Ok(Err(RegenerationParentError::TreeChild(child)));
+                    }
+                }
+            }
+        }
+        let mut child_ordinal = None;
+        for feature in &self.features {
+            ctx.charge_work(1, OPERATION)?;
+            if admission.equal(feature.id.as_str(), child.as_str(), OPERATION)? {
+                child_ordinal = Some(feature.ordinal);
+                break;
+            }
+        }
+        let Some(child_ordinal) = child_ordinal else {
+            return Ok(Err(RegenerationParentError::MissingChild(child)));
+        };
+        let mut parent_ordinal = None;
+        for feature in &self.features {
+            ctx.charge_work(1, OPERATION)?;
+            if admission.equal(feature.id.as_str(), parent.as_str(), OPERATION)? {
+                parent_ordinal = Some(feature.ordinal);
+                break;
+            }
+        }
+        let Some(parent_ordinal) = parent_ordinal else {
+            return Ok(Err(RegenerationParentError::MissingParent(parent)));
+        };
+        if parent_ordinal >= child_ordinal {
+            return Ok(Err(RegenerationParentError::NotPreceding { child, parent }));
+        }
+        Ok(Ok(()))
+    }
+
+    /// Set a decoded regeneration predecessor with charged text and map admission.
     pub fn set_feature_regeneration_parent(
         &mut self,
-        child: crate::features::FeatureId,
-        parent: crate::features::FeatureId,
-    ) -> Result<(), String> {
-        if self.feature_tree_parent(&child).is_some() {
-            return Err(format!(
-                "tree child `{child}` already has a structural parent"
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        child: &crate::features::FeatureId,
+        parent: &crate::features::FeatureId,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "install decoded feature regeneration parent";
+        if let Err(error) = self.validate_regeneration_parent(child, parent, ctx)? {
+            return Err(cadmpeg_core::CodecError::malformed(
+                ctx.format_retained(format_args!("{error}"), OPERATION)?,
             ));
         }
-        let child_ordinal = self
-            .features
-            .iter()
-            .find(|feature| feature.id == child)
-            .map(|feature| feature.ordinal)
-            .ok_or_else(|| format!("missing child feature `{child}`"))?;
-        let parent_ordinal = self
-            .features
-            .iter()
-            .find(|feature| feature.id == parent)
-            .map(|feature| feature.ordinal)
-            .ok_or_else(|| format!("missing parent feature `{parent}`"))?;
-        if parent_ordinal >= child_ordinal {
-            return Err(format!(
-                "parent feature `{parent}` does not precede child `{child}`"
-            ));
+        let work = self
+            .feature_regeneration_parents
+            .0
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                child
+                    .as_str()
+                    .len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
+            .and_then(|work| work.checked_mul(3))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
+        let parent = parent.try_clone_for_decode(ctx, OPERATION)?;
+        if let Some(existing) = self.feature_regeneration_parents.0.get_mut(child) {
+            *existing = parent;
+        } else {
+            let child = child.try_clone_for_decode(ctx, OPERATION)?;
+            ctx.charge_work(1, OPERATION)?;
+            ctx.insert_btree_map(
+                &mut self.feature_regeneration_parents.0,
+                child,
+                parent,
+                OPERATION,
+            )?;
         }
-        self.feature_regeneration_parents.0.insert(child, parent);
         Ok(())
     }
 }
@@ -940,141 +1280,246 @@ impl Model {
         owners.next().is_none().then_some(owner)
     }
 
-    /// Attaches one procedural surface construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn add_procedural_surface(
+    /// Attach a procedural surface through typed construction admission.
+    pub fn add_procedural_surface<A: ModelAdmission>(
         &mut self,
-        owner: SurfaceId,
+        admission: &A,
+        owner: &SurfaceId,
         procedural: ProceduralSurface,
-    ) -> Result<(), ProceduralCarrierError> {
-        if self
-            .procedural_surfaces
-            .iter()
-            .any(|existing| existing.id == procedural.id)
-        {
-            return Err(ProceduralCarrierError::new(format!(
-                "procedural surface construction {} already exists",
-                procedural.id
-            )));
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
+        for existing in &self.procedural_surfaces {
+            admission.work(1, "scan procedural surface constructions")?;
+            if admission.equal(
+                existing.id.as_str(),
+                procedural.id.as_str(),
+                "compare procedural surface constructions",
+            )? {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
+                        "procedural surface construction {} already exists",
+                        procedural.id
+                    ),
+                    "procedural surface refusal",
+                )?)));
+            }
         }
-        if let Some(existing_owner) = self.surfaces.iter().find(|surface| {
-            surface.id != owner
-                && surface.geometry.procedural_construction() == Some(&procedural.id)
-        }) {
-            return Err(ProceduralCarrierError::new(format!(
-                "procedural surface construction {} already owns surface {}",
-                procedural.id, existing_owner.id
-            )));
+        let mut owner_index = None;
+        for (index, carrier) in self.surfaces.iter().enumerate() {
+            admission.work(1, "scan procedural surface carriers")?;
+            let is_owner = admission.equal(
+                carrier.id.as_str(),
+                owner.as_str(),
+                "compare procedural surface owners",
+            )?;
+            if owner_index.is_none() && is_owner {
+                owner_index = Some(index);
+            }
+            if !is_owner
+                && match carrier.geometry.procedural_construction() {
+                    Some(construction) => admission.equal(
+                        construction.as_str(),
+                        procedural.id.as_str(),
+                        "compare procedural surface constructions",
+                    )?,
+                    None => false,
+                }
+            {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
+                        "procedural surface construction {} already owns surface {}",
+                        procedural.id, carrier.id
+                    ),
+                    "procedural surface refusal",
+                )?)));
+            }
         }
-        let surface = self
-            .surfaces
-            .iter_mut()
-            .find(|surface| surface.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
+        let Some(surface) = owner_index.and_then(|index| self.surfaces.get_mut(index)) else {
+            return Ok(Err(ProceduralCarrierError::new(admission.text(
+                format_args!(
                     "procedural surface {} references missing surface {owner}",
                     procedural.id
-                ))
-            })?;
+                ),
+                "procedural surface refusal",
+            )?)));
+        };
         match &surface.geometry {
             SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
-            } if *construction == procedural.id => {
+            } if admission.equal(
+                construction.as_str(),
+                procedural.id.as_str(),
+                "compare procedural surface constructions",
+            )? =>
+            {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Err(ProceduralCarrierError::new(format!(
+                    return Ok(Err(ProceduralCarrierError::new(admission.text(
+                        format_args!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
-                    )));
+                    ),
+                        "procedural surface refusal",
+                    )?)));
                 }
+                admission.reserve(
+                    &mut self.procedural_surfaces,
+                    1,
+                    "store procedural surface constructions",
+                )?;
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                return Err(ProceduralCarrierError::new(format!(
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
                     "surface {owner} is already owned by procedural construction {construction}"
-                )));
+                ),
+                    "procedural surface refusal",
+                )?)));
             }
-            geometry => {
-                let cache = SolvedSurfaceGeometry::new(geometry.clone()).map_err(|_| {
-                    ProceduralCarrierError::new(format!(
-                        "surface {owner} already has a procedural construction"
-                    ))
-                })?;
-                surface.geometry = SurfaceGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: Some(cache),
-                };
+            SurfaceGeometry::Solved(_) => {
+                let construction =
+                    admission.surface_id(&procedural.id, "procedural surface owner identity")?;
+                admission.reserve(
+                    &mut self.procedural_surfaces,
+                    1,
+                    "store procedural surface constructions",
+                )?;
+                let previous = std::mem::replace(
+                    &mut surface.geometry,
+                    SurfaceGeometry::Procedural {
+                        construction,
+                        cache: None,
+                    },
+                );
+                if let (
+                    SurfaceGeometry::Solved(geometry),
+                    SurfaceGeometry::Procedural { cache, .. },
+                ) = (previous, &mut surface.geometry)
+                {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_surfaces.push(procedural);
-        Ok(())
+        Ok(Ok(()))
     }
 
-    /// Attaches one procedural curve construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn add_procedural_curve(
+    /// Attach a procedural curve through typed construction admission.
+    pub fn add_procedural_curve<A: ModelAdmission>(
         &mut self,
-        owner: CurveId,
+        admission: &A,
+        owner: &CurveId,
         procedural: ProceduralCurve,
-    ) -> Result<(), ProceduralCarrierError> {
-        if self
-            .procedural_curves
-            .iter()
-            .any(|existing| existing.id == procedural.id)
-        {
-            return Err(ProceduralCarrierError::new(format!(
-                "procedural curve construction {} already exists",
-                procedural.id
-            )));
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
+        for existing in &self.procedural_curves {
+            admission.work(1, "scan procedural curve constructions")?;
+            if admission.equal(
+                existing.id.as_str(),
+                procedural.id.as_str(),
+                "compare procedural curve constructions",
+            )? {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
+                        "procedural curve construction {} already exists",
+                        procedural.id
+                    ),
+                    "procedural curve refusal",
+                )?)));
+            }
         }
-        if let Some(existing_owner) = self.curves.iter().find(|curve| {
-            curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
-        }) {
-            return Err(ProceduralCarrierError::new(format!(
-                "procedural curve construction {} already owns curve {}",
-                procedural.id, existing_owner.id
-            )));
+        let mut owner_index = None;
+        for (index, carrier) in self.curves.iter().enumerate() {
+            admission.work(1, "scan procedural curve carriers")?;
+            let is_owner = admission.equal(
+                carrier.id.as_str(),
+                owner.as_str(),
+                "compare procedural curve owners",
+            )?;
+            if owner_index.is_none() && is_owner {
+                owner_index = Some(index);
+            }
+            if !is_owner
+                && match carrier.geometry.procedural_construction() {
+                    Some(construction) => admission.equal(
+                        construction.as_str(),
+                        procedural.id.as_str(),
+                        "compare procedural curve constructions",
+                    )?,
+                    None => false,
+                }
+            {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
+                        "procedural curve construction {} already owns curve {}",
+                        procedural.id, carrier.id
+                    ),
+                    "procedural curve refusal",
+                )?)));
+            }
         }
-        let curve = self
-            .curves
-            .iter_mut()
-            .find(|curve| curve.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
+        let Some(curve) = owner_index.and_then(|index| self.curves.get_mut(index)) else {
+            return Ok(Err(ProceduralCarrierError::new(admission.text(
+                format_args!(
                     "procedural curve {} references missing curve {owner}",
                     procedural.id
-                ))
-            })?;
-        match &curve.geometry {
+                ),
+                "procedural curve refusal",
+            )?)));
+        };
+        match &mut curve.geometry {
             CurveGeometry::Procedural {
                 construction,
                 cache: None,
-            } if *construction == procedural.id => {
+            } if admission.equal(
+                construction.as_str(),
+                procedural.id.as_str(),
+                "compare procedural curve constructions",
+            )? =>
+            {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Err(ProceduralCarrierError::new(format!(
-                        "direct procedural curve {owner} cannot carry a solved-cache tolerance"
-                    )));
+                    return Ok(Err(ProceduralCarrierError::new(admission.text(
+                        format_args!(
+                            "direct procedural curve {owner} cannot carry a solved-cache tolerance"
+                        ),
+                        "procedural curve refusal",
+                    )?)));
                 }
+                admission.reserve(
+                    &mut self.procedural_curves,
+                    1,
+                    "store procedural curve constructions",
+                )?;
             }
             CurveGeometry::Procedural { construction, .. } => {
-                return Err(ProceduralCarrierError::new(format!(
-                    "curve {owner} is already owned by procedural construction {construction}"
-                )));
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
+                    format_args!(
+                        "curve {owner} is already owned by procedural construction {construction}"
+                    ),
+                    "procedural curve refusal",
+                )?)));
             }
-            geometry => {
-                let cache = SolvedCurveGeometry::new(geometry.clone()).map_err(|_| {
-                    ProceduralCarrierError::new(format!(
-                        "curve {owner} already has a procedural construction"
-                    ))
-                })?;
-                curve.geometry = CurveGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: Some(cache),
-                };
+            CurveGeometry::Solved(_) => {
+                let construction =
+                    admission.curve_id(&procedural.id, "ir_procedural_curve_construction_id")?;
+                admission.reserve(
+                    &mut self.procedural_curves,
+                    1,
+                    "store procedural curve constructions",
+                )?;
+                let previous = std::mem::replace(
+                    &mut curve.geometry,
+                    CurveGeometry::Procedural {
+                        construction,
+                        cache: None,
+                    },
+                );
+                if let (CurveGeometry::Solved(geometry), CurveGeometry::Procedural { cache, .. }) =
+                    (previous, &mut curve.geometry)
+                {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_curves.push(procedural);
-        Ok(())
+        Ok(Ok(()))
     }
 }
 
@@ -1094,6 +1539,31 @@ fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) ->
     Ok(())
 }
 
+impl Serialize for IrVersion {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(IR_VERSION)
+    }
+}
+
+impl<'de> Deserialize<'de> for IrVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let version = serde_json::Value::deserialize(deserializer)?;
+        check_ir_version(Some(&version))?;
+        Ok(Self)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for IrVersion {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "IrVersion".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ir_version_schema(generator)
+    }
+}
+
 #[cfg(feature = "schema")]
 fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
@@ -1106,7 +1576,7 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 ///
 /// Construction state machine: [`crate::draft::ModelDraft`] (mutable, indexed)
 /// commits into [`CadIr`] (structurally canonical after [`CadIr::finalize`]);
-/// [`crate::ValidationReport`] is produced separately by `validate_neutral` and
+/// [`crate::report::check::ValidationReport`] is produced separately by `validate_neutral` and
 /// is not embedded in the document.
 ///
 /// `model` holds the format-neutral graph. `native` retains typed
@@ -1128,8 +1598,7 @@ pub struct CadIr {
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
-    #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
-    ir_version: &'static str,
+    ir_version: IrVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
@@ -1139,16 +1608,15 @@ struct CadIrWriteWire<'a> {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CadIrReadWire {
-    #[serde(default, rename = "ir_version")]
+    #[serde(
+        default,
+        rename = "ir_version",
+        deserialize_with = "deserialize_ir_version"
+    )]
     ir_version: Option<serde_json::Value>,
-    #[serde(flatten)]
-    payload: CadIrPayload,
-}
-
-#[derive(Deserialize)]
-struct CadIrPayload {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_source")]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
     _units: CanonicalUnitsWire,
@@ -1161,7 +1629,7 @@ struct CadIrPayload {
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         CadIrWriteWire {
-            ir_version: IR_VERSION,
+            ir_version: IrVersion,
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
@@ -1176,17 +1644,17 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
-        Ok(wire.payload.into())
+        Ok(wire.into())
     }
 }
 
-impl From<CadIrPayload> for CadIr {
-    fn from(payload: CadIrPayload) -> Self {
+impl From<CadIrReadWire> for CadIr {
+    fn from(wire: CadIrReadWire) -> Self {
         Self {
-            source: payload.source,
-            tolerances: payload.tolerances,
-            model: payload.model,
-            native: payload.native,
+            source: wire.source,
+            tolerances: wire.tolerances,
+            model: wire.model,
+            native: wire.native,
         }
     }
 }
@@ -1206,7 +1674,255 @@ impl JsonSchema for CadIr {
     }
 }
 
+fn admit_append_key(
+    ctx: &DecodeContext<'_>,
+    entries: usize,
+    bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = entries
+        .checked_add(1)
+        .and_then(|count| {
+            bytes
+                .checked_add(1)
+                .and_then(|bytes| count.checked_mul(bytes))
+        })
+        .and_then(|work| work.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(work), operation)
+}
+
 impl CadIr {
+    /// Appends staged neutral and native records, then admits the combined document.
+    ///
+    /// The admission callback can only read the document. On `Err`, every arena
+    /// and feature-parent relation returns to its preceding state. Existing
+    /// geometry and native payloads are not cloned. Source metadata and document
+    /// tolerances are unchanged.
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::{CadIr, document::Model, native::Native};
+    /// let mut ir = CadIr::empty();
+    /// let ctx = cadmpeg_test_support::service_decode_context();
+    /// ir.try_append(&ctx, Model::default(), Native::default(), |candidate| {
+    ///     candidate.model.points.clear();
+    ///     Ok(Ok::<(), ()>(()))
+    /// });
+    /// ```
+    pub fn try_append<T, E>(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        model: Model,
+        native: Native,
+        admit: impl FnOnce(&Self) -> Result<Result<T, E>, CodecError>,
+    ) -> Result<Result<T, E>, CodecError> {
+        let native_lengths = if native.0.is_empty() {
+            None
+        } else {
+            Some(ctx.with_scoped_storage("append native checkpoint", || {
+                let mut lengths = BTreeMap::new();
+                for (format, namespace) in &self.native.0 {
+                    ctx.charge_work(1, "append native checkpoint scan")?;
+                    let mut arenas = BTreeMap::new();
+                    for (arena, records) in namespace.arenas() {
+                        admit_append_key(
+                            ctx,
+                            arenas.len(),
+                            arena.len(),
+                            "append native checkpoint keys",
+                        )?;
+                        let key =
+                            ctx.copy_retained_text(arena, "append native checkpoint arena")?;
+                        ctx.insert_btree_map(
+                            &mut arenas,
+                            key,
+                            records.len(),
+                            "append native checkpoint arenas",
+                        )?;
+                    }
+                    admit_append_key(
+                        ctx,
+                        lengths.len(),
+                        format.len(),
+                        "append native checkpoint keys",
+                    )?;
+                    let key =
+                        ctx.copy_retained_text(format, "append native checkpoint namespace")?;
+                    ctx.insert_btree_map(
+                        &mut lengths,
+                        key,
+                        arenas,
+                        "append native checkpoint namespaces",
+                    )?;
+                }
+                Ok::<_, CodecError>(lengths)
+            })?)
+        };
+        let mut speculative_parents = if model.feature_regeneration_parents.0.is_empty() {
+            None
+        } else {
+            Some(ctx.with_scoped_storage("append speculative parents", || {
+                let parents = self
+                    .model
+                    .feature_regeneration_parents
+                    .try_clone_for_decode(ctx, "append speculative parent copy")?;
+                parents.reserve_append(&model.feature_regeneration_parents, ctx)?;
+                Ok::<_, CodecError>(parents)
+            })?)
+        };
+        macro_rules! reserve_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                if !model.$field.is_empty() {
+                    ctx.reserve_vec(&mut self.model.$field, model.$field.len(), "append model arena slots")?;
+                    let moved = model.$field.len().checked_mul(std::mem::size_of::<$ty>())
+                        .ok_or_else(|| ctx.refuse_codec_limit("append model arena moves", u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(u64_from_index(moved), "append model arena moves")?;
+                    ctx.charge_work(u64_from_index(model.$field.len()), "append model rollback admission")?;
+                }
+            )*};
+        }
+        arena_registry!(reserve_arenas);
+        let namespace_bound = self
+            .native
+            .0
+            .len()
+            .checked_add(native.0.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("append native namespace bound", u64::MAX - 1, u64::MAX)
+            })?;
+        let mut namespace_len = self.native.0.len();
+        for (format, incoming) in &native.0 {
+            admit_append_key(
+                ctx,
+                namespace_bound,
+                format.len(),
+                "append native namespace lookup",
+            )?;
+            if let Some(destination) = self.native.0.get_mut(format) {
+                let arena_bound = destination
+                    .arenas()
+                    .len()
+                    .checked_add(incoming.arenas().len())
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("append native arena bound", u64::MAX - 1, u64::MAX)
+                    })?;
+                let mut arena_len = destination.arenas().len();
+                for (arena, records) in incoming.arenas() {
+                    admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
+                    if let Some(existing) = destination.arenas_mut().get_mut(arena) {
+                        ctx.reserve_vec(existing, records.len(), "append native record slots")?;
+                        let moved = records
+                            .len()
+                            .checked_mul(std::mem::size_of::<crate::native::NativeRecord>())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "append native record moves",
+                                    u64::MAX - 1,
+                                    u64::MAX,
+                                )
+                            })?;
+                        ctx.charge_work(u64_from_index(moved), "append native record moves")?;
+                    } else {
+                        ctx.admit_btree_node_storage::<String, Vec<crate::native::NativeRecord>>(
+                            arena_len,
+                            "append native arena nodes",
+                        )?;
+                        ctx.charge_collection_items(1, "append native arena nodes")?;
+                        ctx.charge_work(1, "append native arena nodes")?;
+                        arena_len += 1;
+                    }
+                }
+            } else {
+                ctx.admit_btree_node_storage::<String, crate::native::NativeNamespace>(
+                    namespace_len,
+                    "append native namespace nodes",
+                )?;
+                ctx.charge_collection_items(1, "append native namespace nodes")?;
+                ctx.charge_work(1, "append native namespace nodes")?;
+                namespace_len += 1;
+            }
+        }
+        if let Some((lengths, _)) = &native_lengths {
+            // Admit the union walk before mutation so rollback can run after a refusal.
+            for (format, namespace) in self.native.0.iter().chain(native.0.iter()) {
+                ctx.charge_work(1, "append native rollback admission")?;
+                admit_append_key(
+                    ctx,
+                    lengths.len(),
+                    format.len(),
+                    "append native rollback namespace lookup",
+                )?;
+                if let Some(arenas) = lengths.get(format) {
+                    for (arena, records) in namespace.arenas() {
+                        ctx.charge_work(1, "append native rollback admission")?;
+                        admit_append_key(
+                            ctx,
+                            arenas.len(),
+                            arena.len(),
+                            "append native rollback arena lookup",
+                        )?;
+                        ctx.charge_work(
+                            u64_from_index(records.len()),
+                            "append native rollback record admission",
+                        )?;
+                    }
+                }
+            }
+        }
+        let original_parents = speculative_parents.as_mut().map(|(parents, _)| {
+            std::mem::replace(
+                &mut self.model.feature_regeneration_parents,
+                std::mem::take(parents),
+            )
+        });
+        macro_rules! append_and_admit {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {{
+                $(let $field = self.model.$field.len();)*
+                self.model.append(model);
+                for (format, mut namespace) in native.0 {
+                    match self.native.0.entry(format) {
+                        std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(namespace); },
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            let destination = entry.get_mut().arenas_mut();
+                            for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
+                                match destination.entry(arena) {
+                                    std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(records); },
+                                    std::collections::btree_map::Entry::Occupied(mut entry) => { entry.get_mut().append(&mut records); },
+                                }
+                            }
+                        },
+                    }
+                }
+                let result = match admit(self) {
+                    Ok(Ok(value)) => {
+                        match speculative_parents.map(|(_, storage)| storage.commit()).transpose() {
+                            Ok(_) => Ok(Ok(value)),
+                            Err(error) => Err(error),
+                        }
+                    },
+                    other => other,
+                };
+                if !result.as_ref().is_ok_and(|inner| inner.is_ok()) {
+                    $(self.model.$field.truncate($field);)*
+                    if let Some(parents) = original_parents { self.model.feature_regeneration_parents = parents; }
+                    if let Some((lengths, _)) = &native_lengths {
+                        self.native.0.retain(|format, namespace| {
+                            let Some(arenas) = lengths.get(format) else { return false; };
+                            namespace.arenas_mut().retain(|arena, records| {
+                                let Some(length) = arenas.get(arena) else { return false; };
+                                records.truncate(*length);
+                                true
+                            });
+                            true
+                        });
+                    }
+                }
+                result
+            }};
+        }
+        arena_registry!(append_and_admit)
+    }
+
     /// Deserialize the reserved `unknowns` arena for `format`.
     pub fn native_unknowns(
         &self,
@@ -1234,28 +1950,14 @@ impl CadIr {
             .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
-    /// Deserialize every reserved native `unknowns` arena one record at a time.
-    ///
-    /// Each record is converted as it is read, so a caller that only scans the
-    /// population — collecting link targets or record ids — keeps just what it
-    /// retains resident rather than the whole typed population at once.
-    pub fn all_native_unknowns_iter(
-        &self,
-    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + '_
-    {
-        self.native
-            .0
-            .values()
-            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
-    }
-
     /// Replace the reserved `unknowns` arena for `format`.
     pub fn set_native_unknowns(
         &mut self,
+        ctx: &DecodeContext<'_>,
         format: &str,
         records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
-        self.set_native_unknowns_from(format, records.iter())
+        self.set_native_unknowns_from(ctx, format, records.iter())
     }
 
     /// Replace the reserved `unknowns` arena for `format` one record at a time.
@@ -1264,14 +1966,96 @@ impl CadIr {
     /// should derive them inside the iterator: each reference is serialized as
     /// it is produced, so the derived population is never resident alongside the
     /// arena built from it.
-    pub fn set_native_unknowns_from<T: Serialize, I: IntoIterator<Item = T>>(
+    /// Duplicate identities are refused before the document changes.
+    ///
+    /// Only the reserved product projection can enter through this route.
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::CadIr;
+    /// let ctx = cadmpeg_test_support::service_decode_context();
+    /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
+    /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
+    /// ```
+    pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(
         &mut self,
+        ctx: &DecodeContext<'_>,
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
-        self.native
-            .namespace_mut(format)
-            .set_arena_from("unknowns", records)
+        let records = ctx.with_scoped_storage("native unknown replacement", || {
+            crate::native::arena_from(
+                ctx,
+                records.into_iter().map(|record| {
+                    Ok::<_, crate::native::NativeConvertError>(UnknownProjection(record))
+                }),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.0.len()),
+            "scan native unknown identities",
+        )?;
+        for pair in records.0.windows(2) {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(pair[0].id().len().min(pair[1].id().len())),
+                "compare native unknown identities",
+            )?;
+            if pair[0].id() == pair[1].id() {
+                return Err(crate::native::NativeConvertError::InvalidCollection(
+                    ctx.format_retained(
+                        format_args!("duplicate native unknown record {}", pair[0].id()),
+                        "native unknown identity collision",
+                    )?,
+                ));
+            }
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(format.len())
+                .checked_mul(
+                    cadmpeg_core::decode::u64_from_index(self.native.0.len())
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "native unknown namespace lookup",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                )
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "native unknown namespace lookup",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "native unknown namespace lookup",
+        )?;
+        let key = ctx.copy_retained_text("unknowns", "native unknown arena key")?;
+        records.1.commit()?;
+        if let Some(namespace) = self.native.0.get_mut(format) {
+            ctx.insert_btree_map(
+                namespace.arenas_mut(),
+                key,
+                records.0,
+                "native unknown arena",
+            )?;
+        } else {
+            let format = ctx.copy_retained_text(format, "native unknown namespace key")?;
+            let mut namespace = crate::native::NativeNamespace::default();
+            ctx.insert_btree_map(
+                namespace.arenas_mut(),
+                key,
+                records.0,
+                "native unknown arena",
+            )?;
+            ctx.insert_btree_map(
+                &mut self.native.0,
+                format,
+                namespace,
+                "native unknown namespace",
+            )?;
+        }
+        Ok(())
     }
 
     /// Construct an empty document with default tolerances.
@@ -1305,10 +2089,23 @@ impl CadIr {
     /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
     /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+    ///
+    /// The text is written through the same finite adapter the digest uses, so
+    /// a non-finite float is refused rather than written as `null`.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a document holding a non-finite float.
+    pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
-        canonical.finalize();
-        serde_json::to_string_pretty(&canonical)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
+        canonical.finalize(&ctx)?;
+        crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
 
     /// Parse JSON and reject any unsupported `ir_version`.
@@ -1324,153 +2121,108 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrPayload>(s).map(Into::into)
+        serde_json::from_str::<CadIrReadWire>(s).map(Into::into)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.
-    pub fn finalize(&mut self) {
-        self.model.finalize();
-        self.native.finalize();
+    pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        self.model.finalize(ctx)?;
+        self.native.finalize(ctx)
     }
 
     /// Count arena rows and native loss tallies without running validation.
     pub fn census(&self) -> BTreeMap<CensusKey, usize> {
-        entity_census(self)
+        crate::index::public_result(census::count(
+            &census::StandardStorage,
+            crate::native::view::NativeView::new(self, None),
+        ))
     }
-}
-
-macro_rules! define_registered_entity_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn registered_entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-            BTreeMap::from([
-                $((CensusKey::model(ArenaName::$field), ir.model.$field.len())),*
-            ])
-        }
-    };
-}
-arena_registry!(define_registered_entity_census);
-
-/// Count the records represented by the IR arenas without running validation.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-    let mut counts = registered_entity_census(ir);
-    counts.insert(
-        CensusKey::surfaces_unknown_geometry(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    surface.geometry,
-                    crate::geometry::SurfaceGeometry::Unknown { .. }
-                )
-            })
-            .count(),
-    );
-    for loss in ir.native.loss_counts() {
-        counts.insert(CensusKey::native(&loss.format, &loss.kind), loss.count);
-    }
-    counts
 }
 
 /// Source-container metadata preserved for reporting.
 ///
-/// Attribute keys ending in [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] hold
+/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
 /// machine-local digests over decoded content for the write-path edit oracle.
 /// Not portable across platforms; not tolerance-aware. Digests over retained
 /// source bytes must not use that suffix. See
 /// [`crate::hash::document_local_sha256`] and
-/// [`cadmpeg_ir::compare::is_local_digest_attribute`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceMeta {
-    classification: FormatIdentity<DialectLayers>,
-    /// Format-specific attributes.
-    pub attributes: BTreeMap<String, String>,
-}
-
-/// Wire shape of [`SourceMeta`], used for both directions.
-#[derive(Serialize, Deserialize)]
+/// [`crate::compare::is_local_digest_attribute`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SourceMetaWire<'a> {
-    format: Cow<'a, str>,
-    #[serde(default = "SourceMetaWire::default_attributes")]
-    attributes: Cow<'a, BTreeMap<String, String>>,
+#[serde(deny_unknown_fields)]
+pub struct SourceMeta {
+    /// Format identity: classified dialect layers, or a bare known format.
+    identity: FormatIdentity<DialectLayers>,
+    /// Format-specific attributes.
     #[serde(default)]
-    dialects: Option<Cow<'a, DialectLayers>>,
-}
-
-impl SourceMetaWire<'_> {
-    fn default_attributes() -> Cow<'static, BTreeMap<String, String>> {
-        Cow::Owned(BTreeMap::new())
-    }
-}
-
-impl Serialize for SourceMeta {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        SourceMetaWire {
-            format: Cow::Borrowed(self.format()),
-            attributes: Cow::Borrowed(&self.attributes),
-            dialects: self.dialects().map(Cow::Borrowed),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SourceMeta {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SourceMetaWire::deserialize(deserializer)?;
-        let classification =
-            FormatIdentity::from_wire(wire.format.into_owned(), wire.dialects.map(Cow::into_owned))
-                .map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            classification,
-            attributes: wire.attributes.into_owned(),
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SourceMeta {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SourceMeta".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::SourceMeta").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = SourceMetaWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["dialects"]);
-        schema
-    }
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub attributes: BTreeMap<NonBlankString, String>,
 }
 
 impl SourceMeta {
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
-    pub fn classified(dialects: DialectLayers, attributes: BTreeMap<String, String>) -> Self {
+    pub fn classified(
+        dialects: DialectLayers,
+        attributes: BTreeMap<NonBlankString, String>,
+    ) -> Self {
         Self {
-            classification: FormatIdentity::classified(dialects),
+            identity: FormatIdentity::classified(dialects),
             attributes,
         }
     }
 
+    pub(crate) fn normalized_digest_copy(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let identity = match &self.identity {
+            FormatIdentity::Classified { dialects } => {
+                FormatIdentity::classified(dialects.try_clone_for_decode(ctx, operation)?)
+            }
+            FormatIdentity::Unclassified { format } => {
+                FormatIdentity::unclassified(ctx.copy_retained_text(format, operation)?)
+            }
+        };
+        let mut attributes = BTreeMap::new();
+        let mut longest = crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.len();
+        for (key, value) in &self.attributes {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(key.as_str().len()),
+                operation,
+            )?;
+            if key.as_str() == crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE {
+                continue;
+            }
+            longest = longest.max(key.as_str().len());
+            crate::hash::admit_digest_key(ctx, attributes.len(), longest, operation)?;
+            let key = key.try_clone_for_decode(ctx, operation)?;
+            let value = ctx.copy_retained_text(value, operation)?;
+            ctx.insert_btree_map(&mut attributes, key, value, operation)?;
+        }
+        Ok(Self {
+            identity,
+            attributes,
+        })
+    }
+
     /// The complete source identity: format plus classified layers, if any.
     #[must_use]
-    pub(crate) fn classification(&self) -> &FormatIdentity<DialectLayers> {
-        &self.classification
+    pub(crate) const fn classification(&self) -> &FormatIdentity<DialectLayers> {
+        &self.identity
     }
 
     /// Registry format namespace of this source's primary layer.
     #[must_use]
     pub fn format(&self) -> &str {
-        self.classification.format()
+        self.identity.format()
     }
 
     /// Returns every source dialect layer when the source was classified.
     #[must_use]
-    pub fn dialects(&self) -> Option<&DialectLayers> {
-        self.classification.classified_payload()
+    pub const fn dialects(&self) -> Option<&DialectLayers> {
+        self.identity.classified_payload()
     }
 
     /// Returns the primary source dialect match when the source was classified.
@@ -1486,3 +2238,9 @@ impl SourceMeta {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
+cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
+
+mod identity_rewrite;

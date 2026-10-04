@@ -6,7 +6,7 @@ driven by rejections, not only by accepts.
 
 ## Shared IR builders
 
-`crates/cadmpeg-ir/src/validate/admissibility_freeze.rs`:
+`crates/cadmpeg-test-support/src/admissibility.rs`:
 
 | fixture                   | outcome | driving check          |
 | ------------------------- | ------- | ---------------------- |

@@ -1,38 +1,93 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_core::container::ContainerRole;
 
-use crate::test_support::*;
 use std::io::Cursor;
 
-use crate::writer::tests::{
-    semantic_writer_rejects_nonfinite_analytic_carriers, semantic_writer_rejects_subds,
-};
+use crate::writer::tests::configuration_carriers::semantic_writer_rejects_subds;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
+use crate::test_support::appearance::sldprt_with_body_and_material;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::sldprt_with_body_and_envelope;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::container::sldprt_with_partition_and_deltas;
+use crate::test_support::container::synthetic_sldprt;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::history::sldprt_with_nested_arc_sketch;
+use crate::test_support::history::sldprt_with_nested_circular_sketch;
+use crate::test_support::history::sldprt_with_nested_nurbs_sketches;
+use crate::test_support::history::sldprt_with_nested_sketch_profiles;
+use crate::test_support::history::sldprt_with_tagged_compact_relation_scalar;
+use crate::test_support::ir::encode_decode_result;
+use crate::test_support::ir::source_less_cube;
+use crate::test_support::ir::translate_model_x;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::closed_cylinder_body;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::prefixed_edge_triangle_body;
+use crate::test_support::parasolid::sphere_patch_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::triangle_body_with_overlapping_point;
+use crate::test_support::parasolid::tripled_triangle_body;
+use crate::test_support::pmi::pmi_semantic_payload;
+use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized SLDPRT should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized SLDPRT should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
-    let native = crate::resolved_features::validate::validate_native(result.ir());
+    let native = crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        result.ir(),
+    )
+    .unwrap();
     assert!(native.is_empty(), "{native:#?}");
+}
+
+#[test]
+fn display_geometry_and_summary_share_one_parse_per_section() {
+    let source = sldprt_with_body_and_display_list(&triangle_body());
+    let section_count = crate::test_support::container::scan(&source)
+        .sections()
+        .count();
+    crate::tessellation::reset_display_parse_calls();
+    let options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &options)
+            .expect("service profile admits display geometry"),
+    );
+    assert!(!result.ir().model.tessellations.is_empty());
+    assert_eq!(crate::tessellation::display_parse_calls(), section_count);
 }
 
 #[test]
 fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_metadata() {
     let bytes = synthetic_sldprt();
-    assert_eq!(SldprtCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&SldprtCodec, &bytes),
+        Confidence::High
+    );
     let summary = SldprtCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("SLDPRT inspection");
@@ -54,7 +109,7 @@ fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_meta
         .iter()
         .any(|entry| entry.role == ContainerRole::DirectoryEntry));
     let result = decode(bytes);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 
@@ -147,8 +202,8 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
         display.ir().model.tessellations[0].body.as_ref(),
         Some(&display.ir().model.bodies[0].id)
     );
-    let tessellation_exactness =
-        &display.source_fidelity().annotations.exactness()[&display.ir().model.tessellations[0].id];
+    let tessellation_exactness = &display.source_fidelity().annotations.exactness()
+        [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
         tessellation_exactness.fields()["body"],
         cadmpeg_ir::Exactness::Derived
@@ -179,18 +234,21 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 #[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = decoded;
     decoded.ir_mut().model.tessellations[0].body = None;
     decoded.ir_mut().model.tessellations[0].faces.clear();
     let mut coincident = decoded.ir().model.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
-    decoded.ir_mut().model.shells[0]
-        .faces
-        .push(coincident.id.clone());
+    decoded.ir_mut().model.shells[0].add_face(coincident.id.clone());
     decoded.ir_mut().model.faces.push(coincident);
 
-    let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let _ = crate::tessellation::assign_unique_surface_owners(&ctx, &mut decoded.ir_mut().model)
+        .unwrap();
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());
@@ -206,8 +264,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
         .expect("semantic SLDPRT write");
     let round_trip = decode(bytes);
     assert_eq!(
-        round_trip.ir().model.points[0].position.x,
-        edited.model.points[0].position.x
+        round_trip.ir().model.points[0].position().get().x,
+        edited.model.points[0].position().get().x
     );
     assert!(!round_trip.ir().model.features.is_empty());
     assert_valid(&round_trip);
@@ -215,7 +273,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 
 #[test]
 fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir() {
-    let first = encode_decode_result(&source_less_cube());
+    let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().model.faces.len(), 6);
     assert_eq!(first.ir().model.edges.len(), 12);
     assert_valid(&first);
@@ -225,11 +283,10 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()),
-        crate::decode::document_local_sha256(second.ir())
+        crate::decode::document_local_sha256(first.ir()).unwrap(),
+        crate::decode::document_local_sha256(second.ir()).unwrap()
     );
     semantic_writer_rejects_subds();
-    semantic_writer_rejects_nonfinite_analytic_carriers();
 }
 
 // --------------------------------------------------------------------------
@@ -254,9 +311,9 @@ fn versioned_part() -> Vec<u8> {
 }
 
 fn plan(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &EditableDecodeResult,
     fidelity: bool,
-    request: cadmpeg_ir::codec::write::TargetRequest<'_>,
+    request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
@@ -268,10 +325,13 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    plan.report()
-        .target()
-        .expect("a SLDPRT write always names its dialect")
-        .to_string()
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("a SLDPRT write always names its dialect")
+    .to_string()
 }
 
 fn classify(bytes: Vec<u8>) -> String {
@@ -306,13 +366,13 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     let plan = plan(
         &result,
         true,
-        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .expect("the source's own dialect is preserved");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay
-    );
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(named_target(&plan), "sldprt:sw-version-12000-plus");
 
     let mut written = Vec::new();
@@ -331,14 +391,25 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
     let error = plan(
         &result,
         false,
-        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .expect_err("a versioned row is not a synthesis target");
     let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "sldprt");
-    assert_eq!(refusal.requested(), Some("sldprt:sw-version-12000-plus"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("sldprt:sw-version-12000-plus")
+    );
     assert!(
         refusal
             .available()
@@ -347,8 +418,9 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         "{:?}",
         refusal.available()
     );
-    let reason = refusal
-        .reason()
+    let reason = serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["reason"]
+        .as_str()
+        .map(str::to_owned)
         .expect("delivery refusal carries its reason");
     assert!(
         reason.contains("sldprt:unknown"),
@@ -365,17 +437,20 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let plan = plan(
         &result,
         true,
-        cadmpeg_ir::codec::write::TargetRequest::Explicit("sldprt:unknown"),
+        cadmpeg_ir::codec::write::target::TargetRequest::Explicit("sldprt:unknown"),
     )
     .expect("the catalog row is synthesized from the neutral IR");
     assert_eq!(named_target(&plan), "sldprt:unknown");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     assert_eq!(
-        plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotConsumed
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
 
     let mut written = Vec::new();
@@ -394,16 +469,32 @@ fn the_patch_path_names_the_preserved_dialect() {
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("an edited part still preserves its dialect");
-    assert_eq!(plan.report().write_path(), cadmpeg_ir::WritePath::Patched);
-    let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity() else {
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    let cadmpeg_ir::report::export::FidelityResolution::Degraded { reason } =
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity",
+        )
+    else {
         panic!("digest mismatch must report degraded fidelity");
     };
     assert!(reason.contains("digest"), "{reason}");
@@ -427,36 +518,49 @@ fn the_patch_path_names_the_preserved_dialect() {
 fn a_retained_source_record_without_data_reports_degraded_fidelity() {
     let result = decode(versioned_part());
     let (ir, _, mut fidelity) = result.into_parts();
-    let source_image_index = fidelity
-        .retained_records
-        .iter()
-        .position(|record| record.id() == crate::SOURCE_IMAGE_ID)
-        .expect("decode retains the source image");
     let unavailable = {
-        let record = &fidelity.retained_records[source_image_index];
-        cadmpeg_ir::RetainedSourceRecord::unavailable(
-            record.id().to_owned(),
+        let record = fidelity
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .expect("decode retains the source image");
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
+            .expect("decoded source image has a valid digest");
+        cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
-            record.byte_len(),
-            record.sha256().to_owned(),
+            cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                byte_len: record.byte_len(),
+                sha256: digest,
+            },
         )
+        .expect("source image extent")
     };
-    fidelity.retained_records[source_image_index] = unavailable;
+    let source_image_id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
+        .to_owned()
+        .try_into()
+        .expect("source image identity");
+    fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("decode retains the source image");
+    fidelity
+        .insert_retained_record(source_image_id, unavailable)
+        .expect("source image identity is unique");
 
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("missing retained bytes fall back to semantic writing");
-    assert_ne!(
+    assert!(!matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay
-    );
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(
-        &plan.report().fidelity(),
-        &cadmpeg_ir::FidelityResolution::Degraded {
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &cadmpeg_ir::report::export::FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }
     );
@@ -481,13 +585,13 @@ fn the_generation_path_names_the_catalog_row() {
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("nothing to inherit, so the catalog default stands in");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:unknown");
 

@@ -9,6 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::StepLossCode;
+use crate::test_support::exchange::equivalent_seam_source;
 use crate::StepCodec;
 
 #[test]
@@ -37,7 +38,7 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
+        .all(|edge| edge.curve().is_none()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::EdgeNoSurfaceOrCurveForPcurve.kind()
             && loss
@@ -50,7 +51,8 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
                 .message
                 .contains("STEP edge #19 has no 3D curve carrier")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -72,7 +74,8 @@ fn unresolved_vertex_point_does_not_enter_a_topology_draft() {
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -178,7 +181,8 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
             .iter()
             .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -205,9 +209,10 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -242,21 +247,9 @@ fn seam_edge_rejects_an_explicit_pcurve_outside_its_curve() {
             && loss.message.contains("SEAM_EDGE #22")
             && loss.message.contains("belongs to its edge curve")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-fn equivalent_seam_source() -> String {
-    String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
-        .expect("fixture is UTF-8")
-        .replace(
-            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
-            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
-        )
-        .replace(
-            "ENDSEC;\nEND-ISO-10303-21;",
-            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
-        )
 }
 
 #[test]
@@ -280,12 +273,13 @@ fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
-        .is_some_and(|edge| edge.curve.is_none()));
+        .is_some_and(|edge| edge.curve().is_none()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("STEP edge curve #19: surface-curve #57 has no resolvable basis")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -318,8 +312,7 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
     assert!(decoded.ir().model.edges.iter().any(|edge| {
         edge.id.as_str() == "step:data:edge#19"
             && edge
-                .curve
-                .as_ref()
+                .curve()
                 .is_some_and(|curve| curve.as_str() == "step:data:curve#18")
     }));
     assert!(decoded
@@ -328,7 +321,8 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.as_str() != "step:data:subedge#19"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -354,7 +348,8 @@ fn shell_based_wireframe_model_owns_wire_shell_edges() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir().model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -379,8 +374,9 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.shells[0].free_vertices.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert_eq!(decoded.ir().model.shells[0].free_vertices().len(), 1);
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -416,7 +412,8 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str() == "step:data:connected_edge_set#34"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -449,7 +446,8 @@ fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str() == "step:data:connected_edge_sub_set#33"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -483,7 +481,8 @@ fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
         .expect("oriented edge carrier");
     assert!(reversed.start.as_str().contains("vertex#7"));
     assert!(reversed.end.as_str().contains("vertex#6"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -506,7 +505,8 @@ fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -533,7 +533,8 @@ fn complex_vertex_point_instances_retain_their_point_carriers() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.vertices.len(), 3);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -559,7 +560,8 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
         .any(|record| {
             record.id.as_str() == "step:data:manifold_surface_shape_representation#71"
         }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -581,6 +583,7 @@ fn complex_representation_items_reach_edge_based_wire_models() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir().model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

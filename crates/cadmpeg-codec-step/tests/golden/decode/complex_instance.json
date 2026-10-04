@@ -12,23 +12,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 2,
             "kind": "nurbs",
             "knots": [
@@ -40,11 +23,35 @@
               1.0
             ],
             "periodic": false,
-            "weights": [
-              1.0,
-              1.0,
-              1.0
-            ]
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
           },
           "id": "step:data:curve#1",
           "source_object": {
@@ -83,11 +90,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -98,19 +101,20 @@
         "entity_instances": "4",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -121,27 +125,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.document-length-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         "severity": "error"
@@ -150,7 +155,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -158,7 +165,11 @@
     ],
     "notes": [
       "byte accounting: 267 structural, 344 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

@@ -14,6 +14,7 @@ mod fidelity;
 mod graph;
 mod item;
 mod join;
+mod output;
 mod schema;
 mod schema_infer;
 
@@ -31,15 +32,15 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-pub use fidelity::FidelityArgs;
-pub use graph::GraphArgs;
-pub use item::ItemArgs;
-pub use join::JoinArgs;
-pub use schema::SchemaArgs;
+use fidelity::FidelityArgs;
+use graph::GraphArgs;
+use item::ItemArgs;
+use join::JoinArgs;
+use schema::SchemaArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
-pub enum QueryView {
+pub(crate) enum QueryView {
     /// Aggregate artifact projections with common input and output arguments.
     #[command(flatten)]
     Aggregate(AggregateView),
@@ -91,6 +92,8 @@ pub enum QueryView {
     /// (default 10000) caps explosion: a truncated walk prints a note on
     /// standard error and still exits 0. A record with no string `id`
     /// uses `ARENA#<index>` as its locator and cannot be selected by id.
+    ///
+    /// `--fields start,path,record.id` projects paths relative to each walk result.
     Graph(GraphArgs),
     /// Join two arenas on named key paths.
     ///
@@ -102,6 +105,8 @@ pub enum QueryView {
     /// value only. Arena names match `query item`. Discover key paths
     /// with `query schema file FILE ARENA`. This is not SQL: no expressions,
     /// no WHERE, no three-way join.
+    ///
+    /// `--fields left.id,right.links` projects paths relative to each joined row.
     Join(JoinArgs),
     /// Retained source bytes.
     ///
@@ -118,7 +123,7 @@ pub enum QueryView {
 
 /// Aggregate query views that share [`QueryArgs`].
 #[derive(Debug, Subcommand)]
-pub enum AggregateView {
+pub(crate) enum AggregateView {
     /// What this JSON file is.
     ///
     /// Accepts every artifact kind. Each source, decode, inspect, or refusal
@@ -147,12 +152,12 @@ pub enum AggregateView {
 
 /// Input selection and output format for one query view.
 #[derive(Debug, Args)]
-pub struct QueryArgs {
+pub(crate) struct QueryArgs {
     /// JSON file, or `-` for standard input.
-    pub file: PathBuf,
+    file: PathBuf,
     /// Print the projected subtree as JSON instead of the table.
     #[arg(long)]
-    pub json: bool,
+    json: bool,
 }
 
 impl AggregateView {
@@ -192,7 +197,7 @@ impl Artifact {
 struct KindProbe {
     command: Option<String>,
     status: Option<String>,
-    ir_version: Option<String>,
+    ir_version: Option<Value>,
     ir_sha256: Option<String>,
 }
 
@@ -248,7 +253,7 @@ struct ContainerSummaryProbe {
 #[derive(Deserialize)]
 struct ExportReportProbe {
     #[serde(default)]
-    format: Option<String>,
+    payload: Option<String>,
     #[serde(default)]
     target: Option<String>,
 }
@@ -260,15 +265,23 @@ struct DecodeReportProbe {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
-    container_only: Option<bool>,
-    #[serde(default)]
-    geometry_transferred: Option<bool>,
+    transfer: Option<DecodeTransferProbe>,
     #[serde(default)]
     coverage: BTreeMap<String, u64>,
     #[serde(default)]
     losses: Vec<LossProbe>,
     #[serde(default)]
     dialects: Option<DialectLayers>,
+}
+
+/// Lenient decode-transfer state: the tag reads as a string so a future state
+/// does not break projection.
+#[derive(Deserialize)]
+struct DecodeTransferProbe {
+    #[serde(default)]
+    transfer: Option<String>,
+    #[serde(default)]
+    geometry_transferred: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -321,20 +334,33 @@ mod tests {
     use super::{push_decode_dialect_summary, DecodeReportProbe};
 
     #[test]
+    fn summary_cells_keep_text_and_json_distinct_from_field_names() {
+        let text = super::SummaryCell::from("not JSON".to_owned());
+        let structured = super::SummaryCell::from(
+            serde_json::value::to_raw_value(&serde_json::json!({"a": 1})).unwrap(),
+        );
+        let rows = std::collections::BTreeMap::from([
+            ("ordinary_dialects", text),
+            ("other_name", structured),
+        ]);
+        let value = serde_json::to_value(&rows).unwrap();
+        assert_eq!(value["ordinary_dialects"], "not JSON");
+        assert_eq!(value["other_name"], serde_json::json!({"a": 1}));
+    }
+
+    #[test]
     fn decode_summary_names_every_extra_dialect_layer() {
         let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
             "dialects": {
                 "primary": {
-                    "format": "f3d",
                     "dialect": "f3d:archive-2",
                     "declared": {"manifest_version": "2"},
                     "admission": "admitted"
                 },
                 "extra": [{
-                    "format": "acis",
                     "dialect": "acis:sab-22300",
                     "declared": {"save_format": "22300"},
-                    "admission": {"unverified": {"using": "acis:sab-22200"}},
+                    "admission": {"unverified": {"using": "sab-22200"}},
                     "instance": "member:model.sab"
                 }]
             }
@@ -342,7 +368,11 @@ mod tests {
         .unwrap();
         let mut rows = Vec::new();
 
-        push_decode_dialect_summary(&mut rows, &decode);
+        push_decode_dialect_summary(&mut rows, &decode).unwrap();
+        let rows = rows
+            .into_iter()
+            .map(|(key, value)| (key, value.as_text().to_owned()))
+            .collect::<Vec<_>>();
 
         assert_eq!(
             rows,
@@ -448,13 +478,13 @@ impl<'de> Deserialize<'de> for ArenaLen {
 }
 
 /// Runs one query view against one artifact file.
-pub fn run(view: &QueryView) -> Result<()> {
+pub(crate) fn run(view: &QueryView) -> Result<()> {
     match view {
         QueryView::Aggregate(view) => run_aggregate(view),
-        QueryView::Item(args) => item::run(args, args.mode()),
+        QueryView::Item(args) => item::run(args),
         QueryView::Schema(args) => schema::run(args),
-        QueryView::Graph(args) => graph::run(args, args.mode()),
-        QueryView::Join(args) => join::run(args, args.mode()),
+        QueryView::Graph(args) => graph::run(args),
+        QueryView::Join(args) => join::run(args),
         QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
 }
@@ -464,10 +494,7 @@ fn run_aggregate(view: &AggregateView) -> Result<()> {
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
     match view {
-        AggregateView::Summary(args) => {
-            summary(&artifact, args);
-            Ok(())
-        }
+        AggregateView::Summary(args) => summary(&artifact, args),
         AggregateView::Coverage(args) => coverage(&artifact, args),
         AggregateView::Findings(args) => findings(&artifact, args),
         AggregateView::Losses(args) => losses(&artifact, args),
@@ -475,33 +502,51 @@ fn run_aggregate(view: &AggregateView) -> Result<()> {
     }
 }
 
+const MAX_QUERY_INPUT_BYTES: u64 = 256 * 1024 * 1024;
+
 fn read_input(path: &Path) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
     if path == Path::new("-") {
-        let mut bytes = Vec::new();
-        std::io::stdin()
-            .lock()
-            .read_to_end(&mut bytes)
-            .context("reading standard input")?;
-        Ok(bytes)
+        std::io::copy(
+            &mut std::io::stdin().lock().take(MAX_QUERY_INPUT_BYTES + 1),
+            &mut bytes,
+        )
+        .context("reading standard input")?;
     } else {
-        std::fs::read(path).with_context(|| format!("reading {}", path.display()))
+        let file =
+            std::fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
+        if file.metadata()?.len() > MAX_QUERY_INPUT_BYTES {
+            bail!(
+                "{} exceeds the query input limit of 256 MiB",
+                path.display()
+            );
+        }
+        std::io::copy(&mut file.take(MAX_QUERY_INPUT_BYTES + 1), &mut bytes)
+            .with_context(|| format!("reading {}", path.display()))?;
     }
+    if u64::try_from(bytes.len())? > MAX_QUERY_INPUT_BYTES {
+        bail!(
+            "{} exceeds the query input limit of 256 MiB",
+            path.display()
+        );
+    }
+    Ok(bytes)
 }
 
 /// Artifact kind decided from top-level keys alone.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArtifactKind {
+enum ArtifactKind {
     Report,
     Cadir,
     Sidecar,
 }
 
-/// Decides the artifact kind from top-level keys and gates a CADIR document
+/// Decides the artifact kind from top-level keys and gates every artifact
 /// on this build's `IR_VERSION`.
 ///
 /// The sniff skips every value it does not name, so a view that goes on to
 /// materialize the document pays for one body parse, not two.
-pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
+fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
@@ -509,28 +554,30 @@ pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
             path.display()
         )
     })?;
-    if sniff.command.is_some() && sniff.status.is_some() {
-        return Ok(ArtifactKind::Report);
+    let kind = if sniff.command.is_some() && sniff.status.is_some() {
+        ArtifactKind::Report
+    } else if sniff.ir_sha256.is_some() {
+        ArtifactKind::Sidecar
+    } else if sniff.ir_version.is_some() {
+        ArtifactKind::Cadir
+    } else {
+        bail!(
+            "{} is JSON but not a recognized artifact; query reads a command report \
+             (top-level `command` and `status`), a decoded CADIR document \
+             (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
+            path.display()
+        )
+    };
+    let found = sniff.ir_version.as_ref().and_then(Value::as_str);
+    if found != Some(cadmpeg_ir::IR_VERSION) {
+        bail!(
+            "{} has ir_version {}; this build reads ir_version {}",
+            path.display(),
+            found.unwrap_or("<absent or non-string>"),
+            cadmpeg_ir::IR_VERSION
+        );
     }
-    if let Some(found) = &sniff.ir_version {
-        if found != cadmpeg_ir::IR_VERSION {
-            bail!(
-                "{} has ir_version {found}; this build reads ir_version {}",
-                path.display(),
-                cadmpeg_ir::IR_VERSION
-            );
-        }
-        return Ok(ArtifactKind::Cadir);
-    }
-    if sniff.ir_sha256.is_some() {
-        return Ok(ArtifactKind::Sidecar);
-    }
-    bail!(
-        "{} is JSON but not a recognized artifact; query reads a command report \
-         (top-level `command` and `status`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
-        path.display()
-    )
+    Ok(kind)
 }
 
 fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
@@ -565,74 +612,120 @@ fn opt(text: Option<&String>) -> String {
 /// Prints one view as the shared command-report envelope:
 /// `{"command": "query", "status": "ok", "view": <name>, "payload": <...>}`.
 /// The view name is a value, never a top-level key.
-fn print_json(view: &str, payload: serde_json::Value) {
-    let mut body = serde_json::Map::new();
-    body.insert(
-        "view".to_owned(),
-        serde_json::Value::String(view.to_owned()),
-    );
-    body.insert("payload".to_owned(), payload);
+fn print_json(view: &str, payload: impl Serialize) -> Result<()> {
+    #[derive(Serialize)]
+    struct Body<'a, T> {
+        payload: T,
+        view: &'a str,
+    }
+    impl<T: Serialize> crate::commands::reporting::ReportBody for Body<'_, T> {}
     println!(
         "{}",
-        crate::commands::reporting::command_report_json("query", serde_json::Value::Object(body))
-            .expect("query report serializes")
+        crate::commands::reporting::command_report_json("query", Body { payload, view })?
     );
+    Ok(())
+}
+
+/// Text cells retain their display spelling; structured cells retain admitted JSON.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum SummaryCell {
+    Text(String),
+    Structured(Box<serde_json::value::RawValue>),
+}
+
+impl From<String> for SummaryCell {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl From<Box<serde_json::value::RawValue>> for SummaryCell {
+    fn from(value: Box<serde_json::value::RawValue>) -> Self {
+        Self::Structured(value)
+    }
+}
+
+impl SummaryCell {
+    fn as_text(&self) -> &str {
+        match self {
+            Self::Text(text) => text,
+            Self::Structured(value) => value.get(),
+        }
+    }
 }
 
 fn counts_json(map: &BTreeMap<String, u64>) -> serde_json::Value {
     serde_json::json!(map)
 }
 
-fn summary(artifact: &Artifact, args: &QueryArgs) {
-    let mut rows: Vec<(String, String)> =
-        vec![("kind".to_owned(), artifact.kind_name().to_owned())];
+fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    let mut rows: Vec<(String, SummaryCell)> =
+        vec![("kind".to_owned(), artifact.kind_name().to_owned().into())];
     match artifact {
         Artifact::Report(report) => {
-            rows.push(("command".to_owned(), cell(&report.command)));
-            rows.push(("status".to_owned(), cell(&report.status)));
+            rows.push(("command".to_owned(), cell(&report.command).into()));
+            rows.push(("status".to_owned(), cell(&report.status).into()));
             if let Some(refusal) = &report.refusal {
                 if let Some(stage) = &refusal.stage {
-                    rows.push(("refusal_stage".to_owned(), cell(stage)));
+                    rows.push(("refusal_stage".to_owned(), cell(stage).into()));
                 }
                 if let Some(code) = &refusal.code {
-                    rows.push(("refusal_code".to_owned(), cell(code)));
+                    rows.push(("refusal_code".to_owned(), cell(code).into()));
                 }
                 if let Some(message) = &refusal.message {
-                    rows.push(("refusal_message".to_owned(), cell(message)));
+                    rows.push(("refusal_message".to_owned(), cell(message).into()));
                 }
-                push_dialect_layers_summary(&mut rows, "refusal", refusal.dialects.as_ref());
+                push_dialect_layers_summary(&mut rows, "refusal", refusal.dialects.as_ref())?;
                 if let Some(target) = &refusal.target {
-                    rows.push(("refusal_target".to_owned(), target.to_string()));
+                    rows.push((
+                        "refusal_target".to_owned(),
+                        serde_json::value::to_raw_value(target)?.into(),
+                    ));
                 }
             }
             if let Some(generator) = &report.generator {
-                rows.push(("generator".to_owned(), cell(generator)));
+                rows.push(("generator".to_owned(), cell(generator).into()));
             }
             if let Some(summary) = &report.summary {
                 if let Some(format) = &summary.format {
-                    rows.push(("inspect_format".to_owned(), cell(format)));
+                    rows.push(("inspect_format".to_owned(), cell(format).into()));
                 }
-                push_dialect_layers_summary(&mut rows, "inspect", summary.dialects.as_ref());
+                push_dialect_layers_summary(&mut rows, "inspect", summary.dialects.as_ref())?;
             }
             match &report.decode_report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
-                        rows.push(("decode_format".to_owned(), cell(format)));
+                        rows.push(("decode_format".to_owned(), cell(format).into()));
                     }
-                    if let Some(container_only) = decode.container_only {
-                        rows.push(("container_only".to_owned(), container_only.to_string()));
+                    if let Some(transfer) = decode
+                        .transfer
+                        .as_ref()
+                        .and_then(|state| state.transfer.as_ref())
+                    {
+                        rows.push(("decode_transfer".to_owned(), cell(transfer).into()));
                     }
-                    if let Some(geometry) = decode.geometry_transferred {
-                        rows.push(("geometry_transferred".to_owned(), geometry.to_string()));
+                    if let Some(geometry) = decode
+                        .transfer
+                        .as_ref()
+                        .and_then(|state| state.geometry_transferred)
+                    {
+                        rows.push((
+                            "geometry_transferred".to_owned(),
+                            geometry.to_string().into(),
+                        ));
                     }
                     rows.push((
                         "coverage_rows".to_owned(),
-                        decode.coverage.len().to_string(),
+                        decode.coverage.len().to_string().into(),
                     ));
-                    rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
-                    push_decode_dialect_summary(&mut rows, decode);
+                    rows.push((
+                        "decode_losses".to_owned(),
+                        decode.losses.len().to_string().into(),
+                    ));
+                    push_decode_dialect_summary(&mut rows, decode)?;
                 }
-                None => rows.push(("decode_report".to_owned(), "null".to_owned())),
+                None => rows.push(("decode_report".to_owned(), "null".to_owned().into())),
             }
             match &report.check_report {
                 Some(validation) => {
@@ -643,42 +736,47 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                             validation.findings.len(),
                             count_severity(&validation.findings, &["error", "blocking"]),
                             count_severity(&validation.findings, &["warning"]),
-                        ),
+                        )
+                        .into(),
                     ));
                     rows.push((
                         "check_losses".to_owned(),
-                        validation.losses.len().to_string(),
+                        validation.losses.len().to_string().into(),
                     ));
                     rows.push((
                         "entity_count_rows".to_owned(),
-                        validation.entity_counts.len().to_string(),
+                        validation.entity_counts.len().to_string().into(),
                     ));
                 }
-                None => rows.push(("check_report".to_owned(), "null".to_owned())),
+                None => rows.push(("check_report".to_owned(), "null".to_owned().into())),
             }
             if let Some(export) = &report.export {
-                if let Some(format) = &export.format {
-                    rows.push(("export_format".to_owned(), cell(format)));
+                if let Some(payload) = &export.payload {
+                    rows.push(("export_payload".to_owned(), cell(payload).into()));
                 }
                 rows.push((
                     "export_target".to_owned(),
                     export
                         .target
                         .as_ref()
-                        .map_or_else(|| "null".to_owned(), |target| cell(target)),
+                        .map_or_else(|| "null".to_owned(), |target| cell(target))
+                        .into(),
                 ));
             }
         }
         Artifact::Cadir(cadir) => {
-            rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
+            rows.push(("ir_version".to_owned(), cell(&cadir.ir_version).into()));
             match &cadir.source {
                 Some(source) => {
-                    rows.push(("source_format".to_owned(), cell(source.format())));
-                    push_dialect_layers_summary(&mut rows, "source", source.dialects());
+                    rows.push(("source_format".to_owned(), cell(source.format()).into()));
+                    push_dialect_layers_summary(&mut rows, "source", source.dialects())?;
                 }
-                None => rows.push(("source".to_owned(), "null".to_owned())),
+                None => rows.push(("source".to_owned(), "null".to_owned().into())),
             }
-            rows.push(("model_arenas".to_owned(), cadir.model.len().to_string()));
+            rows.push((
+                "model_arenas".to_owned(),
+                cadir.model.len().to_string().into(),
+            ));
             rows.push((
                 "model_entities".to_owned(),
                 cadir
@@ -686,67 +784,66 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     .values()
                     .map(|len| len.0)
                     .sum::<u64>()
-                    .to_string(),
+                    .to_string()
+                    .into(),
             ));
             for (namespace, arenas) in &cadir.native {
                 rows.push((
                     format!("native.{namespace}.arenas"),
-                    arenas.len().to_string(),
+                    arenas.len().to_string().into(),
                 ));
                 rows.push((
                     format!("native.{namespace}.entities"),
-                    arenas.values().map(|len| len.0).sum::<u64>().to_string(),
+                    arenas
+                        .values()
+                        .map(|len| len.0)
+                        .sum::<u64>()
+                        .to_string()
+                        .into(),
                 ));
             }
         }
         Artifact::Sidecar(sidecar) => {
             rows.push((
                 "sidecar_fidelity_validation".to_owned(),
-                "not_run".to_owned(),
+                "not_run".to_owned().into(),
             ));
             match &sidecar.report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
-                        rows.push(("decode_format".to_owned(), cell(format)));
+                        rows.push(("decode_format".to_owned(), cell(format).into()));
                     }
                     rows.push((
                         "coverage_rows".to_owned(),
-                        decode.coverage.len().to_string(),
+                        decode.coverage.len().to_string().into(),
                     ));
-                    rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
-                    push_decode_dialect_summary(&mut rows, decode);
+                    rows.push((
+                        "decode_losses".to_owned(),
+                        decode.losses.len().to_string().into(),
+                    ));
+                    push_decode_dialect_summary(&mut rows, decode)?;
                 }
-                None => rows.push(("report".to_owned(), "null".to_owned())),
+                None => rows.push(("report".to_owned(), "null".to_owned().into())),
             }
         }
     }
     if args.json {
-        let map: serde_json::Map<String, serde_json::Value> = rows
-            .into_iter()
-            .map(|(field, value)| {
-                let value = if field.ends_with("_dialects")
-                    || field.ends_with("_dialect_declared")
-                    || field == "refusal_target"
-                {
-                    serde_json::from_str(&value)
-                        .expect("structured identity summary cells contain JSON")
-                } else {
-                    serde_json::Value::String(value)
-                };
-                (field, value)
-            })
-            .collect();
-        print_json("summary", serde_json::Value::Object(map));
+        let map = rows.into_iter().collect::<BTreeMap<_, _>>();
+        print_json("summary", map)?;
     } else {
         println!("field\tvalue");
         for (field, value) in rows {
-            println!("{field}\t{value}");
+            println!("{field}\t{}", value.as_text());
         }
     }
+    Ok(())
 }
 
-fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &DecodeReportProbe) {
-    push_dialect_layers_summary(rows, "decode", decode.dialects.as_ref());
+fn push_decode_dialect_summary(
+    rows: &mut Vec<(String, SummaryCell)>,
+    decode: &DecodeReportProbe,
+) -> Result<()> {
+    push_dialect_layers_summary(rows, "decode", decode.dialects.as_ref())
 }
 
 struct DialectLayersOutput<'a>(&'a DialectLayers);
@@ -789,11 +886,9 @@ impl Serialize for DialectMatchOutput<'_> {
 fn admission_value(matched: &DialectMatch) -> Value {
     match matched.admission() {
         Admission::Admitted => serde_json::json!("admitted"),
-        Admission::Unverified { .. } => serde_json::json!({
+        Admission::Unverified { using } => serde_json::json!({
             "unverified": {
-                "using": matched
-                    .using()
-                    .expect("unverified admission always names its grammar")
+                "using": matched.grammar_id(using)
             }
         }),
         Admission::Residual => serde_json::json!("residual"),
@@ -802,56 +897,60 @@ fn admission_value(matched: &DialectMatch) -> Value {
 }
 
 fn push_dialect_layers_summary(
-    rows: &mut Vec<(String, String)>,
+    rows: &mut Vec<(String, SummaryCell)>,
     prefix: &str,
     layers: Option<&DialectLayers>,
-) {
+) -> Result<()> {
     let Some(layers) = layers else {
-        rows.push((format!("{prefix}_dialects"), "null".to_owned()));
-        push_dialect_summary(rows, prefix, None);
-        return;
+        rows.push((
+            format!("{prefix}_dialects"),
+            serde_json::value::to_raw_value(&())?.into(),
+        ));
+        return push_dialect_summary(rows, prefix, None);
     };
     rows.push((
         format!("{prefix}_dialect_layers"),
-        layers.iter().count().to_string(),
+        layers.iter().count().to_string().into(),
     ));
     rows.push((
         format!("{prefix}_dialects"),
-        serde_json::to_string(&DialectLayersOutput(layers))
-            .expect("dialect-layer projections always serialize"),
+        serde_json::value::to_raw_value(&DialectLayersOutput(layers))?.into(),
     ));
-    push_dialect_summary(rows, prefix, Some(layers.primary()));
+    push_dialect_summary(rows, prefix, Some(layers.primary()))
 }
 
 fn push_dialect_summary(
-    rows: &mut Vec<(String, String)>,
+    rows: &mut Vec<(String, SummaryCell)>,
     prefix: &str,
     matched: Option<&DialectMatch>,
-) {
+) -> Result<()> {
     let Some(matched) = matched else {
-        rows.push((format!("{prefix}_dialect"), "null".to_owned()));
-        return;
+        rows.push((format!("{prefix}_dialect"), "null".to_owned().into()));
+        return Ok(());
     };
-    rows.push((format!("{prefix}_dialect_format"), cell(matched.format())));
+    rows.push((
+        format!("{prefix}_dialect_format"),
+        cell(matched.format()).into(),
+    ));
     rows.push((
         format!("{prefix}_dialect"),
-        cell(matched.dialect().as_str()),
+        cell(matched.dialect().as_str()).into(),
     ));
     let admission = admission_value(matched);
     let admission = admission
         .as_str()
         .map_or_else(|| admission.to_string(), cell);
-    rows.push((format!("{prefix}_dialect_admission"), admission));
+    rows.push((format!("{prefix}_dialect_admission"), admission.into()));
     if let Some(instance) = matched.instance() {
-        rows.push((format!("{prefix}_dialect_instance"), cell(instance)));
+        rows.push((format!("{prefix}_dialect_instance"), cell(instance).into()));
     }
     if !matched.declared().is_empty() {
         rows.push((
             format!("{prefix}_dialect_declared"),
-            serde_json::to_string(matched.declared())
-                .expect("dialect declarations always serialize"),
+            serde_json::value::to_raw_value(matched.declared())?.into(),
         ));
     }
+    Ok(())
 }
 
 fn count_severity(findings: &[FindingProbe], severities: &[&str]) -> usize {
@@ -890,7 +989,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
     };
     if args.json {
-        print_json("coverage", counts_json(coverage));
+        print_json("coverage", counts_json(coverage))?;
     } else {
         println!("measure\tcount");
         for (measure, count) in coverage {
@@ -932,7 +1031,7 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("findings", serde_json::Value::Array(payload));
+        print_json("findings", serde_json::Value::Array(payload))?;
     } else {
         println!("severity\tcheck\tentity\tmessage");
         for finding in rows {
@@ -985,7 +1084,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("losses", serde_json::Value::Array(payload));
+        print_json("losses", serde_json::Value::Array(payload))?;
     } else {
         println!("severity\tcode\tmessage");
         for loss in rows {
@@ -1032,7 +1131,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 for (namespace, arena, entries) in &rows {
                     map.insert(format!("{namespace}.{arena}"), serde_json::json!(entries));
                 }
-                print_json("counts", serde_json::Value::Object(map));
+                print_json("counts", serde_json::Value::Object(map))?;
             } else {
                 println!("namespace\tarena\tentries");
                 for (namespace, arena, entries) in rows {
@@ -1054,7 +1153,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     }
                 };
             if args.json {
-                print_json("counts", counts_json(entity_counts));
+                print_json("counts", counts_json(entity_counts))?;
             } else {
                 println!("namespace\tarena\tentries");
                 for (arena, entries) in entity_counts {

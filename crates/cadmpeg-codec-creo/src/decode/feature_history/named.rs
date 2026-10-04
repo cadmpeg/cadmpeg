@@ -2,13 +2,20 @@
 //! Named and referenced feature definitions.
 
 use super::super::uniqueness::unique_feature_profile_ref;
-use super::{
-    feature_reference_name, feature_revolution_axis_for_transfer,
-    filled_surface_feature_definition, knit_surface_feature_definition,
+use super::axes::{feature_revolution_axis_for_transfer, unresolved_feature_profile_ref};
+use super::draft::{
     linear_extrusion_extent_and_direction, numbered_feature_name_has_family,
     preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
-    sweep_output_kind, sweep_solid, thicken_feature_definition,
+    thicken_feature_definition,
 };
+use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
+use super::outputs::{
+    decoded_feature_reference_name, feature_reference_name, insert_feature_source_property,
+    sweep_output_kind, sweep_solid,
+};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, feature_recipe_effect, feature_revolution_extent,
@@ -17,46 +24,93 @@ use crate::decode::sketch_transfer::recipe::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternKind,
-    ProfileRef, RevolveConstruction, UnresolvedFamily,
+    patterns::PatternKind, BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+    FaceSelection, FeatureDefinition as IrFeatureDefinition,
+    FeatureOperation as IrFeatureOperation, FeatureTreeNodeRole, LinearTermination,
+    PartialRevolveConstruction, ProfileRef, RevolveConstruction, UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(in super::super) fn named_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if let Some(definition) =
+        name_only_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
+    {
+        return Ok(Some(definition));
+    }
+    let schema_class = match kind {
+        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
+        "Hole" => SchemaClass::Hole,
+        "Round" | "Rundung" => SchemaClass::Round,
+        "Chamfer" => SchemaClass::Chamfer,
+        "Draft" | "Schräge" => SchemaClass::Draft,
+        _ => return Ok(None),
+    };
+    schema_feature_definition(
+        ctx,
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        Some(schema_class),
+        kind,
+    )
+    .map(Some)
+}
+
+/// The definition a feature name alone establishes, before the schema class
+/// is consulted.
+///
+/// Every answer here comes from the name and the scan, so the function has no
+/// failure of its own; `None` means the name establishes nothing.
+fn name_only_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+    kind: &str,
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
     if feature_section_sweep_semantics_conflict(scan, feature_id)
         && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
             || numbered_feature_name_has_family(kind, "Extrude")
             || numbered_feature_name_has_family(kind, "Revolve"))
     {
-        return None;
+        return Ok(None);
     }
     if numbered_feature_name_has_family(kind, "Fill") {
-        return Some(filled_surface_feature_definition(scan, ir, feature_id));
+        return Ok(Some(filled_surface_feature_definition(
+            ctx, scan, ir, feature_id,
+        )?));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Some(thicken_feature_definition(scan, ir, feature_id));
+        return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(knit_surface_feature_definition(scan, feature_id));
+        return Ok(Some(knit_surface_feature_definition(
+            ctx, scan, feature_id,
+        )?));
     }
-    if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
-        return Some(definition);
+    if let Some(definition) = surface_intersect_feature_definition(ctx, scan, feature_id, kind)? {
+        return Ok(Some(definition));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
-        return Some(definition);
+        return Ok(Some(definition));
     }
     if matches!(kind, "Protrusion" | "Cut") {
-        return Some(extrude_feature_definition_with_profile(
+        return Ok(Some(extrude_feature_definition_with_profile(
+            ctx,
             scan,
             ir,
+            source_carriers,
             feature_id,
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
@@ -64,7 +118,7 @@ pub(in super::super) fn named_feature_definition(
                 false,
                 preceding_features_establish_body(ir),
             ),
-        ));
+        )?));
     }
     let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
@@ -84,17 +138,20 @@ pub(in super::super) fn named_feature_definition(
         _ => None,
     };
     if let Some(role) = tree_node_role {
-        return Some(IrFeatureDefinition::TreeNode {
-            role,
-            children: Vec::new(),
-            active_child: None,
-        });
+        return Ok(Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::TreeNode {
+                role,
+                children: cadmpeg_ir::features::TreeChildren::default(),
+            },
+        )));
     }
     if kind == "Mirror" {
-        return Some(IrFeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::UnresolvedMirror,
-        });
+        return Ok(Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED_MIRROR,
+            },
+        )));
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
         let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
@@ -104,9 +161,14 @@ pub(in super::super) fn named_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return Some(extrude_feature_definition_with_profile(
-            scan, ir, feature_id, op,
-        ));
+        return Ok(Some(extrude_feature_definition_with_profile(
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
+        )?));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
@@ -116,205 +178,298 @@ pub(in super::super) fn named_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return Some(revolve_feature_definition_with_profile(
-            scan, ir, feature_id, op,
-        ));
+        return Ok(Some(revolve_feature_definition_with_profile(
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
+        )?));
     }
-    let schema_class = match kind {
-        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
-        "Hole" => SchemaClass::Hole,
-        "Round" | "Rundung" => SchemaClass::Round,
-        "Chamfer" => SchemaClass::Chamfer,
-        "Draft" | "Schräge" => SchemaClass::Draft,
-        _ => return None,
-    };
-    Some(schema_feature_definition(
-        scan,
-        ir,
-        feature_id,
-        Some(schema_class),
-        kind,
-    ))
+    Ok(None)
 }
 
 pub(in super::super) fn named_or_referenced_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
-    named_feature_definition(scan, ir, feature_id, kind).or_else(|| {
-        if kind == "Native Feature"
-            && current_feature_operation(&scan.features.operations, feature_id)
-                .is_some_and(|operation| operation.display_state_conflict)
-        {
-            return None;
-        }
-        feature_reference_name(scan, feature_id)
-            .filter(|reference_name| *reference_name != kind)
-            .and_then(|reference_name| {
-                named_feature_definition(scan, ir, feature_id, &reference_name)
-            })
-    })
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if let Some(definition) =
+        named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
+    {
+        return Ok(Some(definition));
+    }
+    if kind == "Native Feature"
+        && current_feature_operation(&scan.features.operations, feature_id)
+            .is_some_and(|operation| operation.display_state_conflict)
+    {
+        return Ok(None);
+    }
+    let Some(reference_name) = feature_reference_name(scan, feature_id) else {
+        return Ok(None);
+    };
+    let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
+    if reference_name == kind {
+        return Ok(None);
+    }
+    named_feature_definition(ctx, scan, ir, source_carriers, feature_id, &reference_name)
 }
 
-pub(in super::super) fn extrude_feature_definition_with_profile(
+pub(super) fn extrude_feature_definition_with_profile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
-) -> IrFeatureDefinition {
-    let profile = unique_feature_profile_ref(scan, ir, feature_id)
-        .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
+) -> Result<IrFeatureDefinition, CodecError> {
+    let profile = match unique_feature_profile_ref(ctx, scan, ir, feature_id)? {
+        Some(profile) => profile,
+        None => unresolved_feature_profile_ref(
+            ctx,
+            feature_id,
+            "creo unresolved named profile identity",
+        )?,
+    };
     let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
     } else {
         op
     };
-    let (direction, extent) = linear_extrusion_extent_and_direction(scan, ir, feature_id).map_or(
-        (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
-        |(extent, direction)| {
+    let (direction, extent) =
+        linear_extrusion_extent_and_direction(ctx, scan, ir, source_carriers, feature_id)?.map_or(
             (
-                ExtrudeDirection::Explicit {
-                    vector: Vector3::new(direction[0], direction[1], direction[2]),
-                    source: None,
-                },
-                extent,
-            )
+                ExtrudeDirection::ProfileNormal {},
+                unresolved_extrude_extent(),
+            ),
+            |(extent, direction)| {
+                (
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)).map_or(
+                        ExtrudeDirection::Unresolved {},
+                        |vector| ExtrudeDirection::Explicit {
+                            vector,
+                            source: None,
+                        },
+                    ),
+                    extent,
+                )
+            },
+        );
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::Extrude {
+            profile,
+            direction,
+            start: cadmpeg_ir::features::ExtrudeStart::default(),
+            extent,
+            op,
+            solid: sweep_solid(output_kind),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
-    );
-    IrFeatureDefinition::Extrude {
-        profile,
-        direction,
-        start: cadmpeg_ir::features::ExtrudeStart::default(),
-        extent,
-        op,
-        solid: sweep_solid(output_kind),
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    }
+    ))
 }
 
-pub(in super::super) fn revolve_feature_definition_with_profile(
+fn revolve_feature_definition_with_profile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
-) -> IrFeatureDefinition {
+) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-    IrFeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(
-            unique_feature_profile_ref(scan, ir, feature_id),
-            feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
-            extent,
-            sweep_solid(output_kind),
-            None,
-            None,
-            None,
-        ),
-        op,
-    }
+    let profile =
+        unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
+            ProfileRef::Planar(planar) => Some(planar),
+            _ => None,
+        });
+    let axis = feature_revolution_axis_for_transfer(
+        ctx,
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        extent.as_ref(),
+    )?;
+    let solid = sweep_solid(output_kind);
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::Revolve {
+            construction: match (profile, axis, extent) {
+                (None, axis, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                        axis,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), None, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                        profile,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), None) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                        profile,
+                        axis,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                    profile,
+                    axis,
+                    extent,
+                    solid,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+            },
+            op,
+        },
+    ))
 }
-
-pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
+pub(super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {
-            termination: LinearTermination::Unresolved,
+            termination: LinearTermination::Unresolved {},
             draft: None,
         },
     }
 }
 
-pub(in super::super) fn surface_intersect_feature_definition(
+fn surface_intersect_feature_definition(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
-    numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
-    let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == feature_id
-            && table.table_class_id == 29
-            && !table.surface_ids().is_empty()
-            && table
-                .surface_ids()
-                .iter()
-                .copied()
-                .collect::<BTreeSet<_>>()
-                .len()
-                == table.surface_ids().len()
-            && table.surface_ids().iter().all(|surface_id| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
-                    .is_some_and(|surface| surface.feature_id == feature_id)
-            })
-    });
-    surface_tables.next()?;
-    surface_tables.next().is_none().then_some(())?;
-    Some(IrFeatureDefinition::SectionShape {
-        first: BodySelection::Unresolved,
-        second: BodySelection::Unresolved,
-        approximate: None,
-    })
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    let eligible = (|| {
+        numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
+        let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
+            table.feature_id == feature_id
+                && table.table_class_id == 29
+                && table.surface_ids_iter().next().is_some()
+                && table.unique_surface_ids().len() == table.surface_ids_iter().count()
+                && table.surface_ids_iter().all(|surface_id| {
+                    crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+                        .is_some_and(|surface| surface.feature_id == feature_id)
+                })
+        });
+        surface_tables.next()?;
+        surface_tables.next().is_none().then_some(())?;
+        Some(())
+    })();
+    if eligible.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(IrFeatureDefinition::Operation(
+        IrFeatureOperation::SectionShape {
+            operands: cadmpeg_ir::features::SectionOperands::new(
+                BodySelection::Unresolved,
+                BodySelection::Unresolved,
+                ctx,
+            )?
+            .map_err(CodecError::malformed)?,
+
+            approximate: None,
+        },
+    )))
 }
 
 pub(in super::super) fn reference_named_feature_definition(
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
     if numbered_feature_name_has_family(kind, "Boundary Blend") {
-        return Some(IrFeatureDefinition::Unresolved {
-            family: UnresolvedFamily::BoundarySurface,
-        });
+        return Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Unresolved {
+                family: UnresolvedFamily::BoundarySurface,
+            },
+        ));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Some(IrFeatureDefinition::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: None,
-            side: None,
-        });
+        return Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Thicken {
+                faces: FaceSelection::Unresolved,
+                thickness: None,
+                side: None,
+            },
+        ));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(IrFeatureDefinition::KnitSurface {
-            faces: FaceSelection::Unresolved,
-            merge_entities: Some(true),
-            create_solid: Some(false),
-            gap_tolerance: None,
-        });
+        return Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            },
+        ));
     }
     None
 }
 
 pub(in super::super) fn retain_native_feature_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
     parameters: &BTreeMap<String, String>,
-) {
-    if matches!(definition, IrFeatureDefinition::Native { .. }) {
-        return;
+) -> Result<(), CodecError> {
+    if matches!(
+        definition,
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
+    ) {
+        return Ok(());
     }
     for (name, value) in parameters {
-        source_properties.insert(format!("native_parameter.{name}"), value.clone());
+        insert_feature_source_property(
+            ctx,
+            source_properties,
+            format_args!("native_parameter.{name}"),
+            value,
+        )?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{surface_intersect_feature_definition, BodySelection, IrFeatureDefinition};
+    use super::{
+        surface_intersect_feature_definition, BodySelection, IrFeatureDefinition,
+        IrFeatureOperation,
+    };
 
     #[test]
     fn numbered_intersect_name_identifies_section_shape_feature() {
         let table = || {
-            crate::feature::FeatureEntityTable {
-                feature_id: 50,
-                table_class_id: 29,
-                entries: vec![
-                    crate::feature::dummy_table_entry(61, true),
-                    crate::feature::dummy_table_entry(75, true),
+            crate::feature::entity::FeatureEntityTable::new(
+                50,
+                29,
+                vec![
+                    crate::feature::entity::dummy_table_entry(61),
+                    crate::feature::entity::dummy_table_entry(75),
                 ],
-                offset: 0,
-            }
+                &std::collections::BTreeSet::new(),
+                0,
+            )
             .with_surface_ids([61, 75])
         };
         let surface = |id, feature_id| crate::surface::SurfaceRow {
@@ -327,7 +482,7 @@ mod tests {
             offset: 0,
         };
         let valid_scan = || {
-            let mut scan = crate::container::scan_bytes(Vec::new());
+            let mut scan = crate::test_support::empty_container_scan();
             scan.features.entity_tables.push(table());
             scan.surfaces
                 .rows
@@ -335,46 +490,90 @@ mod tests {
             scan
         };
 
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         assert_eq!(
-            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
         scan = valid_scan();
         assert_eq!(
-            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
-            Some(IrFeatureDefinition::SectionShape {
-                first: BodySelection::Unresolved,
-                second: BodySelection::Unresolved,
-                approximate: None,
-            })
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
+            Some(IrFeatureDefinition::Operation(
+                IrFeatureOperation::SectionShape {
+                    operands: cadmpeg_ir::features::SectionOperands::new(
+                        BodySelection::Unresolved,
+                        BodySelection::Unresolved,
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("operand admission")
+                    .expect("valid test fixture"),
+
+                    approximate: None,
+                }
+            ))
         );
         scan.surfaces.rows.pop();
         assert_eq!(
-            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         let mut duplicate_surface_row = valid_scan();
         duplicate_surface_row.surfaces.rows.push(surface(61, 50));
         assert_eq!(
-            surface_intersect_feature_definition(&duplicate_surface_row, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate_surface_row,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         let mut foreign_surface = valid_scan();
         foreign_surface.surfaces.rows[1].feature_id = 51;
         assert_eq!(
-            surface_intersect_feature_definition(&foreign_surface, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &foreign_surface,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         let mut duplicate_surface_id = valid_scan();
         duplicate_surface_id.features.entity_tables[0]
             .entries
-            .push(crate::feature::dummy_table_entry(61, true));
+            .push(crate::feature::entity::dummy_table_entry(61));
         assert_eq!(
-            surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate_surface_id,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
@@ -384,16 +583,34 @@ mod tests {
             .entity_tables
             .push(table());
         assert_eq!(
-            surface_intersect_feature_definition(&multiple_materialized_tables, 50, "Intersect 1"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &multiple_materialized_tables,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         assert_eq!(
-            surface_intersect_feature_definition(&scan, 50, "Intersect"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect"
+            )
+            .expect("section projection admission"),
             None
         );
         assert_eq!(
-            surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect copy"
+            )
+            .expect("section projection admission"),
             None
         );
     }

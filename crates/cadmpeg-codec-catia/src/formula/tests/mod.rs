@@ -7,6 +7,8 @@ use super::{outer_container_in_scope, LegacyModelingScope};
 use crate::native::CatiaOuterContainerBinding;
 
 mod evaluate;
+mod expression_admission;
+mod legacy_admission;
 mod transfer;
 
 fn binding(stream_name: &str) -> CatiaOuterContainerBinding {
@@ -48,4 +50,62 @@ fn legacy_parameter_scope_admits_unbound_fragment_runs() {
         None,
         LegacyModelingScope::Unbounded
     ));
+}
+
+fn inactive_string_index(value: f64) -> Option<usize> {
+    crate::test_support::with_service_context(|ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let parser = super::FormulaExpressionParser {
+            source: "",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            refusal: None,
+            evaluate: false,
+            static_check: false,
+        };
+        parser.string_index(super::EvaluatedFormulaScalar::from_parts(
+            value,
+            super::FormulaDimension::SCALAR,
+            Some(true),
+            Some(value),
+        ))
+    })
+}
+
+#[test]
+fn inactive_string_index_uses_placeholder_for_positive_infinity() {
+    assert_eq!(inactive_string_index(f64::INFINITY), Some(0));
+}
+
+#[test]
+fn inactive_string_index_preserves_negative_placeholder() {
+    assert_eq!(inactive_string_index(-1.0), Some(0));
+}
+
+#[test]
+fn inactive_string_index_preserves_nan_placeholder() {
+    assert_eq!(inactive_string_index(f64::NAN), Some(0));
+}
+
+#[test]
+fn active_formula_refuses_unknown_integer_binding() {
+    let bindings = std::collections::BTreeMap::from([(
+        "#1_",
+        super::static_formula_value(super::FormulaParameterType::Integer),
+    )]);
+    assert!(super::evaluate_formula_expression("#1_ + 1", &bindings).is_none());
+}
+
+#[test]
+fn inactive_formula_preserves_unknown_integer_type() {
+    let bindings = std::collections::BTreeMap::from([(
+        "#1_",
+        super::static_formula_value(super::FormulaParameterType::Integer),
+    )]);
+    let result = super::evaluate_formula_expression("false ? #1_ + 1 ; 2", &bindings)
+        .and_then(super::EvaluatedFormulaValue::scalar)
+        .expect("known active result");
+    assert_eq!(result.known_value(), Some(2.0));
+    assert!(super::evaluate_formula_expression_with_mode("#1_ + 1", &bindings, false).is_some());
 }

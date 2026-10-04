@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::direct_face::exact_scale_operation;
+use crate::records::feature::scope::DesignParameterScope;
+use std::collections::HashMap;
 
 const EPS_SCALE_VALUE: f64 = 1.0e-12;
 
@@ -14,22 +12,29 @@ const EPS_SCALE_VALUE: f64 = 1.0e-12;
 fn legacy_scale_resolves_explicit_point_data_center() {
     for extra_reference in [false, true] {
         let (bytes, scope, position_at) = legacy_scale_fixture(extra_reference);
-        let records = IndexedRecordOffsets::build(&bytes);
-        let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
-            .expect("legacy Scale operation");
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let operation = exact_scale_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+            &scope,
+            &HashMap::new(),
+        )
+        .unwrap()
+        .expect("legacy Scale operation");
 
         assert_eq!(operation.body_group_record_index, 102);
         assert_eq!(operation.center_record_index, 105);
         assert_eq!(
             operation.center_position.map(|center| center.offset),
-            Some(position_at as u64)
+            Some(u64_from_index(position_at))
         );
         assert_eq!(operation.uniform_factor_offset, 21);
-        assert!((operation.uniform_factor - 2.5).abs() < EPS_SCALE_VALUE);
+        assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
 
         let position = operation.center_position.expect("point-data center").value;
         for (actual, expected) in position.into_iter().zip([1.25, -2.5, 3.75]) {
-            assert!((actual - expected).abs() < EPS_SCALE_VALUE);
+            assert!((actual.get() - expected).abs() < EPS_SCALE_VALUE);
         }
     }
 }
@@ -37,22 +42,29 @@ fn legacy_scale_resolves_explicit_point_data_center() {
 #[test]
 fn modern_localized_scale_resolves_explicit_point_data_center() {
     let (bytes, scope, position_at) = modern_scale_fixture();
-    let records = IndexedRecordOffsets::build(&bytes);
-    let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
-        .expect("modern localized Scale operation");
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let operation = exact_scale_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::new(),
+    )
+    .unwrap()
+    .expect("modern localized Scale operation");
 
     assert_eq!(operation.body_group_record_index, 102);
     assert_eq!(operation.center_record_index, 105);
     assert_eq!(
         operation.center_position.map(|center| center.offset),
-        Some(position_at as u64)
+        Some(u64_from_index(position_at))
     );
     assert_eq!(operation.uniform_factor_offset, 25);
-    assert!((operation.uniform_factor - 2.5).abs() < EPS_SCALE_VALUE);
+    assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
 
     let position = operation.center_position.expect("point-data center").value;
     for (actual, expected) in position.into_iter().zip([1.25, -2.5, 3.75]) {
-        assert!((actual - expected).abs() < EPS_SCALE_VALUE);
+        assert!((actual.get() - expected).abs() < EPS_SCALE_VALUE);
     }
 }
 
@@ -71,12 +83,19 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let position_at = append_point_data(&mut bytes, 105, [104, 103]);
     let mut scope = DesignParameterScope::empty(
         "generated:scale#100",
-        crate::records::feature::DesignFeatureKind::Massstab,
+        crate::records::feature::scope::DesignFeatureKind::Massstab,
         100,
     );
-    scope.frame_length = 317;
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 317;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope, position_at)
 }
 
@@ -100,11 +119,19 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
     let position_at = append_point_data(&mut bytes, 105, [104, 103]);
     let mut scope = DesignParameterScope::empty(
         "generated:scale#100",
-        crate::records::feature::DesignFeatureKind::Scale,
+        crate::records::feature::scope::DesignFeatureKind::Scale,
         100,
     );
-    scope.frame_length = frame_length as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(frame_length);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(reference_members);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope, position_at)
 }
 

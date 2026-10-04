@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral drawing sheets, resources, views, and annotations.
 
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable identity of one neutral drawing entity.
-    DrawingId
+    DrawingId, compose
 );
 
 /// Semantic role of a drawing entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DrawingKind {
     /// Sheet containing ordered views.
     Page,
@@ -47,6 +49,7 @@ pub enum DrawingKind {
 /// A page, template, view, projection, section, or drawing annotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Drawing {
     /// Stable drawing identity.
     pub id: DrawingId,
@@ -59,32 +62,154 @@ pub struct Drawing {
     /// Source order among drawing entities.
     pub order: u32,
     /// Whether the source explicitly displays this drawing entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visible"
+    )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub relationships: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub template: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_template"
+    )]
+    pub template: Option<DrawingId>,
     /// View origin on its page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f64; 2]>,
+    #[serde(deserialize_with = "deserialize_position")]
+    pub position: Option<crate::units::FiniteVector<2>>,
     /// Positive view scale.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scale: Option<f64>,
+    #[serde(deserialize_with = "deserialize_scale")]
+    pub scale: Option<crate::scalar::PositiveReal>,
     /// Nonzero model projection direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<[f64; 3]>,
+    #[serde(deserialize_with = "deserialize_direction")]
+    pub direction: Option<crate::units::NonzeroVector<3>>,
     /// View rotation in degrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rotation_degrees: Option<f64>,
+    #[serde(deserialize_with = "deserialize_rotation_degrees")]
+    pub rotation_degrees: Option<crate::scalar::FiniteReal>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub parameters: BTreeMap<String, String>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
     pub native_ref: String,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_position,
+    crate::units::FiniteVector<2>,
+    "position"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_scale, crate::scalar::PositiveReal, "scale");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_direction,
+    crate::units::NonzeroVector<3>,
+    "direction"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_rotation_degrees,
+    crate::scalar::FiniteReal,
+    "rotation_degrees"
+);
+
+#[cfg(test)]
+mod tests {
+    use super::{Drawing, DrawingId};
+
+    #[test]
+    fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
+        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native"});
+        let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
+        assert_eq!(
+            drawing.template.as_ref().map(DrawingId::as_str),
+            Some("synthetic:test:drawing#template")
+        );
+        assert_eq!(
+            serde_json::to_value(drawing).expect("serialize drawing"),
+            value
+        );
+        for invalid in ["", "bad id"] {
+            let mut invalid_value = value.clone();
+            invalid_value["template"] = serde_json::json!(invalid);
+            assert!(serde_json::from_value::<Drawing>(invalid_value).is_err());
+        }
+    }
+    #[test]
+    fn numeric_admission_names_fields_and_preserves_valid_values() {
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0});
+        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
+        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        for (field, invalid) in [
+            ("scale", serde_json::json!(0)),
+            ("direction", serde_json::json!([0, 0, 0])),
+            ("position", serde_json::json!([0, null])),
+        ] {
+            let mut rejected = wire.clone();
+            rejected[field] = invalid;
+            let error =
+                serde_json::from_value::<Drawing>(rejected).expect_err("invalid numeric field");
+            assert!(error.to_string().contains(field));
+        }
+    }
+
+    #[test]
+    fn a_free_form_map_refuses_a_blank_key() {
+        let wire = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "parameters": {"   ": "value"},
+        });
+        let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
+        assert!(error.to_string().contains("must not be blank"), "{error}");
+
+        let relationships = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "relationships": {"": []},
+        });
+        let error =
+            serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
+        assert!(error.to_string().contains("must not be blank"), "{error}");
+
+        let named = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "parameters": {" scale ": "value"},
+        });
+        let drawing: Drawing =
+            serde_json::from_value(named).expect("a named role is kept verbatim");
+        assert!(drawing.parameters.contains_key(" scale "));
+    }
+}
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");
+
+mod identity_rewrite;

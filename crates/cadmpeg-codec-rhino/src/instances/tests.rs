@@ -1,16 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
+
+mod recovery;
+mod resource_limits;
+mod support;
+mod transforms;
+mod units;
+
+use support::{install_definitions, static_definition};
 
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
 };
+use crate::loss::Diagnostics;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
 
-use crate::chunks::{ArchiveVersion, BoundedReader};
-use crate::test_support::test_dump::*;
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::test_support::test_dump::{
+    anonymous_chunk, circle_payload, class_userdata, class_userdata_v2_with_direct_payload,
+    class_userdata_with_anonymous_payload, class_userdata_with_payload, definition_record,
+    definition_record_with_userdata, document_with_definitions, file_reference,
+    instance_reference_payload, mesh_payload, nurbs_curve_payload, object_record_with_payload,
+    point_payload, scan_with_objects, set_identity, set_test_units, transform, utf16_bytes,
+    v5_definition_payload, v5_definition_payload_with_paths, v6_definition_payload,
+    ARC_CURVE_CLASS, INSTANCE_REFERENCE_CLASS, MESH_CLASS, NURBS_CURVE_CLASS, POINT_CLASS,
+    REV_SURFACE_CLASS, SUBD_CLASS,
+};
 use crate::wire::Uuid;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const OBSOLETE_IDEF_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
     0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3, 0x2d,
@@ -24,31 +47,32 @@ fn parent_child_composition_uses_column_point_order() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    let child = Transform::from_rows([
+    let child = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
     assert_eq!(
         parent
             .compose(child)
-            .apply_point(Point3::new(1.0, 0.0, 0.0)),
-        Point3::new(12.0, 0.0, 0.0)
+            .unwrap()
+            .apply_point(Point3::new(1.0, 0.0, 0.0))
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(12.0, 0.0, 0.0))
     );
 }
 
 #[test]
 fn translation_scales_once_without_scaling_linear_coefficients() {
-    let source = Transform::from_rows([
+    let source = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 3.0],
         [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let scaled = scale_translation(source, 25.4).expect("finite translation");
+    let scaled = scale_translation(source, crate::settings::StandardUnit::Inches.into())
+        .expect("finite translation");
     assert_eq!(scaled.rows()[0][0], 2.0);
     assert_eq!(scaled.rows()[1][3], 76.199_999_999_999_99);
 }
@@ -61,7 +85,14 @@ fn translation_scaling_rejects_overflow() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    assert!(scale_translation(source, 2.0).is_none());
+    let mut scan = scan_with_objects(&[]);
+    set_test_units(&mut scan, 2.0);
+    let crate::settings::UnitBinding::Millimeters(scale) =
+        crate::settings::UnitBinding::from_units(scan.metadata.settings.units.as_ref())
+    else {
+        panic!("physical test unit");
+    };
+    assert!(scale_translation(source, scale).is_none());
 }
 
 #[test]
@@ -78,8 +109,9 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     let crc = bytes.len() - 1;
     bytes[crc] ^= 1;
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     let (_, payload) = anonymous(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
@@ -94,16 +126,50 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
 }
 
 #[test]
+fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
+    let body = [1_i32.to_le_bytes(), 0_i32.to_le_bytes()].concat();
+    let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(
+        &i64::try_from(body.len() + 4)
+            .expect("bounded body")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&body);
+    bytes.extend_from_slice(&crc32fast::hash(&body).to_le_bytes());
+    let crc = bytes.len() - 1;
+    bytes[crc] ^= 1;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let refused = anonymous(
+        &ctx,
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V5,
+        "instance test",
+        &mut Diagnostics::new(),
+    )
+    .expect_err("checksum diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+    );
+}
+
+#[test]
 fn normals_use_inverse_transpose_and_normalization() {
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
     assert_eq!(
-        transform.apply_normal(Vector3::new(1.0, 0.0, 1.0)),
+        transform
+            .apply_normal(Vector3::new(1.0, 0.0, 1.0))
+            .map(Vector3::from),
         Some(Vector3::new(
             0.242_535_625_036_332_97,
             0.0,
@@ -139,7 +205,9 @@ fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
     let crc_offset = chunk.len() - 4;
     chunk.splice(crc_offset..crc_offset, suffix.iter().copied());
     let length = i64::from_le_bytes(chunk[4..12].try_into().expect("chunk header"));
-    chunk[4..12].copy_from_slice(&(length + suffix.len() as i64).to_le_bytes());
+    chunk[4..12].copy_from_slice(
+        &(length + i64::try_from(suffix.len()).expect("fixture value fits i64")).to_le_bytes(),
+    );
     let crc = crc32fast::hash(&chunk[12..chunk.len() - 4]);
     let crc_offset = chunk.len() - 4;
     chunk[crc_offset..].copy_from_slice(&crc.to_le_bytes());
@@ -170,6 +238,21 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
     trailing.push(0);
     let parsed = parse_reference(&trailing, 0..trailing.len()).expect("future suffix is bounded");
     assert_eq!(parsed.transform, Transform::identity());
+}
+
+/// The refused transform names the first byte of the matrix it read, which
+/// follows the version byte and the definition UUID.
+#[test]
+fn nonfinite_instance_transform_is_refused_at_the_matrix_first_byte() {
+    let mut rows = Transform::identity().rows();
+    rows[1][2] = f64::NAN;
+    let bytes = reference_matrix_bytes(rows);
+    let matrix_offset = 17;
+    let error = parse_reference(&bytes, 0..bytes.len()).expect_err("nonfinite transform");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(matrix_offset, "instance transform is not finite")
+    );
 }
 
 #[test]
@@ -254,8 +337,14 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     set_anonymous_minor(&mut reference, 9);
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
-    let parsed = parse_file_reference(&reference, &mut reader, ArchiveVersion::V6, &mut Vec::new())
-        .expect("future file-reference suffix is bounded");
+    let parsed = parse_file_reference(
+        &cadmpeg_test_support::service_decode_context(),
+        &reference,
+        &mut reader,
+        ArchiveVersion::V6,
+        &mut Diagnostics::new(),
+    )
+    .expect("future file-reference suffix is bounded");
     assert_eq!(parsed.full_path, "/full/source.3dm");
     assert_eq!(reader.remaining(), 0);
 }
@@ -367,7 +456,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert!(parsed.legacy_relative_path());
     assert!(scan.definitions.diagnostics.is_empty());
     set_test_units(&mut scan, 1.0);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let external = &result
         .ir()
         .native
@@ -377,7 +466,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert_eq!(external.fields()["full_path"], "/full/source.3dm");
     assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
     assert_eq!(external.fields()["relative_path_preferred"], true);
-    assert!(result.source_fidelity().retained_records.is_empty());
+    assert!(result.source_fidelity().retained_records().is_empty());
 
     let full_carrier = class_userdata(
         archive,
@@ -478,10 +567,11 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .definitions
         .diagnostics
         .iter()
-        .any(
-            |diagnostic| diagnostic.message.contains("alternate-path userdata")
-                && diagnostic.message.contains("was dropped")
-        ));
+        .any(|diagnostic| diagnostic
+            .diagnostic
+            .message
+            .contains("alternate-path userdata")
+            && diagnostic.diagnostic.message.contains("was dropped")));
     let malformed_range = scan
         .opaque_records
         .iter()
@@ -493,12 +583,14 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         &malformed_source_bytes[malformed_range.clone()]
     );
     set_test_units(&mut scan, 1.0);
-    let malformed_result = crate::decode::decode_for_test(&scan);
+    let malformed_result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let malformed_retained = malformed_result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|source| source.offset() == malformed_range.start as u64)
+        .retained_records()
+        .values()
+        .find(|source| {
+            source.offset() == cadmpeg_core::decode::u64_from_index(malformed_range.start)
+        })
         .expect("malformed definition fidelity");
     assert_eq!(
         malformed_retained.data(),
@@ -540,6 +632,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .iter()
         .any(|diagnostic| {
             diagnostic
+                .diagnostic
                 .message
                 .contains("unsupported instance-definition alternate-path version")
         }));
@@ -554,7 +647,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         future_record.as_slice()
     );
     set_test_units(&mut future_scan, 1.0);
-    let future_result = crate::decode::decode_for_test(&future_scan);
+    let future_result = EditableDecodeResult::from(crate::decode::decode_for_test(&future_scan));
     let future_external = &future_result
         .ir()
         .native
@@ -564,9 +657,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert_eq!(future_external.fields()["relative_path"], "");
     let future_retained = future_result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|source| source.offset() == future_range.start as u64)
+        .retained_records()
+        .values()
+        .find(|source| source.offset() == cadmpeg_core::decode::u64_from_index(future_range.start))
         .expect("future definition fidelity");
     assert_eq!(future_retained.data(), Some(future_record.as_slice()));
 }
@@ -590,7 +683,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
     assert_eq!(parsed.members, vec![Uuid::from_wire(member_id)]);
     assert_eq!(parsed.units.unit, 2);
-    assert_eq!(parsed.units.meters_per_unit, 0.001);
+    assert_eq!(f64::from_bits(parsed.units.meters_per_unit_bits()), 0.001);
     assert_eq!(parsed.linked_appearance, 2);
     assert!(parsed.file_reference().is_none());
 
@@ -616,8 +709,8 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         ("70", ArchiveVersion::V7),
         ("80", ArchiveVersion::V8),
     ] {
-        let definition_id = [archive.value() as u8; 16];
-        let member_id = [archive.value() as u8 + 1; 16];
+        let definition_id = [u8::try_from(archive.value()).expect("fixture value fits u8"); 16];
+        let member_id = [u8::try_from(archive.value()).expect("fixture value fits u8") + 1; 16];
         let static_record = definition_record(
             archive,
             &v6_definition_payload(archive, definition_id, &[member_id], 1, false, false),
@@ -651,7 +744,10 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert_eq!(static_definition.name, "modern definition");
         assert_eq!(static_definition.members, vec![Uuid::from_wire(member_id)]);
         assert_eq!(static_definition.units.unit, 8);
-        assert_eq!(static_definition.units.meters_per_unit, 0.0254);
+        assert_eq!(
+            f64::from_bits(static_definition.units.meters_per_unit_bits()),
+            0.0254
+        );
         let linked = &scan.definitions.definitions[1];
         assert_eq!(linked.kind, crate::instances::DefinitionKind::Linked);
         assert!(linked.members.is_empty());
@@ -722,10 +818,16 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
     assert!(scan.definitions.diagnostics.len() >= 2);
     assert!(scan.definitions.diagnostics.iter().all(|diagnostic| {
         diagnostic.source_range.start < diagnostic.source_range.end
-            && !diagnostic.message.contains("unsupported class")
+            && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
-    let container_only =
-        crate::decode::seal_for_test(crate::container::container_only_result(&scan), true);
+    let container_only = crate::decode::seal_for_test(
+        crate::container::container_only_result(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+        )
+        .expect("container-only source metadata admitted"),
+        true,
+    );
     assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
@@ -807,15 +909,21 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.bodies.len(), 2);
     assert_eq!(result.ir().model.points.len(), 2);
+    assert!(result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.transform.is_none()));
     assert_eq!(
         result
             .ir()
             .model
-            .bodies
+            .points
             .iter()
-            .map(|body| body.transform.expect("required invariant").rows()[0][3])
+            .map(|point| point.position().get())
             .collect::<Vec<_>>(),
-        vec![10.0, 20.0]
+        vec![Point3::new(11.0, 2.0, 3.0), Point3::new(21.0, 2.0, 3.0)]
     );
     let body_ids = result
         .ir()
@@ -830,7 +938,10 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links,
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
         body_ids
     );
     assert_eq!(
@@ -869,7 +980,11 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -904,21 +1019,19 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
 
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 11.0);
-    assert_eq!(
-        result.ir().model.bodies[0]
-            .transform
-            .expect("body carrier transform")
-            .rows()[0][3],
-        10.0
-    );
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry
+    assert_eq!(result.ir().model.points[0].position().get().x, 11.0);
+    assert!(result.ir().model.bodies[0].transform.is_none());
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("free member curve must remain a transformed solved carrier");
     };
     assert_eq!(curve.control_points()[0].x, 11.0);
     assert_eq!(curve.control_points()[1].x, 12.0);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -976,7 +1089,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.curves.len(), 1);
     let curve = &result.ir().model.curves[0];
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         panic!("expected transformed NURBS");
     };
     assert_eq!(nurbs.control_points()[0].x, 12.0);
@@ -998,12 +1111,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
             .as_ref()
             .expect("required invariant")
             .color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(
         curve
@@ -1018,7 +1126,11 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
         Uuid::from_wire(world_reference_id),
         Uuid::from_wire(nested_reference_id)
     )));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1104,7 +1216,11 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
             .len(),
         4
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1147,14 +1263,35 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
     assert_eq!(mesh.vertices()[0].x, 5.0);
     assert_eq!(mesh.vertices()[1].x, 7.0);
     assert_eq!(
-        mesh.normals()[0],
+        mesh.vertex_normals()[0],
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];
-    assert_eq!(subd.vertices[2].point.x, 7.0);
-    assert_eq!(subd.edges[0].sharpness, [0.25, 0.25]);
-    assert_eq!(subd.edges[0].sector_coefficients, [0.125, 0.875]);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
+            .point()
+            .x,
+        7.0
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(subd.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(subd.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
+        [0.125, 0.875]
+    );
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1168,7 +1305,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         archive,
         0x20,
         MESH_CLASS,
-        &crate::test_support::mesh_payload(3, 0, false, false),
+        &crate::test_support::test_archive::mesh_payload(3, 0, false, false),
     );
     let reference = object_record_with_payload(
         archive,
@@ -1185,10 +1322,12 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     );
 
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.decode_geometry();
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
+        context.decode_geometry().expect("geometry decode");
         assert!(context.mesh_budget_used() > 0);
-        let result = crate::decode::seal_for_test(context.commit(), false);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert!(result.ir().model.tessellations.is_empty());
         assert!(result.ir().model.bodies.is_empty());
     });
@@ -1216,7 +1355,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("nonuniform circle must become NURBS");
     };
@@ -1224,10 +1363,14 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     assert_eq!(nurbs.control_points()[0].x, 2.0);
     assert_eq!(nurbs.control_points()[2].y, 1.0);
     assert_eq!(
-        nurbs.weights().expect("required invariant")[1],
+        nurbs.weights().expect("required invariant")[1].get(),
         std::f64::consts::FRAC_1_SQRT_2
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1264,11 +1407,15 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
         .losses
         .iter()
         .any(|loss| loss.message.contains("exact solved carrier retained")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
-fn branching_instance_budget_retains_current_reference_and_later_reference_recovers() {
+fn branching_instance_member_limit_propagates_resource_refusal() {
     let archive = ArchiveVersion::V5;
     let first_member_id = [0x31; 16];
     let second_member_id = [0x32; 16];
@@ -1317,23 +1464,16 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         ],
     );
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
-        context.decode_geometry();
-        let result = crate::decode::seal_for_test(context.commit(), false);
-        assert_eq!(result.ir().model.points.len(), 1);
-        assert_eq!(
-            result.ir().model.bodies[0]
-                .transform
-                .expect("instance transform")
-                .rows()[0][3],
-            10.0
+        let error = context
+            .decode_geometry()
+            .expect_err("wide reference exceeds one member");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1)
         );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("instance member budget exceeded")));
     });
 }
 
@@ -1461,12 +1601,10 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().model.bodies[0].transform.is_none());
     assert_eq!(
-        result.ir().model.bodies[0]
-            .transform
-            .expect("required invariant")
-            .rows()[0][3],
-        30.0
+        result.ir().model.points[0].position().get(),
+        Point3::new(33.0, 0.0, 0.0)
     );
     for unknown in &result
         .ir()
@@ -1491,5 +1629,132 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
                 .contains("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
             && loss.message.contains("decode warnings")
     }));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+}
+
+#[test]
+fn contradictory_standard_unit_detail_preserves_scale_and_name() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 2_u32.to_le_bytes().to_vec();
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(utf16_bytes("retained name"));
+    let data = anonymous_chunk(archive, 0, &body);
+    let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
+    let mut warnings = Diagnostics::new();
+    let units = super::unit_detail(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &mut reader,
+        archive,
+        &mut warnings,
+    )
+    .expect("unit evidence");
+    assert_eq!(units.unit, 2);
+    assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
+    assert_eq!(units.custom_name, "retained name");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(
+        warnings[0].code,
+        Some(crate::loss::RhinoLossCode::RedundantFieldRepaired)
+    );
+}
+
+#[test]
+fn file_reference_fixtures_have_valid_nested_checksums() {
+    for archive in [
+        ArchiveVersion::V5,
+        ArchiveVersion::V6,
+        ArchiveVersion::V7,
+        ArchiveVersion::V8,
+    ] {
+        let bytes = file_reference(archive, "/full/source.3dm", "source.3dm");
+        let mut reader =
+            BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
+        let mut warnings = Diagnostics::new();
+        let reference = parse_file_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &mut reader,
+            archive,
+            &mut warnings,
+        )
+        .expect("valid file reference");
+        assert_eq!(reference.full_path, "/full/source.3dm");
+        assert_eq!(reference.relative_path, "source.3dm");
+        assert_eq!(reader.remaining(), 0);
+        assert!(warnings.is_empty(), "archive={archive:?}: {warnings:?}");
+    }
+}
+
+#[test]
+fn instance_reference_limit_propagates_resource_refusal() {
+    let archive = ArchiveVersion::V5;
+    let reference = object_record_with_payload(
+        archive,
+        0x1000,
+        INSTANCE_REFERENCE_CLASS,
+        &instance_reference_payload([0x41; 16], transform(1.0, [0.0; 3])),
+    );
+    let scan = scan_with_objects(&[reference]);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        context.set_expansion_limits([0, 16, 128]);
+        let error = context.decode_geometry().expect_err("zero reference limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1)
+        );
+    });
+}
+
+#[test]
+fn instance_local_depth_limit_propagates_resource_refusal() {
+    let archive = ArchiveVersion::V5;
+    let definitions: Vec<_> = (1u8..=65)
+        .map(|index| {
+            let members = if index == 65 {
+                Vec::new()
+            } else {
+                vec![[index + 1; 16]]
+            };
+            static_definition([index; 16], &members)
+        })
+        .collect();
+    let objects: Vec<_> = (1u8..=65)
+        .map(|index| {
+            object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &instance_reference_payload([index; 16], transform(1.0, [0.0; 3])),
+            )
+        })
+        .collect();
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for index in 1u8..=65 {
+        set_identity(
+            &mut scan,
+            usize::from(index - 1),
+            [index; 16],
+            "reference",
+            None,
+            true,
+        );
+    }
+    install_definitions(&mut scan, definitions);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        let error = context
+            .decode_geometry()
+            .expect_err("65 reference levels exceed the local slice");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1)
+        );
+    });
 }

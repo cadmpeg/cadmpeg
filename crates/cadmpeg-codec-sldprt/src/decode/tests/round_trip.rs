@@ -2,14 +2,22 @@
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::ir::encode_decode;
+use crate::test_support::ir::encode_decode_result;
+use crate::test_support::ir::sorted_point_positions;
+use crate::test_support::ir::source_less_cube;
+use crate::test_support::ir::translate_model;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -17,25 +25,29 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::transform::Transform;
 
+    /// An affine motion and the point map it must induce.
+    struct Motion {
+        rows: [[f64; 4]; 3],
+        apply: fn(Point3) -> Point3,
+    }
+
     let motions = [
-        (
-            [
+        Motion {
+            rows: [
                 [0.0, -1.0, 0.0, 10.0],
                 [1.0, 0.0, 0.0, 20.0],
                 [0.0, 0.0, 1.0, 30.0],
-                [0.0, 0.0, 0.0, 1.0],
             ],
-            (|p: Point3| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0)) as fn(Point3) -> Point3,
-        ),
-        (
-            [
+            apply: |p| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0),
+        },
+        Motion {
+            rows: [
                 [1.0, 0.0, 0.0, -5.0],
                 [0.0, 0.0, -1.0, 7.0],
                 [0.0, 1.0, 0.0, 3.0],
-                [0.0, 0.0, 0.0, 1.0],
             ],
-            |p: Point3| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
-        ),
+            apply: |p| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
+        },
     ];
 
     // The `.sldprt` semantic writer refuses a body or face name without a
@@ -46,10 +58,10 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         ir.model
             .edges
             .iter_mut()
-            .for_each(|edge| edge.param_range = None);
+            .for_each(|edge| edge.set_param_range(None));
     };
 
-    let mut base = cadmpeg_ir::examples::unit_cube();
+    let mut base = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     prepare(&mut base);
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
@@ -65,14 +77,13 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .model
         .points
         .iter()
-        .map(|point| point.position)
+        .map(|point| point.position().get())
         .collect();
 
-    for (rows, apply) in motions {
-        let mut moved = cadmpeg_ir::examples::unit_cube();
+    for Motion { rows, apply } in motions {
+        let mut moved = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         prepare(&mut moved);
-        moved.model.bodies[0].transform =
-            Some(Transform::from_rows(rows).expect("affine transform"));
+        moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         SldprtCodec
             .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)
@@ -86,9 +97,9 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             let expected = apply(*reference_point);
             assert!(
                 decoded.ir().model.points.iter().any(|point| {
-                    (point.position.x - expected.x).abs() < 1.0e-9
-                        && (point.position.y - expected.y).abs() < 1.0e-9
-                        && (point.position.z - expected.z).abs() < 1.0e-9
+                    (point.position().get().x - expected.x).abs() < 1.0e-9
+                        && (point.position().get().y - expected.y).abs() < 1.0e-9
+                        && (point.position().get().z - expected.z).abs() < 1.0e-9
                 }),
                 "rigid motion not preserved for point {reference_point:?}"
             );
@@ -106,9 +117,11 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
 fn decode_encode_decode_reaches_fixpoint() {
     let fixture = sldprt_with_body_and_history(&triangle_body());
 
-    let first = SldprtCodec
-        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
-        .expect("first decode");
+    let first = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+            .expect("first decode"),
+    );
     assert!(first.report().geometry_transferred());
 
     let mut reencoded = Vec::new();
@@ -199,7 +212,7 @@ fn decode_is_equivariant_under_rigid_translation() {
 /// misconception cannot hide behind a self-consistent round trip.
 #[test]
 fn source_less_cube_reaches_encode_decode_fixpoint() {
-    let first = encode_decode_result(&source_less_cube());
+    let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();
@@ -209,8 +222,8 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         .into_parts()
         .0;
 
-    let first_hash = crate::decode::document_local_sha256(first.ir());
-    let second_hash = crate::decode::document_local_sha256(&second);
+    let first_hash = crate::decode::document_local_sha256(first.ir()).unwrap();
+    let second_hash = crate::decode::document_local_sha256(&second).unwrap();
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.

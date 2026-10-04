@@ -27,12 +27,16 @@
 //! wrong for exactly the files whose declarations are wrong.
 
 use crate::global::ResolvedGlobal;
+use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
+use std::fmt;
 
 include!("dialect/registry_ids.rs");
 
@@ -41,37 +45,48 @@ include!("dialect/registry_ids.rs");
 /// [`classify`] and this function consume the same recovery fact. A verified
 /// Global therefore cannot enter the unverified message construction, and no
 /// independently supplied match can contradict the declaration being reported.
-pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
+pub(crate) fn dialect_loss(
+    global: &ResolvedGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<LossNote>, CodecError> {
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
-        return None;
+        return Ok(None);
     };
     let declared = global.declared_version_flag();
     let version = global.version_name();
-    let (declaration, clamp) = match recovery {
-        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => (
-            format!(
-                "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared}",
-            ),
-            String::new(),
-        ),
-        UnverifiedDialectRecovery::Clamped => (
-            format!("IGES Global version flag {declared}"),
-            format!(
-                " after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor",
-                global.effective_version_flag()
-            ),
-        ),
-        UnverifiedDialectRecovery::UnverifiedVersion => (
-            format!("IGES Global version flag {declared}"),
-            String::new(),
-        ),
+    let names = VerifiedVersionNames;
+    let message = match recovery {
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => ctx.format_retained(format_args!(
+                "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
+            ), "iges dialect loss message")?,
+        UnverifiedDialectRecovery::Clamped => ctx.format_retained(format_args!(
+                "IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
+                global.effective_version_flag(),
+            ), "iges dialect loss message")?,
+        UnverifiedDialectRecovery::UnverifiedVersion => ctx.format_retained(format_args!(
+                "IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
+            ), "iges dialect loss message")?,
     };
-    Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
-        "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
-        IgesVersion::ALL
-            .map(IgesVersion::name)
-            .join(", ")
-    )))
+    let code = IgesLossCode::SourceDialectUnverified;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges dialect loss kind",
+    )?;
+    Ok(Some(code.note(message)))
+}
+
+struct VerifiedVersionNames;
+
+impl fmt::Display for VerifiedVersionNames {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, version) in IgesVersion::ALL.into_iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            formatter.write_str(version.name())?;
+        }
+        Ok(())
+    }
 }
 
 /// Key of the physical representation in [`DialectMatch::declared`].
@@ -106,10 +121,7 @@ const DECLARED_VERSION_FLAG_DECLARATION: &str = "version_flag_declaration";
 /// Fixed ASCII has a row for every flag in [`VersionFlag::ALL`]. Compressed
 /// ASCII and Binary have rows for the five versions whose Global tables are
 /// verified. Every other pair lands on the mandatory totality row.
-pub(crate) const fn dialect_id(
-    representation: Representation,
-    version: Option<VersionFlag>,
-) -> DialectId {
+const fn dialect_id(representation: Representation, version: Option<VersionFlag>) -> DialectId {
     match (representation, version) {
         (Representation::FixedAscii, Some(VersionFlag::V1_0)) => IGES_1_0_FIXED_ASCII,
         (Representation::FixedAscii, Some(VersionFlag::AnsiY1426M1981)) => {
@@ -162,15 +174,15 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
     declared.insert(
-        DECLARED_REPRESENTATION.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
         representation.as_str().into(),
     );
     declared.insert(
-        DECLARED_VERSION_FLAG.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG),
         global.declared_version_flag().to_string(),
     );
     declared.insert(
-        DECLARED_EFFECTIVE_VERSION.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION),
         global.version_name().to_owned(),
     );
     if matches!(
@@ -178,12 +190,15 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
         DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
     ) {
         declared.insert(
-            DECLARED_EFFECTIVE_VERSION_FLAG.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION_FLAG),
             global.effective_version_flag().to_string(),
         );
     }
     if let Some(text) = global.unreadable_version_declaration() {
-        declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG_DECLARATION),
+            text.to_owned(),
+        );
     }
     if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)

@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Serialize;
 
 use crate::legacy::{
@@ -19,78 +21,67 @@ const VALUE_INTEGER: &str = "value(i_val)";
 const VALUE_STRING: &str = "value(s_val)";
 
 /// One complete legacy family-table root and its ordered rows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTable {
-    /// Stable native identity derived from the root object's source offset.
-    pub(crate) id: String,
-    /// Legacy root object identity.
-    pub(crate) root_object_id: String,
     /// Direct owning model object identity.
-    pub(crate) root_parent_id: String,
+    root_parent_id: String,
     /// Direct owning model object name.
-    pub(crate) root_parent_name: String,
+    root_parent_name: String,
     /// Source offset of the root object row.
     pub(crate) offset: usize,
     /// Optional root generic-name field.
-    pub(crate) generic_name: Option<legacy::StringValue>,
+    generic_name: Option<legacy::StringValue>,
     /// Ordered table-column descriptors.
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) items: Vec<FamilyTableItem>,
     /// Ordered instance rows.
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) instances: Vec<FamilyTableInstance>,
 }
 
 /// One ordered family-table column descriptor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableItem {
-    /// Legacy item object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the item object row.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Stored item identifier.
-    pub(crate) item_id: i32,
+    item_id: i32,
     /// Stored item type code.
-    pub(crate) type_code: i32,
+    type_code: i32,
     /// Stored visibility flag.
-    pub(crate) invisible: i32,
+    invisible: i32,
     /// Stored item name, including null or non-UTF-8 forms.
-    pub(crate) name: legacy::StringValue,
+    name: legacy::StringValue,
 }
 
 /// One ordered family-table instance row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableInstance {
-    /// Legacy instance-row object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the instance object row.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Stored instance name. This field is required to be non-empty UTF-8.
-    pub(crate) name: String,
+    name: String,
     /// Stored instance attributes bitfield.
-    pub(crate) attributes: i32,
+    attributes: i32,
     /// Direct model object referenced by the instance row.
-    pub(crate) model_object_id: String,
+    model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
-    #[serde(serialize_with = "serialize_ordered")]
-    pub(crate) values: Vec<FamilyTableValue>,
+    values: Vec<FamilyTableValue>,
 }
 
 /// One typed family-table cell.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FamilyTableValue {
+struct FamilyTableValue {
     /// Legacy value-row object identity.
-    pub(crate) source_object_id: String,
+    source_object_id: String,
     /// Source offset of the typed value field.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Typed value payload.
-    pub(crate) value: FamilyTableValuePayload,
+    value: FamilyTableValuePayload,
 }
 
 /// Typed payload forms admitted by the legacy family-table row grammar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-pub(crate) enum FamilyTableValuePayload {
+enum FamilyTableValuePayload {
     /// `type=50` with one `value(d_val)` real field.
     Real {
         /// Exact source real value.
@@ -109,12 +100,59 @@ pub(crate) enum FamilyTableValuePayload {
 }
 
 impl FamilyTableValuePayload {
-    pub(crate) fn type_code(&self) -> i32 {
+    fn type_code(&self) -> i32 {
         match self {
             Self::Real { .. } => 50,
             Self::String { .. } => 51,
             Self::Integer { .. } => 52,
         }
+    }
+}
+
+impl Serialize for FamilyTableItem {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: legacy::SerializedOffsetId,
+            offset: &'a usize,
+            item_id: &'a i32,
+            type_code: &'a i32,
+            invisible: &'a i32,
+            name: &'a legacy::StringValue,
+        }
+        Wire {
+            source_object_id: legacy::serialized_object_node_id(self.offset),
+            offset: &self.offset,
+            item_id: &self.item_id,
+            type_code: &self.type_code,
+            invisible: &self.invisible,
+            name: &self.name,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl Serialize for FamilyTableInstance {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: legacy::SerializedOffsetId,
+            offset: &'a usize,
+            name: &'a String,
+            attributes: &'a i32,
+            model_object_id: &'a String,
+            #[serde(serialize_with = "serialize_ordered")]
+            values: &'a Vec<FamilyTableValue>,
+        }
+        Wire {
+            source_object_id: legacy::serialized_object_node_id(self.offset),
+            offset: &self.offset,
+            name: &self.name,
+            attributes: &self.attributes,
+            model_object_id: &self.model_object_id,
+            values: &self.values,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -150,89 +188,141 @@ fn serialize_ordered<T: Serialize, S: serde::Serializer>(
 }
 
 struct Index<'a> {
-    object_by_id: BTreeMap<&'a str, &'a ObjectRecord>,
-    objects_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a ObjectRecord>>,
-    integers_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::IntegerRecord>>,
-    reals_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::RealRecord>>,
-    strings_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::StringRecord>>,
-    typed_field_names: BTreeMap<&'a str, Vec<&'a str>>,
+    object_by_id: BTreeMap<String, &'a ObjectRecord>,
+    object_by_offset: BTreeMap<usize, &'a ObjectRecord>,
+    objects_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>,
+    integers_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>,
+    reals_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>,
+    strings_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::StringRecord>>,
+    typed_field_names: BTreeMap<usize, Vec<&'a str>>,
 }
 
 impl<'a> Index<'a> {
-    fn build(persistence: &'a Persistence) -> Option<Self> {
+    fn build(
+        ctx: &DecodeContext<'_>,
+        persistence: &'a Persistence,
+    ) -> Result<Option<Self>, CodecError> {
         let mut object_by_id = BTreeMap::new();
+        let mut object_by_offset = BTreeMap::new();
         let mut objects_by_parent_name = BTreeMap::new();
         for object in &persistence.objects {
-            if object_by_id.insert(object.id.as_str(), object).is_some() {
-                return None;
+            let id = legacy::checked_object_node_id(
+                ctx,
+                object.offset,
+                "creo legacy family object index IDs",
+            )?;
+            ctx.admit_btree_entry(&object_by_id, &id, "creo legacy family object index nodes")?;
+            match object_by_id.entry(id) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(object);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Ok(None),
             }
-            if let Some(parent) = object.parent.as_deref() {
-                objects_by_parent_name
-                    .entry((parent, object.name.as_str()))
-                    .or_insert_with(Vec::new)
-                    .push(object);
+            ctx.insert_btree_map(
+                &mut object_by_offset,
+                object.offset,
+                object,
+                "creo legacy family object offsets",
+            )?;
+            if let Some(parent) = object.parent {
+                ctx.admit_btree_entry(
+                    &objects_by_parent_name,
+                    &(parent, object.name.as_str()),
+                    "creo legacy family child index nodes",
+                )?;
+                match objects_by_parent_name.entry((parent, object.name.as_str())) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        let mut rows = Vec::new();
+                        ctx.reserve_vec(&mut rows, 1, "creo legacy family child index rows")?;
+                        rows.push(object);
+                        entry.insert(rows);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        let rows = entry.get_mut();
+                        ctx.reserve_vec(rows, 1, "creo legacy family child index rows")?;
+                        rows.push(object);
+                    }
+                }
             }
         }
 
         let mut integers_by_parent_name = BTreeMap::new();
-        add_value_index(&mut integers_by_parent_name, &persistence.integer_values);
+        legacy::value_index(
+            ctx,
+            &persistence.integer_values.rows,
+            &mut integers_by_parent_name,
+        )?;
         let mut reals_by_parent_name = BTreeMap::new();
-        add_value_index(&mut reals_by_parent_name, &persistence.real_values);
+        legacy::value_index(
+            ctx,
+            &persistence.real_values.rows,
+            &mut reals_by_parent_name,
+        )?;
         let mut strings_by_parent_name = BTreeMap::new();
-        add_value_index(&mut strings_by_parent_name, &persistence.string_values);
+        legacy::value_index(ctx, &persistence.string_values, &mut strings_by_parent_name)?;
 
         let mut typed_field_names = BTreeMap::new();
-        add_typed_field_names(&mut typed_field_names, &persistence.integer_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.real_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.string_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_3_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_4_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_5_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_6_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_7_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_9_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_11_values);
+        add_typed_field_names(
+            ctx,
+            &mut typed_field_names,
+            &persistence.integer_values.rows,
+        )?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.real_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.string_values)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_3_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_4_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_5_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_6_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_7_values.rows)?;
+        add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_9_values.rows)?;
+        add_typed_field_names(
+            ctx,
+            &mut typed_field_names,
+            &persistence.type_11_values.rows,
+        )?;
 
-        Some(Self {
+        Ok(Some(Self {
             object_by_id,
+            object_by_offset,
             objects_by_parent_name,
             integers_by_parent_name,
             reals_by_parent_name,
             strings_by_parent_name,
             typed_field_names,
-        })
+        }))
     }
 }
 
-fn add_value_index<'a, T>(
-    index: &mut BTreeMap<(&'a str, &'a str), Vec<&'a legacy::ValueRecord<T>>>,
-    records: &'a [legacy::ValueRecord<T>],
-) {
-    for record in records {
-        if let Some(parent) = record.parent.as_deref() {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_default()
-                .push(record);
-        }
-    }
-}
-
-fn add_typed_field_names<'a, T>(
-    index: &mut BTreeMap<&'a str, Vec<&'a str>>,
-    records: &'a [legacy::ValueRecord<T>],
-) {
+fn add_typed_field_names<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    index: &mut BTreeMap<usize, Vec<&'a str>>,
+    records: &'a [legacy::ValueRecord<K>],
+) -> Result<(), CodecError> {
     for record in records {
         if !record.name.starts_with("value(") {
             continue;
         }
-        if let Some(parent) = record.parent.as_deref() {
-            index.entry(parent).or_default().push(record.name.as_str());
+        if let Some(parent) = record.parent {
+            ctx.admit_btree_entry(index, &parent, "creo legacy family typed-name nodes")?;
+            match index.entry(parent) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let mut names = Vec::new();
+                    ctx.reserve_vec(&mut names, 1, "creo legacy family typed names")?;
+                    names.push(record.name.as_str());
+                    entry.insert(names);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let names = entry.get_mut();
+                    ctx.reserve_vec(names, 1, "creo legacy family typed names")?;
+                    names.push(record.name.as_str());
+                }
+            }
         }
     }
+    Ok(())
 }
 
-fn one_object<'a>(index: &Index<'a>, parent: &str, name: &str) -> Option<&'a ObjectRecord> {
+fn one_object<'a>(index: &Index<'a>, parent: usize, name: &str) -> Option<&'a ObjectRecord> {
     let records = index.objects_by_parent_name.get(&(parent, name))?;
     let [record] = records.as_slice() else {
         return None;
@@ -241,31 +331,43 @@ fn one_object<'a>(index: &Index<'a>, parent: &str, name: &str) -> Option<&'a Obj
 }
 
 fn array_elements<'a>(
+    ctx: &DecodeContext<'_>,
     index: &Index<'a>,
-    parent: &str,
+    parent: usize,
     name: &str,
-) -> Option<Vec<&'a ObjectRecord>> {
-    let array = one_object(index, parent, name)?;
+) -> Result<Option<Vec<&'a ObjectRecord>>, CodecError> {
+    let Some(array) = one_object(index, parent, name) else {
+        return Ok(None);
+    };
     let ObjectPayload::Array {
         dimensions,
         elements,
     } = &array.payload
     else {
-        return None;
+        return Ok(None);
     };
     if !array.payload.is_complete() || dimensions.len() != 1 {
-        return None;
+        return Ok(None);
     }
-    elements
-        .iter()
-        .map(|element_id| {
-            let element = index.object_by_id.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str())).then_some(element)
-        })
-        .collect()
+    let mut rows = Vec::new();
+    ctx.reserve_vec(
+        &mut rows,
+        elements.len(),
+        "creo legacy family array elements",
+    )?;
+    for element_id in elements {
+        let Some(element) = index.object_by_id.get(element_id.as_str()).copied() else {
+            return Ok(None);
+        };
+        if element.parent != Some(array.offset) {
+            return Ok(None);
+        }
+        rows.push(element);
+    }
+    Ok(Some(rows))
 }
 
-fn optional_integer(index: &Index<'_>, parent: &str, name: &str) -> Result<Option<i32>, ()> {
+fn optional_integer(index: &Index<'_>, parent: usize, name: &str) -> Result<Option<i32>, ()> {
     let Some(records) = index.integers_by_parent_name.get(&(parent, name)) else {
         return Ok(None);
     };
@@ -274,15 +376,15 @@ fn optional_integer(index: &Index<'_>, parent: &str, name: &str) -> Result<Optio
     }
     match &records[0].payload {
         NumericPayload::Scalar { value } => Ok(Some(*value)),
-        NumericPayload::Array { .. } => Err(()),
+        NumericPayload::Array(_) => Err(()),
     }
 }
 
-fn optional_string(
-    index: &Index<'_>,
-    parent: &str,
+fn optional_string<'a>(
+    index: &'a Index<'_>,
+    parent: usize,
     name: &str,
-) -> Result<Option<legacy::StringValue>, ()> {
+) -> Result<Option<&'a legacy::StringValue>, ()> {
     let Some(records) = index.strings_by_parent_name.get(&(parent, name)) else {
         return Ok(None);
     };
@@ -290,73 +392,106 @@ fn optional_string(
         return Err(());
     }
     match &records[0].payload {
-        StringPayload::Scalar { value } => Ok(Some(value.clone())),
+        StringPayload::Scalar { value } => Ok(Some(value)),
         StringPayload::Array { .. } => Err(()),
     }
 }
 
+fn copy_string_value(
+    ctx: &DecodeContext<'_>,
+    value: &legacy::StringValue,
+) -> Result<legacy::StringValue, CodecError> {
+    match value {
+        legacy::StringValue::Null => Ok(legacy::StringValue::Null),
+        legacy::StringValue::Utf8 { text } => Ok(legacy::StringValue::Utf8 {
+            text: ctx.copy_retained_text(text, "creo legacy family string value")?,
+        }),
+        legacy::StringValue::Bytes { bytes } => Ok(legacy::StringValue::Bytes {
+            bytes: ctx.copy_retained(bytes, "creo legacy family string value")?,
+        }),
+    }
+}
+
 fn typed_value(
+    ctx: &DecodeContext<'_>,
     index: &Index<'_>,
     value_object: &ObjectRecord,
     type_code: i32,
-) -> Option<(usize, FamilyTableValuePayload)> {
-    let names = index.typed_field_names.get(value_object.id.as_str())?;
+) -> Result<Option<(usize, FamilyTableValuePayload)>, CodecError> {
+    let Some(names) = index.typed_field_names.get(&value_object.offset) else {
+        return Ok(None);
+    };
     if names.len() != 1 {
-        return None;
+        return Ok(None);
     }
     let expected_name = match type_code {
         50 => VALUE_REAL,
         51 => VALUE_STRING,
         52 => VALUE_INTEGER,
-        _ => return None,
+        _ => return Ok(None),
     };
     if names[0] != expected_name {
-        return None;
+        return Ok(None);
     }
     match type_code {
         50 => {
-            let records = index
+            let Some(records) = index
                 .reals_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))
+            else {
+                return Ok(None);
+            };
             if records.len() != 1 {
-                return None;
+                return Ok(None);
             }
             let value = match &records[0].payload {
                 NumericPayload::Scalar { value } => *value,
-                NumericPayload::Array { .. } => return None,
+                NumericPayload::Array(_) => return Ok(None),
             };
-            Some((records[0].offset, FamilyTableValuePayload::Real { value }))
+            Ok(Some((
+                records[0].offset,
+                FamilyTableValuePayload::Real { value },
+            )))
         }
         51 => {
-            let records = index
+            let Some(records) = index
                 .strings_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))
+            else {
+                return Ok(None);
+            };
             if records.len() != 1 {
-                return None;
+                return Ok(None);
             }
             let value = match &records[0].payload {
-                StringPayload::Scalar { value } => value.clone(),
-                StringPayload::Array { .. } => return None,
+                StringPayload::Scalar { value } => copy_string_value(ctx, value)?,
+                StringPayload::Array { .. } => return Ok(None),
             };
-            Some((records[0].offset, FamilyTableValuePayload::String { value }))
+            Ok(Some((
+                records[0].offset,
+                FamilyTableValuePayload::String { value },
+            )))
         }
         52 => {
-            let records = index
+            let Some(records) = index
                 .integers_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))
+            else {
+                return Ok(None);
+            };
             if records.len() != 1 {
-                return None;
+                return Ok(None);
             }
             let value = match &records[0].payload {
                 NumericPayload::Scalar { value } => *value,
-                NumericPayload::Array { .. } => return None,
+                NumericPayload::Array(_) => return Ok(None),
             };
-            Some((
+            Ok(Some((
                 records[0].offset,
                 FamilyTableValuePayload::Integer { value },
-            ))
+            )))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -366,134 +501,321 @@ fn typed_value(
 /// `Solid` or `Sld_FamilyInfo`. Nested `drv_tbl_ptr` objects are instance
 /// targets and are never competing roots. Every admitted array is one
 /// dimensional and complete; instance values join item columns by ordinal.
-pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
-    let index = Index::build(persistence)?;
-    let roots = persistence
-        .objects
-        .iter()
-        .filter(|object| {
-            if object.name != FAMILY_ROOT {
-                return false;
-            }
-            let Some(parent_id) = object.parent.as_deref() else {
-                return false;
-            };
-            index
-                .object_by_id
-                .get(parent_id)
-                .is_some_and(|parent| FAMILY_PARENT_NAMES.contains(&parent.name.as_str()))
-        })
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return None;
+pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
+    persistence: &Persistence,
+) -> Result<Option<FamilyTable>, CodecError> {
+    let Some(index) = Index::build(ctx, persistence)? else {
+        return Ok(None);
     };
-    if !matches!(root.payload, ObjectPayload::Arrow) {
-        return None;
+    parse_indexed(ctx, persistence, &index)
+}
+
+fn parse_indexed(
+    ctx: &DecodeContext<'_>,
+    persistence: &Persistence,
+    index: &Index<'_>,
+) -> Result<Option<FamilyTable>, CodecError> {
+    let mut roots = persistence.objects.iter().filter(|object| {
+        if object.name != FAMILY_ROOT {
+            return false;
+        }
+        let Some(parent_id) = object.parent else {
+            return false;
+        };
+        index
+            .object_by_offset
+            .get(&parent_id)
+            .is_some_and(|parent| FAMILY_PARENT_NAMES.contains(&parent.name.as_str()))
+    });
+    let Some(root) = roots.next() else {
+        return Ok(None);
+    };
+    if roots.next().is_some() {
+        return Ok(None);
     }
-    let root_parent_id = root.parent.as_deref()?;
-    let root_parent = index.object_by_id.get(root_parent_id)?;
-    let generic_name = optional_string(&index, &root.id, "gen_name").ok()?;
-    let item_rows = array_elements(&index, &root.id, ITEMS_ARRAY)?;
-    let instance_rows = array_elements(&index, &root.id, INSTANCES_ARRAY)?;
+    if !matches!(root.payload, ObjectPayload::Arrow) {
+        return Ok(None);
+    }
+    let Some(root_parent_offset) = root.parent else {
+        return Ok(None);
+    };
+    let Some(root_parent) = index.object_by_offset.get(&root_parent_offset) else {
+        return Ok(None);
+    };
+    let Ok(generic_name) = optional_string(index, root.offset, "gen_name") else {
+        return Ok(None);
+    };
+    let generic_name = generic_name
+        .map(|value| copy_string_value(ctx, value))
+        .transpose()?;
+    let Some(item_rows) = array_elements(ctx, index, root.offset, ITEMS_ARRAY)? else {
+        return Ok(None);
+    };
+    let Some(instance_rows) = array_elements(ctx, index, root.offset, INSTANCES_ARRAY)? else {
+        return Ok(None);
+    };
     if item_rows.is_empty() || instance_rows.is_empty() {
-        return None;
+        return Ok(None);
     }
 
-    let items = item_rows
-        .into_iter()
-        .map(|item| {
-            if !matches!(item.payload, ObjectPayload::Inline) {
-                return None;
-            }
-            Some(FamilyTableItem {
-                source_object_id: item.id.clone(),
-                offset: item.offset,
-                item_id: optional_integer(&index, &item.id, "id").ok()??,
-                type_code: optional_integer(&index, &item.id, "type").ok()??,
-                invisible: optional_integer(&index, &item.id, "invisible").ok()??,
-                name: optional_string(&index, &item.id, "name").ok()??,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut items = Vec::new();
+    ctx.reserve_vec(&mut items, item_rows.len(), "creo legacy family items")?;
+    for item in item_rows {
+        if !matches!(item.payload, ObjectPayload::Inline) {
+            return Ok(None);
+        }
+        let Some(item_id) = optional_integer(index, item.offset, "id").ok().flatten() else {
+            return Ok(None);
+        };
+        let Some(type_code) = optional_integer(index, item.offset, "type").ok().flatten() else {
+            return Ok(None);
+        };
+        let Some(invisible) = optional_integer(index, item.offset, "invisible")
+            .ok()
+            .flatten()
+        else {
+            return Ok(None);
+        };
+        let Some(name) = optional_string(index, item.offset, "name").ok().flatten() else {
+            return Ok(None);
+        };
+        items.push(FamilyTableItem {
+            offset: item.offset,
+            item_id,
+            type_code,
+            invisible,
+            name: copy_string_value(ctx, name)?,
+        });
+    }
 
     let mut instance_names = BTreeSet::new();
-    let instances = instance_rows
-        .into_iter()
-        .map(|instance| {
-            if !matches!(instance.payload, ObjectPayload::Arrow) {
-                return None;
+    let mut instances = Vec::new();
+    ctx.reserve_vec(
+        &mut instances,
+        instance_rows.len(),
+        "creo legacy family instances",
+    )?;
+    for instance in instance_rows {
+        if !matches!(instance.payload, ObjectPayload::Arrow) {
+            return Ok(None);
+        }
+        let Some(legacy::StringValue::Utf8 { text }) =
+            optional_string(index, instance.offset, "name")
+                .ok()
+                .flatten()
+        else {
+            return Ok(None);
+        };
+        if text.is_empty() || instance_names.contains(text.as_str()) {
+            return Ok(None);
+        }
+        ctx.insert_btree_set(
+            &mut instance_names,
+            text.as_str(),
+            "creo legacy family instance names",
+        )?;
+        let name = ctx.copy_retained_text(text, "creo legacy family instance name")?;
+        let Some(attributes) = optional_integer(index, instance.offset, "attributes")
+            .ok()
+            .flatten()
+        else {
+            return Ok(None);
+        };
+        let Some(model) = one_object(index, instance.offset, FAMILY_ROOT) else {
+            return Ok(None);
+        };
+        if !matches!(model.payload, ObjectPayload::Arrow) {
+            return Ok(None);
+        }
+        let Some(value_rows) = array_elements(ctx, index, instance.offset, VALUES_ARRAY)? else {
+            return Ok(None);
+        };
+        if value_rows.len() != items.len() {
+            return Ok(None);
+        }
+        let mut values = Vec::new();
+        ctx.reserve_vec(&mut values, value_rows.len(), "creo legacy family values")?;
+        for value_row in value_rows {
+            if !matches!(value_row.payload, ObjectPayload::Inline) {
+                return Ok(None);
             }
-            let name = match optional_string(&index, &instance.id, "name").ok()?? {
-                legacy::StringValue::Utf8 { text } if !text.is_empty() => text,
-                _ => return None,
+            let Some(type_code) = optional_integer(index, value_row.offset, "type")
+                .ok()
+                .flatten()
+            else {
+                return Ok(None);
             };
-            if !instance_names.insert(name.clone()) {
-                return None;
-            }
-            let attributes = optional_integer(&index, &instance.id, "attributes").ok()??;
-            let model = one_object(&index, &instance.id, FAMILY_ROOT)?;
-            if !matches!(model.payload, ObjectPayload::Arrow) {
-                return None;
-            }
-            let value_rows = array_elements(&index, &instance.id, VALUES_ARRAY)?;
-            if value_rows.len() != items.len() {
-                return None;
-            }
-            let values = value_rows
-                .into_iter()
-                .map(|value_row| {
-                    if !matches!(value_row.payload, ObjectPayload::Inline) {
-                        return None;
-                    }
-                    let type_code = optional_integer(&index, &value_row.id, "type").ok()??;
-                    let (offset, value) = typed_value(&index, value_row, type_code)?;
-                    Some(FamilyTableValue {
-                        source_object_id: value_row.id.clone(),
-                        offset,
-                        value,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(FamilyTableInstance {
-                source_object_id: instance.id.clone(),
-                offset: instance.offset,
-                name,
-                attributes,
-                model_object_id: model.id.clone(),
-                values,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+            let Some((offset, value)) = typed_value(ctx, index, value_row, type_code)? else {
+                return Ok(None);
+            };
+            values.push(FamilyTableValue {
+                source_object_id: legacy::checked_object_node_id(
+                    ctx,
+                    value_row.offset,
+                    "creo legacy family value IDs",
+                )?,
+                offset,
+                value,
+            });
+        }
+        instances.push(FamilyTableInstance {
+            offset: instance.offset,
+            name,
+            attributes,
+            model_object_id: legacy::checked_object_node_id(
+                ctx,
+                model.offset,
+                "creo legacy family model IDs",
+            )?,
+            values,
+        });
+    }
 
-    Some(FamilyTable {
-        id: format!("creo:legacy_family:driver_table#{}", root.offset),
-        root_object_id: root.id.clone(),
-        root_parent_id: root_parent.id.clone(),
-        root_parent_name: root_parent.name.clone(),
+    Ok(Some(FamilyTable {
+        root_parent_id: legacy::checked_object_node_id(
+            ctx,
+            root_parent.offset,
+            "creo legacy family parent IDs",
+        )?,
+        root_parent_name: ctx
+            .copy_retained_text(&root_parent.name, "creo legacy family parent name")?,
         offset: root.offset,
         generic_name,
         items,
         instances,
-    })
+    }))
+}
+
+impl Serialize for FamilyTable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: legacy::SerializedOffsetId,
+            root_object_id: legacy::SerializedOffsetId,
+            root_parent_id: &'a str,
+            root_parent_name: &'a str,
+            offset: usize,
+            generic_name: &'a Option<legacy::StringValue>,
+            #[serde(serialize_with = "serialize_ordered")]
+            items: &'a [FamilyTableItem],
+            #[serde(serialize_with = "serialize_ordered")]
+            instances: &'a [FamilyTableInstance],
+        }
+        Wire {
+            id: self.id(),
+            root_object_id: legacy::serialized_object_node_id(self.offset),
+            root_parent_id: &self.root_parent_id,
+            root_parent_name: &self.root_parent_name,
+            offset: self.offset,
+            generic_name: &self.generic_name,
+            items: &self.items,
+            instances: &self.instances,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl FamilyTable {
+    /// Native identity derived from the root offset.
+    pub(crate) fn id(&self) -> legacy::SerializedOffsetId {
+        legacy::SerializedOffsetId {
+            namespace: "legacy_family",
+            kind: "driver_table",
+            offset: self.offset,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse as parse_checked, FamilyTableValuePayload, FAMILY_ROOT, INSTANCES_ARRAY, ITEMS_ARRAY,
+        VALUES_ARRAY, VALUE_INTEGER, VALUE_REAL, VALUE_STRING,
+    };
+    use crate::legacy;
+    use crate::legacy::{NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
+    fn parse(persistence: &Persistence) -> Option<super::FamilyTable> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        parse_checked(&ctx, persistence).expect("service admits legacy family table")
+    }
+
+    fn parse_with_limit(
+        persistence: &Persistence,
+        dimension: ResourceDimension,
+        limit: u64,
+    ) -> Result<Option<super::FamilyTable>, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("the test only limits collection items and retained bytes"),
+        }
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        parse_checked(&ctx, persistence)
+    }
+
+    fn assert_limit_refusal(
+        persistence: &Persistence,
+        dimension: ResourceDimension,
+        operation: &'static str,
+    ) {
+        let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), |cap| {
+            parse_with_limit(persistence, dimension, cap)
+        });
+        let refusal = match parse_with_limit(persistence, dimension, cap) {
+            Err(CodecError::ResourceLimit(resource)) => Some(resource),
+            _ => None,
+        };
+
+        assert!(
+            matches!(
+                refusal,
+                Some(limit) if limit.dimension == dimension
+            ),
+            "missing resource refusal for {operation}"
+        );
+    }
+
+    fn fixture_offset(id: &str) -> usize {
+        match id {
+            "solid" => 1,
+            "root" => 2,
+            "items-array" => 3,
+            "item" => 4,
+            "instances-array" => 5,
+            "instance" => 6,
+            "model" => 7,
+            "values-array" => 8,
+            "value" => 9,
+            _ => panic!("unknown fixture object"),
+        }
+    }
     fn object(
-        id: &str,
+        _id: &str,
         name: &str,
         parent: Option<&str>,
-        payload: ObjectPayload,
+        mut payload: ObjectPayload,
         offset: usize,
     ) -> ObjectRecord {
+        if let ObjectPayload::Array { elements, .. } = &mut payload {
+            for element in elements {
+                *element = crate::legacy::object_node_id(fixture_offset(element));
+            }
+        }
         ObjectRecord {
-            id: id.to_string(),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: parent.map(str::to_string),
+            parent: parent.map(fixture_offset),
             depth: 0,
             payload,
             offset,
@@ -502,11 +824,10 @@ mod tests {
 
     fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
         legacy::ValueRecord {
-            id: format!("integer#{offset}"),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: NumericPayload::Scalar { value },
             offset,
@@ -515,11 +836,10 @@ mod tests {
 
     fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
         legacy::ValueRecord {
-            id: format!("real#{offset}"),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: NumericPayload::Scalar {
                 value: legacy::Real::from_bits(value.to_bits()),
@@ -530,11 +850,10 @@ mod tests {
 
     fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
         legacy::ValueRecord {
-            id: format!("string#{offset}"),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: StringPayload::Scalar {
                 value: legacy::StringValue::Utf8 {
@@ -612,14 +931,20 @@ mod tests {
                     9,
                 ),
             ],
-            integer_values: vec![
-                integer(item, "id", 17, 10),
-                integer(item, "type", 2, 11),
-                integer(item, "invisible", 0, 12),
-                integer(instance, "attributes", 0, 13),
-                integer(value, "type", 50, 14),
-            ],
-            real_values: vec![real(value, VALUE_REAL, 2.5, 15)],
+            integer_values: crate::legacy::TypedValues {
+                rows: vec![
+                    integer(item, "id", 17, 10),
+                    integer(item, "type", 2, 11),
+                    integer(item, "invisible", 0, 12),
+                    integer(instance, "attributes", 0, 13),
+                    integer(value, "type", 50, 14),
+                ],
+                unresolved_count: 0,
+            },
+            real_values: crate::legacy::TypedValues {
+                rows: vec![real(value, VALUE_REAL, 2.5, 15)],
+                unresolved_count: 0,
+            },
             string_values: vec![
                 string(item, "name", "d0", 16),
                 string(instance, "name", "SMALL", 17),
@@ -645,7 +970,9 @@ mod tests {
     #[test]
     fn nested_pointer_is_not_a_family_root() {
         let mut persistence = complete_table();
-        persistence.objects.retain(|object| object.id != "root");
+        persistence
+            .objects
+            .retain(|object| object.offset != fixture_offset("root"));
         assert!(parse(&persistence).is_none());
     }
 
@@ -655,7 +982,7 @@ mod tests {
         null_root
             .objects
             .iter_mut()
-            .find(|object| object.id == "root")
+            .find(|object| object.offset == fixture_offset("root"))
             .expect("synthetic family-table root")
             .payload = ObjectPayload::Null;
         assert!(parse(&null_root).is_none());
@@ -674,24 +1001,27 @@ mod tests {
     #[test]
     fn incomplete_value_form_is_retained() {
         let mut persistence = complete_table();
-        persistence
-            .integer_values
-            .retain(|record| record.name != "type" || record.parent.as_deref() != Some("value"));
+        persistence.integer_values.rows.retain(|record| {
+            record.name != "type" || record.parent != Some(fixture_offset("value"))
+        });
         assert!(parse(&persistence).is_none());
     }
 
     #[test]
     fn integer_and_string_value_forms_are_typed_by_their_source_field() {
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
-            .retain(|record| record.parent.as_deref() != Some("value"));
+            .rows
+            .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 52, 30));
         persistence
             .integer_values
+            .rows
             .push(integer("value", VALUE_INTEGER, 3, 31));
         let mut table = parse(&persistence).expect("integer family table");
         assert!(matches!(
@@ -705,12 +1035,14 @@ mod tests {
         ));
 
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
-            .retain(|record| record.parent.as_deref() != Some("value"));
+            .rows
+            .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 51, 40));
         persistence
             .string_values
@@ -720,5 +1052,169 @@ mod tests {
             table.instances[0].values[0].value,
             FamilyTableValuePayload::String { .. }
         ));
+    }
+
+    fn assert_complete_table_limit(dimension: ResourceDimension, operation: &'static str) {
+        let fixture = complete_table();
+        assert!(parse(&fixture).is_some());
+        assert_limit_refusal(&fixture, dimension, operation);
+    }
+
+    #[test]
+    fn legacy_family_object_index_nodes_refuse_before_insertion() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family object index nodes",
+        );
+    }
+
+    #[test]
+    fn legacy_family_object_index_ids_refuse_before_string_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family object index IDs",
+        );
+    }
+
+    #[test]
+    fn legacy_family_value_ids_refuse_before_string_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family value IDs",
+        );
+    }
+
+    #[test]
+    fn legacy_family_model_ids_refuse_before_string_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family model IDs",
+        );
+    }
+
+    #[test]
+    fn legacy_family_parent_ids_refuse_before_string_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family parent IDs",
+        );
+    }
+
+    #[test]
+    fn legacy_family_object_offsets_refuse_before_insertion() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family object offsets",
+        );
+    }
+
+    #[test]
+    fn legacy_family_child_index_nodes_refuse_before_insertion() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family child index nodes",
+        );
+    }
+
+    #[test]
+    fn legacy_family_child_index_rows_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family child index rows",
+        );
+    }
+
+    #[test]
+    fn legacy_family_typed_name_nodes_refuse_before_insertion() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family typed-name nodes",
+        );
+    }
+
+    #[test]
+    fn legacy_family_typed_names_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family typed names",
+        );
+    }
+
+    #[test]
+    fn legacy_family_array_elements_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family array elements",
+        );
+    }
+
+    #[test]
+    fn legacy_family_items_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family items",
+        );
+    }
+
+    #[test]
+    fn legacy_family_instances_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family instances",
+        );
+    }
+
+    #[test]
+    fn legacy_family_instance_names_refuse_before_insertion() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family instance names",
+        );
+    }
+
+    #[test]
+    fn legacy_family_values_refuse_before_vec_growth() {
+        assert_complete_table_limit(
+            ResourceDimension::CollectionItems,
+            "creo legacy family values",
+        );
+    }
+
+    #[test]
+    fn legacy_family_string_value_refuses_before_copy() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family string value",
+        );
+    }
+
+    #[test]
+    fn legacy_family_instance_name_refuses_before_copy() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family instance name",
+        );
+    }
+
+    #[test]
+    fn legacy_family_parent_name_refuses_before_copy() {
+        assert_complete_table_limit(
+            ResourceDimension::RetainedBytes,
+            "creo legacy family parent name",
+        );
+    }
+
+    #[test]
+    fn legacy_family_byte_string_refuses_before_copy() {
+        let mut fixture = complete_table();
+        fixture.string_values[0].payload = StringPayload::Scalar {
+            value: legacy::StringValue::Bytes { bytes: vec![0xff] },
+        };
+        assert!(parse(&fixture).is_some());
+        assert_limit_refusal(
+            &fixture,
+            ResourceDimension::RetainedBytes,
+            "creo legacy family string value",
+        );
     }
 }

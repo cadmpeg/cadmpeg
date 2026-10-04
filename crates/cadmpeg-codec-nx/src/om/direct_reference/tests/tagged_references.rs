@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::om::direct_reference::{
-    operation_reference_fields, DirectReferenceFrame, ReferenceFieldKind,
-};
-use crate::om::operation_record::OperationPayload;
+use super::record;
+use crate::om::direct_reference::{DirectReferenceFrame, ReferenceFieldKind};
 
-fn record(payload: &[u8], payload_offset: usize) -> OperationPayload<'_> {
-    OperationPayload::new(payload, payload_offset, "EXTRUDE").unwrap()
+fn operation_reference_fields(
+    record: crate::om::operation_record::OperationPayload<'_>,
+    kind: ReferenceFieldKind,
+) -> Vec<DirectReferenceFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::direct_reference::operation_reference_fields(ctx, record, kind)
+    })
+    .unwrap()
 }
 
 fn tagged_field(index: &[u8]) -> Vec<u8> {

@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 use crate::native::EntryRecord;
-use crate::native::{native_id, PropertyRecord};
+use crate::native::{native_id, PropertyFamily, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
@@ -25,8 +25,37 @@ pub(crate) fn set_value_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     valid_xml_name(attribute, "attribute")?;
-    mutate_property(ir, owner, property_name, |property| {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    mutate_property(&ctx, ir, owner, property_name, |property| {
         let property_id = property.id.clone();
+        if !matches!(
+            property.family,
+            PropertyFamily::Scalar
+                | PropertyFamily::Quantity
+                | PropertyFamily::Enumeration
+                | PropertyFamily::Vector
+                | PropertyFamily::Matrix
+                | PropertyFamily::Placement
+                | PropertyFamily::String
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "editing FCStd {} property {} requires a graph-aware serializer",
+                format_args!("{:?}", property.family)
+                    .to_string()
+                    .to_lowercase(),
+                property_id
+            )));
+        }
+        if matches!(attribute, "file" | "File") {
+            return Err(CodecError::NotImplemented(format!(
+                "editing FCStd property {property_id} changes its link or side-entry graph"
+            )));
+        }
         let value_record = property
             .values_mut()
             .into_iter()
@@ -37,6 +66,11 @@ pub(crate) fn set_value_attribute(
                     "FCStd property {property_id} has no value at order {value_order}"
                 ))
             })?;
+        if !value_record.attributes.contains_key(attribute) {
+            return Err(CodecError::NotImplemented(format!(
+                "adding FCStd value attribute {attribute} requires a typed serializer"
+            )));
+        }
         value_record.attributes.insert(attribute.to_owned(), value);
         Ok(())
     })
@@ -57,14 +91,19 @@ pub(crate) fn replace_entry(
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let entry = entries
         .iter_mut()
-        .find(|candidate| candidate.name == entry_name)
+        .find(|candidate| candidate.name() == entry_name)
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
-    entry.data = bytes;
-    namespace.set_arena("entries", &entries)?;
+    entry.replace_data(bytes);
+    namespace.set_arena(
+        &cadmpeg_test_support::service_decode_context(),
+        "entries",
+        &entries,
+    )?;
     Ok(())
 }
 
 fn mutate_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     owner: FcstdPropertyOwner<'_>,
     property_name: &str,
@@ -76,27 +115,21 @@ fn mutate_property(
     };
     let namespace = ir.native.namespace_mut("fcstd");
     let mut properties = namespace.arena_as::<PropertyRecord>("properties")?;
-    let matches = properties
-        .iter()
-        .enumerate()
-        .filter(|(_, property)| property.owner == owner_id && property.name == property_name)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let index = match matches.as_slice() {
-        [index] => *index,
-        [] => {
-            return Err(CodecError::malformed(format_args!(
-                "missing FCStd property {owner_id}.{property_name}"
-            )))
-        }
-        _ => {
-            return Err(CodecError::malformed(format_args!(
-                "ambiguous FCStd property {owner_id}.{property_name}"
-            )))
-        }
-    };
-    mutation(&mut properties[index])?;
-    namespace.set_arena("properties", &properties)?;
+    let property = crate::native::unique_property(properties.iter_mut(), |property| {
+        property.owner == owner_id && property.name == property_name
+    })
+    .map_err(|_| {
+        CodecError::malformed(format_args!(
+            "ambiguous FCStd property {owner_id}.{property_name}"
+        ))
+    })?
+    .ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "missing FCStd property {owner_id}.{property_name}"
+        ))
+    })?;
+    mutation(property)?;
+    namespace.set_arena(ctx, "properties", &properties)?;
     Ok(())
 }
 

@@ -1,24 +1,233 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::{
-    decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
-    SketchRelationClass, SketchRelationMaskWidth,
+use cadmpeg_core::decode::u64_from_index;
+
+mod cast_limits;
+
+use crate::design::decode::sketch::{
+    admit_sketch_relation, decode_pattern_definition, parse_classed_sketch_relation,
+    relation_mask_width, SketchRelationClass, SketchRelationMaskWidth,
 };
-use crate::records::{SketchPatternDefinition, SketchPatternDirection};
+use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
+use crate::test_support::push_reference_u64;
 
-/// One present reference: the presence byte, the u64 target, and the
-/// `cross_document` and same-segment flags.
-fn push_reference(out: &mut Vec<u8>, target: u32) {
-    out.push(1);
-    out.extend_from_slice(&u64::from(target).to_le_bytes());
-    out.extend_from_slice(&[0u8; 2]);
+#[test]
+fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::sketch_relations::SketchRelationDefinition;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    let header = DesignRecordHeader {
+        id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
+        record_index: 7,
+        class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    for (collection_limit, retained_limit, auxiliary, dimension, operation) in [
+        (
+            Some(0),
+            None,
+            false,
+            ResourceDimension::CollectionItems,
+            "f3d sketch relation output",
+        ),
+        (
+            Some(3),
+            None,
+            true,
+            ResourceDimension::CollectionItems,
+            "f3d sketch relation auxiliary output",
+        ),
+        (
+            None,
+            Some(u64_from_index(
+                crate::ids::native_scope("BulkStream.dat").len(),
+            )),
+            false,
+            ResourceDimension::RetainedBytes,
+            "f3d sketch relation ID",
+        ),
+        (
+            None,
+            Some(u64_from_index(
+                format!(
+                    "{}:sketch-relation#7",
+                    crate::ids::native_scope("BulkStream.dat")
+                )
+                .len(),
+            )),
+            false,
+            ResourceDimension::RetainedBytes,
+            "f3d sketch relation raw bytes",
+        ),
+    ] {
+        let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+            .expect("plain relation parse");
+        if auxiliary {
+            parsed
+                .auxiliary_references
+                .push(crate::records::identity::Located {
+                    value: 301,
+                    offset: 0,
+                });
+        }
+        let definition =
+            SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
+        let error = if retained_limit.is_some() {
+            crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                let mut parsed =
+                    tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+                        .expect("plain relation parse");
+                if auxiliary {
+                    parsed
+                        .auxiliary_references
+                        .push(crate::records::identity::Located {
+                            value: 301,
+                            offset: 0,
+                        });
+                }
+                let definition = SketchRelationDefinition::new(parsed.state, None)
+                    .expect("plain relation definition");
+                admit_sketch_relation(
+                    ctx,
+                    &mut Vec::new(),
+                    "BulkStream.dat",
+                    &header,
+                    &record,
+                    parsed,
+                    definition,
+                )
+            })
+        } else {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            if let Some(limit) = collection_limit {
+                policy.limits.max_collection_items = limit;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            admit_sketch_relation(
+                &ctx,
+                &mut Vec::new(),
+                "BulkStream.dat",
+                &header,
+                &record,
+                parsed,
+                definition,
+            )
+            .expect_err("resource limit must refuse relation assembly")
+        };
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == dimension && failure.operation == operation)
+        );
+    }
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+        .expect("plain relation parse");
+    let definition =
+        SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut admitted = Vec::new();
+    admit_sketch_relation(
+        &ctx,
+        &mut admitted,
+        "BulkStream.dat",
+        &header,
+        &record,
+        parsed,
+        definition,
+    )
+    .expect("relation admission");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(
+        admitted[0].id,
+        format!(
+            "{}:sketch-relation#7",
+            crate::ids::native_scope("BulkStream.dat")
+        )
+    );
+    assert_eq!(admitted[0].raw_bytes(), record);
+}
+
+fn tested_parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_classed_sketch_relation(ctx, payload, class).unwrap()
+    })
+}
+
+#[test]
+fn sketch_relation_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let paired = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    let mut frame_members = Vec::new();
+    push_reference_u64(&mut frame_members, 300);
+    push_reference_u64(&mut frame_members, 301);
+    let text_frame = relation_record(&[], &frame_members, 201, 1, &[]);
+    let mut glyph_members = Vec::new();
+    push_glyph_run(&mut glyph_members, 2, 5.0);
+    let text_path = relation_record(&[], &glyph_members, 201, 1, &[]);
+
+    for (record, class, limit, operation) in [
+        (
+            &paired,
+            SketchRelationClass::Plain,
+            0,
+            "f3d sketch relation paired members",
+        ),
+        (
+            &paired,
+            SketchRelationClass::Plain,
+            1,
+            "f3d sketch relation return members",
+        ),
+        (
+            &text_frame,
+            SketchRelationClass::TextFrame,
+            0,
+            "f3d sketch auxiliary relation references",
+        ),
+        (
+            &text_frame,
+            SketchRelationClass::TextFrame,
+            1,
+            "f3d sketch auxiliary relation references",
+        ),
+        (
+            &text_path,
+            SketchRelationClass::TextPath {
+                leading_flag: false,
+            },
+            0,
+            "f3d sketch text glyph transforms",
+        ),
+        (
+            &text_path,
+            SketchRelationClass::TextPath {
+                leading_flag: false,
+            },
+            1,
+            "f3d sketch auxiliary relation references",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_classed_sketch_relation(&ctx, record, class)
+            .err()
+            .expect("collection limit must refuse the relation");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation)
+        );
+    }
 }
 
 /// One absent reference.
@@ -48,12 +257,12 @@ fn relation_record(
             .to_le_bytes(),
     );
     for (reference, ordinal) in members {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
         out.extend_from_slice(&ordinal.to_le_bytes());
     }
     out.push(0);
     out.extend_from_slice(class_members);
-    push_reference(&mut out, owner);
+    push_reference_u64(&mut out, u64::from(owner));
     out.extend_from_slice(&mask.to_le_bytes());
     out.extend_from_slice(
         &u32::try_from(returns.len())
@@ -61,7 +270,7 @@ fn relation_record(
             .to_le_bytes(),
     );
     for reference in returns {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
     }
     out.push(0);
     out
@@ -76,7 +285,7 @@ fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
     out.extend_from_slice(&[0u8; 8]);
     out.push(0);
     out.push(0);
-    push_reference(&mut out, owner);
+    push_reference_u64(&mut out, u64::from(owner));
     out.extend_from_slice(&mask.to_le_bytes());
     out.extend_from_slice(
         &u32::try_from(returns.len())
@@ -84,7 +293,7 @@ fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
             .to_le_bytes(),
     );
     for reference in returns {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
     }
     out.push(0);
     out
@@ -105,18 +314,18 @@ fn push_direction_clause(
     distance_parameter: u32,
 ) {
     out.extend_from_slice(&count.to_le_bytes());
-    push_reference(out, count_parameter);
+    push_reference_u64(out, u64::from(count_parameter));
     for axis in direction {
         out.extend_from_slice(&axis.to_le_bytes());
     }
     out.extend_from_slice(&distance.to_le_bytes());
-    push_reference(out, distance_parameter);
+    push_reference_u64(out, u64::from(distance_parameter));
 }
 
 /// A glyph run: the text reference, the character count, and one block of
 /// `u32 16` and a row-major 4x4 transform.
 fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
-    push_reference(out, text);
+    push_reference_u64(out, u64::from(text));
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&16u32.to_le_bytes());
     for row in 0..4 {
@@ -184,7 +393,8 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
         relation_mask_width(&modern),
         Some(SketchRelationMaskWidth::U64)
     );
-    let modern_parsed = parse_classed_sketch_relation(&modern, SketchRelationClass::Plain).unwrap();
+    let modern_parsed =
+        tested_parse_classed_sketch_relation(&modern, SketchRelationClass::Plain).unwrap();
     assert_eq!(modern_parsed.state, 0x0020_0000_0000);
     assert_eq!(
         modern_parsed
@@ -200,7 +410,8 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
         relation_mask_width(&legacy),
         Some(SketchRelationMaskWidth::U32)
     );
-    let legacy_parsed = parse_classed_sketch_relation(&legacy, SketchRelationClass::Plain).unwrap();
+    let legacy_parsed =
+        tested_parse_classed_sketch_relation(&legacy, SketchRelationClass::Plain).unwrap();
     assert_eq!(legacy_parsed.state, 0x8000_0000);
     assert!(legacy_parsed.members.is_empty());
     assert_eq!(
@@ -215,13 +426,13 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
     let mut invalid = legacy;
     invalid[19] = 2;
     assert_eq!(relation_mask_width(&invalid), None);
-    assert!(parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
+    assert!(tested_parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
 }
 
 #[test]
 fn plain_relation_reads_parent_node_without_class_members() {
     let record = relation_record(&[(300, 1), (301, 0)], &[], 201, 0x1, &[300, 301]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(parsed.state, 0x1);
@@ -250,13 +461,13 @@ fn tangent_relation_reads_its_three_flags() {
     // The middle flag is `1`, which the reference-marker walk reads as the
     // presence byte of a reference and steps into the flags.
     let record = relation_record(&[(300, 1), (301, 0)], &[0, 1, 0], 201, 0x100, &[300, 301]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Tangent)
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Tangent)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(parsed.state, 0x100);
     assert!(parsed.auxiliary_references.is_empty());
     assert_eq!(parsed.parsed_end, record.len());
-    assert!(parse_classed_sketch_relation(
+    assert!(tested_parse_classed_sketch_relation(
         &relation_record(&[(300, 1)], &[0, 2, 0], 201, 0x100, &[300]),
         SketchRelationClass::Tangent
     )
@@ -266,8 +477,8 @@ fn tangent_relation_reads_its_three_flags() {
 #[test]
 fn circular_pattern_relation_reads_its_parameters_and_tables() {
     let mut class_members = Vec::new();
-    push_reference(&mut class_members, 336);
-    push_reference(&mut class_members, 333);
+    push_reference_u64(&mut class_members, 336);
+    push_reference_u64(&mut class_members, 333);
     class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
     class_members.extend_from_slice(&3u32.to_le_bytes());
     class_members.extend_from_slice(&empty_pattern_tables());
@@ -279,8 +490,9 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
         0x1000_0000,
         &[300, 301],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
-        .expect("the classed parse reads the record");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(
         parsed
@@ -292,12 +504,13 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Circular {
             angle_parameter: 336,
             count_parameter: 333,
-            evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: 3,
+            evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU).unwrap(),
+            evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
+                .unwrap(),
         })
     );
 }
@@ -320,19 +533,20 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
     class_members.extend_from_slice(&2u32.to_le_bytes());
     class_members.push(0);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
-        .expect("the classed parse reads the record");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert!(parsed.auxiliary_references.is_empty());
     assert_eq!(parsed.parsed_end, record.len());
-    assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
 }
 
 #[test]
 fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clauses() {
     let mut class_members = vec![1, 0, 0];
     class_members.extend_from_slice(&1u32.to_le_bytes());
-    push_reference(&mut class_members, 900);
+    push_reference_u64(&mut class_members, 900);
     class_members.extend_from_slice(&empty_pattern_tables());
     push_direction_clause(&mut class_members, 3, 464, [1.0, 0.0, 0.0], 3.0, 470);
     push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.5, 473);
@@ -343,8 +557,9 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         0x2000_0000,
         &[300, 301],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-        .expect("the classed parse reads the record");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(
         parsed
@@ -364,27 +579,29 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(1),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[1..5]
     ));
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Rectangular {
             directions: [
                 SketchPatternDirection {
-                    evaluated_count: 3,
+                    evaluated_count:
+                        crate::records::sketch_relations::SketchPatternCount::try_from(3).unwrap(),
                     count_parameter: 464,
-                    direction: [1.0, 0.0, 0.0],
-                    evaluated_distance: 3.0,
+                    direction: [1.0, 0.0, 0.0].try_into().unwrap(),
+                    evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
                     distance_parameter: 470,
                 },
                 SketchPatternDirection {
-                    evaluated_count: 1,
+                    evaluated_count:
+                        crate::records::sketch_relations::SketchPatternCount::try_from(1).unwrap(),
                     count_parameter: 467,
-                    direction: [0.0, 1.0, 0.0],
-                    evaluated_distance: 0.5,
+                    direction: [0.0, 1.0, 0.0].try_into().unwrap(),
+                    evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                     distance_parameter: 473,
                 },
             ],
@@ -400,8 +617,9 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
     push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-        .expect("the classed parse reads the record");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .expect("the classed parse reads the record");
     assert_eq!(
         parsed
             .auxiliary_references
@@ -420,18 +638,18 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(0),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert_eq!(parsed.parsed_end, record.len());
     let Some(SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &parsed)
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected a rectangular pattern definition");
     };
-    assert_eq!(directions[0].evaluated_count, 4);
-    assert_eq!(directions[1].evaluated_count, 2);
+    assert_eq!(directions[0].evaluated_count.get(), 4);
+    assert_eq!(directions[1].evaluated_count.get(), 2);
 }
 
 #[test]
@@ -443,8 +661,9 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     push_direction_clause(&mut class_members, 2, 464, [1.0, 0.0, 0.0], 1.5, 470);
     push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.0, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-        .expect("the classed parse reads the absent run member");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .expect("the classed parse reads the absent run member");
 
     assert_eq!(
         parsed
@@ -464,12 +683,12 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(0),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert!(matches!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Rectangular { .. })
     ));
 }
@@ -485,7 +704,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     class_members.extend_from_slice(&900u64.to_le_bytes());
     class_members.extend_from_slice(&[0, 1]);
     class_members.extend_from_slice(&2u32.to_le_bytes());
-    push_reference(&mut class_members, 901);
+    push_reference_u64(&mut class_members, 901);
     class_members.extend_from_slice(&empty_pattern_tables());
 
     class_members.extend_from_slice(&0u32.to_le_bytes());
@@ -496,12 +715,13 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
-    push_reference(&mut class_members, 470);
+    push_reference_u64(&mut class_members, 470);
 
     push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-        .expect("the classed parse retains the incomplete relation");
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .expect("the classed parse retains the incomplete relation");
 
     assert_eq!(
         parsed
@@ -520,19 +740,16 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     ));
     assert!(matches!(
         parsed.class_members,
-        super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: None,
-            ..
-        }
+        super::super::RelationClassMembers::Rectangular { clauses: None, .. }
     ));
-    assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
 }
 
 #[test]
 fn text_frame_relation_reads_its_two_references() {
     let mut class_members = Vec::new();
     push_absent_reference(&mut class_members);
-    push_reference(&mut class_members, 2394);
+    push_reference_u64(&mut class_members, 2394);
     let record = relation_record(
         &[(2394, 0), (2403, 0)],
         &class_members,
@@ -540,7 +757,7 @@ fn text_frame_relation_reads_its_two_references() {
         0x100_0000_0000,
         &[2403],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
     assert_eq!(
         parsed
@@ -552,15 +769,15 @@ fn text_frame_relation_reads_its_two_references() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::TextFrame {
             text_reference: 2394
         })
     );
 
     let mut both = Vec::new();
-    push_reference(&mut both, 2404);
-    push_reference(&mut both, 2394);
+    push_reference_u64(&mut both, 2404);
+    push_reference_u64(&mut both, 2394);
     let record = relation_record(
         &[(2394, 0), (2403, 0)],
         &both,
@@ -568,7 +785,7 @@ fn text_frame_relation_reads_its_two_references() {
         0x100_0000_0000,
         &[2403],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
     assert_eq!(
         parsed
@@ -596,9 +813,11 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
             0x200_0000_0000,
             &[1],
         );
-        let parsed =
-            parse_classed_sketch_relation(&record, SketchRelationClass::TextPath { leading_flag })
-                .expect("the classed parse reads the record");
+        let mut parsed = tested_parse_classed_sketch_relation(
+            &record,
+            SketchRelationClass::TextPath { leading_flag },
+        )
+        .expect("the classed parse reads the record");
         assert_eq!(
             parsed
                 .auxiliary_references
@@ -611,7 +830,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         let Some(SketchPatternDefinition::TextPath {
             text_reference,
             glyph_transforms,
-        }) = decode_pattern_definition(&record, &parsed)
+        }) = decode_pattern_definition(&record, &mut parsed)
         else {
             panic!("expected a text-path pattern definition");
         };
@@ -619,7 +838,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         assert_eq!(glyph_transforms[0].rows()[0][3], 5.0);
         // The version-0 layout has no leading byte, so reading one steps
         // into the text reference and the run no longer closes.
-        assert!(parse_classed_sketch_relation(
+        assert!(tested_parse_classed_sketch_relation(
             &record,
             SketchRelationClass::TextPath {
                 leading_flag: !leading_flag
@@ -641,7 +860,7 @@ fn text_path_glyph_constructor_rejects_non_finite_source_coefficients() {
             0x200_0000_0000,
             &[1],
         );
-        assert!(parse_classed_sketch_relation(
+        assert!(tested_parse_classed_sketch_relation(
             &record,
             SketchRelationClass::TextPath {
                 leading_flag: false

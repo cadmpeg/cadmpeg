@@ -24,18 +24,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -44,7 +32,22 @@
               2.0,
               2.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "rhino:object:curve#record-000000-offset-177.root.component-0",
           "source_object": {
@@ -66,18 +69,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 3.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -86,7 +77,22 @@
               20.0,
               20.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 2.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 3.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
           "source_object": {
@@ -112,13 +118,15 @@
         {
           "curve": "rhino:object:curve#record-000000-offset-177",
           "definition": {
-            "component_parameters": [
-              0.0,
-              2.0
-            ],
             "components": [
-              "rhino:object:curve#record-000000-offset-177.root.component-0",
-              "rhino:object:curve#record-000000-offset-177.root.component-1"
+              {
+                "component": "rhino:object:curve#record-000000-offset-177.root.component-0",
+                "parameter": 0.0
+              },
+              {
+                "component": "rhino:object:curve#record-000000-offset-177.root.component-1",
+                "parameter": 2.0
+              }
             ],
             "kind": "compound",
             "parameters": [
@@ -132,11 +140,11 @@
         {
           "curve": "rhino:object:curve#record-000000-offset-177.root.component-1",
           "definition": {
-            "component_parameters": [
-              10.0
-            ],
             "components": [
-              "rhino:object:curve#record-000000-offset-177.root.component-1.component-0"
+              {
+                "component": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
+                "parameter": 10.0
+              }
             ],
             "kind": "compound",
             "parameters": [
@@ -232,18 +240,19 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "50"
-          },
-          "dialect": "rhino:archive-50",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "50"
+            },
+            "dialect": "rhino:archive-50"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 0.1,
@@ -254,26 +263,26 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "50"
-        },
-        "dialect": "rhino:archive-50",
-        "format": "rhino"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "50"
+          },
+          "dialect": "rhino:archive-50"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -282,7 +291,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",
         "severity": "error"
@@ -291,7 +302,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
@@ -299,34 +311,42 @@
     ],
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "rhino:object:curve#record-000000-offset-177": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.root.component-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.root.component-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.root.component-1.component-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },
-    "retained_records": [
-      {
-        "byte_len": 636,
-        "data": "cIAAIHACAAAAAAAAcQAAggQAAAAAAAAA+n8CAEgCAAAAAAAA+/8CABQAAAAAAAAA4NTXTkfp0xG/5QAQgwEi8Kr1Koj8/wIAEAIAAAAAAAAQAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAUQPp/AgCBAAAAAAAAAPv/AgAUAAAAAAAAANvU105H6dMRv+UAEIMBIvD0m+kj/P8CAEkAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEADAAAAE5TgUP9/AoAAAAAAAAAAAPp/AgAaAQAAAAAAAPv/AgAUAAAAAAAAAODU105H6dMRv+UAEIMBIvCq9SqI/P8CAOIAAAAAAAAAEAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAkQAAAAAAAADRA+n8CAIEAAAAAAAAA+/8CABQAAAAAAAAA29TXTkfp0xG/5QAQgwEi8PSb6SP8/wIASQAAAAAAAAAQAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAA0QAMAAAC4ZZG2/38CgAAAAAAAAAAAaLSJMP9/AoAAAAAAAAAAAAHTYWf/fwKAAAAAAAAAAAB/AACCAAAAAAAAAADzf449",
-        "id": "rhino:object:record#000000",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAIHACAAAAAAAAcQAAggQAAAAAAAAA+n8CAEgCAAAAAAAA+/8CABQAAAAAAAAA4NTXTkfp0xG/5QAQgwEi8Kr1Koj8/wIAEAIAAAAAAAAQAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAUQPp/AgCBAAAAAAAAAPv/AgAUAAAAAAAAANvU105H6dMRv+UAEIMBIvD0m+kj/P8CAEkAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEADAAAAE5TgUP9/AoAAAAAAAAAAAPp/AgAaAQAAAAAAAPv/AgAUAAAAAAAAAODU105H6dMRv+UAEIMBIvCq9SqI/P8CAOIAAAAAAAAAEAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAkQAAAAAAAADRA+n8CAIEAAAAAAAAA+/8CABQAAAAAAAAA29TXTkfp0xG/5QAQgwEi8PSb6SP8/wIASQAAAAAAAAAQAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAA0QAMAAAC4ZZG2/38CgAAAAAAAAAAAaLSJMP9/AoAAAAAAAAAAAAHTYWf/fwKAAAAAAAAAAAB/AACCAAAAAAAAAADzf449",
+          "retention": "inline"
+        },
         "offset": 177,
-        "sha256": "58b107db00bc3a96634f5106c39a9e20684bd40e7d73d04786029f3a57f3d323",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }

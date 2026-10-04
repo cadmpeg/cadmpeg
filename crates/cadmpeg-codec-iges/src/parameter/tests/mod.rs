@@ -2,37 +2,337 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
-use std::collections::BTreeMap;
-use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
-use super::{
-    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_global_table,
-    analyze_trailing_pointer_groups_with_records, entity_primary_end,
-    entity_primary_end_for_global_table, entity_primary_end_with_records, groups_for_candidate,
-    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
-};
-use crate::card::{scan, Section};
-use crate::global::GlobalTable;
-use crate::loss::IgesLossCode;
-use crate::test_support::*;
-use crate::IgesCodec;
+use super::ParameterRecord;
+use super::Token;
+use super::TokenValue;
+use crate::card::Section;
+use crate::test_support::scan;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
+mod advanced_geometry_boundaries;
 mod curve_surface_boundaries;
+mod curve_surface_segment_boundaries;
 mod drawing_associativity;
+mod drawing_property_boundaries;
 mod entity_table_boundaries;
 mod entity_table_forms;
+mod entity_table_text_and_names;
 mod envelope_boundaries;
+mod envelope_counted_entity_boundaries;
+mod envelope_fixed_field_boundaries;
 mod fixed_entity_boundaries;
+mod fixed_entity_boundaries_surfaces;
 mod implementor_defined;
+mod later_drawing_boundaries;
 mod later_entity_boundaries;
 mod legacy_entities;
 mod legacy_type402;
 mod lexical;
 mod macros;
 mod presentation_forms;
+mod presentation_string_forms;
+mod solid_entity_boundaries;
+mod type_fem;
+
+#[test]
+fn parameter_integer_number_refuses_inexact_f64() {
+    let record = integer_parameter_record(1, &[(1_i64 << 53) + 1]);
+    assert_eq!(record.number(0), None);
+    assert_eq!(record.number_or(0, 0.0), None);
+}
+
+#[test]
+fn parameter_summary_refuses_note_slot_and_text_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let records = [];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&records, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges parameter summary notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        (cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1)
+            + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&records, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>())
+                && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len())
+                && limit.operation == "iges parameter summary text"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&records, &ctx).unwrap(),
+        [
+            "parameter_records=0",
+            "parameter_tokens=0",
+            "external_references=0"
+        ]
+    );
+}
+
+#[test]
+fn trailing_pointer_prefix_refuses_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let record = integer_parameter_record(1, &[999, 0, 0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::analyze_trailing_pointer_groups_for_global_table_with_context(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+        &ctx,
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 4
+                && limit.operation == "iges noninteger token prefix"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        super::analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &BTreeMap::new(),
+            crate::global::GlobalTable::V5Later,
+            &ctx,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn trailing_pointer_entries_refuse_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let record = integer_parameter_record(1, &[999, 3, 5, 0]);
+    let candidate = super::PointerGroupCandidate {
+        token_start: 0,
+        association_start: 1,
+        property_count_index: 3,
+        property_count: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result =
+        super::groups_for_candidate_with_context(&record, &BTreeMap::new(), candidate, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+                && limit.operation == "iges trailing pointer entries"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        super::groups_for_candidate_with_context(&record, &BTreeMap::new(), candidate, &ctx,)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let groups = super::TrailingPointerGroups {
+        token_start: 1,
+        association_pointers: [3_u32, 5]
+            .into_iter()
+            .enumerate()
+            .map(|(token_index, sequence)| super::TrailingPointer {
+                token_index,
+                raw_pointer: i64::from(sequence),
+                resolved: Some(sequence),
+            })
+            .collect(),
+        property_pointers: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = groups.fully_valid_with_context(&ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+                && limit.operation == "iges resolved association pointers"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        groups
+            .fully_valid_with_context(&ctx)
+            .unwrap()
+            .unwrap()
+            .associations(),
+        &[3, 5]
+    );
+}
+
+#[test]
+fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+    let scan = scan(&bytes).unwrap();
+    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+    let cards = [*lines.keys().next().unwrap()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 63;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = super::owned_bytes(&cards, &lines, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 64
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::owned_bytes(&cards, &lines, &ctx).is_ok());
+}
+
+#[test]
+fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use std::collections::BTreeMap;
+
+        let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+        let scan = scan(&bytes).unwrap();
+        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+        let cards = [*lines.keys().next().unwrap()];
+        let (directory, _) =
+            crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
+                .unwrap();
+        let entry = directory.first().unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 79;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = super::quarantine(
+            entry,
+            &cards,
+            &lines,
+            super::ParameterDefect::NoOwnedCards,
+            None,
+            &ctx,
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.additional == 80
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        assert!(super::quarantine(
+            entry,
+            &cards,
+            &lines,
+            super::ParameterDefect::NoOwnedCards,
+            None,
+            &ctx,
+        )
+        .is_ok());
+    });
+}
+
+#[test]
+fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use std::collections::BTreeMap;
+
+        let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+        let scan = scan(&bytes).unwrap();
+        let (directory, _) =
+            crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
+                .unwrap();
+        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+        let back_pointers = lines
+            .iter()
+            .map(|(sequence, line)| (*sequence, super::back_pointer(line)))
+            .collect::<BTreeMap<_, _>>();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = super::resolve_ownership(
+            &directory,
+            &lines,
+            &back_pointers,
+            &mut crate::card::FramingRecoveries::default(),
+            &ctx,
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 2
+                    && limit.additional == 1
+                    && limit.operation == "iges named parameter owners"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        assert!(super::resolve_ownership(
+            &directory,
+            &lines,
+            &back_pointers,
+            &mut crate::card::FramingRecoveries::default(),
+            &ctx,
+        )
+        .is_ok());
+    });
+}
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let mut bytes = owned_test_file(&[OwnedTestEntity {
@@ -65,31 +365,16 @@ impl From<i64> for TokenValue {
 
 impl From<f64> for TokenValue {
     fn from(value: f64) -> Self {
-        Self::Real(value)
+        Self::real(value)
     }
 }
 
-fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
-    DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 1,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    }
+#[test]
+fn finite_real_token_keeps_native_json_shape() {
+    assert_eq!(
+        serde_json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
+        r#"{"kind":"real","value":1.5}"#
+    );
 }
 
 #[test]
@@ -126,6 +411,18 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
     }
 }
 
+#[test]
+fn counted_list_with_start_past_end_has_no_items() {
+    let record = integer_parameter_record(1, &[0]);
+    assert_eq!(record.count_with_stride_at(0, 2, 1, 1), None);
+}
+
+#[test]
+fn default_tail_with_start_past_end_has_no_items() {
+    let record = integer_parameter_record(1, &[0]);
+    assert_eq!(record.items_before_default_tail_at(2, 1, 1), None);
+}
+
 fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRecord {
     let parameter_end = values.len();
     ParameterRecord {
@@ -138,5 +435,32 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
             .collect(),
         parameter_end,
         comment: Vec::new(),
+    }
+}
+
+pub(super) fn directory_target_with_form(
+    sequence: u32,
+    entity_type: i64,
+    form: i64,
+) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type,
+        parameter_start: 1,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: SourceStatus::from_codes([0, 0, 0, 0]),
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
     }
 }

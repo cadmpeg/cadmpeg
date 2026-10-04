@@ -5,10 +5,12 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{
+    fixture, minimal_fcstd, minimal_rhino_archive, rhino_header, synthetic_rhino_point,
+};
 
 #[test]
 fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
@@ -38,9 +40,15 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
             String::from_utf8_lossy(&output.stderr)
         );
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["source"]["format"], "fcstd");
+        assert_eq!(value["source"]["identity"]["classification"], "classified");
+        assert!(
+            value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                .as_str()
+                .is_some_and(|dialect| dialect.starts_with("fcstd:")),
+            "{value}"
+        );
         assert_eq!(
-            value["source"]["dialects"]["primary"]["declared"]["schema_version"],
+            value["source"]["identity"]["dialects"]["primary"]["declared"]["schema_version"],
             "4"
         );
     }
@@ -138,8 +146,14 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
-    assert_eq!(value["confidence"], "high");
-    assert_eq!(value["summary"]["format"], "rhino");
+    assert_eq!(value["selection"]["kind"], "detected");
+    assert_eq!(value["selection"]["confidence"], "high");
+    assert!(
+        value["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("rhino:")),
+        "{value}"
+    );
     assert_eq!(value["summary"]["container_kind"], "3dm-chunks");
     assert_eq!(value["summary"]["entries"].as_array().unwrap().len(), 3);
     assert_eq!(value["summary"]["notes"][0], "archive version 50");
@@ -179,7 +193,12 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
-        assert_eq!(value["source"]["format"], "rhino");
+        assert!(
+            value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                .as_str()
+                .is_some_and(|dialect| dialect.starts_with("rhino:")),
+            "{value}"
+        );
     }
 }
 
@@ -202,7 +221,12 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
-            assert_eq!(value["source"]["format"], "rhino");
+            assert!(
+                value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                    .as_str()
+                    .is_some_and(|dialect| dialect.starts_with("rhino:")),
+                "{value}"
+            );
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
                 value["source"]["attributes"]["container_kind"],
@@ -320,7 +344,11 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
 #[test]
 fn cadir_override_bypasses_native_detection() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "no-extension", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "no-extension",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["check", input.to_str().unwrap(), "--input-format", "cadir"])
@@ -331,7 +359,7 @@ fn cadir_override_bypasses_native_detection() {
 #[test]
 fn input_flag_reaches_every_single_input_command() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 

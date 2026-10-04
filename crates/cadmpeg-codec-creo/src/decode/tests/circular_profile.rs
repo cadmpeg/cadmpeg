@@ -1,0 +1,513 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_test_support::edit;
+
+use crate::decode::feature_history::axes::section_profile_ref;
+use crate::decode::holes::placement::CapOutline;
+use crate::decode::holes::placement::{
+    cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
+    hole_placement,
+};
+use crate::decode::holes::sweep::{
+    circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
+    CircularSweepGeometry,
+};
+use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
+use crate::decode::sweep::circular::circular_section_profile_from_cylinder;
+use crate::decode::sweep::profiles::connected_sketch_profile_vertices;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
+    FeatureOperation as IrFeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+};
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchEntityUse,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+};
+use std::collections::BTreeMap;
+
+#[test]
+fn circular_sweep_projects_profile_direction_and_extent() {
+    let rows = [12, 13].map(|id| super::surface_row(id, 6, crate::surface::SurfaceKind::Cylinder));
+    let sweep = CircularSweepGeometry {
+        cylinder_rows: rows.iter().collect(),
+        section_definition_id: None,
+        direction: [0.0, 0.0, -1.0],
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                        .expect("nonzero length fixture"),
+                },
+                draft: None,
+            },
+        },
+        geometry: CylinderSurface::try_new(
+            Point3::new(2.0, 3.0, 4.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.5,
+        )
+        .expect("valid cylinder fixture"),
+    };
+
+    assert_eq!(
+        circular_sweep_feature_definition(
+            ProfileRef::Planar(PlanarProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
+            )),
+            &sweep,
+            BooleanOp::Join,
+            Some(true),
+        ),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
+            )),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
+                    .expect("valid direction fixture"),
+                source: None,
+            },
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                            .expect("nonzero length fixture"),
+                    },
+                    draft: None,
+                },
+            },
+            op: BooleanOp::Join,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        })
+    );
+}
+
+#[test]
+fn circular_sweep_cylinder_recovers_its_section_profile() {
+    let transform = crate::placement::FeatureSectionTransform::new(
+        917,
+        Some(40),
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.0],
+        20,
+    )
+    .expect("valid section frame");
+    let cylinder = CylinderSurface::try_new(
+        Point3::new(5.0, -14.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        4.5,
+    )
+    .expect("valid cylinder fixture");
+
+    assert_eq!(
+        circular_section_profile_from_cylinder(&transform, &cylinder),
+        Some(([2.0, 4.0], 4.5))
+    );
+    let off_axis = CylinderSurface::try_new(
+        Point3::new(5.0, -14.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        4.5,
+    )
+    .expect("valid cylinder fixture");
+    assert_eq!(
+        circular_section_profile_from_cylinder(&transform, &off_axis),
+        None
+    );
+}
+
+#[test]
+fn typed_center_locus_requires_a_circular_geometry_family() {
+    let entity = SketchEntityId::mint("creo:test:entity#1").expect("valid test fixture");
+    let definition = SketchConstraintDefinitionInput::CoincidentLoci {
+        loci: vec![SketchLocus::Center(entity.clone())],
+    };
+    let unresolved = BTreeMap::from([(
+        entity.clone(),
+        SketchGeometry::native(
+            cadmpeg_core::text::NonBlankString::new("solver_only_section_entity")
+                .expect("nonempty source identity"),
+        ),
+    )]);
+    assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
+
+    let native_arc = BTreeMap::from([(
+        entity.clone(),
+        SketchGeometry::native(
+            cadmpeg_core::text::NonBlankString::new("arc").expect("nonempty source identity"),
+        ),
+    )]);
+    assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
+
+    let native_line = BTreeMap::from([(
+        entity.clone(),
+        SketchGeometry::native(
+            cadmpeg_core::text::NonBlankString::new("line").expect("nonempty source identity"),
+        ),
+    )]);
+    assert!(!sketch_constraint_loci_compatible(
+        &definition,
+        &native_line
+    ));
+
+    let resolved = BTreeMap::from([(
+        entity,
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(1.0).expect("finite length fixture"),
+        })
+        .expect("valid test fixture"),
+    )]);
+    assert!(sketch_constraint_loci_compatible(&definition, &resolved));
+}
+
+#[test]
+fn section_profile_prefers_a_resolved_sketch_chain() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("admitted circular profile fixture");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(Sketch {
+        id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid test fixture"),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
+    });
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
+        })
+        .expect("profile lookup admitted"),
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            "creo:featdefs:sketch#offset:40".to_string()
+        ))
+    );
+
+    ir.model.sketches[0]
+        .profiles
+        .push_single(
+            &resource_ctx,
+            SketchEntityUse {
+                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
+                    .expect("valid test fixture"),
+                reversed: false,
+            },
+        )
+        .expect("admitted circular profile fixture");
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
+        })
+        .expect("profile lookup admitted"),
+        ProfileRef::Planar(PlanarProfileRef::Sketch(
+            SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
+        ))
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#918".to_string())
+        })
+        .expect("profile lookup admitted"),
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            "creo:featdefs:sketch#918".to_string()
+        ))
+    );
+}
+
+#[test]
+fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let id = SketchId::mint("creo:model:sketch#40").expect("sketch ID");
+    let mut profiles = cadmpeg_ir::sketches::SketchProfiles::default();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        profiles.push_single(
+            ctx,
+            SketchEntityUse {
+                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1")
+                    .expect("entity ID"),
+                reversed: false,
+            },
+        )
+    })
+    .expect("profile use admitted");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(Sketch {
+        id: id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+        profiles,
+        native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
+        .expect_err("one sketch needs one lookup unit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo section profile sketch lookup")
+    );
+    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
+        .expect_err("selected sketch copy exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo section profile sketch identity")
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())
+        })
+        .expect("service profile admitted"),
+        ProfileRef::Planar(PlanarProfileRef::Sketch(id))
+    );
+}
+
+#[test]
+fn connected_profile_vertices_include_open_chain_terminals() {
+    let sketch_id =
+        SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
+    let entity_id = |external_id| {
+        SketchEntityId::mint(format!("creo:featdefs:sketch_entity#917:{external_id}"))
+            .expect("valid test fixture")
+    };
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            SketchEntityUse {
+                entity: entity_id(1),
+                reversed: false,
+            },
+            SketchEntityUse {
+                entity: entity_id(2),
+                reversed: true,
+            },
+        ]])
+        .expect("valid test fixture"),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.extend([
+        SketchEntity::new(
+            entity_id(1),
+            sketch_id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            })
+            .expect("valid test fixture"),
+        ),
+        SketchEntity::new(
+            entity_id(2),
+            sketch_id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(1.0, 1.0),
+                end: Point2::new(1.0, 0.0),
+            })
+            .expect("valid test fixture"),
+        ),
+    ]);
+
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id,
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
+        .expect("service profile vertices"),
+        vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
+    );
+
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().to_raw();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
+            if let SketchGeometryDefinition::Line { start, .. } = definition {
+                *start = Point2::new(0.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        };
+        definition.try_into()
+    })
+    .expect("valid test fixture");
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id,
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
+        .expect("service profile vertices"),
+        vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
+    );
+
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().to_raw();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
+            if let SketchGeometryDefinition::Line { end, .. } = definition {
+                *end = Point2::new(2.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        };
+        definition.try_into()
+    })
+    .expect("valid test fixture");
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
+        .expect("service profile vertices")
+        .is_empty()
+    );
+}
+
+#[test]
+fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
+    assert_eq!(
+        hole_extent_and_direction([
+            ([2.0, -21.0, -0.75], [1.0, 0.0, 0.0]),
+            ([5.0, -22.5, 0.75], [-1.0, 0.0, 0.0]),
+        ]),
+        Some((
+            [1.0, 0.0, 0.0],
+            LinearTermination::Blind {
+                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                    .expect("nonzero length fixture"),
+            },
+        ))
+    );
+    assert_eq!(
+        hole_extent_and_direction([
+            ([0.0, 0.5, 0.0], [0.0, 1.0, 0.0]),
+            ([0.0, -0.5, 0.0], [0.0, 1.0, 0.0]),
+        ]),
+        Some((
+            [-0.0, -1.0, -0.0],
+            LinearTermination::Blind {
+                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
+                    .expect("nonzero length fixture"),
+            },
+        ))
+    );
+    assert_eq!(
+        hole_extent_and_direction([
+            ([0.0; 3], [1.0, 0.0, 0.0]),
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ]),
+        None
+    );
+
+    assert_eq!(
+        hole_placement([
+            (902, [0.0, 0.0, 0.85], [0.0, 0.0, 1.0]),
+            (905, [0.0, 0.0, 7.35], [0.0, 0.0, -1.0]),
+        ]),
+        Some((
+            902,
+            [0.0, 0.0, 1.0],
+            LinearTermination::Blind {
+                length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                    .expect("nonzero length fixture"),
+            },
+        ))
+    );
+    assert_eq!(
+        hole_placement([
+            (902, [0.0; 3], [0.0, 0.0, 1.0]),
+            (905, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]),
+            (908, [0.0, 0.0, 2.0], [0.0, 0.0, -1.0]),
+        ]),
+        None
+    );
+    assert!(matches!(
+        hole_cylinder_from_cap_outlines([
+            CapOutline { surface_id: 902, origin: [0.0, 0.0, 0.85], normal: [0.0, 0.0, 1.0], corners: [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]] },
+            CapOutline { surface_id: 905, origin: [0.0, 0.0, 7.35], normal: [0.0, 0.0, -1.0], corners: [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]] },
+        ]),
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(0.0, 19.0, 0.85)
+                && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, 0.0, 1.0)
+                && cylinder.radius().get() == 1.5
+    ));
+    assert!(hole_cylinder_from_cap_outlines([
+        CapOutline {
+            surface_id: 902,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            corners: [[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]]
+        },
+        CapOutline {
+            surface_id: 905,
+            origin: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, -1.0],
+            corners: [[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]]
+        },
+    ])
+    .is_none());
+    assert!(matches!(
+        circular_sweep_cylinder_from_cap_outlines([
+            (828, [0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
+            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+        ], [
+            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
+        ]),
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(-12.5, 4.0, 0.0)
+                && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, -1.0, 0.0)
+                && cylinder.radius().get() == 0.75
+    ));
+    assert!(matches!(
+        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]] }),
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(0.0, 16.0, 0.0)
+                && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, 1.0, 0.0)
+                && cylinder.radius().get() == 4.45
+    ));
+}

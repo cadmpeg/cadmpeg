@@ -3,1168 +3,156 @@
 //!
 //! Carriers are stored in their own arenas and referenced by id from the
 //! topology graph (a face references a [`Surface`], an edge a [`Curve`], a
-//! coedge a [`Pcurve`]). One carrier may therefore support several topological
+//! coedge a [`pcurve::Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use crate::math::{Point2, Point3, Vector3};
+use crate::math::{
+    sum::{fast_dot, ExactSignedSum},
+    Point3, Vector3,
+};
 use crate::provenance::SourceObjectAssociation;
-use crate::transform::{Transform, Transform2};
+use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
+use crate::transform::Transform;
+use crate::units::FiniteVector;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
 
-fn default_true() -> bool {
-    true
+/// Charge a decode copy of `count` values of `T` as collection items and retained bytes.
+pub(super) fn charge_decode_copy<T>(
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64_from_index(count);
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(bytes, operation)
 }
 
-/// Parameter-space continuation used when an offset evaluates beyond its
-/// support's active NURBS rectangle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum OffsetSupportExtension {
-    /// Continue the support's terminal polynomial patch.
-    Natural,
-    /// Continue boundary tangents as ruled linear strips.
-    Linear,
+pub(super) fn copy_decode_slice<T: Copy>(
+    values: &[T],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    ctx.copy_slice(values, operation)
 }
+
+pub mod analytic;
+pub mod nurbs;
+pub mod pcurve;
+pub mod sampled;
+pub mod scaling;
+use analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, HyperbolaCurve,
+    LineCurve, ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
+};
+use nurbs::{NurbsCurve, NurbsSurface};
+use pcurve::PcurveGeometry;
+use sampled::{PolygonalSurface, PolylineCurve};
+
+/// Checked procedural curve payloads.
+pub mod curve_payloads;
+mod lanes;
+/// Checked procedural surface payloads.
+pub mod surface_payloads;
+
+/// Greatest number of nesting carriers the IR admits over one geometry leaf.
+///
+/// A nesting carrier holds its basis inline in a `Box` rather than by arena id:
+/// [`PlacedSurface`], [`PlacedCurve`], and a pcurve's
+/// [`PlacedPcurve`](pcurve::PlacedPcurve),
+/// [`TrimmedPcurve`](pcurve::TrimmedPcurve) and
+/// [`OffsetPcurve`](pcurve::OffsetPcurve). Each one's `try_new` refuses a
+/// result past this depth and stores the depth it holds, so no value of the
+/// three carriers nests deeper however it was built or deserialized, and every
+/// consumer that reads through a basis is bounded without a check of its own.
+pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyExtensionFlags {
     /// The compact `offsur` layout has no extension flag.
-    Absent,
+    Absent {},
     /// The extension gate is false, so no dependent flags follow it.
-    Disabled,
+    Disabled {},
     /// The extension gate is true and carries its required flag and optional
     /// later-revision flag.
     Enabled {
         /// Required flag following the true extension gate.
         secondary: bool,
         /// Optional flag admitted by the later legacy layout.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tertiary"
+        )]
         tertiary: Option<bool>,
     },
 }
 
-impl LegacyExtensionFlags {
-    /// Return the legacy wire sequence.
-    #[must_use]
-    pub fn wire_values(self) -> Vec<bool> {
-        match self {
-            Self::Absent => Vec::new(),
-            Self::Disabled => vec![false],
-            Self::Enabled {
-                secondary,
-                tertiary,
-            } => {
-                let mut flags = vec![true, secondary];
-                flags.extend(tertiary);
-                flags
-            }
-        }
-    }
-}
-
-impl TryFrom<Vec<bool>> for LegacyExtensionFlags {
-    type Error = Vec<bool>;
-
-    fn try_from(flags: Vec<bool>) -> Result<Self, Self::Error> {
-        match flags.as_slice() {
-            [] => Ok(Self::Absent),
-            [false] => Ok(Self::Disabled),
-            [true, secondary] => Ok(Self::Enabled {
-                secondary: *secondary,
-                tertiary: None,
-            }),
-            [true, secondary, tertiary] => Ok(Self::Enabled {
-                secondary: *secondary,
-                tertiary: Some(*tertiary),
-            }),
-            _ => Err(flags),
-        }
-    }
-}
-
-impl Serialize for LegacyExtensionFlags {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.wire_values().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LegacyExtensionFlags {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Self::try_from(Vec::<bool>::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom(
-                "extension_flags must be [], [false], [true, flag], or [true, flag, flag]",
-            )
-        })
-    }
-}
-
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
-#[derive(Debug, Clone, PartialEq)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
-pub enum OffsetExtension {
+// A source states raw scalars; an `OffsetSurfaceConstruction` holds the
+// admitted extension, whose scalars are `FiniteReal` values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub enum OffsetExtension<R = f64> {
     /// Pre-revision conditional flag sequence.
-    Legacy(LegacyExtensionFlags),
+    Legacy {
+        /// Conditional flag sequence in its positional wire form.
+        flags: LegacyExtensionFlags,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
     /// Revision-gated fields with the required four-boolean carrier run.
-    Revision(RevisionSurfaceForm<[bool; 4]>),
+    Revision {
+        /// Revision-gated form whose carrier run is exactly four booleans.
+        form: Box<RevisionSurfaceForm<[bool; 4], R>>,
+    },
 }
 
-#[derive(Serialize)]
-struct OffsetExtensionWriteWire<'a> {
-    extension_flags: Vec<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm<[bool; 4]>>,
-}
-
-#[derive(Deserialize)]
-struct OffsetExtensionReadWire {
-    extension_flags: Vec<bool>,
-    #[serde(default)]
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the offset-extension wire schema")]
-struct OffsetExtensionSchemaWire {
-    extension_flags: Vec<bool>,
-    revision_form: Option<RevisionSurfaceForm<[bool; 4]>>,
-}
-
-impl Serialize for OffsetExtension {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (extension_flags, revision_form) = match self {
-            Self::Legacy(flags) => (flags.wire_values(), None),
-            Self::Revision(form) => (Vec::new(), Some(form)),
-        };
-        OffsetExtensionWriteWire {
-            extension_flags,
-            revision_form,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for OffsetExtension {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = OffsetExtensionReadWire::deserialize(deserializer)?;
-        match wire.revision_form {
-            None => LegacyExtensionFlags::try_from(wire.extension_flags)
-                .map(Self::Legacy)
-                .map_err(|_| {
-                    serde::de::Error::custom(
-                        "extension_flags must be [], [false], [true, flag], or [true, flag, flag]",
-                    )
-                }),
-            Some(mut form) if wire.extension_flags.is_empty() => {
-                let flags: [bool; 4] = std::mem::take(&mut form.flags).try_into().map_err(|_| {
-                    serde::de::Error::custom(
-                        "revision_form.flags must contain exactly four booleans for an offset surface",
-                    )
-                })?;
-                Ok(Self::Revision(form.with_flags(flags)))
-            }
-            Some(_) => Err(serde::de::Error::custom(
-                "extension_flags must be empty when revision_form is present",
-            )),
-        }
-    }
-}
-
-/// A tensor-product NURBS surface.
-///
-/// Control points use u-major order. `weights == None` denotes a non-rational
-/// surface.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct NurbsSurface {
-    /// Degree in the u parametric direction.
-    u_degree: u32,
-    /// Degree in the v parametric direction.
-    v_degree: u32,
-    /// Full knot vector in u.
-    u_knots: Vec<f64>,
-    /// Full knot vector in v.
-    v_knots: Vec<f64>,
-    /// Number of control points along u (poles per row).
-    u_count: u32,
-    /// Number of control points along v (poles per column).
-    v_count: u32,
-    /// Control points, u-major: index `i*v_count + j` is pole `(i, j)`.
-    control_points: Vec<Point3>,
-    /// Per-pole weights in control-point order; `None` denotes non-rational.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
-    /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    normal_reversed: bool,
-    /// Whether the surface is periodic in u.
-    u_periodic: bool,
-    /// Whether the surface is periodic in v.
-    v_periodic: bool,
-}
-
-/// Polynomial tensor-product B-spline surface with a rectangular control grid.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct BsplineSurface {
-    u_degree: u32,
-    v_degree: u32,
-    u_knots: Vec<f64>,
-    v_knots: Vec<f64>,
-    control_points: Vec<Vec<Point3>>,
-}
-
-impl BsplineSurface {
-    /// Build a rectangular grid with full knot vectors for both parameters.
-    // Both parameter axes and their shared control grid form one NURBS invariant.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        u_degree: u32,
-        v_degree: u32,
-        u_knots: Vec<f64>,
-        v_knots: Vec<f64>,
-        control_points: Vec<Vec<Point3>>,
-    ) -> Result<Self, NurbsError> {
-        let u_count = control_points.len();
-        let v_count = control_points.first().map_or(0, Vec::len);
-        for (axis, degree, count, knots) in [
-            ("u", u_degree, u_count, &u_knots),
-            ("v", v_degree, v_count, &v_knots),
-        ] {
-            if count <= degree as usize {
-                return Err(NurbsError(format!(
-                    "control_points {axis} count must exceed degree {degree}, found {count}"
-                )));
-            }
-            require_length(
-                &format!("{axis}_knots"),
-                knots.len(),
-                checked_knot_count(axis, count, degree)?,
-            )?;
-        }
-        for row in &control_points {
-            require_length("control_points row", row.len(), v_count)?;
-        }
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points,
-        })
-    }
-
-    /// Degree in the first parameter.
-    pub const fn u_degree(&self) -> u32 {
-        self.u_degree
-    }
-
-    /// Degree in the second parameter.
-    pub const fn v_degree(&self) -> u32 {
-        self.v_degree
-    }
-
-    /// Full knot vector in the first parameter.
-    pub fn u_knots(&self) -> &[f64] {
-        &self.u_knots
-    }
-
-    /// Full knot vector in the second parameter.
-    pub fn v_knots(&self) -> &[f64] {
-        &self.v_knots
-    }
-
-    /// Rectangular control grid in first-parameter-major order.
-    pub fn control_points(&self) -> &[Vec<Point3>] {
-        &self.control_points
-    }
-
-    /// Mutable pole coordinates. The grid shape cannot change.
-    pub fn control_points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
-        self.control_points.iter_mut().flatten()
-    }
-}
-
-impl<'de> Deserialize<'de> for BsplineSurface {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            u_degree: u32,
-            v_degree: u32,
-            u_knots: Vec<f64>,
-            v_knots: Vec<f64>,
-            control_points: Vec<Vec<Point3>>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.u_degree,
-            wire.v_degree,
-            wire.u_knots,
-            wire.v_knots,
-            wire.control_points,
-        )
-        .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Structural error in a NURBS knot or pole carrier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NurbsError(String);
-
-impl std::fmt::Display for NurbsError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for NurbsError {}
-
-fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
-    pole_count
-        .checked_add(degree as usize)
-        .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| NurbsError(format!("{field} knot count overflows usize")))
-}
-
-fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), NurbsError> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(NurbsError(format!(
-            "{field} must contain {expected} values, found {actual}"
-        )))
-    }
-}
-
-fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsError> {
-    if points
-        .iter()
-        .all(|point| point.u.is_finite() && point.v.is_finite())
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(format!("{field} contains a non-finite point")))
-    }
-}
-
-fn require_finite_points_3(field: &str, points: &[Point3]) -> Result<(), NurbsError> {
-    if points
-        .iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(format!("{field} contains a non-finite point")))
-    }
-}
-
-fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError> {
-    if values.iter().all(|value| value.is_finite()) {
-        Ok(())
-    } else {
-        Err(NurbsError(format!("{field} contains a non-finite value")))
-    }
-}
-
-fn require_nondecreasing_knots(knots: &[f64]) -> Result<(), NurbsError> {
-    require_finite_scalars("knots", knots)?;
-    if knots_nondecreasing(knots) {
-        Ok(())
-    } else {
-        Err(NurbsError("knots must be non-decreasing".into()))
-    }
-}
-
-fn require_3d_weights(weights: &[f64]) -> Result<(), NurbsError> {
-    if weights
-        .iter()
-        .all(|weight| weight.is_finite() && *weight != 0.0)
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(
-            "3D NURBS weights must be finite and non-zero".into(),
-        ))
-    }
-}
-
-fn require_pcurve_weights(weights: &[f64]) -> Result<(), NurbsError> {
-    if weights
-        .iter()
-        .all(|weight| weight.is_finite() && *weight > 0.0)
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(
-            "pcurve NURBS weights must be finite and positive".into(),
-        ))
-    }
-}
-
-fn require_curve_cardinality(
-    degree: u32,
-    knot_count: usize,
-    pole_count: usize,
-    weight_count: Option<usize>,
-    point_field: &str,
-) -> Result<(), NurbsError> {
-    if pole_count <= degree as usize {
-        return Err(NurbsError(format!(
-            "{point_field} must contain more than degree {degree} poles, found {pole_count}"
-        )));
-    }
-    require_length(
-        "knots",
-        knot_count,
-        checked_knot_count("curve", pole_count, degree)?,
-    )?;
-    if let Some(weight_count) = weight_count {
-        require_length("weights", weight_count, pole_count)?;
-    }
-    Ok(())
-}
-
-impl NurbsSurface {
-    /// Build a tensor-product NURBS surface with consistent cardinalities.
-    // Both parameter axes and their shared control grid form one NURBS invariant.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        u_degree: u32,
-        v_degree: u32,
-        u_knots: Vec<f64>,
-        v_knots: Vec<f64>,
-        u_count: u32,
-        v_count: u32,
-        control_points: Vec<Point3>,
-        weights: Option<Vec<f64>>,
-        normal_reversed: bool,
-        u_periodic: bool,
-        v_periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        if u_count <= u_degree {
-            return Err(NurbsError(format!(
-                "u_count must exceed u_degree {u_degree}, found {u_count}"
-            )));
-        }
-        if v_count <= v_degree {
-            return Err(NurbsError(format!(
-                "v_count must exceed v_degree {v_degree}, found {v_count}"
-            )));
-        }
-        let pole_count = (u_count as usize)
-            .checked_mul(v_count as usize)
-            .ok_or_else(|| NurbsError("surface pole count overflows usize".into()))?;
-        require_length("control_points", control_points.len(), pole_count)?;
-        require_length(
-            "u_knots",
-            u_knots.len(),
-            checked_knot_count("u", u_count as usize, u_degree)?,
-        )?;
-        require_length(
-            "v_knots",
-            v_knots.len(),
-            checked_knot_count("v", v_count as usize, v_degree)?,
-        )?;
-        require_finite_points_3("control_points", &control_points)?;
-        require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError(format!("u_{error}")))?;
-        require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError(format!("v_{error}")))?;
-        if let Some(weights) = &weights {
-            require_length("weights", weights.len(), pole_count)?;
-            require_3d_weights(weights)?;
-        }
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            u_count,
-            v_count,
-            control_points,
-            weights,
-            normal_reversed,
-            u_periodic,
-            v_periodic,
-        })
-    }
-
-    /// Degree in the u parametric direction.
-    pub const fn u_degree(&self) -> u32 {
-        self.u_degree
-    }
-
-    /// Degree in the v parametric direction.
-    pub const fn v_degree(&self) -> u32 {
-        self.v_degree
-    }
-
-    /// Full knot vector in u.
-    pub fn u_knots(&self) -> &[f64] {
-        &self.u_knots
-    }
-
-    /// Full knot vector in v.
-    pub fn v_knots(&self) -> &[f64] {
-        &self.v_knots
-    }
-
-    /// Atomically edit the u knot vector and preserve its invariants.
-    pub fn edit_u_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.u_knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("u_{error}")))?;
-        self.u_knots = values;
-        Ok(())
-    }
-
-    /// Atomically edit the v knot vector and preserve its invariants.
-    pub fn edit_v_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.v_knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("v_{error}")))?;
-        self.v_knots = values;
-        Ok(())
-    }
-
-    /// Number of control points along u.
-    pub const fn u_count(&self) -> u32 {
-        self.u_count
-    }
-
-    /// Number of control points along v.
-    pub const fn v_count(&self) -> u32 {
-        self.v_count
-    }
-
-    /// Control points in u-major order.
-    pub fn control_points(&self) -> &[Point3] {
-        &self.control_points
-    }
-
-    /// Atomically edit control points and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnOnce(&mut [Point3]),
-    ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        require_finite_points_3("control_points", &values)?;
-        self.control_points = values;
-        Ok(())
-    }
-
-    /// Rational weights in control-point order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
-    }
-
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("surface has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_3d_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_3d_weights(values)?;
-        }
-        self.weights = weights;
-        Ok(())
-    }
-
-    /// Whether the carrier's oriented normal is reversed.
-    pub const fn normal_reversed(&self) -> bool {
-        self.normal_reversed
-    }
-
-    /// Set whether the carrier's oriented normal is reversed.
-    pub fn set_normal_reversed(&mut self, value: bool) {
-        self.normal_reversed = value;
-    }
-
-    /// Whether the surface is periodic in u.
-    pub const fn u_periodic(&self) -> bool {
-        self.u_periodic
-    }
-
-    /// Set whether the surface is periodic in u.
-    pub fn set_u_periodic(&mut self, value: bool) {
-        self.u_periodic = value;
-    }
-
-    /// Whether the surface is periodic in v.
-    pub const fn v_periodic(&self) -> bool {
-        self.v_periodic
-    }
-
-    /// Set whether the surface is periodic in v.
-    pub fn set_v_periodic(&mut self, value: bool) {
-        self.v_periodic = value;
-    }
-
-    /// Exchange the u and v parameter axes and transpose pole storage.
-    /// The natural normal changes sign; `normal_reversed` remains unchanged.
-    pub fn transpose_parameter_axes(&mut self) {
-        let old_u = self.u_count as usize;
-        let old_v = self.v_count as usize;
-        let old_points = std::mem::take(&mut self.control_points);
-        let old_weights = std::mem::take(&mut self.weights);
-        self.control_points = Vec::with_capacity(old_points.len());
-        self.weights = old_weights
-            .as_ref()
-            .map(|_| Vec::with_capacity(old_points.len()));
-        for new_u in 0..old_v {
-            for new_v in 0..old_u {
-                let old_index = new_v * old_v + new_u;
-                self.control_points.push(old_points[old_index]);
-                if let (Some(source), Some(target)) = (&old_weights, &mut self.weights) {
-                    target.push(source[old_index]);
-                }
-            }
-        }
-        std::mem::swap(&mut self.u_degree, &mut self.v_degree);
-        std::mem::swap(&mut self.u_knots, &mut self.v_knots);
-        std::mem::swap(&mut self.u_count, &mut self.v_count);
-        std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
-    }
-}
-
-impl<'de> Deserialize<'de> for NurbsSurface {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            u_degree: u32,
-            v_degree: u32,
-            u_knots: Vec<f64>,
-            v_knots: Vec<f64>,
-            u_count: u32,
-            v_count: u32,
-            control_points: Vec<Point3>,
-            #[serde(default)]
-            weights: Option<Vec<f64>>,
-            #[serde(default)]
-            normal_reversed: bool,
-            u_periodic: bool,
-            v_periodic: bool,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.u_degree,
-            wire.v_degree,
-            wire.u_knots,
-            wire.v_knots,
-            wire.u_count,
-            wire.v_count,
-            wire.control_points,
-            wire.weights,
-            wire.normal_reversed,
-            wire.u_periodic,
-            wire.v_periodic,
-        )
-        .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Fixed parameter axis used to extract an isoparametric surface curve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum SurfaceParameterAxis {
-    /// Hold the surface U parameter constant and vary V.
-    U,
-    /// Hold the surface V parameter constant and vary U.
-    V,
-}
-
-/// A NURBS curve knot/pole payload.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct NurbsCurve {
-    /// Curve degree.
-    degree: u32,
-    /// Full knot vector.
-    knots: Vec<f64>,
-    /// Control points in parameter order.
-    control_points: Vec<Point3>,
-    /// Per-pole weights; `None` denotes non-rational.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
-    /// Whether the curve is periodic.
-    periodic: bool,
-}
-
-impl NurbsCurve {
-    /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
-    pub fn new(
-        degree: u32,
-        knots: Vec<f64>,
-        control_points: Vec<Point3>,
-        weights: Option<Vec<f64>>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            control_points.len(),
-            weights.as_ref().map(Vec::len),
-            "control_points",
-        )?;
-        require_finite_points_3("control_points", &control_points)?;
-        require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_3d_weights(weights)?;
-        }
-        Ok(Self {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        })
-    }
-
-    /// Curve degree.
-    pub const fn degree(&self) -> u32 {
-        self.degree
-    }
-
-    /// Full knot vector.
-    pub fn knots(&self) -> &[f64] {
-        &self.knots
-    }
-
-    /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
-        Ok(())
-    }
-
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> &[Point3] {
-        &self.control_points
-    }
-
-    /// Atomically edit control points and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnOnce(&mut [Point3]),
-    ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        require_finite_points_3("control_points", &values)?;
-        self.control_points = values;
-        Ok(())
-    }
-
-    /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
-    }
-
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("curve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_3d_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_3d_weights(values)?;
-        }
-        self.weights = weights;
-        Ok(())
-    }
-
-    /// Whether the curve is periodic.
-    pub const fn periodic(&self) -> bool {
-        self.periodic
-    }
-
-    /// Set whether the curve is periodic.
-    pub fn set_periodic(&mut self, value: bool) {
-        self.periodic = value;
-    }
-
-    /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
-        self.control_points.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for NurbsCurve {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            degree: u32,
-            knots: Vec<f64>,
-            control_points: Vec<Point3>,
-            #[serde(default)]
-            weights: Option<Vec<f64>>,
-            periodic: bool,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.control_points,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
-    }
-}
-
-/// True when each knot is at least as large as the previous (repeats allowed).
-///
-/// A NaN pair fails this predicate. Prefer this form when the site already
-/// used `windows(2).all(|pair| pair[0] <= pair[1])`.
-pub fn knots_nondecreasing(knots: &[f64]) -> bool {
-    knots.windows(2).all(|pair| pair[0] <= pair[1])
-}
-
-/// True when each knot is strictly larger than the previous.
-///
-/// A NaN pair fails this predicate. Prefer this form when the site already
-/// used `windows(2).all(|pair| pair[0] < pair[1])`.
-pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
-    knots.windows(2).all(|pair| pair[0] < pair[1])
-}
-
-/// Structural error in a sampled polyline or polygonal carrier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeometryLayoutError(String);
-
-impl std::fmt::Display for GeometryLayoutError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for GeometryLayoutError {}
-
-fn geometry_layout_error(message: impl Into<String>) -> GeometryLayoutError {
-    GeometryLayoutError(message.into())
-}
-
-/// Source-native polygonal surface with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PolygonalSurface {
-    vertices: Vec<Point3>,
-    triangles: Vec<[u32; 3]>,
-    chordal_deflection: f64,
-}
-
-impl PolygonalSurface {
-    /// Build a polygonal surface whose triangle indices address `vertices`.
-    pub fn new(
-        vertices: Vec<Point3>,
-        triangles: Vec<[u32; 3]>,
-        chordal_deflection: f64,
-    ) -> Result<Self, GeometryLayoutError> {
-        if vertices.len() < 3 {
-            return Err(geometry_layout_error(
-                "polygonal surface must contain at least three vertices",
-            ));
-        }
-        if triangles.is_empty() {
-            return Err(geometry_layout_error(
-                "polygonal surface must contain at least one triangle",
-            ));
-        }
-        if triangles
-            .iter()
-            .flatten()
-            .any(|index| *index as usize >= vertices.len())
-        {
-            return Err(geometry_layout_error(
-                "polygonal surface contains an out-of-range triangle index",
-            ));
-        }
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection,
-        })
-    }
-
-    /// Ordered model-space vertices.
-    #[must_use]
-    pub fn vertices(&self) -> &[Point3] {
-        &self.vertices
-    }
-
-    /// Mutable vertex positions. The cardinality cannot change.
-    pub fn vertices_mut(&mut self) -> &mut [Point3] {
-        &mut self.vertices
-    }
-
-    /// Zero-based triangle indices into [`Self::vertices`].
-    #[must_use]
-    pub fn triangles(&self) -> &[[u32; 3]] {
-        &self.triangles
-    }
-
-    /// Maximum chordal deviation recorded by the source.
-    #[must_use]
-    pub const fn chordal_deflection(&self) -> f64 {
-        self.chordal_deflection
-    }
-
-    /// Set the recorded chordal deviation.
-    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
-        self.chordal_deflection = chordal_deflection;
-    }
-}
-
-impl<'de> Deserialize<'de> for PolygonalSurface {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            vertices: Vec<Point3>,
-            triangles: Vec<[u32; 3]>,
-            chordal_deflection: f64,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.vertices, wire.triangles, wire.chordal_deflection)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Source-native polyline with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PolylineCurve {
-    points: Vec<Point3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameters: Option<Vec<f64>>,
-    chordal_deflection: f64,
-}
-
-impl PolylineCurve {
-    /// Build a polyline whose optional parameters match the sample count.
-    pub fn new(
-        points: Vec<Point3>,
-        parameters: Option<Vec<f64>>,
-        chordal_deflection: f64,
-    ) -> Result<Self, GeometryLayoutError> {
-        if points.len() < 2 {
-            return Err(geometry_layout_error(
-                "polyline must contain at least two points",
-            ));
-        }
-        if let Some(parameters) = &parameters {
-            if parameters.len() != points.len() {
-                return Err(geometry_layout_error(
-                    "polyline parameters do not match the point count",
-                ));
-            }
-        }
-        Ok(Self {
-            points,
-            parameters,
-            chordal_deflection,
-        })
-    }
-
-    /// Ordered model-space samples.
-    #[must_use]
-    pub fn points(&self) -> &[Point3] {
-        &self.points
-    }
-
-    /// Mutable sample positions. The cardinality cannot change.
-    pub fn points_mut(&mut self) -> &mut [Point3] {
-        &mut self.points
-    }
-
-    /// Optional source parameters parallel to [`Self::points`].
-    #[must_use]
-    pub fn parameters(&self) -> Option<&[f64]> {
-        self.parameters.as_deref()
-    }
-
-    /// Mutable source parameters. The cardinality cannot change.
-    pub fn parameters_mut(&mut self) -> Option<&mut [f64]> {
-        self.parameters.as_deref_mut()
-    }
-
-    /// Maximum chordal deviation recorded by the source.
-    #[must_use]
-    pub const fn chordal_deflection(&self) -> f64 {
-        self.chordal_deflection
-    }
-
-    /// Set the recorded chordal deviation.
-    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
-        self.chordal_deflection = chordal_deflection;
-    }
-}
-
-impl<'de> Deserialize<'de> for PolylineCurve {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            points: Vec<Point3>,
-            #[serde(default)]
-            parameters: Option<Vec<f64>>,
-            chordal_deflection: f64,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.points, wire.parameters, wire.chordal_deflection)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Analytic, NURBS, or opaque surface geometry.
+/// Analytic, NURBS, or opaque surface geometry established without a
+/// construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SurfaceGeometry {
+#[serde(deny_unknown_fields)]
+pub enum SolvedSurfaceGeometry {
     /// Infinite plane through `origin` with the given `normal`.
-    Plane {
-        /// A point on the plane.
-        origin: Point3,
-        /// Plane normal (unit in well-formed IR).
-        normal: Vector3,
-        /// Positive-u direction in the plane.
-        u_axis: Vector3,
-    },
+    Plane(PlaneSurface),
     /// Right circular cylinder of the given `radius` about the axis line.
-    Cylinder {
-        /// A point on the axis.
-        origin: Point3,
-        /// Axis direction (unit).
-        axis: Vector3,
-        /// Zero-azimuth direction perpendicular to `axis`.
-        ref_direction: Vector3,
-        /// Cylinder radius, in the document's length unit.
-        radius: f64,
-    },
+    Cylinder(CylinderSurface),
     /// Right elliptical cone. `radius` is the major radius at `origin`;
     /// `ratio` is the minor-to-major radius ratio; `half_angle` is the major
     /// half-angle between the axis and the cone surface, in radians.
-    Cone {
-        /// Reference point on the axis where `radius` is measured.
-        origin: Point3,
-        /// Axis direction (unit).
-        axis: Vector3,
-        /// Zero-azimuth direction perpendicular to `axis`.
-        ref_direction: Vector3,
-        /// Radius at `origin`.
-        radius: f64,
-        /// Minor-to-major radius ratio.
-        ratio: f64,
-        /// Half-angle in radians.
-        half_angle: f64,
-    },
+    Cone(ConeSurface),
     /// Sphere.
-    Sphere {
-        /// Sphere center.
-        center: Point3,
-        /// Polar axis.
-        axis: Vector3,
-        /// Zero-azimuth direction perpendicular to `axis`.
-        ref_direction: Vector3,
-        /// Radius.
-        radius: f64,
-    },
+    Sphere(SphereSurface),
     /// Torus. `major_radius` is the distance from `center` to the tube center;
     /// `minor_radius` is the tube radius.
-    Torus {
-        /// Torus center.
-        center: Point3,
-        /// Axis of revolution (unit).
-        axis: Vector3,
-        /// Zero-azimuth direction perpendicular to `axis`.
-        ref_direction: Vector3,
-        /// Major radius.
-        major_radius: f64,
-        /// Minor (tube) radius.
-        minor_radius: f64,
-    },
+    Torus(TorusSurface),
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
-    /// Exact surface defined by a procedural construction in the same model.
-    Procedural {
-        /// Construction that produces this carrier.
-        construction: ProceduralSurfaceId,
-        /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "schema", schemars(skip))]
-        cache: Option<SolvedSurfaceGeometry>,
-    },
     /// Source-native polygonal surface with an explicit chordal error bound.
     Polygonal(PolygonalSurface),
     /// Exact affine placement of an inline basis surface.
-    Transformed {
-        /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<SurfaceGeometry>,
-        /// Affine map from basis coordinates to model coordinates.
-        transform: Transform,
-    },
+    Transformed(PlacedSurface),
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -1175,307 +163,598 @@ pub enum SurfaceGeometry {
     /// not established, so nothing about it is byte-exact or derived.
     Unknown {
         /// Link to the preserved raw record, when the decoder kept the bytes.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_record"
+        )]
         record: Option<UnknownId>,
     },
 }
 
-/// A solved surface cache that cannot recursively contain a procedural carrier.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SolvedSurfaceGeometry(Box<SurfaceGeometry>);
-
 impl SolvedSurfaceGeometry {
-    /// Wrap a non-procedural solved surface geometry.
-    // Failed admission returns the complete input geometry to its caller.
-    #[allow(clippy::result_large_err)]
-    pub fn new(geometry: SurfaceGeometry) -> Result<Self, SurfaceGeometry> {
-        let mut basis = &geometry;
-        while let SurfaceGeometry::Transformed { basis: inner, .. } = basis {
-            basis = inner;
-        }
-        if matches!(basis, SurfaceGeometry::Procedural { .. }) {
-            Err(geometry)
-        } else {
-            Ok(Self(Box::new(geometry)))
-        }
-    }
-
-    /// Borrow the solved geometry.
-    #[must_use]
-    pub fn as_geometry(&self) -> &SurfaceGeometry {
-        &self.0
-    }
-}
-
-impl Serialize for SolvedSurfaceGeometry {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_geometry().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SolvedSurfaceGeometry {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(SurfaceGeometry::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::Plane(value) => Self::Plane(*value),
+            Self::Cylinder(value) => Self::Cylinder(*value),
+            Self::Cone(value) => Self::Cone(*value),
+            Self::Sphere(value) => Self::Sphere(*value),
+            Self::Torus(value) => Self::Torus(*value),
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedSurface {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
         })
     }
-}
 
-impl AsRef<SurfaceGeometry> for SolvedSurfaceGeometry {
-    fn as_ref(&self) -> &SurfaceGeometry {
-        self.as_geometry()
+    /// Placements enclosing the leaf of this carrier's inline basis chain.
+    ///
+    /// [`PlacedSurface`] stores its own depth, so this reads one field and
+    /// building a chain costs one addition per placement.
+    #[must_use]
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Plane(_)
+            | Self::Cylinder(_)
+            | Self::Cone(_)
+            | Self::Sphere(_)
+            | Self::Torus(_)
+            | Self::Nurbs(_)
+            | Self::Polygonal(_)
+            | Self::Unknown { .. } => 0,
+        }
     }
 }
 
-impl std::ops::Deref for SolvedSurfaceGeometry {
-    type Target = SurfaceGeometry;
+/// Exact affine placement of an inline basis surface.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`SolvedSurfaceGeometry`] value nests past
+/// the bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedSurfaceWire")]
+pub struct PlacedSurface {
+    basis: Box<SolvedSurfaceGeometry>,
+    transform: Transform,
+    #[serde(skip)]
+    depth: usize,
+}
 
-    fn deref(&self) -> &Self::Target {
-        self.as_geometry()
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedSurfaceWire {
+    /// Unplaced basis geometry with unchanged parameterization.
+    basis: Box<SolvedSurfaceGeometry>,
+    /// Affine map from basis coordinates to model coordinates.
+    transform: Transform,
+}
+
+impl PlacedSurface {
+    /// Place a basis surface, refusing a chain past [`MAX_GEOMETRY_NESTING`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<SolvedSurfaceGeometry>,
+        transform: Transform,
+    ) -> Result<Self, &'static str> {
+        let Some(depth) = basis
+            .nesting_depth()
+            .checked_add(1)
+            .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+        else {
+            return Err("PlacedSurface.basis nests past the admitted inline basis depth");
+        };
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
     }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &SolvedSurfaceGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Replace the transform. The basis chain, and so the depth, is unchanged.
+    pub const fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+}
+
+impl TryFrom<PlacedSurfaceWire> for PlacedSurface {
+    type Error = &'static str;
+    fn try_from(wire: PlacedSurfaceWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
+    }
+}
+
+/// Analytic, NURBS, procedural, or opaque surface geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SurfaceGeometry {
+    /// Exact surface defined by a procedural construction in the same model.
+    Procedural {
+        /// Construction that produces this carrier.
+        construction: ProceduralSurfaceId,
+        /// Solved carrier geometry retained from the source cache.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_geometry_cache"
+        )]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        cache: Option<SolvedSurfaceGeometry>,
+    },
+    /// A carrier whose shape is established without a construction.
+    #[serde(untagged)]
+    Solved(SolvedSurfaceGeometry),
 }
 
 impl SurfaceGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
-    pub fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
+    pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
-            _ => None,
+            Self::Solved(_) => None,
         }
     }
 
-    /// Geometry used to evaluate this carrier without following a construction.
+    /// Solved carrier retained from the source cache, when this carrier is
+    /// procedural.
     #[must_use]
-    pub fn solved_cache(&self) -> Option<&SurfaceGeometry> {
+    pub const fn solved_cache(&self) -> Option<&SolvedSurfaceGeometry> {
         match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry()),
-            _ => None,
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(_) => None,
         }
     }
 
-    pub(crate) fn wire_geometry(&self) -> &SurfaceGeometry {
-        self.solved_cache().unwrap_or(self)
+    /// Geometry that evaluates this carrier without following a construction.
+    #[must_use]
+    pub const fn solved(&self) -> Option<&SolvedSurfaceGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(geometry) => Some(geometry),
+        }
     }
 }
 
 /// An identified surface carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Surface {
     /// Arena id.
     pub id: SurfaceId,
     /// Surface shape.
     pub geometry: SurfaceGeometry,
     /// Native source-object identity and effective display metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_object"
+    )]
     pub source_object: Option<SourceObjectAssociation>,
 }
 
-/// The analytic or free-form shape of a 3D curve carrier.
+impl Surface {
+    /// Copy the carrier, retained identity and source metadata under caller limits.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let id = self.id.try_clone_for_decode(ctx, operation)?;
+        let geometry = self.geometry.try_clone_for_decode(ctx, operation)?;
+        let source_object = self
+            .source_object
+            .as_ref()
+            .map(|source| source.try_clone_for_decode(ctx, operation))
+            .transpose()?;
+        Ok(Self {
+            id,
+            geometry,
+            source_object,
+        })
+    }
+}
+
+/// The analytic or free-form shape of a 3D curve carrier established without a
+/// construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CurveGeometry {
+#[serde(deny_unknown_fields)]
+pub enum SolvedCurveGeometry {
     /// Infinite line.
-    Line {
-        /// Point on the line.
-        origin: Point3,
-        /// Unit direction.
-        direction: Vector3,
-    },
+    Line(LineCurve),
     /// Full circle.
-    Circle {
-        /// Center.
-        center: Point3,
-        /// Plane normal.
-        axis: Vector3,
-        /// Zero-angle direction perpendicular to `axis`.
-        ref_direction: Vector3,
-        /// Radius.
-        radius: f64,
-    },
+    Circle(CircleCurve),
     /// Ellipse.
-    Ellipse {
-        /// Center.
-        center: Point3,
-        /// Plane normal.
-        axis: Vector3,
-        /// Major-axis direction.
-        major_direction: Vector3,
-        /// Semi-major radius.
-        major_radius: f64,
-        /// Semi-minor radius.
-        minor_radius: f64,
-    },
+    Ellipse(EllipseCurve),
     /// Parabola in STEP conic form.
-    Parabola {
-        /// Vertex.
-        vertex: Point3,
-        /// Plane normal.
-        axis: Vector3,
-        /// Major direction.
-        major_direction: Vector3,
-        /// Focus distance.
-        focal_distance: f64,
-    },
+    Parabola(ParabolaCurve),
     /// Hyperbola in STEP conic form.
-    Hyperbola {
-        /// Center.
-        center: Point3,
-        /// Plane normal.
-        axis: Vector3,
-        /// Transverse-axis direction.
-        major_direction: Vector3,
-        /// Semi-transverse radius.
-        major_radius: f64,
-        /// Semi-conjugate radius.
-        minor_radius: f64,
-    },
+    Hyperbola(HyperbolaCurve),
     /// A curve collapsed to one model-space point at a topological singularity.
-    Degenerate {
-        /// The collapsed curve point.
-        point: Point3,
-    },
+    Degenerate(DegenerateCurve),
     /// Ordered child curves joined into one bounded carrier.
     Composite {
         /// Ordered curve uses and their continuity contracts.
-        segments: Vec<CompositeCurveSegment>,
+        segments: CompositeCurveSegments,
         /// Whether the source classifies the complete curve as self-intersecting.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         self_intersect: Option<bool>,
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Source-native polyline with an explicit chordal error bound.
+    Polyline(PolylineCurve),
+    /// Exact affine placement of an inline basis curve.
+    Transformed(PlacedCurve),
+    /// Native curve carrier whose shape is not decoded.
+    Unknown {
+        /// Retained native record containing the curve carrier.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_record"
+        )]
+        record: Option<UnknownId>,
+    },
+}
+
+impl SolvedCurveGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Degenerate(value) => Self::Degenerate(*value),
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
+                let mut copy = Vec::new();
+                ctx.reserve_vec(&mut copy, segments.len(), operation)?;
+                ctx.charge_work(u64_from_index(segments.len()), operation)?;
+                for segment in segments {
+                    copy.push(CompositeCurveSegment {
+                        curve: segment.curve.try_clone_for_decode(ctx, operation)?,
+                        same_sense: segment.same_sense,
+                        transition: segment.transition,
+                    });
+                }
+                Self::Composite {
+                    segments: CompositeCurveSegments::try_from(copy)
+                        .map_err(CodecError::malformed)?,
+                    self_intersect: *self_intersect,
+                }
+            }
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                Self::Transformed(value.try_clone_for_decode(ctx, operation)?)
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+        })
+    }
+
+    /// Placements enclosing the leaf of this carrier's inline basis chain.
+    ///
+    /// [`PlacedCurve`] stores its own depth, so this reads one field and
+    /// building a chain costs one addition per placement.
+    #[must_use]
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Line(_)
+            | Self::Circle(_)
+            | Self::Ellipse(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Degenerate(_)
+            | Self::Composite { .. }
+            | Self::Nurbs(_)
+            | Self::Polyline(_)
+            | Self::Unknown { .. } => 0,
+        }
+    }
+}
+
+/// Exact affine placement of an inline basis curve.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`SolvedCurveGeometry`] value nests past the
+/// bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedCurveWire")]
+pub struct PlacedCurve {
+    basis: Box<SolvedCurveGeometry>,
+    transform: Transform,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedCurveWire {
+    /// Unplaced basis geometry with unchanged parameterization.
+    basis: Box<SolvedCurveGeometry>,
+    /// Affine map from basis coordinates to model coordinates.
+    transform: Transform,
+}
+
+impl PlacedCurve {
+    // Keep placement recursion out of the carrier match's large stack frame.
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
+        let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
+            ctx.charge_work(1, operation)?;
+            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
+        } else {
+            self.basis.try_clone_for_decode(ctx, operation)?
+        };
+        Ok(Self {
+            basis: Box::new(basis),
+            transform: self.transform,
+            depth: self.depth,
+        })
+    }
+
+    /// Place a basis curve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<SolvedCurveGeometry>,
+        transform: Transform,
+    ) -> Result<Self, &'static str> {
+        let Some(depth) = basis
+            .nesting_depth()
+            .checked_add(1)
+            .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+        else {
+            return Err("PlacedCurve.basis nests past the admitted inline basis depth");
+        };
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &SolvedCurveGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Replace the transform. The basis chain, and so the depth, is unchanged.
+    pub const fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+}
+
+impl TryFrom<PlacedCurveWire> for PlacedCurve {
+    type Error = &'static str;
+    fn try_from(wire: PlacedCurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
+    }
+}
+
+/// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum CurveGeometry {
     /// Exact curve defined by a procedural construction in the same model.
     Procedural {
         /// Construction that produces this carrier.
         construction: ProceduralCurveId,
         /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_curve_geometry_cache"
+        )]
         #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedCurveGeometry>,
     },
-    /// Source-native polyline with an explicit chordal error bound.
-    Polyline(PolylineCurve),
-    /// Exact affine placement of an inline basis curve.
-    Transformed {
-        /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<CurveGeometry>,
-        /// Affine map from basis coordinates to model coordinates.
-        transform: Transform,
-    },
-    /// Native curve carrier whose shape is not decoded.
-    Unknown {
-        /// Retained native record containing the curve carrier.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        record: Option<UnknownId>,
-    },
+    /// A carrier whose shape is established without a construction.
+    #[serde(untagged)]
+    Solved(SolvedCurveGeometry),
 }
 
-/// A solved curve cache that cannot recursively contain a procedural carrier.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SolvedCurveGeometry(Box<CurveGeometry>);
+impl CurveGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
+    }
 
-impl SolvedCurveGeometry {
-    /// Wrap a non-procedural solved curve geometry.
-    // Failed admission returns the complete input geometry to its caller.
-    #[allow(clippy::result_large_err)]
-    pub fn new(geometry: CurveGeometry) -> Result<Self, CurveGeometry> {
-        let mut basis = &geometry;
-        while let CurveGeometry::Transformed { basis: inner, .. } = basis {
-            basis = inner;
-        }
-        if matches!(basis, CurveGeometry::Procedural { .. }) {
-            Err(geometry)
-        } else {
-            Ok(Self(Box::new(geometry)))
+    /// Construction that owns this carrier, when it is procedural.
+    #[must_use]
+    pub const fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
+        match self {
+            Self::Procedural { construction, .. } => Some(construction),
+            Self::Solved(_) => None,
         }
     }
 
-    /// Borrow the solved geometry.
+    /// Solved carrier retained from the source cache, when this carrier is
+    /// procedural.
     #[must_use]
-    pub fn as_geometry(&self) -> &CurveGeometry {
-        &self.0
+    pub const fn solved_cache(&self) -> Option<&SolvedCurveGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(_) => None,
+        }
     }
 
     #[cfg(test)]
-    pub(crate) fn as_geometry_mut(&mut self) -> &mut CurveGeometry {
+    pub(crate) const fn solved_cache_mut(&mut self) -> Option<&mut SolvedCurveGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_mut(),
+            Self::Solved(_) => None,
+        }
+    }
+
+    /// Geometry that evaluates this carrier without following a construction.
+    #[must_use]
+    pub const fn solved(&self) -> Option<&SolvedCurveGeometry> {
+        match self {
+            Self::Procedural { cache, .. } => cache.as_ref(),
+            Self::Solved(geometry) => Some(geometry),
+        }
+    }
+}
+
+/// Non-empty ordered child uses of a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<CompositeCurveSegment>")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CompositeCurveSegments(Vec<CompositeCurveSegment>);
+
+impl TryFrom<Vec<CompositeCurveSegment>> for CompositeCurveSegments {
+    type Error = &'static str;
+
+    fn try_from(segments: Vec<CompositeCurveSegment>) -> Result<Self, Self::Error> {
+        if segments.is_empty() {
+            return Err("composite curve segments must not be empty");
+        }
+        Ok(Self(segments))
+    }
+}
+
+impl std::ops::Deref for CompositeCurveSegments {
+    type Target = [CompositeCurveSegment];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for CompositeCurveSegments {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl Serialize for SolvedCurveGeometry {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_geometry().serialize(serializer)
-    }
-}
+impl<'a> IntoIterator for &'a CompositeCurveSegments {
+    type Item = &'a CompositeCurveSegment;
+    type IntoIter = std::slice::Iter<'a, CompositeCurveSegment>;
 
-impl<'de> Deserialize<'de> for SolvedCurveGeometry {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(CurveGeometry::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
-        })
-    }
-}
-
-impl AsRef<CurveGeometry> for SolvedCurveGeometry {
-    fn as_ref(&self) -> &CurveGeometry {
-        self.as_geometry()
-    }
-}
-
-impl std::ops::Deref for SolvedCurveGeometry {
-    type Target = CurveGeometry;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_geometry()
-    }
-}
-
-impl CurveGeometry {
-    /// Construction that owns this carrier, when it is procedural.
-    #[must_use]
-    pub fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
-        match self {
-            Self::Procedural { construction, .. } => Some(construction),
-            _ => None,
-        }
-    }
-
-    /// Geometry used to evaluate this carrier without following a construction.
-    #[must_use]
-    pub fn solved_cache(&self) -> Option<&CurveGeometry> {
-        match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry()),
-            _ => None,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn solved_cache_mut(&mut self) -> Option<&mut CurveGeometry> {
-        match self {
-            Self::Procedural {
-                cache: Some(geometry),
-                ..
-            } => Some(geometry.as_geometry_mut()),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn wire_geometry(&self) -> &CurveGeometry {
-        self.solved_cache().unwrap_or(self)
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
 /// One directed child use in a composite curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompositeCurveSegment {
     /// Referenced child curve carrier.
     pub curve: CurveId,
@@ -1489,6 +768,7 @@ pub struct CompositeCurveSegment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CompositeCurveTransition {
     /// No positional continuity is asserted.
     Discontinuous,
@@ -1506,10 +786,15 @@ pub enum CompositeCurveTransition {
 /// `axis`, then normalized. Degenerate axes fall back to global x.
 pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
     let norm = axis.norm();
-    if !norm.is_finite() || norm == 0.0 {
+    let axis = if norm.is_finite() && norm != 0.0 {
+        Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm)
+    } else if let Some(unit) = crate::features::FiniteVector3::new(axis)
+        .and_then(crate::features::FiniteVector3::unit_nonzero)
+    {
+        unit
+    } else {
         return Vector3::new(1.0, 0.0, 0.0);
-    }
-    let axis = Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm);
+    };
     let basis = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
         Vector3::new(1.0, 0.0, 0.0)
     } else if axis.y.abs() <= axis.z.abs() {
@@ -1534,43 +819,126 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
 /// A 3D curve carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Curve {
     /// Arena id.
     pub id: CurveId,
     /// Curve shape.
     pub geometry: CurveGeometry,
     /// Native source-object identity and effective display metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_object"
+    )]
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+/// Four optional finite parameter bounds retained from one native surface
+/// record.
+///
+/// The positions are the native record's fields. Their meaning is supplied
+/// by the owning subtype, so a partial quartet remains valid. `None` in one
+/// position means that field was absent in the source record.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[Option<f64>; 4]", into = "[Option<f64>; 4]")]
+pub struct RecordBounds([Option<f64>; 4]);
+
+/// A record-bound quartet contained a non-finite value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("record bounds must contain only finite values")]
+pub struct RecordBoundsError;
+
+impl RecordBounds {
+    /// Admit a native quartet after checking every present value.
+    pub fn try_new(raw: [Option<f64>; 4]) -> Result<Self, RecordBoundsError> {
+        if raw.iter().flatten().all(|value| value.is_finite()) {
+            Ok(Self(raw))
+        } else {
+            Err(RecordBoundsError)
+        }
+    }
+
+    /// Build the quartet `[u_lower, v_lower, u_upper, v_upper]` of a
+    /// parameter box: its lower corner, then its upper corner. Every endpoint
+    /// of an admitted interval is finite, so nothing is checked.
+    #[must_use]
+    pub const fn from_corners(
+        u: crate::topology::IncreasingParameterInterval,
+        v: crate::topology::IncreasingParameterInterval,
+    ) -> Self {
+        Self([
+            Some(u.lower()),
+            Some(v.lower()),
+            Some(u.upper()),
+            Some(v.upper()),
+        ])
+    }
+
+    /// Build the quartet of four present finite values in the native
+    /// record's field order. Every value is finite, so nothing is checked.
+    #[must_use]
+    pub const fn from_finite([first, second, third, fourth]: [FiniteReal; 4]) -> Self {
+        Self([
+            Some(first.get()),
+            Some(second.get()),
+            Some(third.get()),
+            Some(fourth.get()),
+        ])
+    }
+
+    /// Return the admitted quartet. Every present position is finite.
+    #[must_use]
+    pub const fn get(self) -> [Option<f64>; 4] {
+        self.0
+    }
+}
+
+impl TryFrom<[Option<f64>; 4]> for RecordBounds {
+    type Error = RecordBoundsError;
+
+    fn try_from(raw: [Option<f64>; 4]) -> Result<Self, Self::Error> {
+        Self::try_new(raw)
+    }
+}
+
+impl From<RecordBounds> for [Option<f64>; 4] {
+    fn from(bounds: RecordBounds) -> Self {
+        bounds.get()
+    }
+}
+
 /// A neutral surface construction linked to the carrier it produces.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProceduralSurface {
     /// Stable construction identity.
     pub id: ProceduralSurfaceId,
-    /// Neutral construction definition.
+    /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralSurfaceDefinition,
-    /// Fit contract of a legacy solved cache. Revision-gated forms carry the
-    /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<f64>,
     /// Four optional U/V parameter bounds following the record's subtype
     /// scope. For a procedural extrusion or revolution, the first pair is
     /// the neutral surface-carrier interval; its definition retains the
     /// source directrix interval separately. `None` when the record stores no
     /// bound fields.
-    pub record_bounds: Option<[Option<f64>; 4]>,
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    record_bounds: Option<RecordBounds>,
 }
 
 /// Parameter fields carried by exact and loft spline-surface constructions.
+// A source states raw scalars; a `LoftSurfacePayload` holds the admitted
+// fields, whose scalars are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SplineSurfaceParameters {
+#[serde(deny_unknown_fields)]
+pub enum SplineSurfaceParameters<R = f64> {
     /// Ordered semantic U and V intervals in the legacy layout.
     OrderedRanges {
         /// Ordered U and V intervals.
-        ranges: [[f64; 2]; 2],
+        ranges: [[R; 2]; 2],
     },
     /// Two parameter intervals in a revision-gated layout, each stored as an
     /// ordered `[lo, hi]` pair of optional bounds. For exact and t-spline
@@ -1580,326 +948,166 @@ pub enum SplineSurfaceParameters {
     /// bound-presence flag.
     RevisionRanges {
         /// Two parameter intervals in serialized field order.
-        intervals: [[Option<f64>; 2]; 2],
+        intervals: [[Option<R>; 2]; 2],
     },
 }
 
 /// Mutually exclusive legacy and revision-gated exact-spline layouts.
-#[derive(Debug, Clone, PartialEq)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
-pub enum ExactSpline {
+// A source states raw scalars; an `ExactSurfacePayload` holds the admitted
+// spline, whose scalars are `FiniteReal` values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub enum ExactSpline<R = f64> {
     /// Legacy solved-cache layout with ordered U/V ranges.
     Legacy {
         /// Ordered U and V parameter ranges.
-        ranges: [[f64; 2]; 2],
+        ranges: [[R; 2]; 2],
         /// Native ASM extension integer following the ranges.
         extension: i64,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
     },
     /// Revision-gated layout with optional interval bounds and shared form.
     Revision {
         /// Two optional-bound parameter intervals in wire order.
-        intervals: [[Option<f64>; 2]; 2],
+        intervals: [[Option<R>; 2]; 2],
         /// Native ASM extension enum following the intervals.
         extension: i64,
         /// Required revision-gated form.
-        form: RevisionSurfaceForm,
+        form: Box<RevisionSurfaceForm<Vec<bool>, R>>,
     },
 }
 
-#[derive(Serialize)]
-struct ExactSplineWriteWire<'a> {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm>,
-}
-
-#[derive(Deserialize)]
-struct ExactSplineReadWire {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    #[serde(default)]
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the exact-spline wire schema")]
-struct ExactSplineSchemaWire {
-    parameters: SplineSurfaceParameters,
-    extension: i64,
-    revision_form: Option<RevisionSurfaceForm>,
-}
-
-impl Serialize for ExactSpline {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (parameters, extension, revision_form) = match self {
-            Self::Legacy { ranges, extension } => (
-                SplineSurfaceParameters::OrderedRanges { ranges: *ranges },
-                *extension,
-                None,
-            ),
-            Self::Revision {
-                intervals,
-                extension,
-                form,
-            } => (
-                SplineSurfaceParameters::RevisionRanges {
-                    intervals: *intervals,
-                },
-                *extension,
-                Some(form),
-            ),
-        };
-        ExactSplineWriteWire {
-            parameters,
-            extension,
-            revision_form,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExactSpline {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = ExactSplineReadWire::deserialize(deserializer)?;
-        match (wire.parameters, wire.revision_form) {
-            (SplineSurfaceParameters::OrderedRanges { ranges }, None) => Ok(Self::Legacy {
-                ranges,
-                extension: wire.extension,
-            }),
-            (SplineSurfaceParameters::RevisionRanges { intervals }, Some(form)) => {
-                Ok(Self::Revision {
-                    intervals,
-                    extension: wire.extension,
-                    form,
-                })
-            }
-            (SplineSurfaceParameters::OrderedRanges { .. }, Some(_)) => Err(
-                serde::de::Error::custom("exact spline ordered ranges cannot carry revision_form"),
-            ),
-            (SplineSurfaceParameters::RevisionRanges { .. }, None) => Err(
-                serde::de::Error::custom("exact spline revision ranges require revision_form"),
-            ),
-        }
-    }
-}
-
 /// One component and its native construction scalar.
+// A source states a raw scalar; a compound construction holds the admitted
+// component, whose scalar is a `FiniteReal`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CompoundComponent<T> {
+#[serde(deny_unknown_fields)]
+pub struct CompoundComponent<T, R = f64> {
     /// Scalar paired with this component.
-    pub parameter: f64,
+    pub parameter: R,
     /// Component geometry or its resolved identity.
     pub component: T,
 }
 
+/// A non-empty compound curve with finite construction parameters.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CompoundCurveConstructionWire")]
+pub struct CompoundCurveConstruction {
+    parameters: Vec<FiniteReal>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<CompoundComponent<CurveId>>"))]
+    components: Vec<CompoundComponent<CurveId, FiniteReal>>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cache"
+    )]
+    cache: Option<LegacyCache>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundSurfaceComponentsWire {
+#[serde(deny_unknown_fields)]
+struct CompoundCurveConstructionWire {
+    /// Finite leading and per-component construction parameters.
     parameters: Vec<f64>,
-    components: Vec<SurfaceId>,
+    /// Component curves in construction order.
+    components: Vec<CompoundComponent<CurveId>>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cache"
+    )]
+    cache: Option<LegacyCache>,
 }
 
-mod compound_surface_components_wire {
-    use super::{CompoundComponent, CompoundSurfaceComponentsWire, SurfaceId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        components: &[CompoundComponent<SurfaceId>],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        CompoundSurfaceComponentsWire {
-            parameters: components.iter().map(|item| item.parameter).collect(),
-            components: components
-                .iter()
-                .map(|item| item.component.clone())
-                .collect(),
-        }
-        .serialize(serializer)
+impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
+    type Error = &'static str;
+    fn try_from(wire: CompoundCurveConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.parameters, wire.components, wire.cache)
     }
+}
 
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<Vec<CompoundComponent<SurfaceId>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CompoundSurfaceComponentsWire::deserialize(deserializer)?;
-        if wire.parameters.len() != wire.components.len() {
-            return Err(serde::de::Error::custom(
-                "compound surface parameters must match components",
-            ));
+impl CompoundCurveConstruction {
+    /// Admit at least one component and finite leading and component parameters.
+    pub fn try_new(
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
+    ) -> Result<Self, &'static str> {
+        const INVALID: &str = "compound curve parameters must be finite";
+        if components.is_empty() {
+            return Err("compound curve components must not be empty");
         }
-        Ok(wire
-            .parameters
+        let [parameters] = FiniteReal::lanes([parameters]).ok_or(INVALID)?;
+        let components = components
             .into_iter()
-            .zip(wire.components)
-            .map(|(parameter, component)| CompoundComponent {
-                parameter,
-                component,
-            })
-            .collect())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundCurveComponentsWire {
-    component_parameters: Vec<f64>,
-    components: Vec<CurveId>,
-}
-
-mod compound_curve_components_wire {
-    use super::{CompoundComponent, CompoundCurveComponentsWire, CurveId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        components: &[CompoundComponent<CurveId>],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        CompoundCurveComponentsWire {
-            component_parameters: components.iter().map(|item| item.parameter).collect(),
-            components: components
-                .iter()
-                .map(|item| item.component.clone())
-                .collect(),
-        }
-        .serialize(serializer)
+            .map(CompoundComponent::admit)
+            .collect::<Option<Vec<_>>>()
+            .ok_or(INVALID)?;
+        Ok(Self {
+            parameters,
+            components,
+            cache,
+        })
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<CompoundComponent<CurveId>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CompoundCurveComponentsWire::deserialize(deserializer)?;
-        if wire.component_parameters.len() != wire.components.len() {
-            return Err(serde::de::Error::custom(
-                "compound curve component_parameters must match components",
-            ));
-        }
-        Ok(wire
-            .component_parameters
-            .into_iter()
-            .zip(wire.components)
-            .map(|(parameter, component)| CompoundComponent {
-                parameter,
-                component,
-            })
-            .collect())
+    /// Return the parameters.
+    #[must_use]
+    pub fn parameters(&self) -> &[FiniteReal] {
+        &self.parameters
+    }
+
+    /// Return the components.
+    #[must_use]
+    pub fn components(&self) -> &[CompoundComponent<CurveId, FiniteReal>] {
+        &self.components
     }
 }
 
 /// Neutral semantics for a procedural surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
     /// Exact native NURBS surface with retained parameter fields.
-    Exact {
-        /// Complete legacy or revision-gated exact-spline layout.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "ExactSplineSchemaWire"))]
-        spline: ExactSpline,
-    },
+    Exact(surface_payloads::ExactSurfacePayload),
     /// Ordered native compound of a solved surface and component surfaces.
-    Compound {
-        /// Ordered surfaces paired with their native construction scalars.
-        #[serde(flatten, with = "compound_surface_components_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfaceComponentsWire"))]
-        components: Vec<CompoundComponent<SurfaceId>>,
-    },
+    Compound(surface_payloads::CompoundSurfacePayload),
     /// Exact rectangular restriction of an embedded support surface.
-    SubSurface {
-        /// Embedded support surface whose parameterization is retained.
-        support: SurfaceId,
-        /// Ordered U and V parameter intervals.
-        parameter_ranges: [[f64; 2]; 2],
-    },
+    SubSurface(surface_payloads::SubSurfaceConstruction),
     /// Taper of a support surface around a reference curve.
-    Taper {
-        /// Base surface being tapered.
-        support: SurfaceId,
-        /// Reference curve on the support.
-        reference: CurveId,
-        /// UV curve on the support, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pcurve: Option<PcurveGeometry>,
-        /// Native taper parameter or draft magnitude.
-        parameter: f64,
-        /// Subtype-specific taper tail.
-        taper: TaperSurfaceKind,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Taper(surface_payloads::TaperSurfaceConstruction),
     /// Native loft defined by two section graphs and closure contracts.
-    Loft {
-        /// Two ordered loft sections.
-        sections: [LoftSection; 2],
-        /// Legacy ordered ranges or revision-native scalar values.
-        parameters: SplineSurfaceParameters,
-        /// Two ordered native closure enums.
-        closures: [i64; 2],
-        /// Two ordered native singularity enums.
-        singularities: [i64; 2],
-        /// Native loft mode integer.
-        mode: i64,
-        /// Variable native tokens between the mode and solved cache.
-        bridge: Vec<LoftBridgeToken>,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<LoftRevisionForm>,
-    },
+    Loft(surface_payloads::LoftSurfacePayload),
     /// Native compound-loft construction.
-    CompoundLoft {
-        /// Complete native compound-loft graph.
-        construction: Box<CompoundLoftConstruction>,
-    },
+    CompoundLoft(surface_payloads::CompoundLoftSurfacePayload),
     /// Revision-gated compound-loft construction.
     RevisionCompoundLoft {
         /// Complete native revision-gated compound-loft graph.
         construction: Box<RevisionCompoundLoftConstruction>,
     },
     /// Native scaled compound-loft construction.
-    ScaledCompoundLoft {
-        /// Complete native scaled compound-loft graph.
-        construction: Box<ScaledCompoundLoftConstruction>,
-    },
+    ScaledCompoundLoft(surface_payloads::ScaledCompoundLoftSurfacePayload),
     /// Native skinned spline surface.
-    Skin {
-        /// Complete native skin construction graph.
-        construction: Box<SkinSurfaceConstruction>,
-    },
+    Skin(surface_payloads::SkinSurfacePayload),
     /// Native surface defined by recursive law formulas.
-    Law {
-        /// Complete native law-surface construction graph.
-        construction: Box<LawSurfaceConstruction>,
-    },
+    Law(surface_payloads::LawSurfacePayload),
     /// Native curve-network spline surface.
-    Net {
-        /// Complete native net construction graph.
-        construction: Box<NetSurfaceConstruction>,
-    },
+    Net(surface_payloads::NetSurfacePayload),
     /// Native curvature-continuous two-sided blend.
-    G2Blend {
-        /// Complete native G2 construction graph.
-        construction: Box<G2BlendConstruction>,
-    },
+    G2Blend(surface_payloads::G2BlendSurfacePayload),
     /// Revision-gated curvature-continuous blend in the variable-blend side
     /// layout.
     RevisionG2Blend {
@@ -1907,101 +1115,21 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<RevisionG2BlendConstruction>,
     },
     /// Native variable-radius two-sided blend.
-    VariableBlend {
-        /// Complete native variable-blend construction graph.
-        construction: Box<VariableBlendConstruction>,
-    },
+    VariableBlend(surface_payloads::VariableBlendSurfacePayload),
     /// Native vertex-blend patch.
-    VertexBlend {
-        /// Complete native vertex-blend construction graph.
-        construction: Box<VertexBlendConstruction>,
-    },
+    VertexBlend(surface_payloads::VertexBlendSurfacePayload),
     /// Translation of a directrix along a direction.
-    Extrusion {
-        /// Curve swept along `direction` to form the surface.
-        directrix: CurveId,
-        /// Native source directrix parameter interval, when carried by the
-        /// source. The neutral surface-carrier interval is in
-        /// `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Length-bearing sweep direction, in document length units.
-        direction: Vector3,
-        /// Native model-space position following the sweep direction, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native_position: Option<Point3>,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The directrix parameter interval is `parameter_interval`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     /// Unbounded linear sweep of a directrix.
-    LinearSweep {
-        /// Curve swept along `direction`.
-        directrix: CurveId,
-        /// Length-bearing sweep vector.
-        direction: Vector3,
-    },
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
     /// Revolution of a directrix about an axis.
-    Revolution {
-        /// Curve revolved about the axis to form the surface.
-        directrix: CurveId,
-        /// A point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit direction of the revolution axis.
-        axis_direction: Vector3,
-        /// Angular start and end parameters, in radians.
-        angular_interval: [f64; 2],
-        /// Surface-parameter interval that maps affinely to
-        /// `angular_interval`. Absence means the surface parameter is already
-        /// the revolution angle in radians.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angular_parameter_interval: Option<[f64; 2]>,
-        /// Native source directrix parameter start and end values, when
-        /// carried by the source representation. The neutral surface-carrier
-        /// interval is in `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Whether the source parameter directions are transposed.
-        transposed: bool,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The profile curve's optional endpoints are `reference_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
     /// Full revolution of a directrix about an axis.
-    AxisRevolution {
-        /// Curve revolved about the axis.
-        directrix: CurveId,
-        /// Point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit revolution-axis direction.
-        axis_direction: Vector3,
-    },
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
     /// Sum of two ordered curves from a base point.
-    Sum {
-        /// First curve, varying in the first surface parameter.
-        first: CurveId,
-        /// Second curve, varying in the second surface parameter.
-        second: CurveId,
-        /// Surface base point.
-        basepoint: Vector3,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The first curve's optional endpoints are `reference_endpoints`
-        /// and the second curve's are `second_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Sum(surface_payloads::SumSurfaceConstruction),
     /// Sweep of a profile along a spine.
-    Sweep {
-        /// Cross-section curve carried along `spine`.
-        profile: CurveId,
-        /// Path curve the profile is swept along.
-        spine: CurveId,
-        /// Complete native sweep graph when retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<SweepSurfaceConstruction>>,
-    },
+    Sweep(surface_payloads::SweepSurfacePayload),
     /// T-spline face with its shared subtransform program.
     TSpline {
         /// Complete native T-spline wrapper construction.
@@ -2013,47 +1141,11 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<HelixSurfaceConstruction>,
     },
     /// Native deformable spline surface.
-    Deformable {
-        /// Complete decoded deformable construction.
-        construction: Box<DeformableSurfaceConstruction>,
-    },
+    Deformable(surface_payloads::DeformableSurfacePayload),
     /// Offset from a support surface.
-    Offset {
-        /// Surface this surface is offset from.
-        support: SurfaceId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Native U parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<i64>,
-        /// Native V parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<i64>,
-        /// Support continuation law outside its active NURBS rectangle.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support_extension: Option<OffsetSupportExtension>,
-        /// Legacy conditional extension flags or the revision-gated form.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
-        extension: OffsetExtension,
-    },
+    Offset(surface_payloads::OffsetSurfaceConstruction),
     /// Rectangular parameter sub-range of a support surface.
-    Subset {
-        /// Surface being restricted.
-        support: SurfaceId,
-        /// U and V parameter endpoints in the support parameterization.
-        ///
-        /// The endpoint order is significant for cyclic and reversed
-        /// trims. A producer that does not carry direction metadata may
-        /// leave the sense fields absent and use increasing endpoints.
-        parameter_ranges: [[f64; 2]; 2],
-        /// Whether the trimmed surface U direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<bool>,
-        /// Whether the trimmed surface V direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<bool>,
-    },
+    Subset(surface_payloads::SubsetSurfaceConstruction),
     /// Affine replica of a surface carrier, retaining the parent surface
     /// construction and its parameter domain.
     Replica {
@@ -2063,14 +1155,7 @@ pub enum ProceduralSurfaceDefinition {
         transform: Transform,
     },
     /// Parallel offset from a support surface.
-    ParallelOffset {
-        /// Surface being offset.
-        support: SurfaceId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
     /// Self-intersecting torus with an explicitly selected outer or inner sheet.
     DegenerateTorus {
         /// Whether the outer sheet is selected at the self-intersection.
@@ -2097,187 +1182,940 @@ pub enum ProceduralSurfaceDefinition {
         first: CurveId,
         /// Second bounding curve of the ruled surface.
         second: CurveId,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Rolling-ball or law-driven blend between two support surfaces.
-    Blend {
-        /// The two blend support sides, in side order; `None` when a side was
-        /// not resolved.
-        supports: [Option<BlendSupport>; 2],
-        /// Stored center/spine curve, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        spine: Option<CurveId>,
-        /// Signed offset-radius law along the spine.
-        radius: BlendRadiusLaw,
-        /// Cross-section family of the blend.
-        cross_section: BlendCrossSection,
-        /// Complete byte-backed rolling-ball context when available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<RollingBallConstruction>>,
-    },
+    Blend(surface_payloads::BlendSurfacePayload),
     /// Rolling-ball surface defined by aligned quintic value/derivative jets.
-    RollingBallJet {
-        /// Polynomial degree of every scalar channel.
-        degree: u32,
-        /// Ordered knots with their multiplicities and complete derivative jets.
-        #[serde(flatten, with = "rolling_ball_jet_stations_wire")]
-        #[cfg_attr(
-            feature = "schema",
-            schemars(with = "rolling_ball_jet_stations_wire::ReadWire")
-        )]
-        stations: Vec<RollingBallJetStation>,
-    },
+    RollingBallJet(RollingBallJetStations),
     /// Preserved construction without a neutral interpretation.
     Unknown {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(
+    remote = "ProceduralSurfaceDefinition",
+    tag = "kind",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum ProceduralSurfaceDefinitionWire {
+    Exact(surface_payloads::ExactSurfacePayload),
+    Compound(surface_payloads::CompoundSurfacePayload),
+    SubSurface(surface_payloads::SubSurfaceConstruction),
+    Taper(surface_payloads::TaperSurfaceConstruction),
+    Loft(surface_payloads::LoftSurfacePayload),
+    CompoundLoft(surface_payloads::CompoundLoftSurfacePayload),
+    RevisionCompoundLoft {
+        construction: Box<RevisionCompoundLoftConstruction>,
+    },
+    ScaledCompoundLoft(surface_payloads::ScaledCompoundLoftSurfacePayload),
+    Skin(surface_payloads::SkinSurfacePayload),
+    Law(surface_payloads::LawSurfacePayload),
+    Net(surface_payloads::NetSurfacePayload),
+    G2Blend(surface_payloads::G2BlendSurfacePayload),
+    RevisionG2Blend {
+        construction: Box<RevisionG2BlendConstruction>,
+    },
+    VariableBlend(surface_payloads::VariableBlendSurfacePayload),
+    VertexBlend(surface_payloads::VertexBlendSurfacePayload),
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
+    Sum(surface_payloads::SumSurfaceConstruction),
+    Sweep(surface_payloads::SweepSurfacePayload),
+    TSpline {
+        construction: Box<TSplineSurfaceConstruction>,
+    },
+    Helix {
+        construction: Box<HelixSurfaceConstruction>,
+    },
+    Deformable(surface_payloads::DeformableSurfacePayload),
+    Offset(surface_payloads::OffsetSurfaceConstruction),
+    Subset(surface_payloads::SubsetSurfaceConstruction),
+    Replica {
+        source: SurfaceId,
+        transform: Transform,
+    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
+    DegenerateTorus {
+        select_outer: bool,
+    },
+    CurveBounded {
+        support: SurfaceId,
+        boundaries: Vec<CurveId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boundary_pcurves: Vec<PcurveId>,
+        implicit_outer: bool,
+    },
+    Ruled {
+        first: CurveId,
+        second: CurveId,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    Blend(surface_payloads::BlendSurfacePayload),
+    RollingBallJet(RollingBallJetStations),
+    Unknown {
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_record"
+        )]
+        record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+}
+
+impl<'de> Deserialize<'de> for ProceduralSurfaceDefinition {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        ProceduralSurfaceDefinitionWire::deserialize(deserializer)
+    }
 }
 
 impl ProceduralSurfaceDefinition {
-    fn revision_cache(&self) -> Option<&RevisionCacheForm> {
+    fn revision_cache(
+        &self,
+    ) -> Option<&RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>>> {
         match self {
-            Self::Exact {
-                spline: ExactSpline::Revision { form, .. },
-            } => Some(&form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&form.cache),
-            Self::Loft { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
+            Self::Exact(payload) => payload.revision_cache(),
+            Self::Taper(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Extrusion(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Revolution(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Sum(payload) => payload.revision_form().map(|form| &form.cache),
+            Self::Offset(payload) => match payload.extension() {
+                OffsetExtension::Revision { form } => Some(&form.cache),
+                OffsetExtension::Legacy { .. } => None,
+            },
+            Self::Loft(payload) => payload.revision_cache(),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
             Self::RevisionG2Blend { construction } => Some(&construction.cache),
-            Self::Sweep {
-                native: Some(construction),
-                ..
-            } => construction.revision_form.as_ref().map(|form| &form.cache),
-            Self::TSpline { construction } => {
-                construction.revision_form.as_ref().map(|form| &form.cache)
-            }
-            Self::Deformable { construction } => {
-                construction.revision_form.as_ref().map(|form| &form.cache)
-            }
-            Self::Blend {
-                native: Some(construction),
-                ..
-            } => Some(&construction.cache),
-            _ => None,
+            Self::Sweep(payload) => payload.revision_cache(),
+            Self::TSpline { construction } => construction.cache.form().map(|form| &form.cache),
+            Self::Deformable(payload) => payload.revision_cache(),
+            Self::Blend(payload) => payload.revision_cache(),
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => None,
         }
     }
 
-    fn revision_cache_mut(&mut self) -> Option<&mut RevisionCacheForm> {
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so no construction lends its admitted interior for writing.
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::Exact {
-                spline: ExactSpline::Revision { form, .. },
-            } => Some(&mut form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&mut form.cache),
-            Self::Loft { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
-            Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
-            Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
-            Self::Sweep {
-                native: Some(construction),
-                ..
-            } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
-            Self::TSpline { construction } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
-            Self::Deformable { construction } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
-            Self::Blend {
-                native: Some(construction),
-                ..
-            } => Some(&mut construction.cache),
-            _ => None,
+            Self::Exact(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Taper(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Extrusion(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Revolution(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Sum(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Offset(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Loft(payload) => payload.write_revision_fit_tolerance(write),
+            Self::RevisionCompoundLoft { construction } => {
+                construction.cache.write_fit_tolerance(write)
+            }
+            Self::RevisionG2Blend { construction } => construction.cache.write_fit_tolerance(write),
+            Self::Sweep(payload) => payload.write_revision_fit_tolerance(write),
+            Self::TSpline { construction } => write_revision_form_tolerance(
+                construction.cache.form_mut().map(|form| &mut form.cache),
+                write,
+            ),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Blend(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Compound(_)
+            | Self::SubSurface(_)
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::G2Blend(_)
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Subset(_)
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::Ruled { .. }
+            | Self::RollingBallJet(_)
+            | Self::Unknown { .. } => RevisionCacheWrite::NoForm,
         }
     }
 
-    fn owns_revision_cache(&self) -> bool {
-        self.revision_cache().is_some() || matches!(self, Self::VariableBlend { .. })
-    }
-
-    // Outer absence means no revision layout; inner absence means no cache tolerance.
-    #[allow(clippy::option_option)]
-    fn revision_cache_fit_tolerance(&self) -> Option<Option<f64>> {
-        if let Self::VariableBlend { construction } = self {
-            return Some(construction.cache.fit_tolerance());
-        }
-        self.revision_cache().map(RevisionCacheForm::fit_tolerance)
+    /// Whether the construction owns a revision-gated cache form, which then
+    /// states its solved-cache fit tolerance.
+    #[must_use]
+    pub fn owns_revision_cache(&self) -> bool {
+        self.revision_cache().is_some() || matches!(self, Self::VariableBlend(..))
     }
 }
 
-/// A top-level cache-fit field disagrees with the construction that owns it.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum CacheFitToleranceError {
-    /// A parameterized form cannot carry a solved-cache tolerance.
-    #[error("cache_fit_tolerance must be absent for a parameterized revision cache")]
+/// What a write to a revision-gated cache form found.
+enum RevisionCacheWrite {
+    /// The form states a solved cache, whose tolerance the write states.
+    Written,
+    /// The form states a parameterization, which has no solved cache.
     Parameterized,
-    /// A stale variable-blend cache cannot carry an active fit contract.
-    #[error("cache_fit_tolerance must be absent for a stale variable-blend cache")]
-    StaleVariableBlend,
-    /// A solved revision cache cannot lose its required tolerance.
-    #[error("cache_fit_tolerance is required for a solved revision cache")]
-    MissingSolved,
-    /// The compatibility field disagrees with the tolerance in the solved form.
-    #[error(
-        "cache_fit_tolerance {supplied} does not match the solved revision cache tolerance {stored}"
-    )]
-    Conflicting {
-        /// Value supplied at the outer compatibility boundary.
-        supplied: f64,
-        /// Value owned by the solved cache form.
-        stored: f64,
+    /// The construction owns no revision-gated cache form.
+    NoForm,
+    /// Scaling the held tolerance overflowed.
+    InvalidValue(f64),
+}
+
+impl RevisionCacheWrite {
+    /// The outcome the fit-tolerance setter states for this write.
+    const fn into_set_result(self) -> Result<(), CacheContractError> {
+        match self {
+            Self::Written => Ok(()),
+            Self::Parameterized => Err(CacheContractError::Parameterized),
+            Self::NoForm => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+            Self::InvalidValue(value) => Err(CacheContractError::InvalidValue { value }),
+        }
+    }
+}
+
+/// Whether a tolerance write states the value or only raises to it.
+#[derive(Clone, Copy)]
+enum ToleranceWrite {
+    /// State the value in place of the tolerance the form carries.
+    State(FitTolerance),
+    /// Keep the tolerance the form carries unless the value exceeds it.
+    Raise(FitTolerance),
+    /// Scale the tolerance already carried by a solved cache.
+    Scale(crate::scalar::PositiveReal),
+}
+
+/// State the fit tolerance of an optional solved cache form.
+fn write_revision_form_tolerance<P>(
+    form: Option<&mut RevisionCacheForm<P>>,
+    write: ToleranceWrite,
+) -> RevisionCacheWrite {
+    form.map_or(RevisionCacheWrite::NoForm, |form| {
+        form.write_fit_tolerance(write)
+    })
+}
+
+/// The outcome of clearing the fit tolerance of a revision-gated cache form: a
+/// solved cache cannot lose the tolerance it states, and a parameterized form
+/// states none to lose.
+const fn clear_revision_form_tolerance<P>(
+    form: Option<&RevisionCacheForm<P>>,
+) -> Result<(), CacheContractError> {
+    match form {
+        Some(RevisionCacheForm::SolvedCache { .. }) => Err(CacheContractError::MissingSolved),
+        Some(RevisionCacheForm::Parameterization(_)) | None => Ok(()),
+    }
+}
+
+/// A finite, non-negative fit tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "f64", into = "f64")]
+pub struct FitTolerance(f64);
+
+impl FitTolerance {
+    /// A zero fit tolerance.
+    pub const ZERO: Self = Self(0.0);
+
+    /// Admit a finite, non-negative fit tolerance.
+    pub fn try_new(value: f64) -> Result<Self, CacheContractError> {
+        if value.is_finite() && value >= 0.0 {
+            Ok(Self(value))
+        } else {
+            Err(CacheContractError::InvalidValue { value })
+        }
+    }
+
+    /// The fit tolerance in carrier units.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+
+    /// The tolerance times `scale`.
+    ///
+    /// A positive scale keeps the sign of a non-negative tolerance: zero
+    /// stays zero, and rounding does not change a sign. The product is
+    /// refused only when it overflows.
+    #[must_use]
+    pub fn scaled(self, scale: crate::scalar::PositiveReal) -> Option<Self> {
+        let value = self.0 * scale.get();
+        value.is_finite().then_some(Self(value))
+    }
+}
+
+impl TryFrom<f64> for FitTolerance {
+    type Error = CacheContractError;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl From<FitTolerance> for f64 {
+    fn from(value: FitTolerance) -> Self {
+        value.get()
+    }
+}
+
+/// A fit tolerance admits exactly the finite, non-negative values.
+impl From<NonNegativeReal> for FitTolerance {
+    fn from(value: NonNegativeReal) -> Self {
+        Self(value.get())
+    }
+}
+
+/// Fit contract of a solved cache that the construction states itself, used by
+/// constructions with no revision-gated [`RevisionCacheForm`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LegacyCache {
+    /// Fit tolerance of the solved cache.
+    pub fit_tolerance: FitTolerance,
+}
+
+impl LegacyCache {
+    /// A legacy cache with this fit tolerance.
+    #[must_use]
+    pub const fn new(fit_tolerance: FitTolerance) -> Self {
+        Self { fit_tolerance }
+    }
+
+    /// A legacy cache stating an admissible fit tolerance.
+    pub fn try_new(fit_tolerance: f64) -> Result<Self, CacheContractError> {
+        FitTolerance::try_new(fit_tolerance).map(Self::new)
+    }
+}
+
+/// The cache contract of a construction that has both a legacy and a
+/// revision-gated layout: the tolerance is stated in exactly one of them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CacheContract<F> {
+    /// Legacy layout, which states its own solved-cache tolerance.
+    Legacy {
+        /// Solved-cache fit contract, absent when the record stated none.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    /// Revision-gated layout, which states the tolerance in its cache form.
+    Revision {
+        /// Revision-gated form.
+        form: F,
     },
 }
 
-impl ProceduralSurface {
-    /// Build a procedural surface without a legacy top-level cache.
+impl<F> CacheContract<F> {
+    /// A legacy layout with no solved-cache tolerance.
     #[must_use]
+    pub const fn legacy() -> Self {
+        Self::Legacy { cache: None }
+    }
+
+    /// The contract an optional revision-gated form states.
+    #[must_use]
+    pub fn from_form(form: Option<F>) -> Self {
+        match form {
+            Some(form) => Self::Revision { form },
+            None => Self::legacy(),
+        }
+    }
+
+    /// The revision-gated form, absent in the legacy layout.
+    #[must_use]
+    pub const fn form(&self) -> Option<&F> {
+        match self {
+            Self::Revision { form } => Some(form),
+            Self::Legacy { .. } => None,
+        }
+    }
+
+    /// Mutable revision-gated form, absent in the legacy layout.
+    pub const fn form_mut(&mut self) -> Option<&mut F> {
+        match self {
+            Self::Revision { form } => Some(form),
+            Self::Legacy { .. } => None,
+        }
+    }
+
+    /// The legacy solved-cache tolerance, absent in the revision layout.
+    #[must_use]
+    pub const fn legacy_fit_tolerance(&self) -> Option<FitTolerance> {
+        match self {
+            Self::Legacy { cache: Some(cache) } => Some(cache.fit_tolerance),
+            Self::Legacy { cache: None } | Self::Revision { .. } => None,
+        }
+    }
+
+    /// Mutable legacy solved-cache slot, absent in the revision layout.
+    const fn legacy_cache_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
+        match self {
+            Self::Legacy { cache } => Some(cache),
+            Self::Revision { .. } => None,
+        }
+    }
+}
+
+impl<F> CacheContract<F> {
+    /// Whether this is the legacy layout with no stated tolerance, which is
+    /// what a record that states neither carries.
+    #[must_use]
+    pub const fn is_bare_legacy(&self) -> bool {
+        matches!(self, Self::Legacy { cache: None })
+    }
+}
+
+impl<F> Default for CacheContract<F> {
+    fn default() -> Self {
+        Self::legacy()
+    }
+}
+
+/// A fit tolerance, or the cache contract that states it, is not admissible.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum CacheContractError {
+    /// A fit tolerance is negative or non-finite.
+    #[error("fit_tolerance must be finite and non-negative, got {value}")]
+    InvalidValue {
+        /// Rejected tolerance.
+        value: f64,
+    },
+    /// A parameterized cache form states no solved-cache tolerance.
+    #[error("a parameterized cache form states no fit tolerance")]
+    Parameterized,
+    /// A solved cache form cannot lose its required tolerance.
+    #[error("a solved cache form states a fit tolerance")]
+    MissingSolved,
+    /// The construction's layout states no solved-cache tolerance.
+    #[error("{0}")]
+    Layout(&'static str),
+}
+
+impl From<CacheContractError> for cadmpeg_core::CodecError {
+    fn from(error: CacheContractError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
+/// A rejected procedural definition or cache contract.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ProceduralGeometryError {
+    /// A local construction field violates its numeric contract.
+    #[error("{0}")]
+    Payload(&'static str),
+    /// The cache contract is invalid for the definition.
+    #[error(transparent)]
+    Cache(#[from] CacheContractError),
+    /// A member list violates its member contract.
+    #[error(transparent)]
+    Members(#[from] crate::features::BodySelectionError),
+}
+
+/// A construction whose layout states no solved-cache fit tolerance.
+const NO_LEGACY_SLOT: &str = "this construction states no solved-cache fit tolerance";
+
+const PARAMETERIZED_NO_SOLVED_CACHE: &str =
+    "a parameterized cache form takes no solved-cache fit tolerance";
+
+/// A construction whose layout always states one.
+const REQUIRED_LEGACY_SLOT: &str = "this construction states a solved-cache fit tolerance";
+
+/// The legacy solved-cache slot of one surface construction, borrowed for
+/// writing.
+///
+/// A layout that may omit the cache lends `Optional`; a layout that always
+/// states one lends `Required`, which is why losing the cache is the one
+/// refusal a slot makes. Surface-only: `ProceduralCurveDefinition` has no
+/// `Required` slot, so a curve lends its slot as a plain
+/// `&mut Option<LegacyCache>`.
+enum LegacyCacheSlot<'a> {
+    /// Slot of a layout whose record may state no cache.
+    Optional(&'a mut Option<LegacyCache>),
+    /// Slot of a layout that always states a cache.
+    Required(&'a mut LegacyCache),
+}
+
+impl LegacyCacheSlot<'_> {
+    /// Replace the cache the slot holds.
+    const fn set(&mut self, cache: Option<LegacyCache>) -> Result<(), CacheContractError> {
+        match (self, cache) {
+            (Self::Optional(slot), cache) => {
+                **slot = cache;
+                Ok(())
+            }
+            (Self::Required(slot), Some(cache)) => {
+                **slot = cache;
+                Ok(())
+            }
+            (Self::Required(_), None) => Err(CacheContractError::Layout(REQUIRED_LEGACY_SLOT)),
+        }
+    }
+
+    /// Scale the tolerance held by this slot, if the optional cache is present.
+    fn scale_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        let cache = match self {
+            Self::Optional(slot) => slot.as_mut(),
+            Self::Required(cache) => Some(&mut **cache),
+        };
+        if let Some(cache) = cache {
+            let value = cache.fit_tolerance;
+            cache.fit_tolerance =
+                value
+                    .scaled(scale)
+                    .ok_or_else(|| CacheContractError::InvalidValue {
+                        value: value.get() * scale.get(),
+                    })?;
+        }
+        Ok(())
+    }
+}
+
+impl ProceduralSurfaceDefinition {
+    /// Solved-cache fit contract this construction states outside a
+    /// revision-gated cache form.
+    #[must_use]
+    pub fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self {
+            Self::Exact(payload) => payload.legacy_cache(),
+            Self::Compound(payload) => payload.legacy_cache(),
+            Self::Taper(payload) => payload.legacy_cache(),
+            Self::Loft(payload) => payload.legacy_cache(),
+            Self::CompoundLoft(payload) => payload.legacy_cache(),
+            Self::ScaledCompoundLoft(payload) => payload.legacy_cache(),
+            Self::Skin(payload) => payload.legacy_cache(),
+            Self::Law(payload) => payload.legacy_cache(),
+            Self::Net(payload) => payload.legacy_cache(),
+            Self::G2Blend(payload) => payload.legacy_cache(),
+            Self::Extrusion(payload) => payload.legacy_cache(),
+            Self::Revolution(payload) => payload.legacy_cache(),
+            Self::Sum(payload) => payload.legacy_cache(),
+            Self::Sweep(payload) => payload.legacy_cache(),
+            Self::TSpline { construction } => construction.legacy_cache(),
+            Self::Deformable(payload) => payload.legacy_cache(),
+            Self::Offset(payload) => payload.legacy_cache(),
+            Self::Subset(payload) => payload.legacy_cache(),
+            Self::Blend(payload) => payload.legacy_cache(),
+            Self::Ruled { cache, .. } | Self::Unknown { cache, .. } => *cache,
+            Self::SubSurface(_)
+            | Self::RevisionCompoundLoft { .. }
+            | Self::RevisionG2Blend { .. }
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::RollingBallJet(_) => None,
+        }
+    }
+
+    /// Mutable legacy solved-cache slot of this construction, absent when the
+    /// layout states none.
+    ///
+    /// The one write route to the legacy cache: both the setter and the raise
+    /// go through it, so a construction cannot answer them differently.
+    fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        match self {
+            Self::Exact(payload) => payload.legacy_cache_slot_mut(),
+            Self::Compound(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Taper(payload) => payload.legacy_cache_slot_mut(),
+            Self::Loft(payload) => payload.legacy_cache_slot_mut(),
+            Self::CompoundLoft(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::ScaledCompoundLoft(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Skin(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Law(payload) => payload.legacy_cache_slot_mut(),
+            Self::Net(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::G2Blend(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Extrusion(payload) => payload.legacy_cache_slot_mut(),
+            Self::Revolution(payload) => payload.legacy_cache_slot_mut(),
+            Self::Sum(payload) => payload.legacy_cache_slot_mut(),
+            Self::Sweep(payload) => payload.legacy_cache_slot_mut(),
+            Self::TSpline { construction } => construction.legacy_cache_slot_mut(),
+            Self::Deformable(payload) => payload.legacy_cache_slot_mut(),
+            Self::Offset(payload) => payload.legacy_cache_slot_mut(),
+            Self::Subset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Blend(payload) => payload.legacy_cache_slot_mut(),
+            Self::Ruled { cache, .. } | Self::Unknown { cache, .. } => {
+                Some(LegacyCacheSlot::Optional(cache))
+            }
+            Self::SubSurface(_)
+            | Self::RevisionCompoundLoft { .. }
+            | Self::RevisionG2Blend { .. }
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::RollingBallJet(_) => None,
+        }
+    }
+
+    /// State or clear the legacy solved-cache fit contract.
+    ///
+    /// Fallible in both directions, because a surface construction can hold a
+    /// cache it cannot lose. A layout that states none refuses `Some`, and a
+    /// `LawSurfaceTail::Full` tail, whose `Required` slot always states a
+    /// tolerance, refuses `None`.
+    pub fn set_legacy_cache(
+        &mut self,
+        cache: Option<LegacyCache>,
+    ) -> Result<(), CacheContractError> {
+        match self.legacy_cache_slot_mut() {
+            Some(mut slot) => slot.set(cache),
+            None => cache.map_or(Ok(()), |_| Err(CacheContractError::Layout(NO_LEGACY_SLOT))),
+        }
+    }
+
+    /// Effective fit tolerance of the solved cache: a revision-gated form
+    /// states it in its cache form, a legacy layout in the cache it holds.
+    #[must_use]
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        if let Self::VariableBlend(payload) = self {
+            return payload.construction().cache.fit_tolerance();
+        }
+        match self.revision_cache() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
+            Some(RevisionCacheForm::Parameterization(_)) => None,
+            None => self.legacy_cache().map(|cache| cache.fit_tolerance),
+        }
+    }
+
+    /// Change the effective fit tolerance without permitting a parameterized
+    /// cache to acquire one or a solved cache to lose it.
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        value: Option<FitTolerance>,
+    ) -> Result<(), CacheContractError> {
+        if let Self::VariableBlend(payload) = self {
+            return payload.write_cache_fit_tolerance(value);
+        }
+        if self.owns_revision_cache() {
+            return match value {
+                Some(value) => self
+                    .write_revision_fit_tolerance(ToleranceWrite::State(value))
+                    .into_set_result(),
+                None => clear_revision_form_tolerance(self.revision_cache()),
+            };
+        }
+        self.set_legacy_cache(value.map(LegacyCache::new))
+    }
+
+    /// Scale only the fit tolerance already carried by this construction.
+    fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        if let Self::VariableBlend(payload) = self {
+            return payload.scale_cache_fit_tolerance(scale);
+        }
+        match self.write_revision_fit_tolerance(ToleranceWrite::Scale(scale)) {
+            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => Ok(()),
+            RevisionCacheWrite::NoForm => self
+                .legacy_cache_slot_mut()
+                .map_or(Ok(()), |mut slot| slot.scale_fit_tolerance(scale)),
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
+            }
+        }
+    }
+}
+
+impl ProceduralCurveDefinition {
+    /// Solved-cache fit contract this construction states outside a
+    /// revision-gated cache form.
+    #[must_use]
+    pub fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self {
+            Self::Compound(construction) => construction.legacy_cache(),
+            Self::Helix(construction) => construction.legacy_cache(),
+            Self::Subset(payload) => payload.legacy_cache(),
+            Self::VectorOffset(payload) => payload.legacy_cache(),
+            Self::TwoSidedOffset(payload) => payload.legacy_cache(),
+            Self::Spring(payload) => payload.legacy_cache(),
+            Self::SurfaceOffset(payload) => payload.legacy_cache(),
+            Self::Exact { cache }
+            | Self::Law { cache, .. }
+            | Self::Intersection { cache, .. }
+            | Self::TolerantIntersection { cache, .. }
+            | Self::Unknown { cache, .. } => *cache,
+            Self::ThreeSurfaceIntersection(_)
+            | Self::SurfaceCurve { .. }
+            | Self::Silhouette(_)
+            | Self::Deformable(_)
+            | Self::Projection(_)
+            | Self::Offset(_)
+            | Self::SpatialOffset(_)
+            | Self::Replica { .. }
+            | Self::BlendSpine { .. } => None,
+        }
+    }
+
+    /// Mutable legacy solved-cache slot of this construction, absent when the
+    /// layout states none.
+    ///
+    /// The one write route to the legacy cache: the setter, the clear and the
+    /// raise go through it, so a construction cannot answer them differently.
+    /// No curve construction holds a cache it cannot lose, so the slot is a
+    /// plain `&mut Option<LegacyCache>` and `LegacyCacheSlot` is surface-only.
+    fn legacy_cache_slot_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
+        match self {
+            Self::Compound(construction) => Some(construction.legacy_cache_slot_mut()),
+            Self::Helix(construction) => Some(construction.legacy_cache_slot_mut()),
+            Self::Subset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::VectorOffset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::TwoSidedOffset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Spring(payload) => payload.legacy_cache_slot_mut(),
+            Self::SurfaceOffset(payload) => payload.legacy_cache_slot_mut(),
+            Self::Exact { cache }
+            | Self::Law { cache, .. }
+            | Self::Intersection { cache, .. }
+            | Self::TolerantIntersection { cache, .. }
+            | Self::Unknown { cache, .. } => Some(cache),
+            Self::ThreeSurfaceIntersection(_)
+            | Self::SurfaceCurve { .. }
+            | Self::Silhouette(_)
+            | Self::Deformable(_)
+            | Self::Projection(_)
+            | Self::Offset(_)
+            | Self::SpatialOffset(_)
+            | Self::Replica { .. }
+            | Self::BlendSpine { .. } => None,
+        }
+    }
+
+    /// State the legacy solved-cache fit contract. A construction whose
+    /// layout states none refuses a contract.
+    pub fn set_legacy_cache(&mut self, cache: LegacyCache) -> Result<(), CacheContractError> {
+        match self.legacy_cache_slot_mut() {
+            Some(slot) => {
+                *slot = Some(cache);
+                Ok(())
+            }
+            None => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+        }
+    }
+
+    /// Clear the legacy solved-cache fit contract.
+    ///
+    /// Total: a construction with a slot loses the contract it states, and a
+    /// construction with no slot has none to lose. No curve construction holds
+    /// a cache it cannot lose, so this refuses nothing.
+    pub fn clear_legacy_cache(&mut self) {
+        if let Some(slot) = self.legacy_cache_slot_mut() {
+            *slot = None;
+        }
+    }
+
+    /// Effective fit tolerance of the solved cache.
+    #[must_use]
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        match self.revision_cache() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
+            Some(RevisionCacheForm::Parameterization(_)) => None,
+            None => self.legacy_cache().map(|cache| cache.fit_tolerance),
+        }
+    }
+
+    /// Change the effective fit tolerance without permitting a parameterized
+    /// cache to acquire one or a solved cache to lose it.
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        value: Option<FitTolerance>,
+    ) -> Result<(), CacheContractError> {
+        if self.owns_revision_cache() {
+            return match value {
+                Some(value) => self
+                    .write_revision_fit_tolerance(ToleranceWrite::State(value))
+                    .into_set_result(),
+                None => clear_revision_form_tolerance(self.revision_cache()),
+            };
+        }
+        match value {
+            Some(value) => self.set_legacy_cache(LegacyCache::new(value)),
+            None => {
+                self.clear_legacy_cache();
+                Ok(())
+            }
+        }
+    }
+
+    /// Scale only the fit tolerance already carried by this construction.
+    fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        match self.write_revision_fit_tolerance(ToleranceWrite::Scale(scale)) {
+            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => Ok(()),
+            RevisionCacheWrite::NoForm => {
+                if let Some(Some(cache)) = self.legacy_cache_slot_mut() {
+                    let value = cache.fit_tolerance;
+                    cache.fit_tolerance =
+                        value
+                            .scaled(scale)
+                            .ok_or_else(|| CacheContractError::InvalidValue {
+                                value: value.get() * scale.get(),
+                            })?;
+                }
+                Ok(())
+            }
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
+            }
+        }
+    }
+
+    /// State that a solved carrier of this construction was fitted to `value`,
+    /// raising an existing contract rather than lowering it.
+    ///
+    /// Answers every layout. A construction whose legacy slot is empty takes
+    /// the contract; one that already carries a cache raises it; a solved
+    /// revision cache raises its own tolerance. A parameterized form and a
+    /// layout that states no slot have no solved cache to state, so they
+    /// refuse: a caller that asked for a solved cache never gets a silent
+    /// nothing. The write goes through `legacy_cache_slot_mut`, the one write
+    /// route to the slot, so a construction cannot answer it differently from
+    /// the setter and the clear.
+    pub fn require_cache_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+    ) -> Result<(), CacheContractError> {
+        match self.write_revision_fit_tolerance(ToleranceWrite::Raise(value)) {
+            RevisionCacheWrite::Written => Ok(()),
+            RevisionCacheWrite::Parameterized => {
+                Err(CacheContractError::Layout(PARAMETERIZED_NO_SOLVED_CACHE))
+            }
+            RevisionCacheWrite::NoForm => match self.legacy_cache_slot_mut() {
+                Some(slot @ None) => {
+                    *slot = Some(LegacyCache::new(value));
+                    Ok(())
+                }
+                Some(Some(cache)) => {
+                    if value.get() > cache.fit_tolerance.get() {
+                        cache.fit_tolerance = value;
+                    }
+                    Ok(())
+                }
+                None => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+            },
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
+            }
+        }
+    }
+}
+
+fn set_variable_blend_cache(
+    cache: &mut VariableBlendCache<FiniteReal>,
+    value: Option<FitTolerance>,
+) -> Result<(), CacheContractError> {
+    match (cache, value) {
+        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
+            Err(CacheContractError::Parameterized)
+        }
+        (VariableBlendCache::Parameterization { .. } | VariableBlendCache::Stale {}, None) => {
+            Ok(())
+        }
+        (VariableBlendCache::Current { fit_tolerance, .. }, Some(value)) => {
+            *fit_tolerance = value;
+            Ok(())
+        }
+        (VariableBlendCache::Current { .. }, None) => Err(CacheContractError::MissingSolved),
+        (VariableBlendCache::Stale {}, Some(_)) => Err(CacheContractError::Layout(
+            "a stale variable-blend cache states no fit tolerance",
+        )),
+    }
+}
+
+impl ProceduralSurface {
+    /// Build a procedural surface from its construction definition.
     pub fn new(
         id: ProceduralSurfaceId,
         definition: ProceduralSurfaceDefinition,
-        record_bounds: Option<[Option<f64>; 4]>,
+        record_bounds: Option<RecordBounds>,
     ) -> Self {
         Self {
             id,
             definition,
-            legacy_cache_fit_tolerance: None,
             record_bounds,
         }
     }
 
-    /// Build a procedural surface and reconcile the legacy top-level cache
-    /// field with any revision-gated cache form in its definition.
-    pub fn try_new(
-        id: ProceduralSurfaceId,
-        definition: ProceduralSurfaceDefinition,
-        cache_fit_tolerance: Option<f64>,
-        record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Result<Self, CacheFitToleranceError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
-        Ok(Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance,
-            record_bounds,
-        })
+    /// Return the retained native record bounds, when present. The aggregate
+    /// moves whole, so a reader that keeps it holds the finiteness the
+    /// constructor established; `RecordBounds::get` opens it for computation.
+    #[must_use]
+    pub const fn record_bounds(&self) -> Option<RecordBounds> {
+        self.record_bounds
     }
 
     /// Borrow the neutral construction definition.
@@ -2286,187 +2124,56 @@ impl ProceduralSurface {
         &self.definition
     }
 
-    /// Replace the construction definition and discard a legacy cache value
-    /// when the new definition owns a revision cache.
-    pub fn replace_definition(&mut self, definition: ProceduralSurfaceDefinition) {
-        if definition.owns_revision_cache() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        self.definition = definition;
-    }
-
-    /// Replace the definition and effective cache-fit tolerance atomically.
-    pub fn try_replace_definition(
-        &mut self,
-        definition: ProceduralSurfaceDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
-        self.definition = definition;
-        self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
-        Ok(())
-    }
-
-    /// Edit the definition and normalize legacy cache storage before the edit
-    /// can escape this call.
+    /// Edit the definition in place.
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralSurfaceDefinition) -> R,
     ) -> R {
-        let result = edit(&mut self.definition);
-        if self.definition.owns_revision_cache() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        result
+        edit(&mut self.definition)
     }
 
     /// Effective fit tolerance of the solved cache.
     #[must_use]
-    pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition
-            .revision_cache_fit_tolerance()
-            .unwrap_or(self.legacy_cache_fit_tolerance)
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        self.definition.cache_fit_tolerance()
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
-    /// cache to acquire one or a solved revision cache to lose it.
+    /// cache to acquire one or a solved cache to lose it.
     pub fn set_cache_fit_tolerance(
         &mut self,
         value: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
-            return set_variable_blend_cache_fit_tolerance(&mut construction.cache, value);
-        }
-        set_cache_fit_tolerance(
-            self.definition.revision_cache_mut(),
-            &mut self.legacy_cache_fit_tolerance,
-            value,
-        )
+    ) -> Result<(), CacheContractError> {
+        let value = value.map(FitTolerance::try_new).transpose()?;
+        self.definition.set_cache_fit_tolerance(value)
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) {
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
-            if let VariableBlendCache::Current { fit_tolerance, .. } = &mut construction.cache {
-                *fit_tolerance *= scale;
-            }
-            return;
-        }
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => *fit_tolerance *= scale,
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                if let Some(fit_tolerance) = &mut self.legacy_cache_fit_tolerance {
-                    *fit_tolerance *= scale;
-                }
-            }
-        }
-    }
-}
-
-fn reconcile_surface_cache_fit_tolerance(
-    definition: &ProceduralSurfaceDefinition,
-    supplied: Option<f64>,
-) -> Result<Option<f64>, CacheFitToleranceError> {
-    let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
-        return reconcile_cache_fit_tolerance(definition.revision_cache(), supplied);
-    };
-    match (&construction.cache, supplied) {
-        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (VariableBlendCache::Stale, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (
-            VariableBlendCache::Current {
-                fit_tolerance: stored,
-                ..
-            },
-            Some(supplied),
-        ) if supplied != *stored => Err(CacheFitToleranceError::Conflicting {
-            supplied,
-            stored: *stored,
-        }),
-        _ => Ok(None),
-    }
-}
-
-fn set_variable_blend_cache_fit_tolerance(
-    cache: &mut VariableBlendCache,
-    value: Option<f64>,
-) -> Result<(), CacheFitToleranceError> {
-    match (cache, value) {
-        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (VariableBlendCache::Parameterization { .. }, None) => Ok(()),
-        (VariableBlendCache::Current { fit_tolerance, .. }, Some(value)) => {
-            *fit_tolerance = value;
-            Ok(())
-        }
-        (VariableBlendCache::Current { .. }, None) => Err(CacheFitToleranceError::MissingSolved),
-        (VariableBlendCache::Stale, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (VariableBlendCache::Stale, None) => Ok(()),
-    }
-}
-
-fn reconcile_cache_fit_tolerance<P>(
-    cache: Option<&RevisionCacheForm<P>>,
-    supplied: Option<f64>,
-) -> Result<Option<f64>, CacheFitToleranceError> {
-    match (cache, supplied) {
-        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (
-            Some(RevisionCacheForm::SolvedCache {
-                fit_tolerance: stored,
-            }),
-            Some(supplied),
-        ) if supplied != *stored => Err(CacheFitToleranceError::Conflicting {
-            supplied,
-            stored: *stored,
-        }),
-        (Some(_), _) => Ok(None),
-        (None, supplied) => Ok(supplied),
-    }
-}
-
-fn set_cache_fit_tolerance<P>(
-    cache: Option<&mut RevisionCacheForm<P>>,
-    legacy: &mut Option<f64>,
-    value: Option<f64>,
-) -> Result<(), CacheFitToleranceError> {
-    match (cache, value) {
-        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (Some(RevisionCacheForm::Parameterization(_)), None) => Ok(()),
-        (Some(RevisionCacheForm::SolvedCache { fit_tolerance }), Some(value)) => {
-            *fit_tolerance = value;
-            Ok(())
-        }
-        (Some(RevisionCacheForm::SolvedCache { .. }), None) => {
-            Err(CacheFitToleranceError::MissingSolved)
-        }
-        (None, value) => {
-            *legacy = value;
-            Ok(())
-        }
+    ///
+    /// A positive scale keeps the tolerance non-negative, so the scaled
+    /// tolerance is refused only when it overflows, with the admission's own
+    /// error.
+    pub fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        self.definition.scale_cache_fit_tolerance(scale)
     }
 }
 
 /// Structurally selected deformable-surface payload.
+// A source states raw values; a `DeformableSurfacePayload` holds the admitted
+// payload, whose scalars, vectors and points are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DeformableSurfaceData {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
     /// Mode-6 full embedded deformation payload.
     Full {
         /// Four leading deformation vectors.
-        leading_vectors: [Vector3; 4],
+        leading_vectors: [V; 4],
         /// Leading deformation scalar.
-        leading_parameter: f64,
+        leading_parameter: R,
         /// Three leading flags.
         leading_flags: [bool; 3],
         /// Native selector before the secondary support.
@@ -2478,15 +2185,16 @@ pub enum DeformableSurfaceData {
         /// Native support-side flag.
         flag: bool,
         /// First scalar after the flag.
-        first_parameter: f64,
+        first_parameter: R,
         /// Version-gated ASM long when present.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         version_value: Option<i64>,
         /// Second scalar after the optional long.
-        second_parameter: f64,
+        second_parameter: R,
         /// Embedded deformation curve.
         curve: CurveId,
         /// Two ordered full vector frames.
-        frames: Box<[DeformableVectorFrame; 2]>,
+        frames: Box<[DeformableVectorFrame<R, V>; 2]>,
         /// Native trailing long.
         trailing_value: i64,
     },
@@ -2499,67 +2207,67 @@ pub enum DeformableSurfaceData {
         /// Native leading flag.
         flag: bool,
         /// First native scalar.
-        first_parameter: f64,
+        first_parameter: R,
         /// Native selector integer.
         selector: i64,
         /// Second native scalar.
-        second_parameter: f64,
+        second_parameter: R,
         /// Embedded deformation curve.
         curve: CurveId,
         /// Four ordered deformation vectors.
-        vectors: [Vector3; 4],
+        vectors: [V; 4],
         /// Frame scalar after the vectors.
-        frame_parameter: f64,
+        frame_parameter: R,
         /// Three frame flags.
         flags: [bool; 3],
         /// Counted ordered scalar triples.
-        parameter_triples: Vec<[f64; 3]>,
+        parameter_triples: Vec<[R; 3]>,
     },
     /// Mode-1 deformation frame with counted parameter triples.
     Plain {
         /// Shared full deformation frame.
-        frame: Box<DeformableSurfaceFrame>,
+        frame: Box<DeformableSurfaceFrame<R, V, P>>,
         /// Ordered native scalar triples.
-        parameter_triples: Vec<[f64; 3]>,
+        parameter_triples: Vec<[R; 3]>,
     },
     /// Mode-3 deformation frame with a guide scalar.
     Guided {
         /// Shared full deformation frame.
-        frame: Box<DeformableSurfaceFrame>,
+        frame: Box<DeformableSurfaceFrame<R, V, P>>,
         /// Native guide selector.
         selector: i64,
         /// Native guide scalar.
-        guide_parameter: f64,
+        guide_parameter: R,
     },
     /// Mode-8 minimal four-vector scaffold.
     Minimal {
         /// Four ordered deformation vectors.
-        vectors: [Vector3; 4],
+        vectors: [V; 4],
         /// Native trailing selector.
         selector: i64,
     },
     /// Revision-gated mode-3 deformation payload.
     RevisionMode3 {
         /// Four leading deformation vectors.
-        leading_vectors: [Vector3; 4],
+        leading_vectors: [V; 4],
         /// Scalar following the leading vectors.
-        leading_parameter: f64,
+        leading_parameter: R,
         /// Three flags following the leading scalar.
         leading_flags: [bool; 3],
         /// Position anchoring the trailing frame.
-        trailing_point: Point3,
+        trailing_point: P,
         /// Two vectors following the trailing point.
-        trailing_vectors: [Vector3; 2],
+        trailing_vectors: [V; 2],
         /// Scalar following the trailing vectors.
-        frame_parameter: f64,
+        frame_parameter: R,
         /// Two flags following the trailing frame scalar.
         frame_flags: [bool; 2],
         /// Three ordered scalar parameters following the trailing frame.
-        parameters: [f64; 3],
+        parameters: [R; 3],
         /// Five flags following the ordered scalar parameters.
         trailing_flags: [bool; 5],
         /// Scalar preceding the payload's final integer.
-        trailing_parameter: f64,
+        trailing_parameter: R,
         /// Integer closing the revision mode-3 payload.
         trailing_value: i64,
     },
@@ -2568,11 +2276,12 @@ pub enum DeformableSurfaceData {
 /// Four-vector frame used by full deformable surfaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DeformableVectorFrame {
+#[serde(deny_unknown_fields)]
+pub struct DeformableVectorFrame<R = f64, V = Vector3> {
     /// Four ordered vectors.
-    pub vectors: [Vector3; 4],
+    pub vectors: [V; 4],
     /// Frame scalar.
-    pub parameter: f64,
+    pub parameter: R,
     /// Three ordered flags.
     pub flags: [bool; 3],
 }
@@ -2580,363 +2289,991 @@ pub struct DeformableVectorFrame {
 /// Shared frame payload of deformable-surface modes 1 and 3.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DeformableSurfaceFrame {
+#[serde(deny_unknown_fields)]
+pub struct DeformableSurfaceFrame<R = f64, V = Vector3, P = Point3> {
     /// Four leading deformation vectors.
-    pub leading_vectors: [Vector3; 4],
+    pub leading_vectors: [V; 4],
     /// Leading frame scalar.
-    pub leading_parameter: f64,
+    pub leading_parameter: R,
     /// Three leading frame flags.
     pub leading_flags: [bool; 3],
     /// Three secondary deformation vectors.
-    pub secondary_vectors: [Vector3; 3],
+    pub secondary_vectors: [V; 3],
     /// Secondary frame scalar.
-    pub secondary_parameter: f64,
+    pub secondary_parameter: R,
     /// Two secondary frame flags.
     pub secondary_flags: [bool; 2],
     /// Native model-space frame point.
-    pub point: Point3,
+    pub point: P,
     /// Five trailing frame flags.
     pub trailing_flags: [bool; 5],
 }
 
 /// Complete native deformable-surface construction.
+// A source states raw values; a `DeformableSurfacePayload` holds the admitted
+// construction, whose scalars, vectors and points are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DeformableSurfaceConstruction {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct DeformableSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Surface being deformed.
     pub support: SurfaceId,
     /// Discriminator-selected deformation data.
-    pub data: DeformableSurfaceData,
-    /// Revision-gated fields surrounding the support and shared surface tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision_form: Option<RevisionSurfaceForm>,
+    pub data: DeformableSurfaceData<R, V, P>,
+    /// Cache contract: the revision-gated fields surrounding the support and
+    /// shared surface tail, or the legacy solved-cache tolerance this
+    /// construction states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    pub cache: CacheContract<RevisionSurfaceForm<Vec<bool>, R>>,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
 }
 
-/// Inline path shared by helix curves and helix surfaces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+const EPS_HELIX_SURFACE_RADIUS_RELATIVE: f64 = 1.0e-9;
+const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
+
+/// Finite circular path of a helix surface.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixPathConstructionWire")]
 pub struct HelixPathConstruction {
-    /// Native angular path interval.
-    pub angle_range: [f64; 2],
-    /// Axis origin at the path start.
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteReal,
+    axis: FiniteVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HelixPathConstructionWire {
+    /// Native helix angle interval.
+    angle_range: [f64; 2],
+    /// Helix center in model space.
+    center: Point3,
+    /// Major radial axis vector.
+    major: Vector3,
+    /// Minor radial axis vector.
+    minor: Vector3,
+    /// Axial advance of one turn, as a vector.
+    pitch: Vector3,
+    /// Native apex taper factor.
+    apex_factor: f64,
+    /// Helix axis direction.
+    axis: Vector3,
+}
+
+/// The positioned frame a helix construction states.
+///
+/// The two helix constructions state the same five values, so they take them
+/// as one argument and each admits them against its own contract.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HelixFrame<Axis = Vector3> {
+    /// Helix centre in model space.
     pub center: Point3,
-    /// Major profile-radius vector.
+    /// Major radial vector.
     pub major: Vector3,
-    /// Minor profile-radius vector.
+    /// Minor radial vector.
     pub minor: Vector3,
-    /// Axial rise vector per revolution.
+    /// Pitch vector along the axis.
     pub pitch: Vector3,
-    /// Linear radial growth factor.
-    pub apex_factor: f64,
-    /// Unit helix axis direction.
-    pub axis: Vector3,
+    /// Helix axis direction.
+    pub axis: Axis,
+}
+
+impl HelixPathConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        frame: HelixFrame,
+        apex_factor: f64,
+    ) -> Result<Self, &'static str> {
+        Self::try_from_axis(angle_range, frame, apex_factor, FiniteVector3::new)
+    }
+
+    /// Build a helix path from an already admitted unit axis.
+    pub fn try_with_unit_axis(
+        angle_range: [f64; 2],
+        frame: HelixFrame<crate::units::UnitVector3>,
+        apex_factor: f64,
+    ) -> Result<Self, &'static str> {
+        Self::try_from_axis(angle_range, frame, apex_factor, |axis| Some(axis.into()))
+    }
+
+    fn try_from_axis<Axis>(
+        angle_range: [f64; 2],
+        frame: HelixFrame<Axis>,
+        apex_factor: f64,
+        admit_axis: impl FnOnce(Axis) -> Option<FiniteVector3>,
+    ) -> Result<Self, &'static str> {
+        let HelixFrame {
+            center,
+            major,
+            minor,
+            pitch,
+            axis,
+        } = frame;
+        let major_length = major.norm();
+        let minor_length = minor.norm();
+        if !(major_length.is_finite()
+            && minor_length.is_finite()
+            && major_length > 0.0
+            && minor_length > 0.0
+            && (major_length - minor_length).abs()
+                <= EPS_HELIX_SURFACE_RADIUS_RELATIVE * major_length.max(minor_length))
+        {
+            return Err("helix surface path major and minor must define a circular path");
+        }
+
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixPathConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixPathConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixPathConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixPathConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixPathConstruction.pitch must be finite")?;
+        let apex_factor = FiniteReal::new(apex_factor)
+            .ok_or("HelixPathConstruction.apex_factor must be finite")?;
+        let axis = admit_axis(axis).ok_or("HelixPathConstruction.axis must be finite")?;
+        Ok(Self {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        })
+    }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
+    }
+
+    /// Return the center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint3 {
+        &self.center
+    }
+
+    /// Return the major.
+    #[must_use]
+    pub const fn major(&self) -> &FiniteVector3 {
+        &self.major
+    }
+
+    /// Return the minor.
+    #[must_use]
+    pub const fn minor(&self) -> &FiniteVector3 {
+        &self.minor
+    }
+
+    /// Return the pitch.
+    #[must_use]
+    pub const fn pitch(&self) -> &FiniteVector3 {
+        &self.pitch
+    }
+
+    /// Return the apex factor.
+    #[must_use]
+    pub const fn apex_factor(&self) -> FiniteReal {
+        self.apex_factor
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &FiniteVector3 {
+        &self.axis
+    }
+}
+
+impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixPathConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            HelixFrame {
+                center: wire.center,
+                major: wire.major,
+                minor: wire.minor,
+                pitch: wire.pitch,
+                axis: wire.axis,
+            },
+            wire.apex_factor,
+        )
+    }
+}
+
+/// Finite ordered helix curve with a non-degenerate radial frame.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixCurveConstructionWire")]
+pub struct HelixCurveConstruction {
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteReal,
+    axis: FiniteVector3,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cache"
+    )]
+    cache: Option<LegacyCache>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HelixCurveConstructionWire {
+    /// Native helix angle interval.
+    angle_range: [f64; 2],
+    /// Helix center in model space.
+    center: Point3,
+    /// Major radial axis vector.
+    major: Vector3,
+    /// Minor radial axis vector.
+    minor: Vector3,
+    /// Axial advance of one turn, as a vector.
+    pitch: Vector3,
+    /// Native apex taper factor.
+    apex_factor: f64,
+    /// Helix axis direction.
+    axis: Vector3,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, deserialize_with = "deserialize_cache")]
+    cache: Option<LegacyCache>,
+}
+
+impl HelixCurveConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        frame: HelixFrame,
+        apex_factor: f64,
+        cache: Option<LegacyCache>,
+    ) -> Result<Self, &'static str> {
+        let HelixFrame {
+            center,
+            major,
+            minor,
+            pitch,
+            axis,
+        } = frame;
+        if angle_range[0] > angle_range[1] {
+            return Err("helix curve angle_range must be ordered");
+        }
+        let major_radius = major.norm();
+        let minor_radius = minor.norm();
+        if major_radius <= f64::EPSILON
+            || minor_radius <= f64::EPSILON
+            || axis.norm() <= f64::EPSILON
+        {
+            return Err("helix curve major, minor, and axis must be non-degenerate");
+        }
+        if major.is_finite()
+            && minor.is_finite()
+            && (!major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || (major_radius - minor_radius).abs() > EPS_HELIX_CURVE_RADIUS)
+        {
+            return Err("helix curve major and minor radii must agree");
+        }
+
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixCurveConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        let apex_factor = FiniteReal::new(apex_factor)
+            .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
+        let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
+        Ok(Self {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+            cache,
+        })
+    }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
+    }
+
+    /// Borrow the admitted center.
+    #[must_use]
+    pub const fn center(&self) -> &FinitePoint3 {
+        &self.center
+    }
+
+    /// Return the major.
+    #[must_use]
+    pub const fn major(&self) -> &FiniteVector3 {
+        &self.major
+    }
+
+    /// Return the minor.
+    #[must_use]
+    pub const fn minor(&self) -> &FiniteVector3 {
+        &self.minor
+    }
+
+    /// Return the pitch.
+    #[must_use]
+    pub const fn pitch(&self) -> &FiniteVector3 {
+        &self.pitch
+    }
+
+    /// Return the apex factor.
+    #[must_use]
+    pub const fn apex_factor(&self) -> FiniteReal {
+        self.apex_factor
+    }
+
+    /// Return the axis.
+    #[must_use]
+    pub const fn axis(&self) -> &FiniteVector3 {
+        &self.axis
+    }
+}
+
+impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixCurveConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            HelixFrame {
+                center: wire.center,
+                major: wire.major,
+                minor: wire.minor,
+                pitch: wire.pitch,
+                axis: wire.axis,
+            },
+            wire.apex_factor,
+            wire.cache,
+        )
+    }
+}
+
+impl HelixCurveConstruction {
+    /// Reverse the parameter while preserving points and derivatives.
+    /// A zero radius at the new interval start has no admitted helix frame.
+    pub fn try_reverse_parameterization(&mut self) -> Result<(), &'static str> {
+        let [start, end] = self.angle_range.finite_components();
+        let turns = end.turns_from(start).get();
+        let radial_end = self.apex_factor.get().mul_add(turns, 1.0);
+        if !turns.is_finite() || !radial_end.is_finite() || radial_end == 0.0 {
+            return Err("helix curve reversal has no finite nonzero starting radius");
+        }
+        let scale = |vector: Vector3| {
+            Vector3::new(
+                vector.x * radial_end,
+                vector.y * radial_end,
+                vector.z * radial_end,
+            )
+        };
+        let candidate = Self::try_new(
+            self.angle_range.reversed_negated().get(),
+            HelixFrame {
+                center: self.center.get().translated(self.pitch.get(), turns),
+                major: scale(self.major.get()),
+                minor: scale(self.minor.negated().get()),
+                pitch: self.pitch.negated().get(),
+                axis: self.axis.get(),
+            },
+            -self.apex_factor.get() / radial_end,
+            self.cache,
+        )?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Scale lengths atomically and retain the old path when admission fails.
+    pub fn try_scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
+        let vector =
+            |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
+        let center = Point3::new(
+            self.center.x * scale,
+            self.center.y * scale,
+            self.center.z * scale,
+        );
+        let major = vector(self.major.get());
+        let minor = vector(self.minor.get());
+        let pitch = vector(self.pitch.get());
+        let major_radius = major.norm();
+        let minor_radius = minor.norm();
+        if major_radius <= f64::EPSILON || minor_radius <= f64::EPSILON {
+            return Err("helix curve major, minor, and axis must be non-degenerate");
+        }
+        if major.is_finite()
+            && minor.is_finite()
+            && (!major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || (major_radius - minor_radius).abs() > EPS_HELIX_CURVE_RADIUS)
+        {
+            return Err("helix curve major and minor radii must agree");
+        }
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        self.center = center;
+        self.major = major;
+        self.minor = minor;
+        self.pitch = pitch;
+        Ok(())
+    }
+}
+
+/// Finite circular helix profile with a nonzero signed radius.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixCircleProfileWire")]
+pub struct HelixCircleProfile {
+    length: FiniteReal,
+    radius: FiniteReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HelixCircleProfileWire {
+    /// Native profile length.
+    length: f64,
+    /// Signed circular profile radius.
+    radius: f64,
+}
+
+impl HelixCircleProfile {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
+        if radius == 0.0 {
+            return Err("helix circle profile radius must be finite and nonzero");
+        }
+        let length = FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
+        let radius = FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
+        Ok(Self { length, radius })
+    }
+    /// Native profile length.
+    #[must_use]
+    pub const fn length(&self) -> FiniteReal {
+        self.length
+    }
+
+    /// Signed circular profile radius.
+    #[must_use]
+    pub const fn radius(&self) -> FiniteReal {
+        self.radius
+    }
+}
+
+impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
+    type Error = &'static str;
+    fn try_from(wire: HelixCircleProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.length, wire.radius)
+    }
+}
+
+/// Finite non-degenerate linear helix profile.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixLineProfileWire")]
+pub struct HelixLineProfile {
+    direction: FiniteVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HelixLineProfileWire {
+    /// Finite non-degenerate profile direction.
+    direction: Vector3,
+}
+
+impl HelixLineProfile {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(direction: Vector3) -> Result<Self, &'static str> {
+        const INVALID: &str = "helix line profile direction must be finite and non-degenerate";
+        let direction = FiniteVector3::new(direction).ok_or(INVALID)?;
+        if direction.x == 0.0 && direction.y == 0.0 && direction.z == 0.0 {
+            return Err(INVALID);
+        }
+        Ok(Self { direction })
+    }
+    /// Finite non-degenerate profile direction.
+    #[must_use]
+    pub const fn direction(&self) -> FiniteVector3 {
+        self.direction
+    }
+}
+
+impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
+    type Error = &'static str;
+    fn try_from(wire: HelixLineProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.direction)
+    }
 }
 
 /// Profile-specific tail of a helix surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelixSurfaceProfile {
     /// Circular profile swept along the helix.
-    Circle {
-        /// Native length preceding the inline path.
-        length: f64,
-        /// Circular profile radius.
-        radius: f64,
-    },
+    Circle(HelixCircleProfile),
     /// Linear profile swept along a direction.
-    Line {
-        /// Native model-space profile direction.
-        direction: Vector3,
-    },
+    Line(HelixLineProfile),
 }
 
-/// Complete native helix-surface construction.
+/// Complete helix-surface construction with finite native intervals.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixSurfaceConstructionWire")]
+pub struct HelixSurfaceConstruction {
+    angle_range: FiniteVector<2>,
+    dimension_range: FiniteVector<2>,
+    path: HelixPathConstruction,
+    profile: HelixSurfaceProfile,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct HelixSurfaceConstructionWire {
+    /// Native helix angle interval.
+    angle_range: [f64; 2],
+    /// Native profile dimension interval.
+    dimension_range: [f64; 2],
+    /// Circular path of the helix surface.
+    path: HelixPathConstruction,
+    /// Profile swept along the path.
+    profile: HelixSurfaceProfile,
+}
+
+impl HelixSurfaceConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        dimension_range: [f64; 2],
+        path: HelixPathConstruction,
+        profile: HelixSurfaceProfile,
+    ) -> Result<Self, &'static str> {
+        let angle_range =
+            FiniteVector::new(angle_range).ok_or("helix surface angle_range must be finite")?;
+        let dimension_range = FiniteVector::new(dimension_range)
+            .ok_or("helix surface dimension_range must be finite")?;
+        Ok(Self {
+            angle_range,
+            dimension_range,
+            path,
+            profile,
+        })
+    }
+    /// Return the angle range.
+    #[must_use]
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
+    }
+
+    /// Return the dimension range.
+    #[must_use]
+    pub const fn dimension_range(&self) -> &FiniteVector<2> {
+        &self.dimension_range
+    }
+
+    /// Return the path.
+    #[must_use]
+    pub const fn path(&self) -> &HelixPathConstruction {
+        &self.path
+    }
+
+    /// Return the profile.
+    #[must_use]
+    pub const fn profile(&self) -> &HelixSurfaceProfile {
+        &self.profile
+    }
+}
+
+impl TryFrom<HelixSurfaceConstructionWire> for HelixSurfaceConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            wire.dimension_range,
+            wire.path,
+            wire.profile,
+        )
+    }
+}
+
+/// A non-negative native subtype-table index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "i64", into = "i64")]
+pub struct SubtypeTableIndex(i64);
+
+impl SubtypeTableIndex {
+    /// Admit a non-negative native subtype-table index.
+    pub fn try_new(index: i64) -> Result<Self, &'static str> {
+        if index >= 0 {
+            Ok(Self(index))
+        } else {
+            Err("subtype table index must be non-negative")
+        }
+    }
+
+    /// Native subtype-table index.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl TryFrom<i64> for SubtypeTableIndex {
+    type Error = &'static str;
+    fn try_from(index: i64) -> Result<Self, Self::Error> {
+        Self::try_new(index)
+    }
+}
+
+impl From<SubtypeTableIndex> for i64 {
+    fn from(index: SubtypeTableIndex) -> Self {
+        index.get()
+    }
+}
+
+/// An inline T-spline program and its non-empty companion values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HelixSurfaceConstruction {
-    /// Native surface angular interval.
-    pub angle_range: [f64; 2],
-    /// Native secondary interval.
-    pub dimension_range: [f64; 2],
-    /// Inline helix path.
-    pub path: HelixPathConstruction,
-    /// Circular or linear profile tail.
-    pub profile: HelixSurfaceProfile,
+#[serde(
+    tag = "kind",
+    rename = "inline",
+    try_from = "InlineTSplineSubtransformWire"
+)]
+pub struct InlineTSplineSubtransform {
+    /// Line-oriented topology and geometry program.
+    pub program: cadmpeg_core::text::NonBlankString,
+    /// Optional native separator boolean.
+    pub separator: Option<bool>,
+    /// Companion values program.
+    pub values: cadmpeg_core::text::NonBlankString,
 }
 
-/// Native T-spline subtransform storage form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TSplineSubtransform {
+#[serde(deny_unknown_fields)]
+enum InlineTSplineSubtransformWire {
     /// Inline line-oriented T-spline program and companion values.
     Inline {
         /// Line-oriented topology and geometry program.
         program: String,
         /// Optional native separator boolean.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         separator: Option<bool>,
         /// Companion values program.
         values: String,
     },
-    /// Reference to an earlier subtype-table entry.
-    Reference {
+}
+
+impl TryFrom<InlineTSplineSubtransformWire> for InlineTSplineSubtransform {
+    type Error = &'static str;
+    fn try_from(wire: InlineTSplineSubtransformWire) -> Result<Self, Self::Error> {
+        let InlineTSplineSubtransformWire::Inline {
+            program,
+            separator,
+            values,
+        } = wire;
+        Self::try_new(program, separator, values)
+    }
+}
+
+impl InlineTSplineSubtransform {
+    /// Admit a non-empty T-spline program and companion values.
+    pub fn try_new(
+        program: impl Into<String>,
+        separator: Option<bool>,
+        values: impl Into<String>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            program: cadmpeg_core::text::NonBlankString::new(program)
+                .ok_or("T-spline program must not be empty")?,
+            separator,
+            values: cadmpeg_core::text::NonBlankString::new(values)
+                .ok_or("T-spline values must not be empty")?,
+        })
+    }
+}
+
+/// Native T-spline subtransform storage form.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TSplineSubtransformWire")]
+pub enum TSplineSubtransform {
+    /// Inline line-oriented T-spline program and companion values.
+    Inline(InlineTSplineSubtransform),
+    /// Resolved reference to an earlier subtype-table entry.
+    Resolved {
         /// Native subtype-table index.
-        index: i64,
-        /// Resolved shared program when the table target is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved: Option<Box<TSplineSubtransform>>,
+        index: SubtypeTableIndex,
+        /// Resolved shared program.
+        transform: Box<InlineTSplineSubtransform>,
     },
-}
-
-/// Complete native `t_spl_sur` wrapper.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TSplineSurfaceConstruction {
-    /// Ordered U and V native parameter intervals.
-    pub parameter_ranges: [[f64; 2]; 2],
-    /// Native T-spline type integer.
-    pub type_code: i64,
-    /// Inline or referenced shared subtransform object.
-    pub subtransform: TSplineSubtransform,
-    /// Native trailing integer.
-    pub trailing_value: i64,
-    /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
-    /// Native discontinuity tail flag.
-    pub discontinuity_flag: bool,
-    /// Revision-gated form fields; absent from the pre-revision layout. The
-    /// revision layout stores the shared tail first, then four optional
-    /// parameter values (`support_bounds`), the type code as an enum, the
-    /// nested subtransform scope, and the trailing integer.
-    pub revision_form: Option<RevisionSurfaceForm>,
-}
-
-impl TSplineSurfaceConstruction {
-    fn inline_programs(&self) -> Option<(&str, &str)> {
-        let subtransform = match &self.subtransform {
-            TSplineSubtransform::Inline { .. } => &self.subtransform,
-            TSplineSubtransform::Reference {
-                resolved: Some(resolved),
-                ..
-            } => resolved,
-            TSplineSubtransform::Reference { resolved: None, .. } => return None,
-        };
-        match subtransform {
-            TSplineSubtransform::Inline {
-                program, values, ..
-            } => Some((program, values)),
-            TSplineSubtransform::Reference { .. } => None,
-        }
-    }
-
-    /// Parse the semantic index of the effective topology program.
-    #[must_use]
-    pub fn program_graph(&self) -> Option<TSplineProgram> {
-        self.inline_programs()
-            .map(|(program, _)| TSplineProgram::parse(program))
-    }
-
-    /// Parse the semantic index of the effective values program.
-    #[must_use]
-    pub fn values_graph(&self) -> Option<TSplineProgram> {
-        self.inline_programs()
-            .map(|(_, values)| TSplineProgram::parse(values))
-    }
-}
-
-#[derive(Serialize)]
-struct TSplineSurfaceConstructionWriteWire<'a> {
-    parameter_ranges: &'a [[f64; 2]; 2],
-    type_code: i64,
-    subtransform: &'a TSplineSubtransform,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    program_graph: Option<&'a TSplineProgram>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    values_graph: Option<&'a TSplineProgram>,
-    trailing_value: i64,
-    discontinuities: &'a [Vec<f64>; 6],
-    discontinuity_flag: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm>,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct TSplineSurfaceConstructionReadWire {
-    parameter_ranges: [[f64; 2]; 2],
-    type_code: i64,
-    subtransform: TSplineSubtransform,
-    #[serde(default)]
-    program_graph: Option<TSplineProgram>,
-    #[serde(default)]
-    values_graph: Option<TSplineProgram>,
-    trailing_value: i64,
-    discontinuities: [Vec<f64>; 6],
-    discontinuity_flag: bool,
-    #[serde(default)]
-    revision_form: Option<RevisionSurfaceForm>,
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum TSplineSubtransformWire {
+    /// Inline line-oriented T-spline program and companion values.
+    Inline {
+        /// Line-oriented topology and geometry program.
+        program: String,
+        /// Optional native separator boolean.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        separator: Option<bool>,
+        /// Companion values program.
+        values: String,
+    },
+    /// Resolved reference to an earlier subtype-table entry.
+    Reference {
+        /// Native subtype-table index.
+        index: SubtypeTableIndex,
+        /// Resolved shared program.
+        resolved: Box<InlineTSplineSubtransform>,
+    },
 }
 
-impl Serialize for TSplineSurfaceConstruction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let program_graph = self.program_graph();
-        let values_graph = self.values_graph();
-        TSplineSurfaceConstructionWriteWire {
-            parameter_ranges: &self.parameter_ranges,
-            type_code: self.type_code,
-            subtransform: &self.subtransform,
-            program_graph: program_graph.as_ref(),
-            values_graph: values_graph.as_ref(),
-            trailing_value: self.trailing_value,
-            discontinuities: &self.discontinuities,
-            discontinuity_flag: self.discontinuity_flag,
-            revision_form: self.revision_form.as_ref(),
+impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
+    type Error = &'static str;
+    fn try_from(wire: TSplineSubtransformWire) -> Result<Self, Self::Error> {
+        match wire {
+            TSplineSubtransformWire::Inline {
+                program,
+                separator,
+                values,
+            } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
+            TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
+                index,
+                transform: resolved,
+            }),
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = TSplineSurfaceConstructionReadWire::deserialize(deserializer)?;
-        let construction = Self {
-            parameter_ranges: wire.parameter_ranges,
-            type_code: wire.type_code,
-            subtransform: wire.subtransform,
-            trailing_value: wire.trailing_value,
-            discontinuities: wire.discontinuities,
-            discontinuity_flag: wire.discontinuity_flag,
-            revision_form: wire.revision_form,
-        };
-        if wire
-            .program_graph
-            .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.program_graph().as_ref())
-        {
-            return Err(serde::de::Error::custom(
-                "program_graph does not match the T-spline program",
-            ));
+impl Serialize for TSplineSubtransform {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Wire<'a> {
+            Reference {
+                index: SubtypeTableIndex,
+                resolved: &'a InlineTSplineSubtransform,
+            },
         }
-        if wire
-            .values_graph
-            .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.values_graph().as_ref())
-        {
-            return Err(serde::de::Error::custom(
-                "values_graph does not match the T-spline values program",
-            ));
+        match self {
+            Self::Inline(inline) => inline.serialize(serializer),
+            Self::Resolved { index, transform } => Wire::Reference {
+                index: *index,
+                resolved: transform,
+            }
+            .serialize(serializer),
         }
-        Ok(construction)
     }
 }
 
-#[cfg(feature = "schema")]
-impl JsonSchema for TSplineSurfaceConstruction {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "TSplineSurfaceConstruction".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        TSplineSurfaceConstructionReadWire::json_schema(generator)
-    }
-}
-
-/// Parsed line-oriented T-spline subtransform program.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TSplineProgram {
-    /// Ordered recognized header declarations.
-    pub headers: Vec<TSplineProgramLine>,
-    /// Ordered recognized topology, geometry, and constraint records.
-    pub records: Vec<TSplineProgramLine>,
-    /// Non-comment lines outside the defined vocabulary.
-    pub unparsed_lines: Vec<String>,
-}
-
-/// One tokenized T-spline program line.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TSplineProgramLine {
-    /// Leading record or header token.
-    pub kind: String,
-    /// Ordered remaining fields without interpretation loss.
-    pub fields: Vec<String>,
-}
-
-impl TSplineProgram {
-    /// Parse the defined line vocabulary while retaining every other line.
+impl TSplineSubtransform {
+    /// Effective inline program, including resolved references.
     #[must_use]
-    pub fn parse(program: &str) -> Self {
-        const HEADERS: &[&str] = &[
-            "degree",
-            "cap_type",
-            "units",
-            "end_conditions",
-            "star_knot_rule",
-            "star_smoothness",
-            "tol",
-            "ver",
-            "behavior_version",
-            "geom_tol",
-            "compat_version",
-        ];
-        const RECORDS: &[&str] = &[
-            "f",
-            "e",
-            "v",
-            "l",
-            "ec",
-            "0m",
-            "0g",
-            "100edges",
-            "100verts",
-            "105sym",
-            "105plane",
-            "105a",
-            "106ek",
-            "50000grip",
-        ];
-        let mut parsed = Self {
-            headers: Vec::new(),
-            records: Vec::new(),
-            unparsed_lines: Vec::new(),
-        };
-        for line in program.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let mut fields = line.split_whitespace();
-            let Some(kind) = fields.next() else { continue };
-            let parsed_line = TSplineProgramLine {
-                kind: kind.into(),
-                fields: fields.map(String::from).collect(),
-            };
-            if HEADERS.contains(&kind) {
-                parsed.headers.push(parsed_line);
-            } else if RECORDS.contains(&kind) {
-                parsed.records.push(parsed_line);
-            } else {
-                parsed.unparsed_lines.push(line.into());
-            }
+    pub fn inline(&self) -> &InlineTSplineSubtransform {
+        match self {
+            Self::Inline(inline) => inline,
+            Self::Resolved { transform, .. } => transform,
         }
-        parsed
+    }
+}
+
+/// Complete native `t_spl_sur` wrapper.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "TSplineSurfaceConstructionWire",
+    into = "TSplineSurfaceConstructionWire"
+)]
+pub struct TSplineSurfaceConstruction {
+    /// Ordered U and V native parameter intervals.
+    parameter_ranges: [crate::topology::ParameterInterval; 2],
+    /// Native T-spline type integer.
+    type_code: i64,
+    /// Inline or referenced shared subtransform object.
+    subtransform: TSplineSubtransform,
+    /// Native trailing integer.
+    trailing_value: i64,
+    /// Six ordered solved-surface discontinuity arrays.
+    discontinuities: [Vec<FiniteReal>; 6],
+    /// Native discontinuity tail flag.
+    discontinuity_flag: bool,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead. The revision layout stores
+    /// the shared tail first, then four optional parameter values
+    /// (`support_bounds`), the type code as an enum, the nested subtransform
+    /// scope, and the trailing integer.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
+}
+
+impl TSplineSurfaceConstruction {
+    /// Admit finite ordered ranges, finite discontinuities, a valid revision
+    /// cache, and a resolved subtransform.
+    pub fn try_new(
+        parameter_ranges: [[f64; 2]; 2],
+        type_code: i64,
+        subtransform: TSplineSubtransform,
+        trailing_value: i64,
+        discontinuities: [Vec<f64>; 6],
+        discontinuity_flag: bool,
+        cache: CacheContract<RevisionSurfaceForm>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let parameter_ranges = [
+            crate::topology::ParameterInterval::new(parameter_ranges[0])
+                .map_err(ProceduralGeometryError::Payload)?,
+            crate::topology::ParameterInterval::new(parameter_ranges[1])
+                .map_err(ProceduralGeometryError::Payload)?,
+        ];
+        let discontinuities = FiniteReal::lanes(discontinuities).ok_or(
+            ProceduralGeometryError::Payload("T-spline discontinuities must be finite"),
+        )?;
+        let cache = cache.admit_form(RevisionSurfaceForm::admit).ok_or(
+            ProceduralGeometryError::Payload("T-spline revision cache form is invalid"),
+        )?;
+        Ok(Self {
+            parameter_ranges,
+            type_code,
+            subtransform,
+            trailing_value,
+            discontinuities,
+            discontinuity_flag,
+            cache,
+        })
+    }
+
+    /// Return ordered U and V intervals.
+    pub fn parameter_ranges(&self) -> [crate::topology::ParameterInterval; 2] {
+        self.parameter_ranges
+    }
+
+    /// Return the native type code value.
+    pub const fn type_code(&self) -> i64 {
+        self.type_code
+    }
+
+    /// Return the native subtransform value.
+    pub const fn subtransform(&self) -> &TSplineSubtransform {
+        &self.subtransform
+    }
+
+    /// Return the native trailing integer.
+    pub const fn trailing_value(&self) -> i64 {
+        self.trailing_value
+    }
+
+    /// Return the native discontinuities value.
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the native discontinuity flag value.
+    pub const fn discontinuity_flag(&self) -> bool {
+        self.discontinuity_flag
+    }
+
+    /// Return the native revision form value.
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm<Vec<bool>, FiniteReal>> {
+        self.cache.form()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "TSplineSurfaceConstruction"))]
+#[serde(deny_unknown_fields)]
+struct TSplineSurfaceConstructionWire {
+    /// Ordered U and V native parameter intervals.
+    parameter_ranges: [[f64; 2]; 2],
+    /// Native T-spline type integer.
+    type_code: i64,
+    /// Inline or referenced shared subtransform object.
+    subtransform: TSplineSubtransform,
+    /// Native trailing integer.
+    trailing_value: i64,
+    /// Six ordered solved-surface discontinuity arrays.
+    discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
+    discontinuity_flag: bool,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead. The revision layout stores
+    /// the shared tail first, then four optional parameter values
+    /// (`support_bounds`), the type code as an enum, the nested subtransform
+    /// scope, and the trailing integer.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
+}
+
+impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: TSplineSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.parameter_ranges,
+            wire.type_code,
+            wire.subtransform,
+            wire.trailing_value,
+            wire.discontinuities,
+            wire.discontinuity_flag,
+            wire.cache,
+        )
     }
 }
 
 /// One oriented support of a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BlendSupport {
     /// The support surface.
     pub surface: SurfaceId,
@@ -2946,110 +3283,285 @@ pub struct BlendSupport {
 }
 
 /// One parameter station of a rolling-ball jet, with its complete value rows.
-#[derive(Debug, Clone, PartialEq)]
+// A source states raw values; `RollingBallJetStations` holds the admitted
+// station, whose scalars, vectors and points are checked.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallJetStation {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallJetStation<R = f64, V = Vector3, P = Point3> {
     /// Native spine parameter.
-    pub knot: f64,
+    pub knot: R,
     /// Multiplicity of this parameter in the native knot vector.
     pub multiplicity: u32,
     /// Values and derivatives at this parameter.
-    pub site: RollingBallJetSite,
+    pub site: RollingBallJetSite<R, V, P>,
 }
 
-mod rolling_ball_jet_stations_wire {
-    use super::{RollingBallJetSite, RollingBallJetStation};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 
-    #[derive(Serialize)]
-    struct WriteWire<'a> {
-        knots: Vec<f64>,
-        multiplicities: Vec<u32>,
-        sites: Vec<&'a RollingBallJetSite>,
+const ROLLING_BALL_KNOTS: &str = "rolling-ball jet knots must be finite and strictly increasing";
+
+/// Refuse a site whose radii are not finite, whose first radius is not
+/// positive, or whose two radii disagree beyond the relative tolerance.
+fn admit_rolling_ball_radii(
+    site: &RollingBallJetSite<FiniteReal, FiniteVector3, FinitePoint3>,
+) -> Result<(), &'static str> {
+    let first_radius = site.first_limit.distance(site.center.get());
+    let second_radius = site.second_limit.distance(site.center.get());
+    if !first_radius.is_finite()
+        || first_radius <= 0.0
+        || !second_radius.is_finite()
+        || (first_radius - second_radius).abs()
+            > EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
+    {
+        return Err("rolling-ball jet site radii must be finite and agree within tolerance, with a positive first radius");
+    }
+    Ok(())
+}
+
+/// Degree and finite clamped station data of a rolling-ball jet.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "RollingBallJetReadWire")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RollingBallJetStations {
+    degree: u32,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<RollingBallJetStation>"))]
+    stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+}
+
+/// Station invariant or context-free reconstruction failure.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RollingBallJetError {
+    /// A station invariant failed.
+    #[error("{0}")]
+    Invalid(&'static str),
+    /// The admission channel could not complete.
+    #[error("{0}")]
+    Admission(String),
+}
+
+impl RollingBallJetStations {
+    /// Admit raw station controls with charged retained row storage.
+    pub fn try_new(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Self::from_raw(
+            degree,
+            stations,
+            |count, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+            },
+            |count| ctx.collection_vec(count, "rolling-ball jet stations"),
+        )
     }
 
-    #[derive(Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct ReadWire {
-        knots: Vec<f64>,
-        multiplicities: Vec<u32>,
-        sites: Vec<RollingBallJetSite>,
-    }
-
-    pub fn serialize<S: Serializer>(
-        stations: &[RollingBallJetStation],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        WriteWire {
-            knots: stations.iter().map(|station| station.knot).collect(),
-            multiplicities: stations
-                .iter()
-                .map(|station| station.multiplicity)
-                .collect(),
-            sites: stations.iter().map(|station| &station.site).collect(),
+    fn from_raw<E>(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+        mut work: impl FnMut(usize, &'static str) -> Result<(), E>,
+        allocate: impl FnOnce(
+            usize,
+        ) -> Result<
+            Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+            E,
+        >,
+    ) -> Result<Result<Self, &'static str>, E> {
+        if let Err(error) = Self::admit_controls(&mut work, degree, &stations, |row| row.knot)? {
+            return Ok(Err(error));
         }
-        .serialize(serializer)
+        let mut admitted = allocate(stations.len())?;
+        for row in stations {
+            work(1, "rolling-ball jet station controls")?;
+            let Some(knot) = FiniteReal::new(row.knot) else {
+                return Ok(Err(ROLLING_BALL_KNOTS));
+            };
+            let site = match row.site.admit() {
+                Ok(site) => site,
+                Err(error) => return Ok(Err(error)),
+            };
+            if let Err(error) = admit_rolling_ball_radii(&site) {
+                return Ok(Err(error));
+            }
+            admitted.push(RollingBallJetStation {
+                knot,
+                multiplicity: row.multiplicity,
+                site,
+            });
+        }
+        Ok(Ok(Self {
+            degree,
+            stations: admitted,
+        }))
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Vec<RollingBallJetStation>, D::Error> {
-        let wire = ReadWire::deserialize(deserializer)?;
-        if wire.knots.len() != wire.multiplicities.len() || wire.knots.len() != wire.sites.len() {
-            return Err(serde::de::Error::custom(
-                "rolling-ball jet knots, multiplicities, and sites must have equal lengths",
+    /// Validate finite station rows without copying their owned storage.
+    pub fn from_parts(
+        degree: u32,
+        stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if let Err(error) = Self::admit_controls(
+            &mut |count, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+            },
+            degree,
+            &stations,
+            |row| row.knot.get(),
+        )? {
+            return Ok(Err(error));
+        }
+        for station in &stations {
+            ctx.charge_work(1, "rolling-ball jet station controls")?;
+            if let Err(error) = admit_rolling_ball_radii(&station.site) {
+                return Ok(Err(error));
+            }
+        }
+        Ok(Ok(Self { degree, stations }))
+    }
+
+    fn admit_controls<R, V, P, E>(
+        work: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
+        degree: u32,
+        stations: &[RollingBallJetStation<R, V, P>],
+        knot: impl Fn(&RollingBallJetStation<R, V, P>) -> f64,
+    ) -> Result<Result<(), &'static str>, E> {
+        let Some(maximum) = degree.checked_add(1).filter(|_| degree != 0) else {
+            return Ok(Err(
+                "rolling-ball jet degree must be positive with a representable end multiplicity",
+            ));
+        };
+        if stations.len() < 2 {
+            return Ok(Err(
+                "rolling-ball jet stations must contain at least two rows",
             ));
         }
-        Ok(wire
-            .knots
-            .into_iter()
-            .zip(wire.multiplicities)
-            .zip(wire.sites)
-            .map(|((knot, multiplicity), site)| RollingBallJetStation {
-                knot,
-                multiplicity,
-                site,
-            })
-            .collect())
+        if stations[0].multiplicity != maximum
+            || stations[stations.len() - 1].multiplicity != maximum
+        {
+            return Ok(Err(
+                "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
+            ));
+        }
+        for station in stations {
+            work(1, "rolling-ball jet multiplicities")?;
+            if station.multiplicity == 0 || station.multiplicity > maximum {
+                return Ok(Err(
+                    "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
+                ));
+            }
+        }
+        let mut previous = None;
+        for station in stations {
+            work(1, "rolling-ball jet knots")?;
+            let value = knot(station);
+            if !value.is_finite() || previous.is_some_and(|last| value <= last) {
+                return Ok(Err(ROLLING_BALL_KNOTS));
+            }
+            previous = Some(value);
+        }
+        Ok(Ok(()))
+    }
+
+    /// Return the polynomial degree of each scalar channel.
+    #[must_use]
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Return the ordered station data.
+    #[must_use]
+    pub fn stations(&self) -> &[RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>] {
+        &self.stations
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct RollingBallJetReadWire {
+    /// Polynomial degree of each scalar channel.
+    degree: u32,
+    /// Ordered station data.
+    stations: Vec<RollingBallJetStation>,
+}
+
+impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
+    type Error = RollingBallJetError;
+
+    fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
+        Self::from_raw(
+            wire.degree,
+            wire.stations,
+            |_, _| Ok::<(), RollingBallJetError>(()),
+            |count| {
+                let mut values = Vec::new();
+                values
+                    .try_reserve_exact(count)
+                    .map_err(|error| RollingBallJetError::Admission(error.to_string()))?;
+                Ok(values)
+            },
+        )?
+        .map_err(RollingBallJetError::Invalid)
+    }
+}
+
+#[derive(Serialize)]
+struct RollingBallJetWriteWire<'a> {
+    degree: u32,
+    stations: &'a [RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>],
+}
+
+impl Serialize for RollingBallJetStations {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RollingBallJetWriteWire {
+            degree: self.degree,
+            stations: &self.stations,
+        }
+        .serialize(serializer)
     }
 }
 
 /// One aligned knot site of an exact rolling-ball surface jet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallJetSite {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallJetSite<R = f64, V = Vector3, P = Point3> {
     /// First limiting point at the knot.
-    pub first_limit: Point3,
+    pub first_limit: P,
     /// Second limiting point at the knot.
-    pub second_limit: Point3,
+    pub second_limit: P,
     /// Rolling-ball center at the knot.
-    pub center: Point3,
+    pub center: P,
     /// Signed opening angle at the knot, in radians.
-    pub angle: f64,
+    pub angle: R,
     /// First parameter derivative of all four value channels.
-    pub first_derivative: RollingBallJetDerivative,
+    pub first_derivative: RollingBallJetDerivative<R, V>,
     /// Second parameter derivative of all four value channels.
-    pub second_derivative: RollingBallJetDerivative,
+    pub second_derivative: RollingBallJetDerivative<R, V>,
 }
 
 /// One derivative row for the four channels of a rolling-ball jet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallJetDerivative {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
     /// Derivative of the first limiting point.
-    pub first_limit: Vector3,
+    pub first_limit: V,
     /// Derivative of the second limiting point.
-    pub second_limit: Vector3,
+    pub second_limit: V,
     /// Derivative of the rolling-ball center.
-    pub center: Vector3,
+    pub center: V,
     /// Derivative of the signed opening angle.
-    pub angle: f64,
+    pub angle: R,
 }
 
 /// Cross-section family of a procedural blend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BlendCrossSection {
     /// Constant-radius circular cross-section.
     Circular,
@@ -3063,31 +3575,37 @@ pub enum BlendCrossSection {
 /// integer, optional support bounds and reference-curve endpoints, a
 /// carrier-specific boolean run, and the shared tail enum, discontinuity
 /// arrays, tail boolean, and post-tail boolean run.
+// A source states raw scalars; a surface construction holds the admitted
+// form, whose scalars are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "F: Deserialize<'de> + Default, R: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "F: JsonSchema + Default, R: JsonSchema + Serialize")
+)]
+pub struct RevisionSurfaceForm<F: Default = Vec<bool>, R = f64> {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Optional U/V bound fields following the support surface.
     #[serde(default)]
-    pub support_bounds: [Option<f64>; 4],
+    pub support_bounds: [Option<R>; 4],
     /// Optional parameter endpoints following the embedded reference curve.
     #[serde(default)]
-    pub reference_endpoints: [Option<f64>; 2],
+    pub reference_endpoints: [Option<R>; 2],
     /// Optional parameter endpoints following a second embedded curve, used
     /// by two-curve carriers such as `sum_spl_sur`.
     #[serde(default)]
-    pub second_endpoints: [Option<f64>; 2],
+    pub second_endpoints: [Option<R>; 2],
     /// Carrier-specific boolean run preceding the shared tail.
     #[serde(default)]
     pub flags: F,
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
-    pub cache: RevisionCacheForm,
+    pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
     /// Boolean run following the shared tail.
@@ -3095,63 +3613,44 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
     pub trailing_flags: Vec<bool>,
 }
 
-impl<F: Default> RevisionSurfaceForm<F> {
-    fn with_flags<G: Default>(self, flags: G) -> RevisionSurfaceForm<G> {
-        RevisionSurfaceForm {
-            revision: self.revision,
-            support_bounds: self.support_bounds,
-            reference_endpoints: self.reference_endpoints,
-            second_endpoints: self.second_endpoints,
-            flags,
-            cache: self.cache,
-            discontinuities: self.discontinuities,
-            tail_flag: self.tail_flag,
-            trailing_flags: self.trailing_flags,
-        }
-    }
-}
-
 /// Mutually exclusive payloads of a revision-gated approximation cache.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
     /// A solved cache followed by its carrier-specific cache contract.
     SolvedCache {
         /// Carrier-specific solved-cache contract.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// Parameterization stored in place of a solved cache.
     Parameterization(P),
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the revision-surface cache wire schema"
-)]
-struct RevisionSurfaceCacheSchemaWire {
-    tail_enum: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    tail_parameterization: Option<RevisionSurfaceParameterization>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the cache-first curve wire schema")]
-struct CacheFirstCurveCacheSchemaWire {
-    cache_enum: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameterization: Option<CacheFirstCurveParameterization>,
-}
-
 impl<P> RevisionCacheForm<P> {
-    /// Native selector emitted for this cache form.
-    #[must_use]
-    pub const fn selector(&self) -> i64 {
+    /// State the fit tolerance this form carries for its solved cache.
+    fn write_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::SolvedCache { .. } => 0,
-            Self::Parameterization(_) => 2,
+            Self::SolvedCache { fit_tolerance } => {
+                match write {
+                    ToleranceWrite::State(value) => *fit_tolerance = value,
+                    ToleranceWrite::Raise(value) => {
+                        if value.get() > fit_tolerance.get() {
+                            *fit_tolerance = value;
+                        }
+                    }
+                    ToleranceWrite::Scale(scale) => {
+                        let Some(scaled) = fit_tolerance.scaled(scale) else {
+                            return RevisionCacheWrite::InvalidValue(
+                                fit_tolerance.get() * scale.get(),
+                            );
+                        };
+                        *fit_tolerance = scaled;
+                    }
+                }
+                RevisionCacheWrite::Written
+            }
+            Self::Parameterization(_) => RevisionCacheWrite::Parameterized,
         }
     }
 
@@ -3166,7 +3665,7 @@ impl<P> RevisionCacheForm<P> {
 
     /// Fit tolerance carried by a solved cache.
     #[must_use]
-    pub const fn fit_tolerance(&self) -> Option<f64> {
+    pub const fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
             Self::SolvedCache { fit_tolerance } => Some(*fit_tolerance),
             Self::Parameterization(_) => None,
@@ -3175,50 +3674,60 @@ impl<P> RevisionCacheForm<P> {
 }
 
 /// Approximation state and its dependent fit contract for a variable blend.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum VariableBlendCache {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub enum VariableBlendCache<R = f64> {
     /// A nonzero approximation-current flag with an active fit contract.
     Current {
         /// Native approximation-current flag.
         shape_prefix: NonZeroI64,
         /// Fit tolerance in document length units.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// A zero approximation-current flag without an active fit contract.
-    Stale,
+    Stale {},
     /// Parameterization in place of a solved cache.
     Parameterization {
         /// Native approximation-current flag, independent of the parameterization.
         shape_prefix: i64,
         /// Surface parameterization.
-        parameterization: RevisionSurfaceParameterization,
+        parameterization: RevisionSurfaceParameterization<R>,
     },
 }
 
-impl VariableBlendCache {
+impl<R> VariableBlendCache<R> {
+    /// Scale the tolerance only when this cache carries a solved one.
+    fn scale_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        if let Self::Current { fit_tolerance, .. } = self {
+            let value = *fit_tolerance;
+            *fit_tolerance =
+                value
+                    .scaled(scale)
+                    .ok_or_else(|| CacheContractError::InvalidValue {
+                        value: value.get() * scale.get(),
+                    })?;
+        }
+        Ok(())
+    }
+
     /// Native approximation-current flag.
     #[must_use]
     pub const fn shape_prefix(&self) -> i64 {
         match self {
             Self::Current { shape_prefix, .. } => shape_prefix.get(),
-            Self::Stale => 0,
+            Self::Stale {} => 0,
             Self::Parameterization { shape_prefix, .. } => *shape_prefix,
-        }
-    }
-
-    /// Native tail selector.
-    #[must_use]
-    pub const fn selector(&self) -> i64 {
-        match self {
-            Self::Current { .. } | Self::Stale => 0,
-            Self::Parameterization { .. } => 2,
         }
     }
 
     /// Parameterization carried in place of a solved cache.
     #[must_use]
-    pub const fn parameterization(&self) -> Option<&RevisionSurfaceParameterization> {
+    pub const fn parameterization(&self) -> Option<&RevisionSurfaceParameterization<R>> {
         match self {
             Self::Parameterization {
                 parameterization, ..
@@ -3229,193 +3738,10 @@ impl VariableBlendCache {
 
     /// Active fit tolerance, absent for a stale or parameterized approximation.
     #[must_use]
-    pub const fn fit_tolerance(&self) -> Option<f64> {
+    pub const fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
             Self::Current { fit_tolerance, .. } => Some(*fit_tolerance),
             _ => None,
-        }
-    }
-}
-
-mod revision_surface_cache_wire {
-    use super::{RevisionCacheForm, RevisionSurfaceParameterization};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize)]
-    struct SolvedWire {
-        tail_enum: i64,
-    }
-
-    #[derive(Serialize)]
-    struct ParameterizationWriteWire<'a> {
-        tail_enum: i64,
-        tail_parameterization: &'a RevisionSurfaceParameterization,
-    }
-
-    #[derive(Deserialize)]
-    struct ReadWire {
-        #[serde(alias = "cache_selector")]
-        tail_enum: i64,
-        #[serde(default)]
-        tail_parameterization: Option<RevisionSurfaceParameterization>,
-        #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
-    }
-
-    pub fn serialize<S>(value: &RevisionCacheForm, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match value {
-            RevisionCacheForm::SolvedCache { .. } => {
-                SolvedWire { tail_enum: 0 }.serialize(serializer)
-            }
-            RevisionCacheForm::Parameterization(parameterization) => ParameterizationWriteWire {
-                tail_enum: 2,
-                tail_parameterization: parameterization,
-            }
-            .serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<RevisionCacheForm, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (
-            wire.tail_enum,
-            wire.tail_parameterization,
-            wire.cache_fit_tolerance,
-        ) {
-            (0, None, Some(fit_tolerance)) => {
-                Ok(RevisionCacheForm::SolvedCache { fit_tolerance })
-            }
-            (2, Some(parameterization), None) => {
-                Ok(RevisionCacheForm::Parameterization(parameterization))
-            }
-            (selector, _, _) => Err(serde::de::Error::custom(format_args!(
-                "tail_enum must be 0 with cache_fit_tolerance or 2 with tail_parameterization, got {selector}"
-            ))),
-        }
-    }
-}
-
-mod variable_blend_cache_wire {
-    use super::{RevisionSurfaceParameterization, VariableBlendCache};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::num::NonZeroI64;
-
-    #[derive(Serialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct WriteWire<'a> {
-        shape_prefix: i64,
-        tail_enum: i64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        tail_parameterization: Option<&'a RevisionSurfaceParameterization>,
-    }
-
-    #[derive(Deserialize)]
-    struct ReadWire {
-        shape_prefix: i64,
-        #[serde(alias = "cache_selector")]
-        tail_enum: i64,
-        #[serde(default)]
-        tail_parameterization: Option<RevisionSurfaceParameterization>,
-        #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
-    }
-
-    pub fn serialize<S>(value: &VariableBlendCache, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        WriteWire {
-            shape_prefix: value.shape_prefix(),
-            tail_enum: value.selector(),
-            tail_parameterization: value.parameterization(),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<VariableBlendCache, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (wire.tail_enum, wire.tail_parameterization, wire.cache_fit_tolerance, NonZeroI64::new(wire.shape_prefix)) {
-            (0, None, Some(fit_tolerance), Some(shape_prefix)) => Ok(VariableBlendCache::Current { shape_prefix, fit_tolerance }),
-            (0, None, None, None) => Ok(VariableBlendCache::Stale),
-            (2, Some(parameterization), None, _) => Ok(VariableBlendCache::Parameterization { shape_prefix: wire.shape_prefix, parameterization }),
-            _ => Err(serde::de::Error::custom("variable-blend cache requires a nonzero prefix with a fit tolerance, a zero prefix without a fit tolerance, or tail_enum 2 with parameterization")),
-        }
-    }
-}
-
-mod cache_first_curve_cache_wire {
-    use super::{CacheFirstCurveParameterization, RevisionCacheForm};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize)]
-    struct SolvedWire {
-        cache_enum: i64,
-    }
-
-    #[derive(Serialize)]
-    struct ParameterizationWriteWire<'a> {
-        cache_enum: i64,
-        parameterization: &'a CacheFirstCurveParameterization,
-    }
-
-    #[derive(Deserialize)]
-    struct ReadWire {
-        cache_enum: i64,
-        #[serde(default)]
-        parameterization: Option<CacheFirstCurveParameterization>,
-        #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
-    }
-
-    pub fn serialize<S>(
-        value: &RevisionCacheForm<CacheFirstCurveParameterization>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match value {
-            RevisionCacheForm::SolvedCache { .. } => {
-                SolvedWire { cache_enum: 0 }.serialize(serializer)
-            }
-            RevisionCacheForm::Parameterization(parameterization) => ParameterizationWriteWire {
-                cache_enum: 2,
-                parameterization,
-            }
-            .serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<RevisionCacheForm<CacheFirstCurveParameterization>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (
-            wire.cache_enum,
-            wire.parameterization,
-            wire.cache_fit_tolerance,
-        ) {
-            (0, None, Some(fit_tolerance)) => {
-                Ok(RevisionCacheForm::SolvedCache { fit_tolerance })
-            }
-            (2, Some(parameterization), None) => {
-                Ok(RevisionCacheForm::Parameterization(parameterization))
-            }
-            (selector, _, _) => Err(serde::de::Error::custom(format_args!(
-                "cache_enum must be 0 with cache_fit_tolerance or 2 with parameterization, got {selector}"
-            ))),
         }
     }
 }
@@ -3424,17 +3750,20 @@ mod cache_first_curve_cache_wire {
 /// spline-surface tail. This form stores no approximation cache and no fit
 /// tolerance; it stores the two parameter intervals followed by four enums, in
 /// the order the fields appear below.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RevisionSurfaceParameterization {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct RevisionSurfaceParameterization<R = f64> {
     /// U parameter interval, an ordered `[lo, hi]` pair of optional bounds.
     /// `None` is a false bound-presence flag.
     #[serde(default)]
-    pub u_interval: [Option<f64>; 2],
+    pub u_interval: [Option<R>; 2],
     /// V parameter interval, an ordered `[lo, hi]` pair of optional bounds.
     /// `None` is a false bound-presence flag.
     #[serde(default)]
-    pub v_interval: [Option<f64>; 2],
+    pub v_interval: [Option<R>; 2],
     /// U closure enum.
     pub u_closure: i64,
     /// V closure enum.
@@ -3445,13 +3774,30 @@ pub struct RevisionSurfaceParameterization {
     pub v_singularity: i64,
 }
 
+impl<R> Default for RevisionSurfaceParameterization<R> {
+    /// Absent interval bounds and zero enums.
+    fn default() -> Self {
+        Self {
+            u_interval: [None, None],
+            v_interval: [None, None],
+            u_closure: 0,
+            v_closure: 0,
+            u_singularity: 0,
+            v_singularity: 0,
+        }
+    }
+}
+
 /// Subtype-specific tail of a native taper spline surface.
+// A source states raw values; a `TaperSurfaceConstruction` holds the admitted
+// tail, whose scalars and draft vector are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TaperSurfaceKind {
+#[serde(deny_unknown_fields)]
+pub enum TaperSurfaceKind<R = f64, V = Vector3> {
     /// Standard taper without a subtype-specific tail.
-    Standard,
+    Standard {},
     /// Orthogonal taper with a native sense flag.
     Orthogonal {
         /// Native orientation sense.
@@ -3460,71 +3806,149 @@ pub enum TaperSurfaceKind {
     /// Edge taper with a model-space draft vector.
     Edge {
         /// Native draft vector.
-        draft: Vector3,
+        draft: V,
     },
     /// Shadow taper with a pre-factored draft angle.
     Shadow {
         /// Native draft vector.
-        draft: Vector3,
+        draft: V,
         /// Stored draft-angle sine.
-        sine: f64,
+        sine: R,
         /// Stored draft-angle cosine.
-        cosine: f64,
+        cosine: R,
     },
     /// Ruled taper with a pre-factored angle and factor.
     Ruled {
         /// Native draft vector.
-        draft: Vector3,
+        draft: V,
         /// Stored draft-angle sine.
-        sine: f64,
+        sine: R,
         /// Stored draft-angle cosine.
-        cosine: f64,
+        cosine: R,
         /// Native ruled-taper factor.
-        factor: f64,
+        factor: R,
     },
     /// Swept taper with a pre-factored draft angle.
     Swept {
         /// Native draft vector.
-        draft: Vector3,
+        draft: V,
         /// Stored draft-angle sine.
-        sine: f64,
+        sine: R,
         /// Stored draft-angle cosine.
-        cosine: f64,
+        cosine: R,
     },
 }
 
 /// One scalar row in native loft subdata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftSubdataRow {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct LoftSubdataRow<R = f64> {
     /// Leading ordered scalar pair.
-    pub parameters: [f64; 2],
+    pub parameters: [R; 2],
     /// Ordered per-column scalar pairs; empty for subdata type 211.
-    pub columns: Vec<[f64; 2]>,
+    pub columns: Vec<[R; 2]>,
     /// Trailing scalar pair stored by the revision-gated row encoding.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extra: Option<[f64; 2]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extra"
+    )]
+    pub extra: Option<[R; 2]>,
 }
 
 /// Native loft constraint table with structurally consistent dimensions.
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoftSubdata {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub enum LoftSubdata<R = f64> {
     /// Type 211 stores exactly one leading pair and no column pairs.
     Type211 {
         /// Native row/column header values. They do not count this form's payload.
         dimensions: [i64; 2],
         /// The sole leading scalar pair.
-        row: [f64; 2],
+        row: [R; 2],
     },
     /// All other table types store rows of one shared column width.
-    Table(LoftSubdataTable),
+    Table(LoftSubdataTable<R>),
 }
 
 /// Checked non-211 loft table payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoftSubdataTable {
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(into = "LoftSubdataTableWire<R>"))]
+#[serde(
+    try_from = "LoftSubdataTableWire<R>",
+    bound(deserialize = "R: Deserialize<'de>")
+)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct LoftSubdataTable<R = f64> {
     type_code: i64,
-    rows: Vec<LoftSubdataRow>,
+    rows: Vec<LoftSubdataRow<R>>,
+    row_count: i64,
+    column_count: i64,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+struct LoftSubdataTableWire<R = f64> {
+    /// Native loft table type code.
+    type_code: i64,
+    /// Table rows, all of one column width.
+    rows: Vec<LoftSubdataRow<R>>,
+}
+
+/// The written form of a loft table, borrowing its rows.
+#[derive(Serialize)]
+struct LoftSubdataTableWriteWire<'a, R> {
+    type_code: i64,
+    rows: &'a [LoftSubdataRow<R>],
+}
+
+impl<R: Serialize> Serialize for LoftSubdataTable<R> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LoftSubdataTableWriteWire {
+            type_code: self.type_code,
+            rows: &self.rows,
+        }
+        .serialize(serializer)
+    }
+}
+
+/// The rows of a loft table do not share one column width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("loft subdata rows do not share one column width")]
+pub struct RaggedLoftTable;
+
+impl<R> LoftSubdataTable<R> {
+    /// Admit a table whose rows share one column width.
+    pub fn new(type_code: i64, rows: Vec<LoftSubdataRow<R>>) -> Result<Self, RaggedLoftTable> {
+        let row_count = i64::try_from(rows.len()).map_err(|_| RaggedLoftTable)?;
+        let column_count = rows.first().map_or(0, |row| row.columns.len());
+        let column_count_i64 = i64::try_from(column_count).map_err(|_| RaggedLoftTable)?;
+        if rows.iter().any(|row| row.columns.len() != column_count) {
+            return Err(RaggedLoftTable);
+        }
+        Ok(Self {
+            type_code,
+            rows,
+            row_count,
+            column_count: column_count_i64,
+        })
+    }
+}
+
+impl<R> TryFrom<LoftSubdataTableWire<R>> for LoftSubdataTable<R> {
+    type Error = RaggedLoftTable;
+
+    fn try_from(wire: LoftSubdataTableWire<R>) -> Result<Self, Self::Error> {
+        Self::new(wire.type_code, wire.rows)
+    }
 }
 
 impl LoftSubdata {
@@ -3537,20 +3961,11 @@ impl LoftSubdata {
     /// Construct a non-211 table whose rows have one shared column width.
     #[must_use]
     pub fn table(type_code: i64, rows: Vec<LoftSubdataRow>) -> Option<Self> {
-        if type_code == 211
-            || rows.len() > i64::MAX as usize
-            || rows
-                .first()
-                .is_some_and(|row| row.columns.len() > i64::MAX as usize)
-        {
-            return None;
-        }
-        let column_count = rows.first().map_or(0, |row| row.columns.len());
-        rows.iter()
-            .all(|row| row.columns.len() == column_count)
-            .then_some(Self::Table(LoftSubdataTable { type_code, rows }))
+        LoftSubdataTable::new(type_code, rows).ok().map(Self::Table)
     }
+}
 
+impl<R> LoftSubdata<R> {
     /// Native table type discriminator.
     #[must_use]
     pub fn type_code(&self) -> i64 {
@@ -3565,7 +3980,7 @@ impl LoftSubdata {
     pub fn row_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[0],
-            Self::Table(table) => table.rows.len() as i64,
+            Self::Table(table) => table.row_count,
         }
     }
 
@@ -3574,12 +3989,12 @@ impl LoftSubdata {
     pub fn column_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[1],
-            Self::Table(table) => table.rows.first().map_or(0, |row| row.columns.len() as i64),
+            Self::Table(table) => table.column_count,
         }
     }
 
     /// Visit the leading and column pairs in each row.
-    pub fn visit_rows(&self, mut visit: impl FnMut(&[f64; 2], &[[f64; 2]], Option<&[f64; 2]>)) {
+    pub fn visit_rows(&self, mut visit: impl FnMut(&[R; 2], &[[R; 2]], Option<&[R; 2]>)) {
         match self {
             Self::Type211 { row, .. } => visit(row, &[], None),
             Self::Table(table) => {
@@ -3589,227 +4004,58 @@ impl LoftSubdata {
             }
         }
     }
-
-    /// Whether every leading and per-column scalar is finite.
-    #[must_use]
-    pub(crate) fn row_values_are_finite(&self) -> bool {
-        let mut valid = true;
-        self.visit_rows(|parameters, columns, _extra| {
-            valid &= parameters.iter().all(|value| value.is_finite())
-                && columns.iter().flatten().all(|value| value.is_finite());
-        });
-        valid
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LoftSubdataWire {
-    type_code: i64,
-    row_count: i64,
-    column_count: i64,
-    rows: Vec<LoftSubdataRow>,
-}
-
-impl Serialize for LoftSubdata {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("LoftSubdata", 4)?;
-        state.serialize_field("type_code", &self.type_code())?;
-        state.serialize_field("row_count", &self.row_count())?;
-        state.serialize_field("column_count", &self.column_count())?;
-        match self {
-            Self::Type211 { row, .. } => {
-                let row = LoftSubdataRow {
-                    parameters: *row,
-                    columns: Vec::new(),
-                    extra: None,
-                };
-                state.serialize_field("rows", std::slice::from_ref(&row))?;
-            }
-            Self::Table(table) => state.serialize_field("rows", &table.rows)?,
-        }
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for LoftSubdata {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = LoftSubdataWire::deserialize(deserializer)?;
-        if wire.type_code == 211 {
-            let [row] = wire.rows.as_slice() else {
-                return Err(serde::de::Error::custom(
-                    "loft subdata type 211 requires exactly one row",
-                ));
-            };
-            if !row.columns.is_empty() || row.extra.is_some() {
-                return Err(serde::de::Error::custom(
-                    "loft subdata type 211 forbids columns and a trailing pair",
-                ));
-            }
-            return Ok(Self::type_211(
-                [wire.row_count, wire.column_count],
-                row.parameters,
-            ));
-        }
-        let row_count = usize::try_from(wire.row_count)
-            .map_err(|_| serde::de::Error::custom("loft subdata row_count is negative"))?;
-        let column_count = usize::try_from(wire.column_count)
-            .map_err(|_| serde::de::Error::custom("loft subdata column_count is negative"))?;
-        if wire.rows.len() != row_count {
-            return Err(serde::de::Error::custom(
-                "loft subdata row_count does not match rows",
-            ));
-        }
-        if wire
-            .rows
-            .iter()
-            .any(|row| row.columns.len() != column_count)
-        {
-            return Err(serde::de::Error::custom(
-                "loft subdata column_count does not match every row",
-            ));
-        }
-        Self::table(wire.type_code, wire.rows).ok_or_else(|| {
-            serde::de::Error::custom("loft subdata dimensions exceed the wire representation")
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LoftSubdata {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftSubdata".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftSubdataWire::json_schema(generator)
-    }
-}
-
-/// Surface-side constraint attached to one loft profile curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
-struct LoftProfileDataWire {
-    /// Constraint support surface, absent for the native `null_surface`
-    /// sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<SurfaceId>,
-    /// Optional U/V bound fields following the support surface in the
-    /// revision-gated encoding.
-    #[serde(default)]
-    support_bounds: [Option<f64>; 4],
-    /// UV curve on the support, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pcurve: Option<PcurveGeometry>,
-    /// Second UV curve slot, carried only by the type-zero member form and
-    /// absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    secondary_pcurve: Option<PcurveGeometry>,
-    /// First native constraint flag, absent from the type-zero member form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_flag: Option<bool>,
-    /// ASM extension integer following the first flag, absent from member
-    /// forms that omit it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    asm_extension: Option<i64>,
-    /// Native constraint table.
-    subdata: LoftSubdata,
-    /// Optional direction selected by the second native flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction: Option<Vector3>,
 }
 
 /// The complete constraint payload of a classic loft or skin profile.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "LoftProfileDataWire")]
-pub struct ClassicLoftProfileData {
+///
+/// Every field the classic form carries is required and every field it cannot
+/// carry is absent from the type, so the revision-gated `support_bounds` and
+/// the type-zero `secondary_pcurve` are unknown keys here rather than values a
+/// reader has to refuse.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct ClassicLoftProfileData<R = f64, V = Vector3> {
     /// Required support surface.
     pub surface: SurfaceId,
     /// Nullable parameter curve on the support.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_pcurve"
+    )]
     pub pcurve: Option<PcurveGeometry>,
     /// First native constraint flag.
     pub first_flag: bool,
     /// ASM extension integer preceding the subdata.
     pub asm_extension: i64,
     /// Native constraint table.
-    pub subdata: LoftSubdata,
+    pub subdata: LoftSubdata<R>,
     /// Optional direction selected by the second native flag.
-    pub direction: Option<Vector3>,
-}
-
-impl TryFrom<LoftProfileDataWire> for ClassicLoftProfileData {
-    type Error = String;
-
-    fn try_from(wire: LoftProfileDataWire) -> Result<Self, Self::Error> {
-        if wire.support_bounds.iter().any(Option::is_some) {
-            return Err("classic loft data.support_bounds must be unbounded".into());
-        }
-        if wire.secondary_pcurve.is_some() {
-            return Err("classic loft data.secondary_pcurve must be absent".into());
-        }
-        Ok(Self {
-            surface: wire
-                .surface
-                .ok_or("classic loft data.surface is required")?,
-            pcurve: wire.pcurve,
-            first_flag: wire
-                .first_flag
-                .ok_or("classic loft data.first_flag is required")?,
-            asm_extension: wire
-                .asm_extension
-                .ok_or("classic loft data.asm_extension is required")?,
-            subdata: wire.subdata,
-            direction: wire.direction,
-        })
-    }
-}
-
-impl Serialize for ClassicLoftProfileData {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let field_count =
-            5 + usize::from(self.pcurve.is_some()) + usize::from(self.direction.is_some());
-        let mut wire = serializer.serialize_struct("LoftProfileData", field_count)?;
-        wire.serialize_field("surface", &self.surface)?;
-        wire.serialize_field("support_bounds", &[None::<f64>; 4])?;
-        if let Some(pcurve) = &self.pcurve {
-            wire.serialize_field("pcurve", pcurve)?;
-        }
-        wire.serialize_field("first_flag", &self.first_flag)?;
-        wire.serialize_field("asm_extension", &self.asm_extension)?;
-        wire.serialize_field("subdata", &self.subdata)?;
-        if let Some(direction) = &self.direction {
-            wire.serialize_field("direction", direction)?;
-        }
-        wire.end()
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ClassicLoftProfileData {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftProfileData".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        LoftProfileDataWire::schema_id()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftProfileDataWire::json_schema(generator)
-    }
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_direction"
+    )]
+    pub direction: Option<V>,
 }
 
 /// Type-selected fields of one loft profile member.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum LoftMemberForm {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub enum LoftMemberForm<R = f64, V = Vector3> {
     /// Support-surface form. Legacy layouts can use type zero; revision-gated
     /// layouts select this form with a nonzero type code.
     Support {
@@ -3817,37 +4063,78 @@ pub enum LoftMemberForm {
         type_code: i64,
         /// Constraint support surface, absent for the native `null_surface`
         /// sentinel.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface"
+        )]
         surface: Option<SurfaceId>,
         /// Optional U/V bound fields following the support surface in the
         /// revision-gated encoding.
-        support_bounds: [Option<f64>; 4],
+        #[serde(default)]
+        support_bounds: [Option<R>; 4],
         /// UV curve on the support, absent for `nullbs`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_pcurve"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// First native constraint flag.
         first_flag: bool,
         /// ASM extension integer when the stream version carries it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_asm_extension"
+        )]
         asm_extension: Option<i64>,
         /// Native constraint table.
-        subdata: LoftSubdata,
+        subdata: LoftSubdata<R>,
         /// Optional direction selected by the second native flag.
-        direction: Option<Vector3>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<V>,
     },
     /// Revision-gated type-zero form with two nullable UV curve slots.
     PcurvePair {
         /// First UV curve slot, absent for `nullbs`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_pcurve"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// Second UV curve slot, absent for `nullbs`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_secondary_pcurve"
+        )]
         secondary_pcurve: Option<PcurveGeometry>,
         /// ASM extension integer when the stream version carries it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_asm_extension"
+        )]
         asm_extension: Option<i64>,
         /// Native constraint table.
-        subdata: LoftSubdata,
+        subdata: LoftSubdata<R>,
         /// Optional direction selected by the second native flag.
-        direction: Option<Vector3>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<V>,
     },
 }
 
-impl LoftMemberForm {
+impl<R, V> LoftMemberForm<R, V> {
     /// Return the native type code selected by this form.
     #[must_use]
     pub fn type_code(&self) -> i64 {
@@ -3866,17 +4153,9 @@ impl LoftMemberForm {
         }
     }
 
-    /// Return the first pcurve slot.
-    #[must_use]
-    pub fn pcurve(&self) -> Option<&PcurveGeometry> {
-        match self {
-            Self::Support { pcurve, .. } | Self::PcurvePair { pcurve, .. } => pcurve.as_ref(),
-        }
-    }
-
     /// Return the constraint subdata.
     #[must_use]
-    pub fn subdata(&self) -> &LoftSubdata {
+    pub fn subdata(&self) -> &LoftSubdata<R> {
         match self {
             Self::Support { subdata, .. } | Self::PcurvePair { subdata, .. } => subdata,
         }
@@ -3884,7 +4163,7 @@ impl LoftMemberForm {
 
     /// Return the optional direction selected by the second native flag.
     #[must_use]
-    pub fn direction(&self) -> Option<&Vector3> {
+    pub fn direction(&self) -> Option<&V> {
         match self {
             Self::Support { direction, .. } | Self::PcurvePair { direction, .. } => {
                 direction.as_ref()
@@ -3896,245 +4175,83 @@ impl LoftMemberForm {
 /// One referenced curve together with its optional native parameter bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftPathCurve {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct LoftPathCurve<R = f64> {
     /// Referenced curve carrier.
     #[serde(rename = "curve")]
     pub id: CurveId,
     /// Optional parameter endpoints following the curve in a revision-gated encoding.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoints: Option<[Option<f64>; 2]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_endpoints"
+    )]
+    pub endpoints: Option<[Option<R>; 2]>,
 }
 
 /// One curve member of a loft profile.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoftProfileMember {
-    /// Profile curve and its revision-gated parameter endpoints.
-    pub curve: LoftPathCurve,
-    /// Structurally selected surface-side constraint form.
-    pub form: LoftMemberForm,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LoftProfileMemberWire {
-    type_code: i64,
-    curve: CurveId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    endpoints: Option<[Option<f64>; 2]>,
-    data: LoftProfileDataWire,
-}
-
-impl Serialize for LoftProfileMember {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let data = match &self.form {
-            LoftMemberForm::Support {
-                surface,
-                support_bounds,
-                pcurve,
-                first_flag,
-                asm_extension,
-                subdata,
-                direction,
-                ..
-            } => LoftProfileDataWire {
-                surface: surface.clone(),
-                support_bounds: *support_bounds,
-                pcurve: pcurve.clone(),
-                secondary_pcurve: None,
-                first_flag: Some(*first_flag),
-                asm_extension: *asm_extension,
-                subdata: subdata.clone(),
-                direction: *direction,
-            },
-            LoftMemberForm::PcurvePair {
-                pcurve,
-                secondary_pcurve,
-                asm_extension,
-                subdata,
-                direction,
-            } => LoftProfileDataWire {
-                surface: None,
-                support_bounds: [None; 4],
-                pcurve: pcurve.clone(),
-                secondary_pcurve: secondary_pcurve.clone(),
-                first_flag: None,
-                asm_extension: *asm_extension,
-                subdata: subdata.clone(),
-                direction: *direction,
-            },
-        };
-        LoftProfileMemberWire {
-            type_code: self.form.type_code(),
-            curve: self.curve.id.clone(),
-            endpoints: self.curve.endpoints,
-            data,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LoftProfileMember {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = LoftProfileMemberWire::deserialize(deserializer)?;
-        let LoftProfileDataWire {
-            surface,
-            support_bounds,
-            pcurve,
-            secondary_pcurve,
-            first_flag,
-            asm_extension,
-            subdata,
-            direction,
-        } = wire.data;
-        let form = match first_flag {
-            Some(first_flag) if secondary_pcurve.is_none() => LoftMemberForm::Support {
-                type_code: wire.type_code,
-                surface,
-                support_bounds,
-                pcurve,
-                first_flag,
-                asm_extension,
-                subdata,
-                direction,
-            },
-            Some(_) => {
-                return Err(serde::de::Error::custom(
-                    "loft support form cannot carry secondary_pcurve",
-                ));
-            }
-            None if wire.type_code == 0
-                && surface.is_none()
-                && support_bounds.iter().all(Option::is_none) =>
-            {
-                LoftMemberForm::PcurvePair {
-                    pcurve,
-                    secondary_pcurve,
-                    asm_extension,
-                    subdata,
-                    direction,
-                }
-            }
-            None if wire.type_code == 0 => {
-                return Err(serde::de::Error::custom(
-                    "loft pcurve-pair form cannot carry a support surface or support_bounds",
-                ));
-            }
-            None => {
-                return Err(serde::de::Error::custom(
-                    "nonzero loft type_code requires data.first_flag",
-                ));
-            }
-        };
-        Ok(Self {
-            curve: LoftPathCurve {
-                id: wire.curve,
-                endpoints: wire.endpoints,
-            },
-            form,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LoftProfileMember {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftProfileMember".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftProfileMemberWire::json_schema(generator)
-    }
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct LoftProfileMember<R = f64, V = Vector3> {
+    /// Profile curve and its revision-gated parameter endpoints.
+    pub profile: LoftPathCurve<R>,
+    /// Structurally selected surface-side constraint form.
+    pub form: LoftMemberForm<R, V>,
 }
 
 /// Native path data attached to one loft section entry.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoftPath {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct LoftPath<R = f64> {
     /// Primary path curve and its optional endpoints, absent for `null_curve`.
-    pub curve: Option<LoftPathCurve>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path"
+    )]
+    pub path: Option<LoftPathCurve<R>>,
     /// Ordered auxiliary BS3 curves.
     pub auxiliaries: Vec<CurveId>,
     /// Native path tail integer.
     pub flag: i64,
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LoftPathWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    curve: Option<CurveId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    endpoints: Option<[Option<f64>; 2]>,
-    auxiliaries: Vec<CurveId>,
-    flag: i64,
-}
-
-impl Serialize for LoftPath {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        LoftPathWire {
-            curve: self.curve.as_ref().map(|curve| curve.id.clone()),
-            endpoints: self.curve.as_ref().and_then(|curve| curve.endpoints),
-            auxiliaries: self.auxiliaries.clone(),
-            flag: self.flag,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LoftPath {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = LoftPathWire::deserialize(deserializer)?;
-        let curve = match (wire.curve, wire.endpoints) {
-            (Some(id), endpoints) => Some(LoftPathCurve { id, endpoints }),
-            (None, None) => None,
-            (None, Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "loft path endpoints require a curve",
-                ));
-            }
-        };
-        Ok(Self {
-            curve,
-            auxiliaries: wire.auxiliaries,
-            flag: wire.flag,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LoftPath {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftPath".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftPathWire::json_schema(generator)
-    }
-}
-
 /// One parameterized entry in a native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftSectionEntry {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct LoftSectionEntry<R = f64, V = Vector3> {
     /// Native section parameter.
-    pub parameter: f64,
+    pub parameter: R,
     /// Ordered profile members.
-    pub profile: Vec<LoftProfileMember>,
+    pub profile: Vec<LoftProfileMember<R, V>>,
     /// Native path data.
-    pub path: LoftPath,
+    pub path: LoftPath<R>,
 }
 
 /// Revision-gated `loft_spl_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftRevisionForm {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct LoftRevisionForm<R = f64> {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Four booleans following the parameter intervals.
     #[serde(default)]
     pub flags: [bool; 4],
@@ -4142,12 +4259,10 @@ pub struct LoftRevisionForm {
     #[serde(default)]
     pub ints: [i64; 2],
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
-    pub cache: RevisionCacheForm,
+    pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
 }
@@ -4155,22 +4270,28 @@ pub struct LoftRevisionForm {
 /// Ordered native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftSection {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct LoftSection<R = f64, V = Vector3> {
     /// Ordered entries in the section.
-    pub entries: Vec<LoftSectionEntry>,
+    pub entries: Vec<LoftSectionEntry<R, V>>,
 }
 
 /// Token retained from the variable bridge preceding a loft solved cache.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum LoftBridgeToken {
+#[serde(deny_unknown_fields)]
+pub enum LoftBridgeToken<R = f64> {
     /// Native boolean token.
     Boolean(bool),
     /// Native integer token.
     Integer(i64),
     /// Native double token.
-    Double(f64),
+    Double(R),
     /// Native string token.
     Text(String),
     /// Native enum token.
@@ -4180,7 +4301,8 @@ pub enum LoftBridgeToken {
 /// Common carrier fields of one G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct G2BlendSide {
+#[serde(deny_unknown_fields)]
+pub struct G2BlendSide<V = Vector3> {
     /// Native side label.
     pub label: String,
     /// Primary support surface.
@@ -4190,32 +4312,45 @@ pub struct G2BlendSide {
     /// First and second ordered BS2 pcurves; each may be `nullbs`.
     pub pcurves: [Option<PcurveGeometry>; 2],
     /// Native side direction.
-    pub direction: Vector3,
+    pub direction: V,
 }
 
 /// Singularity-specific payload of the first G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum G2BlendFirstShape {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub enum G2BlendFirstShape<R = f64> {
     /// Full singularity with an optional BS3 support surface.
     Full {
         /// Exact BS3 support and fit tolerance, when serialized.
-        #[serde(flatten, with = "g2_blend_full_support_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "G2BlendFullSupportSchemaWire"))]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_support"
+        )]
         support: Option<G2BlendFullSupport>,
     },
     /// Non-singular nine-scalar frame and tertiary pcurve.
     None {
         /// Ordered native frame scalars.
-        coefficients: [f64; 9],
+        coefficients: [R; 9],
         /// Native fit tolerance.
-        tolerance: f64,
+        tolerance: FitTolerance,
         /// Optional intervening native token.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        extension: Option<LoftBridgeToken>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_extension"
+        )]
+        extension: Option<LoftBridgeToken<R>>,
         /// Tertiary BS2 pcurve, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_pcurve"
+        )]
         pcurve: Option<PcurveGeometry>,
     },
 }
@@ -4223,256 +4358,148 @@ pub enum G2BlendFirstShape {
 /// Exact support surface and fit tolerance of a full G2 first-side shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct G2BlendFullSupport {
     /// Exact BS3 support surface.
     pub surface: SurfaceId,
     /// Fit tolerance of the support, in document length units.
-    pub tolerance: f64,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the G2 full-support wire schema")]
-struct G2BlendFullSupportSchemaWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<SurfaceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    tolerance: Option<f64>,
-}
-
-mod g2_blend_full_support_wire {
-    use super::{G2BlendFullSupport, SurfaceId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        surface: Option<SurfaceId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tolerance: Option<f64>,
-    }
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(
-        value: &Option<G2BlendFullSupport>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            Some(value) => Wire {
-                surface: Some(value.surface.clone()),
-                tolerance: Some(value.tolerance),
-            },
-            None => Wire {
-                surface: None,
-                tolerance: None,
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<G2BlendFullSupport>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.surface, wire.tolerance) {
-            (Some(surface), Some(tolerance)) => Ok(Some(G2BlendFullSupport { surface, tolerance })),
-            (None, None) => Ok(None),
-            _ => Err(serde::de::Error::custom(
-                "G2 full surface and tolerance must occur together",
-            )),
-        }
-    }
+    pub tolerance: FitTolerance,
 }
 
 /// Full native G2 blend construction graph.
+// A source states raw values; a `G2BlendSurfacePayload` holds the admitted
+// construction, whose scalars and vectors are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct G2BlendConstruction {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct G2BlendConstruction<R = f64, V = Vector3> {
     /// First side common fields.
-    pub first: G2BlendSide,
+    pub first: G2BlendSide<V>,
     /// Native first-side singularity enum.
     pub singularity: i64,
     /// First-side singularity payload.
-    pub first_shape: G2BlendFirstShape,
+    pub first_shape: G2BlendFirstShape<R>,
     /// Second side common fields.
-    pub second: G2BlendSide,
+    pub second: G2BlendSide<V>,
     /// Exact second-side spline support.
     pub second_exact_surface: SurfaceId,
     /// Center or transition curve.
     pub center_curve: CurveId,
     /// Ordered center-curve scalars.
-    pub center_parameters: [f64; 2],
+    pub center_parameters: [R; 2],
     /// Native center tail integer.
     pub center_flag: i64,
     /// Native U and V intervals.
-    pub parameter_ranges: [[f64; 2]; 2],
+    pub parameter_ranges: [[R; 2]; 2],
     /// Four ordered trailing scalars.
-    pub trailing_parameters: [f64; 4],
+    pub trailing_parameters: [R; 4],
     /// Three ordered ASM discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
+    pub discontinuities: [Vec<R>; 3],
 }
 
 /// A present rolling-ball support surface and its native UV bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallSupportSurface<S = SurfaceId> {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallSupportSurface<S = SurfaceId, R = f64> {
     /// Support surface or embedded geometry.
     pub surface: S,
     /// Optional native U and V endpoints.
-    pub parameter_ranges: [[Option<f64>; 2]; 2],
+    pub parameter_ranges: [[Option<R>; 2]; 2],
 }
 
 /// A present rolling-ball side curve and its native parameter bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallSupportCurve<C = CurveId> {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallSupportCurve<C = CurveId, R = f64> {
     /// Side curve or embedded geometry.
     pub curve: C,
     /// Optional native parameter endpoints.
-    pub parameter_range: [Option<f64>; 2],
+    pub parameter_range: [Option<R>; 2],
 }
 
 /// The optional rolling-ball extension clause.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(bound(deserialize = "P: Deserialize<'de>"))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallSideExtension<P = PcurveGeometry> {
     /// Native integer introducing the clause.
     pub value: i64,
     /// Tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub pcurve: Option<P>,
 }
 
 /// One complete native rolling-ball support side.
-#[derive(Debug, Clone, PartialEq)]
+// A source states raw values; a blend construction holds the admitted side,
+// whose endpoints are `FiniteReal` values and whose location is a
+// `FinitePoint3`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "RollingBallSideWire<S, C, P>"))]
-pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry> {
+#[serde(bound(
+    serialize = "S: Serialize, C: Serialize, P: Serialize, R: Serialize, L: Serialize",
+    deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>, R: Deserialize<'de>, L: Deserialize<'de>"
+))]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "S: JsonSchema + Serialize, C: JsonSchema + Serialize, P: JsonSchema + Serialize, R: JsonSchema + Serialize, L: JsonSchema + Serialize"
+    )
+)]
+pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry, R = f64, L = Point3> {
     /// Geometry role selected by the support-side discriminator.
     pub support_kind: VariableBlendSupportKind,
     /// Primary support surface and bounds, absent for `null_surface`.
-    pub surface: Option<RollingBallSupportSurface<S>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolling_ball_side_surface"
+    )]
+    pub surface: Option<RollingBallSupportSurface<S, R>>,
     /// Side curve and bounds, absent for `null_curve`.
-    pub curve: Option<RollingBallSupportCurve<C>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_curve"
+    )]
+    pub curve: Option<RollingBallSupportCurve<C, R>>,
     /// Primary BS2 pcurve, absent for `nullbs`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolling_ball_side_pcurve"
+    )]
     pub pcurve: Option<P>,
     /// Native model-space side location.
-    pub location: Point3,
+    pub location: L,
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolling_ball_side_secondary_pcurve"
+    )]
     pub secondary_pcurve: Option<P>,
     /// Native extension integer and nullable tertiary pcurve.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolling_ball_side_extension"
+    )]
     pub extension: Option<RollingBallSideExtension<P>>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(bound(deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>"))]
-struct RollingBallSideWire<S, C, P> {
-    support_kind: VariableBlendSupportKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<S>,
-    #[serde(default)]
-    surface_ranges: [[Option<f64>; 2]; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    curve: Option<C>,
-    #[serde(default)]
-    curve_range: [Option<f64>; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pcurve: Option<P>,
-    location: Point3,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    secondary_pcurve: Option<P>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    extension: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    tertiary_pcurve: Option<P>,
-}
-
-impl<S: Serialize, C: Serialize, P: Serialize> Serialize for RollingBallSide<S, C, P> {
-    fn serialize<W: serde::Serializer>(&self, serializer: W) -> Result<W::Ok, W::Error> {
-        RollingBallSideWire {
-            support_kind: self.support_kind,
-            surface: self.surface.as_ref().map(|support| &support.surface),
-            surface_ranges: self
-                .surface
-                .as_ref()
-                .map_or([[None; 2]; 2], |support| support.parameter_ranges),
-            curve: self.curve.as_ref().map(|support| &support.curve),
-            curve_range: self
-                .curve
-                .as_ref()
-                .map_or([None; 2], |support| support.parameter_range),
-            pcurve: self.pcurve.as_ref(),
-            location: self.location,
-            secondary_pcurve: self.secondary_pcurve.as_ref(),
-            extension: self.extension.as_ref().map(|extension| extension.value),
-            tertiary_pcurve: self
-                .extension
-                .as_ref()
-                .and_then(|extension| extension.pcurve.as_ref()),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de, S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>> Deserialize<'de>
-    for RollingBallSide<S, C, P>
-{
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = RollingBallSideWire::<S, C, P>::deserialize(deserializer)?;
-        let surface = match wire.surface {
-            Some(surface) => Some(RollingBallSupportSurface {
-                surface,
-                parameter_ranges: wire.surface_ranges,
-            }),
-            None if wire.surface_ranges.iter().flatten().any(Option::is_some) => {
-                return Err(serde::de::Error::custom(
-                    "rolling-ball surface_ranges require surface",
-                ))
-            }
-            None => None,
-        };
-        let curve = match wire.curve {
-            Some(curve) => Some(RollingBallSupportCurve {
-                curve,
-                parameter_range: wire.curve_range,
-            }),
-            None if wire.curve_range.iter().any(Option::is_some) => {
-                return Err(serde::de::Error::custom(
-                    "rolling-ball curve_range requires curve",
-                ))
-            }
-            None => None,
-        };
-        let extension = match (wire.extension, wire.tertiary_pcurve) {
-            (Some(value), pcurve) => Some(RollingBallSideExtension { value, pcurve }),
-            (None, Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "rolling-ball tertiary_pcurve requires extension",
-                ))
-            }
-            (None, None) => None,
-        };
-        Ok(Self {
-            support_kind: wire.support_kind,
-            surface,
-            curve,
-            pcurve: wire.pcurve,
-            location: wire.location,
-            secondary_pcurve: wire.secondary_pcurve,
-            extension,
-        })
-    }
 }
 
 /// Third support graph appended by `sss_blend_spl_sur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallThirdSide {
+#[serde(deny_unknown_fields)]
+pub struct RollingBallThirdSide<V = Vector3> {
     /// Native side label.
     pub label: String,
     /// Third support surface.
@@ -4480,17 +4507,29 @@ pub struct RollingBallThirdSide {
     /// Third side curve.
     pub curve: CurveId,
     /// Primary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_pcurve"
+    )]
     pub pcurve: Option<PcurveGeometry>,
     /// Native side vector.
-    pub direction: Vector3,
+    pub direction: V,
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_secondary_pcurve"
+    )]
     pub secondary_pcurve: Option<PcurveGeometry>,
     /// Native ASM integer following the secondary pcurve.
     pub extension: i64,
     /// ASM tertiary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tertiary_pcurve"
+    )]
     pub tertiary_pcurve: Option<PcurveGeometry>,
     /// Final ASM flag.
     pub flag: bool,
@@ -4499,10 +4538,10 @@ pub struct RollingBallThirdSide {
 /// Native optional-radius selector in a rolling-ball construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RollingBallRadiusSelector<T = f64> {
-    /// Native `-1` no-radius sentinel.
-    None,
+    /// The construction states no radius.
+    None {},
     /// Explicit native selector scalar.
     Value {
         /// Stored scalar value.
@@ -4510,125 +4549,57 @@ pub enum RollingBallRadiusSelector<T = f64> {
     },
 }
 
-/// Integer radius-selector value in a revision G2 blend.
-///
-/// The native `-1` value denotes the absence variant and is not a value of
-/// this type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(transparent))]
-pub struct RevisionG2RadiusValue(i64);
-
-impl RevisionG2RadiusValue {
-    /// Construct an explicit selector value.
-    #[must_use]
-    pub const fn new(value: i64) -> Option<Self> {
-        if value == -1 {
-            None
-        } else {
-            Some(Self(value))
-        }
-    }
-
-    /// Return the native integer value.
-    #[must_use]
-    pub const fn get(self) -> i64 {
-        self.0
-    }
-}
-
-impl Serialize for RevisionG2RadiusValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = i64::deserialize(deserializer)?;
-        Self::new(value).ok_or_else(|| {
-            serde::de::Error::custom("revision G2 radius selector value cannot be -1")
-        })
-    }
-}
-
-mod revision_g2_radius_selector_wire {
-    use super::{RevisionG2RadiusValue, RollingBallRadiusSelector};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        selector: &RollingBallRadiusSelector<RevisionG2RadiusValue>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match selector {
-            RollingBallRadiusSelector::None => (-1_i64).serialize(serializer),
-            RollingBallRadiusSelector::Value { value } => value.get().serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<RollingBallRadiusSelector<RevisionG2RadiusValue>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(match i64::deserialize(deserializer)? {
-            -1 => RollingBallRadiusSelector::None,
-            value => RollingBallRadiusSelector::Value {
-                value: RevisionG2RadiusValue(value),
-            },
-        })
-    }
-}
-
 /// Complete byte-backed rolling-ball or three-surface blend context.
+// A source states raw values; a `BlendSurfacePayload` holds the admitted
+// construction, whose scalars, vectors and points are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallConstruction {
-    /// Native subtype definition-table index.
-    pub definition_index: i64,
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: PositiveI64,
     /// Two ordered primary support sides.
-    pub sides: Box<[RollingBallSide; 2]>,
+    pub sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2],
     /// Stored slice or center curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
     #[serde(default)]
-    pub slice_range: [Option<f64>; 2],
+    pub slice_range: [Option<R>; 2],
     /// Two signed support offsets in document length units.
-    pub offsets: [f64; 2],
+    pub offsets: [R; 2],
     /// Optional-radius selector field.
-    pub radius_selector: RollingBallRadiusSelector,
+    pub radius_selector: RollingBallRadiusSelector<R>,
     /// Native optional U interval endpoints.
-    pub u_range: [Option<f64>; 2],
+    pub u_range: [Option<R>; 2],
     /// Native optional V interval endpoints.
-    pub v_range: [Option<f64>; 2],
+    pub v_range: [Option<R>; 2],
     /// Native integer preceding the trailing scalars.
     pub shape_prefix: i64,
     /// Two ordered trailing scalars.
-    pub parameters: [f64; 2],
+    pub parameters: [R; 2],
     /// Native long following the trailing scalars.
     pub tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
-    pub cache: RevisionCacheForm,
+    pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
     /// Six ordered ASM discontinuity arrays closing the shared tail.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native Boolean closing the shared tail.
     #[serde(default)]
     pub tail_flag: bool,
     /// Third side present only for `sss_blend_spl_sur`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub third: Option<Box<RollingBallThirdSide>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_third"
+    )]
+    pub third: Option<Box<RollingBallThirdSide<V>>>,
     /// Three ASM integers preceding the subtype close.
     #[serde(default)]
     pub tail_extensions: [i64; 3],
@@ -4638,6 +4609,7 @@ pub struct RollingBallConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendSupportKind {
     /// Support defined by a cosine curve.
     CosineCurve,
@@ -4655,6 +4627,7 @@ pub enum VariableBlendSupportKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendConvexity {
     /// The blend bends toward the support intersection.
     Convex,
@@ -4666,6 +4639,7 @@ pub enum VariableBlendConvexity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendRenderMode {
     /// The solved surface is the rolling-ball envelope.
     RollingBallEnvelope,
@@ -4676,49 +4650,24 @@ pub enum VariableBlendRenderMode {
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VariableBlendInterpolationPoint {
+#[serde(deny_unknown_fields)]
+pub struct VariableBlendInterpolationPoint<R = f64, V = Vector3, P = Point3> {
     /// Law parameter.
-    pub parameter: f64,
+    pub parameter: R,
     /// Radius in document length units.
-    pub radius: f64,
+    pub radius: R,
     /// Optional first and second derivative scalars.
-    #[serde(with = "variable_blend_tangents_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
-    pub tangents: [Option<f64>; 2],
+    pub tangents: [Option<R>; 2],
     /// Model-space control location.
-    pub location: Point3,
+    pub location: P,
     /// Control normal.
-    pub normal: Vector3,
-}
-
-mod variable_blend_tangents_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    const LEGACY_UNSET_TANGENT: f64 = 1.0e37;
-
-    pub fn serialize<S>(tangents: &[Option<f64>; 2], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        tangents.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[Option<f64>; 2], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(
-            <[Option<f64>; 2]>::deserialize(deserializer)?.map(|value| match value {
-                Some(LEGACY_UNSET_TANGENT) => None,
-                value => value,
-            }),
-        )
-    }
+    pub normal: V,
 }
 
 /// Native edge-offset blend-value sub-discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "i64", into = "i64")]
 pub enum EdgeOffsetDiscriminator {
     /// Explicit zero sub-discriminator.
     Zero,
@@ -4745,42 +4694,67 @@ impl EdgeOffsetDiscriminator {
     }
 }
 
+/// An edge-offset blend value carries sub-discriminator 0 or 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("edge-offset discriminator must be 0 or 1")]
+pub struct EdgeOffsetDiscriminatorCode;
+
+impl TryFrom<i64> for EdgeOffsetDiscriminator {
+    type Error = EdgeOffsetDiscriminatorCode;
+
+    fn try_from(code: i64) -> Result<Self, Self::Error> {
+        Self::from_code(code).ok_or(EdgeOffsetDiscriminatorCode)
+    }
+}
+
+impl From<EdgeOffsetDiscriminator> for i64 {
+    fn from(discriminator: EdgeOffsetDiscriminator) -> Self {
+        discriminator.code()
+    }
+}
+
 /// Numeric or symbolic terminal of a functional blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum VariableBlendTerminal {
+#[serde(deny_unknown_fields)]
+pub enum VariableBlendTerminal<R = f64> {
     /// Native double token.
-    Double(f64),
+    Double(R),
     /// Native string token.
     Text(String),
 }
 
 /// Complete recursive native `getBlendValues` payload.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "VariableBlendValueWire"))]
-pub struct VariableBlendValue {
+#[serde(deny_unknown_fields)]
+pub struct VariableBlendValue<R = f64, V = Vector3, P = Point3> {
     /// Native Boolean following the calibrated enum.
     pub modern_flag: bool,
     /// Native calibrated enum.
     pub calibrated: i64,
     /// Type-specific payload with its native sub-discriminator.
-    pub payload: VariableBlendValuePayload,
+    pub payload: VariableBlendValuePayload<R, V, P>,
 }
 
 /// Type-specific payload of a variable blend value.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Each arm carries the native sub-discriminator it admits: the edge-offset
+/// arm is one of two codes, so an edge-offset value with any other
+/// sub-discriminator has no spelling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum VariableBlendValuePayload {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum VariableBlendValuePayload<R = f64, V = Vector3, P = Point3> {
     /// Law-domain parameter range and two endpoint radii.
     TwoEnds {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: i64,
         /// Law-domain parameter range (lower, upper).
-        parameters: [f64; 2],
+        parameters: [R; 2],
         /// Endpoint radii in document length units.
-        radii: [f64; 2],
+        radii: [R; 2],
     },
     /// Fixed-width branch: the parameter-range bounds and the chamfer width
     /// scalar, stored unscaled.
@@ -4788,55 +4762,55 @@ pub enum VariableBlendValuePayload {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: i64,
         /// Parameter-range lower and upper bounds.
-        parameters: [f64; 2],
+        parameters: [R; 2],
         /// Chamfer width.
-        width: f64,
+        width: R,
     },
     /// Edge-offset branch.
     EdgeOffset {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: EdgeOffsetDiscriminator,
         /// Ordered native scalar payload.
-        scalars: [f64; 2],
+        scalars: [R; 2],
         /// Ordered length payload in document units.
-        lengths: [f64; 1],
+        lengths: [R; 1],
     },
     /// Functional radius law carried by a BS2 pcurve.
     Functional {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: i64,
         /// Leading scalar.
-        parameter: f64,
+        parameter: R,
         /// Leading length in document units.
-        radius: f64,
+        radius: R,
         /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Numeric or symbolic terminal value.
-        terminal: VariableBlendTerminal,
+        terminal: VariableBlendTerminal<R>,
     },
     /// Constant law followed by a recursive chamfer value.
     Constant {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: i64,
         /// Ordered native scalars.
-        parameters: [f64; 2],
+        parameters: [R; 2],
         /// Radius in document length units.
-        radius: f64,
+        radius: R,
         /// Native variable-chamfer enum.
         variable_chamfer: i64,
         /// Native chamfer-type enum.
         chamfer_type: i64,
         /// Recursively nested blend value.
-        nested: Box<VariableBlendValue>,
+        nested: Box<VariableBlendValue<R, V, P>>,
     },
     /// Interpolated radius law.
     Interpolated {
         /// Native sub-discriminator preceding the calibrated enum.
         discriminator: i64,
         /// Leading scalar.
-        parameter: f64,
+        parameter: R,
         /// Leading radius in document length units.
-        radius: f64,
+        radius: R,
         /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Native extension enum, stored ahead of the radius-point count. It
@@ -4844,227 +4818,15 @@ pub enum VariableBlendValuePayload {
         enum_count: i64,
         /// Whether the extension enum is stored as a `0x15` enum token
         /// (revision-gated streams) rather than a `0x04` integer.
+        #[serde(default)]
         enum_tagged: bool,
         /// Counted radius-point array: each control carries a parameter,
         /// radius, two derivative scalars, a position, and a vector.
-        points: Vec<VariableBlendInterpolationPoint>,
+        points: Vec<VariableBlendInterpolationPoint<R, V, P>>,
     },
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum VariableBlendPayloadWire<F, T, N, P> {
-    TwoEnds {
-        parameters: [f64; 2],
-        radii: [f64; 2],
-    },
-    FixedWidth {
-        parameters: [f64; 2],
-        width: f64,
-    },
-    EdgeOffset {
-        scalars: [f64; 2],
-        lengths: [f64; 1],
-    },
-    Functional {
-        parameter: f64,
-        radius: f64,
-        function: F,
-        terminal: T,
-    },
-    Constant {
-        parameters: [f64; 2],
-        radius: f64,
-        variable_chamfer: i64,
-        chamfer_type: i64,
-        nested: N,
-    },
-    Interpolated {
-        parameter: f64,
-        radius: f64,
-        function: F,
-        enum_count: i64,
-        #[serde(default)]
-        enum_tagged: bool,
-        points: P,
-    },
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct VariableBlendValueWire {
-    name: String,
-    modern_flag: bool,
-    discriminator: i64,
-    calibrated: i64,
-    payload: VariableBlendPayloadWire<
-        PcurveGeometry,
-        VariableBlendTerminal,
-        Box<VariableBlendValue>,
-        Vec<VariableBlendInterpolationPoint>,
-    >,
-}
-
-impl Serialize for VariableBlendValue {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let payload = match &self.payload {
-            VariableBlendValuePayload::TwoEnds {
-                parameters, radii, ..
-            } => VariableBlendPayloadWire::TwoEnds {
-                parameters: *parameters,
-                radii: *radii,
-            },
-            VariableBlendValuePayload::FixedWidth {
-                parameters, width, ..
-            } => VariableBlendPayloadWire::FixedWidth {
-                parameters: *parameters,
-                width: *width,
-            },
-            VariableBlendValuePayload::EdgeOffset {
-                scalars, lengths, ..
-            } => VariableBlendPayloadWire::EdgeOffset {
-                scalars: *scalars,
-                lengths: *lengths,
-            },
-            VariableBlendValuePayload::Functional {
-                parameter,
-                radius,
-                function,
-                terminal,
-                ..
-            } => VariableBlendPayloadWire::Functional {
-                parameter: *parameter,
-                radius: *radius,
-                function,
-                terminal,
-            },
-            VariableBlendValuePayload::Constant {
-                parameters,
-                radius,
-                variable_chamfer,
-                chamfer_type,
-                nested,
-                ..
-            } => VariableBlendPayloadWire::Constant {
-                parameters: *parameters,
-                radius: *radius,
-                variable_chamfer: *variable_chamfer,
-                chamfer_type: *chamfer_type,
-                nested: nested.as_ref(),
-            },
-            VariableBlendValuePayload::Interpolated {
-                parameter,
-                radius,
-                function,
-                enum_count,
-                enum_tagged,
-                points,
-                ..
-            } => VariableBlendPayloadWire::Interpolated {
-                parameter: *parameter,
-                radius: *radius,
-                function,
-                enum_count: *enum_count,
-                enum_tagged: *enum_tagged,
-                points: points.as_slice(),
-            },
-        };
-        let mut wire = serializer.serialize_struct("VariableBlendValue", 5)?;
-        wire.serialize_field("name", self.payload.native_name())?;
-        wire.serialize_field("modern_flag", &self.modern_flag)?;
-        wire.serialize_field("discriminator", &self.payload.discriminator())?;
-        wire.serialize_field("calibrated", &self.calibrated)?;
-        wire.serialize_field("payload", &payload)?;
-        wire.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for VariableBlendValue {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = VariableBlendValueWire::deserialize(deserializer)?;
-        let payload = match wire.payload {
-            VariableBlendPayloadWire::TwoEnds { parameters, radii } => {
-                VariableBlendValuePayload::TwoEnds {
-                    discriminator: wire.discriminator,
-                    parameters,
-                    radii,
-                }
-            }
-            VariableBlendPayloadWire::FixedWidth { parameters, width } => {
-                VariableBlendValuePayload::FixedWidth {
-                    discriminator: wire.discriminator,
-                    parameters,
-                    width,
-                }
-            }
-            VariableBlendPayloadWire::EdgeOffset { scalars, lengths } => {
-                VariableBlendValuePayload::EdgeOffset {
-                    discriminator: EdgeOffsetDiscriminator::from_code(wire.discriminator)
-                        .ok_or_else(|| {
-                            serde::de::Error::custom("edge-offset discriminator must be 0 or 1")
-                        })?,
-                    scalars,
-                    lengths,
-                }
-            }
-            VariableBlendPayloadWire::Functional {
-                parameter,
-                radius,
-                function,
-                terminal,
-            } => VariableBlendValuePayload::Functional {
-                discriminator: wire.discriminator,
-                parameter,
-                radius,
-                function,
-                terminal,
-            },
-            VariableBlendPayloadWire::Constant {
-                parameters,
-                radius,
-                variable_chamfer,
-                chamfer_type,
-                nested,
-            } => VariableBlendValuePayload::Constant {
-                discriminator: wire.discriminator,
-                parameters,
-                radius,
-                variable_chamfer,
-                chamfer_type,
-                nested,
-            },
-            VariableBlendPayloadWire::Interpolated {
-                parameter,
-                radius,
-                function,
-                enum_count,
-                enum_tagged,
-                points,
-            } => VariableBlendValuePayload::Interpolated {
-                discriminator: wire.discriminator,
-                parameter,
-                radius,
-                function,
-                enum_count,
-                enum_tagged,
-                points,
-            },
-        };
-        if wire.name != payload.native_name() {
-            return Err(serde::de::Error::custom(
-                "variable-blend name must match payload",
-            ));
-        }
-        Ok(Self {
-            modern_flag: wire.modern_flag,
-            calibrated: wire.calibrated,
-            payload,
-        })
-    }
-}
-
-impl VariableBlendValuePayload {
+impl<R, V, P> VariableBlendValuePayload<R, V, P> {
     /// Native sub-discriminator preceding the calibrated enum.
     pub const fn discriminator(&self) -> i64 {
         match self {
@@ -5093,26 +4855,26 @@ impl VariableBlendValuePayload {
 /// Radius-law payloads of a variable blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum VariableBlendRadii {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum VariableBlendRadii<R = f64, V = Vector3, P = Point3> {
     /// One radius law controls both support sides.
     Single {
         /// Shared radius law.
-        value: VariableBlendValue,
+        value: VariableBlendValue<R, V, P>,
     },
     /// Each support side has an independent radius law.
     Two {
         /// First support-side radius law.
-        first: VariableBlendValue,
+        first: VariableBlendValue<R, V, P>,
         /// Second support-side radius law.
-        second: VariableBlendValue,
+        second: VariableBlendValue<R, V, P>,
     },
 }
 
-impl VariableBlendRadii {
+impl<R, V, P> VariableBlendRadii<R, V, P> {
     /// First radius law in native order.
     #[must_use]
-    pub const fn first(&self) -> &VariableBlendValue {
+    pub const fn first(&self) -> &VariableBlendValue<R, V, P> {
         match self {
             Self::Single { value } | Self::Two { first: value, .. } => value,
         }
@@ -5120,7 +4882,7 @@ impl VariableBlendRadii {
 
     /// Second radius law when both sides are controlled independently.
     #[must_use]
-    pub const fn second(&self) -> Option<&VariableBlendValue> {
+    pub const fn second(&self) -> Option<&VariableBlendValue<R, V, P>> {
         match self {
             Self::Single { .. } => None,
             Self::Two { second, .. } => Some(second),
@@ -5134,148 +4896,40 @@ impl VariableBlendRadii {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum VariableBlendRadiusKindWire {
-    SingleRadius,
-    TwoRadii,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the variable-blend radii wire schema"
-)]
-struct VariableBlendRadiiSchemaWire {
-    radius_kind: VariableBlendRadiusKindWire,
-    first_value: VariableBlendValue,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    second_value: Option<VariableBlendValue>,
-}
-
-mod variable_blend_radii_wire {
-    use super::{VariableBlendRadii, VariableBlendRadiusKindWire, VariableBlendValue};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        radius_kind: VariableBlendRadiusKindWire,
-        first_value: VariableBlendValue,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second_value: Option<VariableBlendValue>,
-    }
-
-    pub fn serialize<S>(value: &VariableBlendRadii, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            VariableBlendRadii::Single { value } => Wire {
-                radius_kind: VariableBlendRadiusKindWire::SingleRadius,
-                first_value: value.clone(),
-                second_value: None,
-            },
-            VariableBlendRadii::Two { first, second } => Wire {
-                radius_kind: VariableBlendRadiusKindWire::TwoRadii,
-                first_value: first.clone(),
-                second_value: Some(second.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<VariableBlendRadii, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.radius_kind, wire.second_value) {
-            (VariableBlendRadiusKindWire::SingleRadius, None) => Ok(VariableBlendRadii::Single {
-                value: wire.first_value,
-            }),
-            (VariableBlendRadiusKindWire::TwoRadii, Some(second)) => Ok(VariableBlendRadii::Two {
-                first: wire.first_value,
-                second,
-            }),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend radius kind conflicts with its payload count",
-            )),
-        }
-    }
-}
-
-mod variable_blend_u_range_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &[f64; 2], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        [Some(value[0]), Some(value[1])].serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[f64; 2], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match <[Option<f64>; 2]>::deserialize(deserializer)? {
-            [Some(lower), Some(upper)] => Ok([lower, upper]),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend u_range requires both bounds",
-            )),
-        }
-    }
-}
-
-mod variable_blend_v_range_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        [*value, None].serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match <[Option<f64>; 2]>::deserialize(deserializer)? {
-            [lower, None] => Ok(lower),
-            _ => Err(serde::de::Error::custom(
-                "variable-blend v_range requires an absent upper bound",
-            )),
-        }
-    }
-}
-
 /// Cross-section clause following the variable-radius laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum VariableBlendCrossSection {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
     /// Circular section with no additional parameters.
-    Circular,
+    Circular {},
     /// Thumbweight-controlled section with two ordered shape parameters.
     Thumbweights {
         /// Ordered native shape parameters.
-        parameters: [f64; 2],
+        parameters: [R; 2],
     },
     /// Rounded chamfer with an optional independent rounding-radius law.
     RoundedChamfer {
         /// Rounding-radius law; absent when the clause stores `no_radius`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        radius: Option<Box<VariableBlendValue>>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_radius"
+        )]
+        radius: Option<Box<VariableBlendValue<R, V, P>>>,
     },
     /// Curvature-continuous round with two ordered shape parameters.
     G2Round {
         /// Ordered native shape parameters.
-        parameters: [f64; 2],
+        parameters: [R; 2],
     },
     /// A zero-width native selector whose record framing is known but whose
     /// geometric cross-section law is not classified.
@@ -5290,6 +4944,7 @@ pub enum VariableBlendCrossSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendBareCrossSection {
     /// Native selector `2`.
     Selector2 = 2,
@@ -5304,7 +4959,12 @@ pub enum VariableBlendBareCrossSection {
 impl VariableBlendBareCrossSection {
     /// Numeric selector stored in the native variable-blend record.
     pub const fn native_selector(self) -> i64 {
-        self as i64
+        match self {
+            Self::Selector2 => 2,
+            Self::Selector4 => 4,
+            Self::Selector5 => 5,
+            Self::Selector6 => 6,
+        }
     }
 }
 
@@ -5326,6 +4986,7 @@ impl TryFrom<i64> for VariableBlendBareCrossSection {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendSurfaceSubtype {
     /// General variable-blend surface.
     #[default]
@@ -5340,132 +5001,98 @@ pub enum VariableBlendSurfaceSubtype {
     SurfaceCurveFree,
 }
 
-mod variable_blend_secondary_curve_wire {
-    use super::{CurveId, RollingBallSupportCurve};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(bound(deserialize = "C: Deserialize<'de>"))]
-    pub(super) struct Wire<C> {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        secondary_curve: Option<C>,
-        #[serde(default)]
-        secondary_range: [Option<f64>; 2],
-    }
-
-    // Serde's field adapter passes a reference to the complete optional field.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S: Serializer>(
-        curve: &Option<RollingBallSupportCurve>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        Wire {
-            secondary_curve: curve.as_ref().map(|curve| &curve.curve),
-            secondary_range: curve
-                .as_ref()
-                .map_or([None; 2], |curve| curve.parameter_range),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<RollingBallSupportCurve>, D::Error> {
-        let wire = Wire::<CurveId>::deserialize(deserializer)?;
-        match wire.secondary_curve {
-            Some(curve) => Ok(Some(RollingBallSupportCurve {
-                curve,
-                parameter_range: wire.secondary_range,
-            })),
-            None if wire.secondary_range.iter().any(Option::is_some) => Err(
-                serde::de::Error::custom("variable-blend secondary_range requires secondary_curve"),
-            ),
-            None => Ok(None),
-        }
-    }
-}
-
 /// Complete native variable-radius blend construction graph.
+// A source states raw values; a `VariableBlendSurfacePayload` holds the
+// admitted construction, whose scalars, vectors and points are checked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VariableBlendConstruction {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct VariableBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Native surface subtype selecting the variable-blend behavior class.
     #[serde(default)]
     pub subtype: VariableBlendSurfaceSubtype,
-    /// Native serializer-revision integer following the subtype name.
-    #[serde(alias = "definition_index")]
-    pub revision: i64,
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: PositiveI64,
     /// Two ordered support-side graphs in the rolling-ball side layout.
-    pub sides: Box<[RollingBallSide; 2]>,
+    pub sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2],
     /// Stored slice curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
     #[serde(default)]
-    pub slice_range: [Option<f64>; 2],
+    pub slice_range: [Option<R>; 2],
     /// Two signed support offsets in document length units.
-    pub offsets: [f64; 2],
+    pub offsets: [R; 2],
     /// Structurally selected radius-control payloads.
-    #[serde(flatten, with = "variable_blend_radii_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "VariableBlendRadiiSchemaWire"))]
-    pub radii: VariableBlendRadii,
+    pub radii: VariableBlendRadii<R, V, P>,
     /// Cross-section clause following the complete radius-law sequence.
     /// Absence denotes an elided default circular section; an explicit
     /// circular clause remains distinct.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cross_section: Option<VariableBlendCrossSection>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cross_section"
+    )]
+    pub cross_section: Option<VariableBlendCrossSection<R, V, P>>,
     /// Support-side parameter interval `(T0, T1)`; both bounds present in
     /// every instance.
-    #[serde(with = "variable_blend_u_range_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
-    pub u_range: [f64; 2],
+    pub u_range: [R; 2],
     /// Second interval: a lower bound with an unbounded-above marker,
     /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
     /// upper-bound marker is an interval bound, not a standalone Boolean.
-    #[serde(rename = "v_range", with = "variable_blend_v_range_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(rename = "v_range", with = "[Option<f64>; 2]")
+    #[serde(
+        rename = "v_lower",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_v_lower"
     )]
-    pub v_lower: Option<f64>,
+    pub v_lower: Option<R>,
     /// Requested fit tolerance for the surface cache.
-    pub shape_parameter: f64,
-    /// Achieved fit tolerance for the surface cache, at or below
-    /// `shape_parameter`, in document units.
-    pub shape_length: f64,
-    /// Non-negative integer immediately before the shared tail's enum.
+    pub shape_parameter: R,
+    /// Achieved fit tolerance for the surface cache, in document units.
+    pub shape_length: R,
+    /// Native integer immediately before the shared tail's enum.
     pub shape_tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "variable_blend_cache_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "variable_blend_cache_wire::WriteWire<'_>")
-    )]
-    pub cache: VariableBlendCache,
+    pub cache: VariableBlendCache<R>,
     /// Six ordered ASM discontinuity arrays closing the shared tail.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native Boolean following the discontinuity arrays.
     pub tail_flag: bool,
     /// Three ASM integers following the tail Boolean.
     pub tail_extensions: [i64; 3],
     /// Secondary curve and its bounds, absent for `null_curve`.
-    #[serde(flatten, with = "variable_blend_secondary_curve_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "variable_blend_secondary_curve_wire::Wire<CurveId>")
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_secondary_curve"
     )]
-    pub secondary_curve: Option<RollingBallSupportCurve>,
+    pub secondary_curve: Option<RollingBallSupportCurve<CurveId, R>>,
     /// Blend convexity.
     pub convexity: VariableBlendConvexity,
     /// Solved-surface representation.
     pub render_mode: VariableBlendRenderMode,
     /// Native optional post-shape interval endpoints.
-    pub post_range: [Option<f64>; 2],
+    pub post_range: [Option<R>; 2],
     /// Native post-shape BS3 curve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_post_curve"
+    )]
     pub post_curve: Option<CurveId>,
     /// Native post-shape BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_post_pcurve"
+    )]
     pub post_pcurve: Option<PcurveGeometry>,
 }
 
@@ -5474,9 +5101,41 @@ pub struct VariableBlendConstruction {
 /// layout and ends with the shared revision-gated surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "RevisionG2BlendConstructionWire")]
 pub struct RevisionG2BlendConstruction {
+    revision: PositiveI64,
+    leading_parameters: [FiniteReal; 2],
+    #[cfg_attr(feature = "schema", schemars(with = "Box<[RollingBallSide; 2]>"))]
+    sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, FiniteReal, FinitePoint3>; 2],
+    center: CurveId,
+    #[serde(default)]
+    center_range: [Option<FiniteReal>; 2],
+    radii: [FiniteReal; 2],
+    radius_selector: RollingBallRadiusSelector<PositiveI64>,
+    u_range: [Option<FiniteReal>; 2],
+    v_range: [Option<FiniteReal>; 2],
+    shape_prefix: i64,
+    shape_parameter: FiniteReal,
+    shape_length: FiniteReal,
+    shape_tail: i64,
+    #[cfg_attr(feature = "schema", schemars(with = "RevisionCacheForm"))]
+    cache: RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>>,
+    #[serde(default)]
+    discontinuities: [Vec<FiniteReal>; 6],
+    tail_flag: bool,
+    tail_extensions: [i64; 3],
+}
+
+/// Stored fields of a revision-gated `g2_blend_spl_sur` construction before
+/// admission. This is the wire shape the deserializer reads and the only
+/// input `RevisionG2BlendConstruction::admit` accepts.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "RevisionG2BlendConstruction"))]
+#[serde(deny_unknown_fields)]
+pub struct RevisionG2BlendConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Two native scalars following the revision integer.
     pub leading_parameters: [f64; 2],
     /// Two ordered support-side graphs in the variable-blend side layout.
@@ -5489,9 +5148,7 @@ pub struct RevisionG2BlendConstruction {
     /// Two signed blend radii in document length units.
     pub radii: [f64; 2],
     /// Integer-valued optional-radius selector following the radii.
-    #[serde(with = "revision_g2_radius_selector_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "i64"))]
-    pub radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
+    pub radius_selector: RollingBallRadiusSelector<PositiveI64>,
     /// Native optional U interval endpoints.
     pub u_range: [Option<f64>; 2],
     /// Native optional V interval endpoints.
@@ -5505,8 +5162,6 @@ pub struct RevisionG2BlendConstruction {
     /// Native integer immediately before the shared tail.
     pub shape_tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
     pub cache: RevisionCacheForm,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
@@ -5517,17 +5172,217 @@ pub struct RevisionG2BlendConstruction {
     pub tail_extensions: [i64; 3],
 }
 
+impl RevisionG2BlendConstruction {
+    /// Admit stored fields whose scalars are all finite. This is the
+    /// admission of the `revision_g2_blend` procedural surface: a decoder
+    /// that reads the fields admits them here, and the deserializer runs the
+    /// same walk. The fields are private, so this and the deserializer are
+    /// the only routes to a value.
+    pub fn admit(wire: RevisionG2BlendConstructionWire) -> Result<Self, ProceduralGeometryError> {
+        let invalid = || {
+            ProceduralGeometryError::Payload("revision g2 blend construction payload is invalid")
+        };
+        let [first, second] = *wire.sides;
+        let (
+            Some(leading_parameters),
+            Some(center_range),
+            Some(radii),
+            Some(u_range),
+            Some(v_range),
+            Some([shape_parameter, shape_length]),
+            Some(discontinuities),
+            Some(first),
+            Some(second),
+            Some(cache),
+        ) = (
+            FiniteReal::array(wire.leading_parameters),
+            FiniteReal::optional(wire.center_range),
+            FiniteReal::array(wire.radii),
+            FiniteReal::optional(wire.u_range),
+            FiniteReal::optional(wire.v_range),
+            FiniteReal::array([wire.shape_parameter, wire.shape_length]),
+            FiniteReal::lanes(wire.discontinuities),
+            first.admit(),
+            second.admit(),
+            wire.cache.admit(),
+        )
+        else {
+            return Err(invalid());
+        };
+        Ok(Self {
+            revision: wire.revision,
+            leading_parameters,
+            sides: [first, second],
+            center: wire.center,
+            center_range,
+            radii,
+            radius_selector: wire.radius_selector,
+            u_range,
+            v_range,
+            shape_prefix: wire.shape_prefix,
+            shape_parameter,
+            shape_length,
+            shape_tail: wire.shape_tail,
+            cache,
+            discontinuities,
+            tail_flag: wire.tail_flag,
+            tail_extensions: wire.tail_extensions,
+        })
+    }
+
+    /// Return the positive serializer-revision integer.
+    #[must_use]
+    pub const fn revision(&self) -> PositiveI64 {
+        self.revision
+    }
+
+    /// Return the two native scalars following the revision integer.
+    #[must_use]
+    pub const fn leading_parameters(&self) -> [FiniteReal; 2] {
+        self.leading_parameters
+    }
+
+    /// Return the two ordered support-side graphs.
+    #[must_use]
+    pub const fn sides(
+        &self,
+    ) -> &[RollingBallSide<SurfaceId, CurveId, PcurveGeometry, FiniteReal, FinitePoint3>; 2] {
+        &self.sides
+    }
+
+    /// Return the stored center curve.
+    #[must_use]
+    pub const fn center(&self) -> &CurveId {
+        &self.center
+    }
+
+    /// Return the optional center-curve parameter endpoints.
+    #[must_use]
+    pub const fn center_range(&self) -> [Option<FiniteReal>; 2] {
+        self.center_range
+    }
+
+    /// Return the two signed blend radii.
+    #[must_use]
+    pub const fn radii(&self) -> [FiniteReal; 2] {
+        self.radii
+    }
+
+    /// Return the optional-radius selector.
+    #[must_use]
+    pub const fn radius_selector(&self) -> &RollingBallRadiusSelector<PositiveI64> {
+        &self.radius_selector
+    }
+
+    /// Return the optional U interval endpoints.
+    #[must_use]
+    pub const fn u_range(&self) -> [Option<FiniteReal>; 2] {
+        self.u_range
+    }
+
+    /// Return the optional V interval endpoints.
+    #[must_use]
+    pub const fn v_range(&self) -> [Option<FiniteReal>; 2] {
+        self.v_range
+    }
+
+    /// Return the integer before the solved shape.
+    #[must_use]
+    pub const fn shape_prefix(&self) -> i64 {
+        self.shape_prefix
+    }
+
+    /// Return the scalar before the solved shape.
+    #[must_use]
+    pub const fn shape_parameter(&self) -> FiniteReal {
+        self.shape_parameter
+    }
+
+    /// Return the length before the solved shape.
+    #[must_use]
+    pub const fn shape_length(&self) -> FiniteReal {
+        self.shape_length
+    }
+
+    /// Return the integer immediately before the shared tail.
+    #[must_use]
+    pub const fn shape_tail(&self) -> i64 {
+        self.shape_tail
+    }
+
+    /// Return the approximation-cache form.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>> {
+        &self.cache
+    }
+
+    /// Return the six ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the Boolean terminating the shared tail.
+    #[must_use]
+    pub const fn tail_flag(&self) -> bool {
+        self.tail_flag
+    }
+
+    /// Return the three ASM integers following the shared tail.
+    #[must_use]
+    pub const fn tail_extensions(&self) -> [i64; 3] {
+        self.tail_extensions
+    }
+}
+
+impl TryFrom<RevisionG2BlendConstructionWire> for RevisionG2BlendConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: RevisionG2BlendConstructionWire) -> Result<Self, Self::Error> {
+        Self::admit(wire)
+    }
+}
+
 /// Complete native revision-gated `cl_loft_spl_sur` construction. The
 /// revision layout is cache-first: the revision integer and shared
 /// revision-gated surface tail precede the construction fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "RevisionCompoundLoftConstructionWire")]
 pub struct RevisionCompoundLoftConstruction {
+    revision: PositiveI64,
+    #[cfg_attr(feature = "schema", schemars(with = "RevisionCacheForm"))]
+    cache: RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>>,
+    #[serde(default)]
+    discontinuities: [Vec<FiniteReal>; 6],
+    tail_flag: bool,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<LoftProfileMember>"))]
+    base_profile: Vec<LoftProfileMember<FiniteReal, FiniteVector3>>,
+    #[cfg_attr(feature = "schema", schemars(with = "LoftPath"))]
+    base_path: LoftPath<FiniteReal>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<LoftSectionEntry>"))]
+    entries: Vec<LoftSectionEntry<FiniteReal, FiniteVector3>>,
+    flags: [bool; 2],
+    kind_flags: [bool; 2],
+    #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftDirection"))]
+    direction: CompoundLoftDirection<FiniteVector3>,
+    tail: RevisionCompoundLoftTail<CurveId, FiniteReal>,
+}
+
+/// Stored fields of a revision-gated `cl_loft_spl_sur` construction before
+/// admission. This is the wire shape the deserializer reads and the only
+/// input `RevisionCompoundLoftConstruction::admit` accepts.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(rename = "RevisionCompoundLoftConstruction")
+)]
+#[serde(deny_unknown_fields)]
+pub struct RevisionCompoundLoftConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
     pub cache: RevisionCacheForm,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
@@ -5546,49 +5401,206 @@ pub struct RevisionCompoundLoftConstruction {
     /// Two flags opening the kind-zero payload.
     pub kind_flags: [bool; 2],
     /// Direction carrier selected by the kind-zero direction tag.
-    #[serde(flatten, with = "revision_compound_loft_direction_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "RevisionCompoundLoftDirectionSchemaWire")
-    )]
     pub direction: CompoundLoftDirection,
     /// Trailing bounds and their dependent BS3 curve.
-    #[serde(flatten, with = "revision_compound_loft_tail_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "revision_compound_loft_tail_wire::WriteWire<'_, CurveId>")
-    )]
     pub tail: RevisionCompoundLoftTail<CurveId>,
+}
+
+impl RevisionCompoundLoftConstruction {
+    /// Admit stored fields whose scalars are all finite. This is the
+    /// admission of the `revision_compound_loft` procedural surface: a
+    /// decoder that reads the fields admits them here, and the deserializer
+    /// runs the same walk. The fields are private, so this and the
+    /// deserializer are the only routes to a value.
+    pub fn admit(
+        wire: RevisionCompoundLoftConstructionWire,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let invalid = || {
+            ProceduralGeometryError::Payload(
+                "revision compound loft construction payload is invalid",
+            )
+        };
+        let (
+            Some(discontinuities),
+            Some(tail),
+            Some(cache),
+            Some(base_profile),
+            Some(base_path),
+            Some(entries),
+            Some(direction),
+        ) = (
+            FiniteReal::lanes(wire.discontinuities),
+            wire.tail.admit(),
+            wire.cache.admit(),
+            wire.base_profile
+                .into_iter()
+                .map(LoftProfileMember::admit)
+                .collect::<Option<Vec<_>>>(),
+            wire.base_path.admit(),
+            wire.entries
+                .into_iter()
+                .map(LoftSectionEntry::admit)
+                .collect::<Option<Vec<_>>>(),
+            wire.direction.admit(),
+        )
+        else {
+            return Err(invalid());
+        };
+        Ok(Self {
+            revision: wire.revision,
+            cache,
+            discontinuities,
+            tail_flag: wire.tail_flag,
+            base_profile,
+            base_path,
+            entries,
+            flags: wire.flags,
+            kind_flags: wire.kind_flags,
+            direction,
+            tail,
+        })
+    }
+
+    /// Return the positive serializer-revision integer.
+    #[must_use]
+    pub const fn revision(&self) -> PositiveI64 {
+        self.revision
+    }
+
+    /// Return the approximation-cache form.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>> {
+        &self.cache
+    }
+
+    /// Return the six ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the Boolean terminating the shared tail.
+    #[must_use]
+    pub const fn tail_flag(&self) -> bool {
+        self.tail_flag
+    }
+
+    /// Return the profile members of the leading scale block.
+    #[must_use]
+    pub fn base_profile(&self) -> &[LoftProfileMember<FiniteReal, FiniteVector3>] {
+        &self.base_profile
+    }
+
+    /// Return the path data of the leading scale block.
+    #[must_use]
+    pub const fn base_path(&self) -> &LoftPath<FiniteReal> {
+        &self.base_path
+    }
+
+    /// Return the counted parameterized entries.
+    #[must_use]
+    pub fn entries(&self) -> &[LoftSectionEntry<FiniteReal, FiniteVector3>] {
+        &self.entries
+    }
+
+    /// Return the two flags following the entries.
+    #[must_use]
+    pub const fn flags(&self) -> [bool; 2] {
+        self.flags
+    }
+
+    /// Return the two flags opening the kind-zero payload.
+    #[must_use]
+    pub const fn kind_flags(&self) -> [bool; 2] {
+        self.kind_flags
+    }
+
+    /// Return the direction carrier of the kind-zero payload.
+    #[must_use]
+    pub const fn direction(&self) -> &CompoundLoftDirection<FiniteVector3> {
+        &self.direction
+    }
+
+    /// Return the trailing bounds and their dependent BS3 curve.
+    #[must_use]
+    pub const fn tail(&self) -> &RevisionCompoundLoftTail<CurveId, FiniteReal> {
+        &self.tail
+    }
+}
+
+impl TryFrom<RevisionCompoundLoftConstructionWire> for RevisionCompoundLoftConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: RevisionCompoundLoftConstructionWire) -> Result<Self, Self::Error> {
+        Self::admit(wire)
+    }
 }
 
 /// Trailing parameter bounds of a revision compound loft.
 /// Both bounds select a trailing curve; all other forms contain no curve.
-#[derive(Debug, Clone, PartialEq)]
+// A source states raw bounds; a `RevisionCompoundLoftConstruction` holds the
+// admitted tail, whose bounds are `FiniteReal` values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum RevisionCompoundLoftTail<T> {
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(
+        serialize = "T: Serialize, S: Serialize",
+        deserialize = "T: Deserialize<'de>, S: Deserialize<'de>"
+    )
+)]
+pub enum RevisionCompoundLoftTail<T, S = f64> {
     /// Neither parameter bound is present.
-    Unbounded,
+    Unbounded {},
     /// Only the lower parameter bound is present.
-    LowerBound(f64),
+    LowerBound {
+        /// Lower parameter bound.
+        lower: S,
+    },
     /// Only the upper parameter bound is present.
-    UpperBound(f64),
+    UpperBound {
+        /// Upper parameter bound.
+        upper: S,
+    },
     /// Both parameter bounds and their selected curve.
     Curve {
         /// Ordered lower and upper parameter bounds.
-        interval: [f64; 2],
+        interval: [S; 2],
         /// Curve selected by the complete parameter pair.
         curve: T,
     },
 }
 
 impl<T> RevisionCompoundLoftTail<T> {
+    /// The tail with admitted bounds, absent when a stored bound is not
+    /// finite.
+    fn admit(self) -> Option<RevisionCompoundLoftTail<T, FiniteReal>> {
+        Some(match self {
+            Self::Unbounded {} => RevisionCompoundLoftTail::Unbounded {},
+            Self::LowerBound { lower } => RevisionCompoundLoftTail::LowerBound {
+                lower: FiniteReal::new(lower)?,
+            },
+            Self::UpperBound { upper } => RevisionCompoundLoftTail::UpperBound {
+                upper: FiniteReal::new(upper)?,
+            },
+            Self::Curve { interval, curve } => RevisionCompoundLoftTail::Curve {
+                interval: FiniteReal::array(interval)?,
+                curve,
+            },
+        })
+    }
+}
+
+impl<T, S: Copy> RevisionCompoundLoftTail<T, S> {
     /// Optional bounds in native order.
     #[must_use]
-    pub const fn interval(&self) -> [Option<f64>; 2] {
+    pub const fn interval(&self) -> [Option<S>; 2] {
         match self {
-            Self::Unbounded => [None, None],
-            Self::LowerBound(value) => [Some(*value), None],
-            Self::UpperBound(value) => [None, Some(*value)],
+            Self::Unbounded {} => [None, None],
+            Self::LowerBound { lower } => [Some(*lower), None],
+            Self::UpperBound { upper } => [None, Some(*upper)],
             Self::Curve { interval, .. } => [Some(interval[0]), Some(interval[1])],
         }
     }
@@ -5601,152 +5613,73 @@ impl<T> RevisionCompoundLoftTail<T> {
             _ => None,
         }
     }
-
-    /// Transform the curve payload while retaining its parameter bounds.
-    #[must_use]
-    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> RevisionCompoundLoftTail<U> {
-        match self {
-            Self::Unbounded => RevisionCompoundLoftTail::Unbounded,
-            Self::LowerBound(value) => RevisionCompoundLoftTail::LowerBound(value),
-            Self::UpperBound(value) => RevisionCompoundLoftTail::UpperBound(value),
-            Self::Curve { interval, curve } => RevisionCompoundLoftTail::Curve {
-                interval,
-                curve: map(curve),
-            },
-        }
-    }
-}
-
-mod revision_compound_loft_tail_wire {
-    use super::RevisionCompoundLoftTail;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct WriteWire<'a, T> {
-        interval: [Option<f64>; 2],
-        #[serde(skip_serializing_if = "Option::is_none")]
-        trailing_curve: Option<&'a T>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(bound(deserialize = "T: Deserialize<'de>"))]
-    struct ReadWire<T> {
-        #[serde(default)]
-        interval: [Option<f64>; 2],
-        #[serde(default)]
-        trailing_curve: Option<T>,
-    }
-
-    pub fn serialize<T: Serialize, S: Serializer>(
-        value: &RevisionCompoundLoftTail<T>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        WriteWire {
-            interval: value.interval(),
-            trailing_curve: value.curve(),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<RevisionCompoundLoftTail<T>, D::Error> {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (wire.interval, wire.trailing_curve) {
-            ([None, None], None) => Ok(RevisionCompoundLoftTail::Unbounded),
-            ([Some(value), None], None) => Ok(RevisionCompoundLoftTail::LowerBound(value)),
-            ([None, Some(value)], None) => Ok(RevisionCompoundLoftTail::UpperBound(value)),
-            ([Some(lower), Some(upper)], Some(curve)) => Ok(RevisionCompoundLoftTail::Curve {
-                interval: [lower, upper],
-                curve,
-            }),
-            _ => Err(serde::de::Error::custom(
-                "revision compound loft pairs its trailing curve with both parameter values",
-            )),
-        }
-    }
 }
 
 /// One boundary record in a native vertex-blend patch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VertexBlendBoundary {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct VertexBlendBoundary<R = f64, V = Vector3, P = Point3> {
     /// Native cross flag. The wire form is a logical, so the value is the
     /// tag itself and no payload follows.
     pub boundary_type: bool,
-    /// Native magic direction. A unit direction or the zero vector, never a
-    /// length, so it carries no unit scale.
-    pub magic: Vector3,
+    /// Native magic direction with finite components, stored as read. It is a
+    /// direction, never a length, so it carries no unit scale.
+    pub magic: V,
     /// Native U-smoothing flag, a logical on the wire.
     pub u_smoothing: bool,
     /// Native V-smoothing flag, a logical on the wire.
     pub v_smoothing: bool,
     /// Native fullness scalar.
-    pub fullness: f64,
+    pub fullness: R,
     /// Structurally selected boundary geometry.
-    pub geometry: VertexBlendBoundaryGeometry,
+    pub geometry: VertexBlendBoundaryGeometry<R, V, P>,
 }
 
 /// Twist payload selected by a vertex-blend circle form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "VertexBlendTwistsWire", into = "VertexBlendTwistsWire")]
-pub enum VertexBlendTwists {
-    /// Form zero has no twist entries.
-    None,
-    /// Form one has one twist entry.
-    One(Point3),
-    /// Form three has two ordered twist entries.
-    Two([Point3; 2]),
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum VertexBlendTwists<P = Point3> {
+    /// Native form zero: no twist entries.
+    None {},
+    /// Native form one: one twist entry.
+    One {
+        /// The one twist entry.
+        twist: P,
+    },
+    /// Native form three: two ordered twist entries.
+    Two {
+        /// The two ordered twist entries.
+        twists: [P; 2],
+    },
 }
 
-impl VertexBlendTwists {
+impl<P> VertexBlendTwists<P> {
     /// Native form selected by the twist payload.
     #[must_use]
     pub const fn form(&self) -> i64 {
         match self {
-            Self::None => 0,
-            Self::One(_) => 1,
-            Self::Two(_) => 3,
+            Self::None {} => 0,
+            Self::One { .. } => 1,
+            Self::Two { .. } => 3,
         }
     }
 
     /// Ordered twist entries. Their coordinate semantics depend on the layout revision.
     #[must_use]
-    pub fn entries(&self) -> &[Point3] {
+    pub fn entries(&self) -> &[P] {
         match self {
-            Self::None => &[],
-            Self::One(point) => std::slice::from_ref(point),
-            Self::Two(points) => points,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct VertexBlendTwistsWire {
-    form: i64,
-    twists: Vec<Point3>,
-}
-
-impl TryFrom<VertexBlendTwistsWire> for VertexBlendTwists {
-    type Error = &'static str;
-    fn try_from(wire: VertexBlendTwistsWire) -> Result<Self, Self::Error> {
-        match (wire.form, wire.twists.as_slice()) {
-            (0, []) => Ok(Self::None),
-            (1, [point]) => Ok(Self::One(*point)),
-            (3, [first, second]) => Ok(Self::Two([*first, *second])),
-            _ => Err("vertex-blend circle forms 0, 1, and 3 require zero, one, and two twists"),
-        }
-    }
-}
-
-impl From<VertexBlendTwists> for VertexBlendTwistsWire {
-    fn from(value: VertexBlendTwists) -> Self {
-        Self {
-            form: value.form(),
-            twists: value.entries().to_vec(),
+            Self::None {} => &[],
+            Self::One { twist } => std::slice::from_ref(twist),
+            Self::Two { twists } => twists,
         }
     }
 }
@@ -5755,7 +5688,15 @@ impl From<VertexBlendTwists> for VertexBlendTwistsWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum VertexBlendBoundaryGeometry {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
     /// Curve boundary with a circle/ellipse/unknown twist form.
     Circle {
         /// Boundary curve.
@@ -5763,22 +5704,21 @@ pub enum VertexBlendBoundaryGeometry {
         /// Optional native curve parameter endpoints stored by the
         /// revision-gated layout.
         #[serde(default)]
-        curve_endpoints: [Option<f64>; 2],
+        curve_endpoints: [Option<R>; 2],
         /// Twist payload. Pre-revision layouts store model-space locations;
         /// the revision-gated layout stores unscaled twist vectors.
-        #[serde(flatten)]
-        twists: VertexBlendTwists,
+        twists: VertexBlendTwists<P>,
         /// Two ordered curve parameters.
-        parameters: [f64; 2],
+        parameters: [R; 2],
         /// Native sense flag, a logical on the wire.
         sense: bool,
     },
     /// Degenerate boundary at a model-space location.
     Degenerate {
         /// Degenerate location.
-        location: Point3,
+        location: P,
         /// Two ordered boundary normals.
-        normals: [Vector3; 2],
+        normals: [V; 2],
     },
     /// Surface pcurve boundary.
     Pcurve {
@@ -5787,64 +5727,89 @@ pub enum VertexBlendBoundaryGeometry {
         /// Optional U/V bound fields stored after the support by the
         /// revision-gated layout.
         #[serde(default)]
-        support_bounds: [Option<f64>; 4],
+        support_bounds: [Option<R>; 4],
         /// Native BS2 pcurve, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_pcurve"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// Native sense flag, a logical on the wire.
         sense: bool,
         /// Parameter-space fit tolerance.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// Planar boundary described by a normal and curve.
     Plane {
         /// Plane normal.
-        normal: Vector3,
+        normal: V,
         /// Two ordered plane parameters.
-        parameters: [f64; 2],
+        parameters: [R; 2],
         /// Boundary curve.
         curve: CurveId,
         /// Optional native curve parameter endpoints stored by the
         /// revision-gated layout.
         #[serde(default)]
-        curve_endpoints: [Option<f64>; 2],
+        curve_endpoints: [Option<R>; 2],
     },
 }
 
 /// Complete native vertex-blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VertexBlendConstruction {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct VertexBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Positive serializer-revision integer selecting the revision-gated
     /// layout; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision: Option<i64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_revision"
+    )]
+    pub revision: Option<PositiveI64>,
     /// Ordered boundary records.
-    pub boundaries: Vec<VertexBlendBoundary>,
+    pub boundaries: Vec<VertexBlendBoundary<R, V, P>>,
     /// Native grid-size integer.
     pub grid_size: i64,
     /// Native model-space fit tolerance.
-    pub fit_tolerance: f64,
+    pub fit_tolerance: FitTolerance,
 }
 
 /// One member of a compound-loft scale block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CompoundLoftScaleMember {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct CompoundLoftScaleMember<R = f64, V = Vector3> {
     /// Native member integer.
     pub type_code: i64,
     /// Member curve.
     pub curve: CurveId,
     /// Native loft constraint data.
-    pub data: ClassicLoftProfileData,
+    pub data: ClassicLoftProfileData<R, V>,
 }
 
 /// Complete `_readScaleClLoft` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CompoundLoftScale {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct CompoundLoftScale<R = f64, V = Vector3> {
     /// Ordered scale members.
-    pub members: Vec<CompoundLoftScaleMember>,
+    pub members: Vec<CompoundLoftScaleMember<R, V>>,
     /// Scale path curve.
     pub path: CurveId,
     /// Ordered BS3 auxiliary curves.
@@ -5856,29 +5821,23 @@ pub struct CompoundLoftScale {
 /// Direction carrier in the zero-kind compound-loft tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CompoundLoftDirection {
-    /// Inline direction vector when the selector is zero.
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompoundLoftDirection<V = Vector3> {
+    /// Inline direction vector. This form has no native selector.
     Vector {
         /// Stored direction.
-        value: Vector3,
+        value: V,
     },
-    /// BS3 direction curve when the selector is nonzero.
+    /// BS3 direction curve and its nonzero native selector.
     Curve {
         /// Stored curve.
         curve: CurveId,
         /// Exact nonzero native selector retained for byte-faithful export.
-        #[serde(skip, default = "default_compound_loft_curve_selector")]
-        #[cfg_attr(feature = "schema", schemars(skip))]
         selector: NonZeroI64,
     },
 }
 
-const fn default_compound_loft_curve_selector() -> NonZeroI64 {
-    NonZeroI64::new(1).expect("one is nonzero")
-}
-
-impl CompoundLoftDirection {
+impl<V> CompoundLoftDirection<V> {
     /// Native selector for this direction form.
     #[must_use]
     pub const fn selector(&self) -> i64 {
@@ -5889,140 +5848,29 @@ impl CompoundLoftDirection {
     }
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the revision compound-loft direction wire schema"
-)]
-struct RevisionCompoundLoftDirectionSchemaWire {
-    kind: i64,
-    selector: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction: Option<Vector3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction_curve: Option<CurveId>,
-}
-
-mod revision_compound_loft_direction_wire {
-    use super::{CompoundLoftDirection, CurveId, Vector3};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::num::NonZeroI64;
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        kind: i64,
-        selector: i64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction_curve: Option<CurveId>,
-    }
-
-    pub fn serialize<S>(value: &CompoundLoftDirection, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            CompoundLoftDirection::Vector { value } => Wire {
-                kind: 0,
-                selector: 0,
-                direction: Some(*value),
-                direction_curve: None,
-            },
-            CompoundLoftDirection::Curve { curve, selector } => Wire {
-                kind: 0,
-                selector: selector.get(),
-                direction: None,
-                direction_curve: Some(curve.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<CompoundLoftDirection, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        if wire.kind != 0 {
-            return Err(serde::de::Error::custom(
-                "revision compound loft requires kind zero",
-            ));
-        }
-        match (wire.selector, wire.direction, wire.direction_curve) {
-            (0, Some(value), None) => Ok(CompoundLoftDirection::Vector { value }),
-            (selector, None, Some(curve)) => NonZeroI64::new(selector)
-                .map(|selector| CompoundLoftDirection::Curve { curve, selector })
-                .ok_or_else(|| {
-                    serde::de::Error::custom("compound-loft direction conflicts with its selector")
-                }),
-            _ => Err(serde::de::Error::custom(
-                "compound-loft direction conflicts with its selector",
-            )),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundLoftDirectionWire {
-    selector: i64,
-    direction: CompoundLoftDirection,
-}
-
-mod compound_loft_direction_wire {
-    use super::{CompoundLoftDirection, CompoundLoftDirectionWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::num::NonZeroI64;
-
-    pub fn serialize<S>(direction: &CompoundLoftDirection, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        CompoundLoftDirectionWire {
-            selector: direction.selector(),
-            direction: direction.clone(),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<CompoundLoftDirection, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CompoundLoftDirectionWire::deserialize(deserializer)?;
-        match (wire.selector, wire.direction) {
-            (0, direction @ CompoundLoftDirection::Vector { .. }) => Ok(direction),
-            (selector, CompoundLoftDirection::Curve { curve, .. }) => NonZeroI64::new(selector)
-                .map(|selector| CompoundLoftDirection::Curve { curve, selector })
-                .ok_or_else(|| {
-                    serde::de::Error::custom("compound-loft curve selector must be nonzero")
-                }),
-            _ => Err(serde::de::Error::custom(
-                "compound-loft vector selector must be zero",
-            )),
-        }
-    }
-}
-
 /// Structurally selected tail of `cl_loft_spl_sur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CompoundLoftTail {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub enum CompoundLoftTail<R = f64, V = Vector3> {
     /// Native kind `6` tail.
     Six {
         /// Two leading flags.
         flags: [bool; 2],
         /// Required scale block.
-        scale: Box<CompoundLoftScale>,
+        scale: Box<CompoundLoftScale<R, V>>,
         /// Native integer following the scale.
         selector: i64,
         /// Stored direction.
-        direction: Vector3,
+        direction: V,
         /// Native parameter interval.
-        parameter_range: [f64; 2],
+        parameter_range: [R; 2],
         /// BS3 tail curve.
         curve: CurveId,
     },
@@ -6031,16 +5879,20 @@ pub enum CompoundLoftTail {
         /// First flag.
         first_flag: bool,
         /// First optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        first_scale: Option<Box<CompoundLoftScale>>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_first_scale"
+        )]
+        first_scale: Option<Box<CompoundLoftScale<R, V>>>,
         /// Second flag.
         second_flag: bool,
         /// Required second scale block.
-        second_scale: Box<CompoundLoftScale>,
+        second_scale: Box<CompoundLoftScale<R, V>>,
         /// Native selector integer.
         selector: i64,
         /// Stored direction.
-        direction: Vector3,
+        direction: V,
         /// Two trailing flags.
         trailing_flags: [bool; 2],
     },
@@ -6049,42 +5901,121 @@ pub enum CompoundLoftTail {
         /// Two leading flags.
         flags: [bool; 2],
         /// Vector or BS3 curve with its derived native selector.
-        #[serde(flatten, with = "compound_loft_direction_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftDirectionWire"))]
-        direction: CompoundLoftDirection,
+        direction: CompoundLoftDirection<V>,
         /// Two trailing flags.
         trailing_flags: [bool; 2],
     },
 }
 
+/// A bounded list of compound-loft scales.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(
+    try_from = "Vec<CompoundLoftScale<R, V>>",
+    bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>")
+)]
+pub struct CompoundLoftScales<const CAPACITY: usize, R = f64, V = Vector3>(
+    Vec<CompoundLoftScale<R, V>>,
+);
+
+impl<const CAPACITY: usize, R: Serialize, V: Serialize> Serialize
+    for CompoundLoftScales<CAPACITY, R, V>
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl<const CAPACITY: usize, R, V> JsonSchema for CompoundLoftScales<CAPACITY, R, V>
+where
+    CompoundLoftScale<R, V>: JsonSchema,
+{
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        format!("CompoundLoftScales_{CAPACITY}").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut schema = Vec::<CompoundLoftScale<R, V>>::json_schema(generator);
+        schema.insert("maxItems".into(), CAPACITY.into());
+        schema
+    }
+}
+
+impl<const CAPACITY: usize, R, V> CompoundLoftScales<CAPACITY, R, V> {
+    /// Admit a leading scale list within the native slot capacity.
+    pub fn try_new(scales: Vec<CompoundLoftScale<R, V>>) -> Result<Self, &'static str> {
+        if scales.len() > CAPACITY {
+            return Err("compound loft scales exceed slot capacity");
+        }
+        Ok(Self(scales))
+    }
+
+    /// Admit native optional slots whose present values form a leading prefix.
+    pub fn try_from_slots(
+        slots: impl IntoIterator<Item = Option<CompoundLoftScale<R, V>>>,
+    ) -> Result<Self, &'static str> {
+        let mut scales = Vec::new();
+        let mut absent = false;
+        for (index, slot) in slots.into_iter().enumerate() {
+            if index >= CAPACITY {
+                return Err("compound loft scales exceed slot capacity");
+            }
+            match slot {
+                Some(scale) if !absent => scales.push(scale),
+                Some(_) => return Err("compound loft scales must form a leading prefix"),
+                None => absent = true,
+            }
+        }
+        Ok(Self(scales))
+    }
+
+    /// Present scales in native order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[CompoundLoftScale<R, V>] {
+        &self.0
+    }
+}
+
+impl<const CAPACITY: usize, R, V> TryFrom<Vec<CompoundLoftScale<R, V>>>
+    for CompoundLoftScales<CAPACITY, R, V>
+{
+    type Error = &'static str;
+    fn try_from(scales: Vec<CompoundLoftScale<R, V>>) -> Result<Self, Self::Error> {
+        Self::try_new(scales)
+    }
+}
+
 /// Complete native compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CompoundLoftConstruction {
-    /// Four mandatory scale slots; a boolean token encodes an absent slot.
-    pub scales: Box<[Option<CompoundLoftScale>; 4]>,
-    /// Optional fifth leading scale slot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fifth_scale: Option<Box<CompoundLoftScale>>,
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct CompoundLoftConstruction<R = f64, V = Vector3> {
+    /// Present scales, up to the five native slots.
+    pub scales: CompoundLoftScales<5, R, V>,
     /// Two flags before the tail kind.
     pub flags: [bool; 2],
     /// Kind-specific trailing graph.
-    pub tail: CompoundLoftTail,
+    pub tail: CompoundLoftTail<R, V>,
 }
 
 /// Initial solved-shape branch of a scaled compound loft.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ScaledCompoundLoftShape {
+#[serde(deny_unknown_fields)]
+pub enum ScaledCompoundLoftShape<R = f64> {
     /// A solved NURBS cache follows the singularity enum.
-    Full,
+    Full {},
     /// The cache is replaced by two intervals and two scalar arrays.
     None {
         /// Two ordered native intervals.
-        parameter_ranges: [[f64; 2]; 2],
+        parameter_ranges: [[R; 2]; 2],
         /// Two ordered native scalar arrays.
-        parameters: [Vec<f64>; 2],
+        parameters: [Vec<R>; 2],
     },
 }
 
@@ -6092,24 +6023,38 @@ pub enum ScaledCompoundLoftShape {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ScaledCompoundLoftBranch {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub enum ScaledCompoundLoftBranch<R = f64, V = Vector3> {
     /// Extended branch ending in a direction vector.
     ExtendedVector {
         /// Optional first scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        first_scale: Option<Box<CompoundLoftScale>>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_first_scale"
+        )]
+        first_scale: Option<Box<CompoundLoftScale<R, V>>>,
         /// Required second scale block.
-        second_scale: Box<CompoundLoftScale>,
+        second_scale: Box<CompoundLoftScale<R, V>>,
         /// Native selector integer.
         selector: i64,
         /// Stored direction vector.
-        direction: Vector3,
+        direction: V,
     },
     /// Extended branch ending in a singularity and curve.
     ExtendedCurve {
         /// Optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<Box<CompoundLoftScale>>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_scale"
+        )]
+        scale: Option<Box<CompoundLoftScale<R, V>>>,
         /// Native branch flag.
         flag: bool,
         /// Native singularity enum.
@@ -6122,195 +6067,168 @@ pub enum ScaledCompoundLoftBranch {
         /// Native branch flag.
         flag: bool,
         /// Vector or BS3 curve with its derived native selector.
-        #[serde(flatten, with = "compound_loft_direction_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftDirectionWire"))]
-        direction: CompoundLoftDirection,
+        direction: CompoundLoftDirection<V>,
     },
 }
 
 /// Complete native scaled compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct ScaledCompoundLoftConstruction {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct ScaledCompoundLoftConstruction<R = f64, V = Vector3> {
     /// Native leading singularity enum.
     pub singularity: i64,
     /// Singularity-selected solved-shape payload.
-    pub shape: ScaledCompoundLoftShape,
+    pub shape: ScaledCompoundLoftShape<R>,
     /// Six ordered discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
-    /// Three leading scale slots; absent slots leave the following boolean in place.
-    pub scales: Box<[Option<CompoundLoftScale>; 3]>,
+    /// Present leading scales within the three native slots.
+    pub scales: CompoundLoftScales<3, R, V>,
     /// Two native flags preceding the selector.
     pub flags: [bool; 2],
     /// Native integer preceding the middle branch.
     pub selector: i64,
     /// Structurally selected middle branch.
-    pub branch: ScaledCompoundLoftBranch,
+    pub branch: ScaledCompoundLoftBranch<R, V>,
     /// Two trailing branch flags.
     pub trailing_flags: [bool; 2],
     /// Native trailing kind integer.
     pub tail_kind: i64,
     /// Two native trailing vectors.
-    pub tail_directions: [Vector3; 2],
+    pub tail_directions: [V; 2],
     /// Native trailing singularity enum.
     pub tail_singularity: i64,
     /// Native trailing BS3 curve.
     pub tail_curve: CurveId,
 }
 
-/// A native law formula name that cannot be the `null_law` sentinel.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct LawFormulaName(String);
-
-impl LawFormulaName {
-    /// Construct a non-sentinel law formula name.
-    #[must_use]
-    pub fn new(name: impl Into<String>) -> Option<Self> {
-        let name = name.into();
-        (name != "null_law").then_some(Self(name))
-    }
-
-    /// Borrow the native formula name.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for LawFormulaName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let name = String::deserialize(deserializer)?;
-        Self::new(name)
-            .ok_or_else(|| serde::de::Error::custom("law formula name cannot be null_law"))
-    }
-}
-
-impl std::fmt::Display for LawFormulaName {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
 /// One recursively framed native law formula.
-#[derive(Debug, Clone, PartialEq)]
-pub enum LawFormula {
-    /// Native `null_law` with no variables.
-    Null,
+// A source states raw values; a law store holds the admitted formula, whose
+// scalars, vectors and points are checked.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub enum LawFormula<R = f64, V = Vector3, P = Point3> {
+    /// The native null law, with no variables.
+    Null {},
     /// Named formula and its ordered recursive variables.
     Named {
-        /// Non-sentinel native formula name.
-        name: LawFormulaName,
+        /// Native formula name.
+        name: cadmpeg_core::text::NonBlankString,
         /// Ordered recursive variables.
-        variables: Vec<LawExpression>,
+        variables: Vec<LawExpression<R, V, P>>,
     },
 }
 
-impl LawFormula {
-    /// Native formula name, including `null_law` for the null variant.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Null => "null_law",
-            Self::Named { name, .. } => name.as_str(),
-        }
-    }
-
+impl<R, V, P> LawFormula<R, V, P> {
     /// Ordered recursive variables; empty for the null variant.
     #[must_use]
-    pub fn variables(&self) -> &[LawExpression] {
+    pub fn variables(&self) -> &[LawExpression<R, V, P>] {
         match self {
-            Self::Null => &[],
+            Self::Null {} => &[],
             Self::Named { variables, .. } => variables,
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+/// A law formula whose expression tree carries only finite scalars.
+///
+/// The carrier of the `law_int_cur` formulas. It serializes as the formula it
+/// holds, so the curve wire states the formula alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LawFormulaWire {
-    name: String,
-    variables: Vec<LawExpression>,
-}
+#[serde(try_from = "LawFormula")]
+pub struct FiniteLawFormula(
+    #[cfg_attr(feature = "schema", schemars(with = "LawFormula"))]
+    LawFormula<FiniteReal, FiniteVector3, FinitePoint3>,
+);
 
-impl Serialize for LawFormula {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("LawFormula", 2)?;
-        state.serialize_field("name", self.name())?;
-        state.serialize_field("variables", self.variables())?;
-        state.end()
+impl TryFrom<LawFormula> for FiniteLawFormula {
+    type Error = &'static str;
+
+    fn try_from(formula: LawFormula) -> Result<Self, Self::Error> {
+        Self::try_new(formula)
     }
 }
 
-impl<'de> Deserialize<'de> for LawFormula {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = LawFormulaWire::deserialize(deserializer)?;
-        match LawFormulaName::new(wire.name) {
-            Some(name) => Ok(Self::Named {
-                name,
-                variables: wire.variables,
-            }),
-            None if wire.variables.is_empty() => Ok(Self::Null),
-            None => Err(serde::de::Error::custom(
-                "null_law formula cannot carry variables",
-            )),
-        }
+impl FiniteLawFormula {
+    /// Admit a law formula whose expression tree carries only finite scalars.
+    pub fn try_new(formula: LawFormula) -> Result<Self, &'static str> {
+        formula.admit().map(Self).ok_or(LAW_FORMULA_NOT_FINITE)
+    }
+
+    /// The admitted law formula.
+    #[must_use]
+    pub const fn formula(&self) -> &LawFormula<FiniteReal, FiniteVector3, FinitePoint3> {
+        &self.0
     }
 }
 
-#[cfg(feature = "schema")]
-impl JsonSchema for LawFormula {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LawFormula".into()
-    }
+/// Refusal of a law formula that carries a non-finite scalar.
+const LAW_FORMULA_NOT_FINITE: &str = "law formula constants must be finite";
 
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LawFormulaWire::json_schema(generator)
-    }
-}
+/// Recursion bound of the law-expression walk. An expression nested deeper than
+/// this is refused.
+const LAW_EXPRESSION_DEPTH_LIMIT: usize = 64;
 
 /// Complete recursive construction stored by a native law spline surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LawSurfaceConstruction {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct LawSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Legacy U and V parameter intervals; absent from modern layouts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_ranges: Option<[[f64; 2]; 2]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_ranges"
+    )]
+    pub parameter_ranges: Option<[[R; 2]; 2]>,
     /// Primary recursive surface law.
-    pub primary: LawFormula,
+    pub primary: LawFormula<R, V, P>,
     /// Ordered counted auxiliary laws referenced by the primary law.
-    pub additional: Vec<LawFormula>,
+    pub additional: Vec<LawFormula<R, V, P>>,
     /// Standard surface-tail mode and its mode-specific fields.
-    pub tail: LawSurfaceTail,
+    pub tail: LawSurfaceTail<R>,
     /// Six ordered discontinuity arrays from the standard surface tail.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
 }
 
 /// Mode-specific payload of a native law surface's standard surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LawSurfaceTail {
-    /// Selector 0; the surface record carries a solved NURBS cache.
-    Full,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LawSurfaceTail<R = f64> {
+    /// Selector 0; the surface record carries a solved NURBS cache, whose fit
+    /// contract this tail states.
+    Full {
+        /// Fit contract of the solved cache this tail requires.
+        cache: LegacyCache,
+    },
     /// Selector 1; compact parameter summaries replace the solved cache.
     Summary {
         /// Ordered U and V parameter summaries.
-        parameters: [Vec<f64>; 2],
+        parameters: [Vec<R>; 2],
         /// Native model-space fit tolerance.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
         /// Ordered U and V closure enums.
         closures: [i64; 2],
         /// Ordered U and V singularity enums.
@@ -6319,29 +6237,35 @@ pub enum LawSurfaceTail {
     /// Selector 2; exact parameter intervals and boundary classifications.
     None {
         /// Ordered U and V parameter intervals.
-        parameter_ranges: [[f64; 2]; 2],
+        parameter_ranges: [[R; 2]; 2],
         /// Ordered U and V closure enums.
         closures: [i64; 2],
         /// Ordered U and V singularity enums.
         singularities: [i64; 2],
     },
     /// Selector 3; no mode-specific payload.
-    Historical,
+    Historical {},
     /// Selector 4; no mode-specific payload.
-    Optimal,
+    Optimal {},
 }
 
 /// One native law-expression node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LawExpression {
-    /// Zero-payload `null_law` sentinel.
-    Null,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub enum LawExpression<R = f64, V = Vector3, P = Point3> {
+    /// Zero-payload spelling of the native null law.
+    Null {},
     /// Serializer-preserved textual law expression.
     Text {
         /// Exact text stored in the native law slot.
-        value: String,
+        value: cadmpeg_core::text::NonBlankString,
     },
     /// Tagged integer constant.
     Integer {
@@ -6351,22 +6275,22 @@ pub enum LawExpression {
     /// Tagged double constant.
     Double {
         /// Stored scalar value.
-        value: f64,
+        value: R,
     },
     /// Tagged model-space point constant.
     Point {
         /// Stored point value.
-        value: Point3,
+        value: P,
     },
     /// Tagged direction-vector constant.
     Vector {
         /// Stored vector value.
-        value: Vector3,
+        value: V,
     },
     /// Inline transform-law payload.
     Transform {
         /// Thirteen ordered transform scalars.
-        scalars: [f64; 13],
+        scalars: [R; 13],
         /// Three ordered transform enums.
         enums: [i64; 3],
     },
@@ -6374,9 +6298,9 @@ pub enum LawExpression {
     /// and three flags, in place of the thirteen-scalar/three-enum form.
     TransformVec {
         /// Four ordered transform vectors.
-        vectors: [Vector3; 4],
+        vectors: [V; 4],
         /// Trailing transform scale.
-        scale: f64,
+        scale: R,
         /// Three ordered transform flags.
         flags: [bool; 3],
     },
@@ -6384,51 +6308,60 @@ pub enum LawExpression {
     Edge {
         /// Embedded curve carrier and its optional revision-gated endpoints.
         #[serde(flatten)]
-        curve: LoftPathCurve,
+        curve: LoftPathCurve<R>,
         /// Two native curve parameters.
-        parameters: [f64; 2],
+        parameters: [R; 2],
     },
     /// Spline-law payload.
     Spline {
         /// Native spline-law integer.
         native_id: i64,
         /// Ordered spline-law knots.
-        knots: Vec<f64>,
+        knots: Vec<R>,
         /// Ordered spline-law controls.
-        controls: Vec<f64>,
+        controls: Vec<R>,
         /// Native model-space point.
-        point: Point3,
+        point: P,
     },
     /// Algebraic operator and its recursively framed operands.
     Algebraic {
         /// Native operator token.
         operator: String,
         /// Ordered operands.
-        operands: Vec<LawExpression>,
+        operands: Vec<LawExpression<R, V, P>>,
     },
 }
 
 /// One profile entry in the expanded skin layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SkinSurfaceProfile {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub struct SkinSurfaceProfile<R = f64, V = Vector3> {
     /// Native profile type integer.
     pub type_code: i64,
     /// Profile curve.
     pub curve: CurveId,
     /// Native loft constraint data.
-    pub data: ClassicLoftProfileData,
+    pub data: ClassicLoftProfileData<R, V>,
 }
 
 /// Structurally selected native skin payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SkinSurfaceLayout {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
+)]
+pub enum SkinSurfaceLayout<R = f64, V = Vector3> {
     /// Expanded sequence of profile curves and loft constraints.
     Profiles {
         /// Ordered profile entries.
-        profiles: Vec<SkinSurfaceProfile>,
+        profiles: Vec<SkinSurfaceProfile<R, V>>,
         /// Trailing path curve.
         path: CurveId,
         /// Two native trailing integers.
@@ -6441,7 +6374,7 @@ pub enum SkinSurfaceLayout {
         /// Primary curve.
         curve: CurveId,
         /// Native loft subdata.
-        subdata: LoftSubdata,
+        subdata: LoftSubdata<R>,
         /// Integer after the subdata.
         first_tail: i64,
         /// Secondary curve.
@@ -6451,129 +6384,33 @@ pub enum SkinSurfaceLayout {
     },
 }
 
-impl SkinSurfaceLayout {
+impl<R, V> SkinSurfaceLayout<R, V> {
     /// Native inner count, derived from the profile list in the expanded form.
-    pub fn inner_count(&self) -> i64 {
+    pub fn inner_count(&self) -> Result<i64, cadmpeg_core::CodecError> {
         match self {
-            Self::Profiles { profiles, .. } => profiles.len() as i64,
-            Self::Compact { inner_count, .. } => *inner_count,
+            Self::Profiles { profiles, .. } => i64::try_from(profiles.len()).map_err(|_| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "skin surface profile count",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(profiles.len()),
+                )
+            }),
+            Self::Compact { inner_count, .. } => Ok(*inner_count),
         }
-    }
-}
-
-mod skin_surface_layout_wire {
-    use super::{CurveId, LoftSubdata, SkinSurfaceLayout, SkinSurfaceProfile};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(tag = "kind", rename_all = "snake_case")]
-    enum Layout<P, C, S> {
-        Profiles {
-            profiles: P,
-            path: C,
-            tail: [i64; 2],
-        },
-        Compact {
-            curve: C,
-            subdata: S,
-            first_tail: i64,
-            secondary_curve: C,
-            second_tail: i64,
-        },
-    }
-
-    #[derive(Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct ReadWire {
-        inner_count: i64,
-        layout: Layout<Vec<SkinSurfaceProfile>, CurveId, LoftSubdata>,
-    }
-
-    pub fn serialize<S: Serializer>(
-        value: &SkinSurfaceLayout,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct WriteWire<'a> {
-            inner_count: i64,
-            layout: Layout<&'a [SkinSurfaceProfile], &'a CurveId, &'a LoftSubdata>,
-        }
-        let layout = match value {
-            SkinSurfaceLayout::Profiles {
-                profiles,
-                path,
-                tail,
-            } => Layout::Profiles {
-                profiles: profiles.as_slice(),
-                path,
-                tail: *tail,
-            },
-            SkinSurfaceLayout::Compact {
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-                ..
-            } => Layout::Compact {
-                curve,
-                subdata,
-                first_tail: *first_tail,
-                secondary_curve,
-                second_tail: *second_tail,
-            },
-        };
-        WriteWire {
-            inner_count: value.inner_count(),
-            layout,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<SkinSurfaceLayout, D::Error> {
-        let wire = ReadWire::deserialize(deserializer)?;
-        Ok(match wire.layout {
-            Layout::Profiles {
-                profiles,
-                path,
-                tail,
-            } => {
-                if usize::try_from(wire.inner_count).ok() != Some(profiles.len()) {
-                    return Err(serde::de::Error::custom(
-                        "skin inner_count must match profiles",
-                    ));
-                }
-                SkinSurfaceLayout::Profiles {
-                    profiles,
-                    path,
-                    tail,
-                }
-            }
-            Layout::Compact {
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-            } => SkinSurfaceLayout::Compact {
-                inner_count: wire.inner_count,
-                curve,
-                subdata,
-                first_tail,
-                secondary_curve,
-                second_tail,
-            },
-        })
     }
 }
 
 /// Complete native `skin_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SkinSurfaceConstruction {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct SkinSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Native `SURF_BOOL` enum.
     pub surface_boolean: i64,
     /// Native `SURF_NORM` enum.
@@ -6583,24 +6420,19 @@ pub struct SkinSurfaceConstruction {
     /// Native leading count.
     pub count: i64,
     /// Native leading scalar.
-    pub parameter: f64,
+    pub parameter: R,
     /// Structurally selected skin payload.
-    #[serde(flatten, with = "skin_surface_layout_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "skin_surface_layout_wire::ReadWire")
-    )]
-    pub layout: SkinSurfaceLayout,
+    pub layout: SkinSurfaceLayout<R, V>,
     /// Stored direction vector.
-    pub direction: Vector3,
+    pub direction: V,
     /// Native scalar before the formula.
-    pub trailing_parameter: f64,
+    pub trailing_parameter: R,
     /// Recursive parametric law.
-    pub formula: LawFormula,
+    pub formula: LawFormula<R, V, P>,
     /// Trailing curve after the formula.
     pub parameter_curve: CurveId,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
 }
@@ -6608,19 +6440,26 @@ pub struct SkinSurfaceConstruction {
 /// Complete native `net_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct NetSurfaceConstruction {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct NetSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Two ordered loft-section graphs.
-    pub sections: Box<[LoftSection; 2]>,
+    pub sections: Box<[LoftSection<R, V>; 2]>,
     /// Twelve ordered frame scalars.
-    pub frame_parameters: [f64; 12],
+    pub frame_parameters: [R; 12],
     /// Native frame integer.
     pub flag: i64,
     /// Four ordered frame directions.
-    pub directions: [Vector3; 4],
+    pub directions: [V; 4],
     /// Four ordered parameter laws.
-    pub formulas: Box<[LawFormula; 4]>,
+    pub formulas: Box<[LawFormula<R, V, P>; 4]>,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
 }
@@ -6629,42 +6468,50 @@ pub struct NetSurfaceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SweepSurfaceLayout {
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
     /// Profile-first modern ASM sweep layout.
     ProfileFirst {
         /// Second native sweep enum.
         secondary_kind: i64,
         /// Five ordered frame directions.
-        directions: [Vector3; 5],
+        directions: [V; 5],
         /// Native model-space frame origin.
-        origin: Point3,
+        origin: P,
         /// Four ordered native frame scalars.
-        parameters: [f64; 4],
+        parameters: [R; 4],
         /// Three ordered parametric laws.
-        formulas: Box<[LawFormula; 3]>,
+        formulas: Box<[LawFormula<R, V, P>; 3]>,
     },
     /// Explicit sweep layout whose trajectory is controlled by a formula.
     ExplicitFormula {
         /// Native explicit-layout integer.
         mode: i64,
         /// Profile parameter interval.
-        profile_range: [f64; 2],
+        profile_range: [R; 2],
         /// Optional explicit profile frame.
-        profile_frame: Option<(Point3, Vector3)>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
-        origin: Point3,
+        origin: P,
         /// Three ordered sweep frame directions.
-        directions: [Vector3; 3],
+        directions: [V; 3],
         /// Native trajectory boolean.
         trajectory_flag: bool,
         /// Path parameter interval in model length units.
-        path_range: [f64; 2],
+        path_range: [R; 2],
         /// Native trajectory scalar.
-        path_parameter: f64,
+        path_parameter: R,
         /// Native formula-side boolean.
         formula_flag: bool,
         /// Parametric trajectory formula.
-        formula: LawFormula,
+        formula: LawFormula<R, V, P>,
         /// Native trailing boolean.
         trailing_flag: bool,
     },
@@ -6673,29 +6520,30 @@ pub enum SweepSurfaceLayout {
         /// Native explicit-layout integer.
         mode: i64,
         /// Profile parameter interval.
-        profile_range: [f64; 2],
+        profile_range: [R; 2],
         /// Optional explicit profile frame.
-        profile_frame: Option<(Point3, Vector3)>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
-        origin: Point3,
+        origin: P,
         /// Three ordered sweep frame directions.
-        directions: [Vector3; 3],
+        directions: [V; 3],
         /// Native trajectory boolean.
         trajectory_flag: bool,
         /// Path parameter interval in model length units.
-        path_range: [f64; 2],
+        path_range: [R; 2],
         /// Native trajectory scalar.
-        path_parameter: f64,
+        path_parameter: R,
         /// Two guide-side booleans.
         guide_flags: [bool; 2],
         /// Auxiliary guide curve.
         guide_curve: CurveId,
         /// Guide parameter interval.
-        guide_range: [f64; 2],
+        guide_range: [R; 2],
         /// Two native guide integers.
         guide_modes: [i64; 2],
         /// Six ordered guide scalars.
-        guide_parameters: [f64; 6],
+        guide_parameters: [R; 6],
         /// Three trailing guide booleans.
         trailing_flags: [bool; 3],
     },
@@ -6704,28 +6552,31 @@ pub enum SweepSurfaceLayout {
         /// Native explicit-layout integer.
         mode: i64,
         /// Profile parameter interval.
-        profile_range: [f64; 2],
+        profile_range: [R; 2],
         /// Optional explicit profile frame.
-        profile_frame: Option<(Point3, Vector3)>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
-        origin: Point3,
+        origin: P,
         /// Three ordered sweep frame directions.
-        directions: [Vector3; 3],
+        directions: [V; 3],
         /// Native trajectory boolean.
         trajectory_flag: bool,
         /// Path parameter interval in model length units.
-        path_range: [f64; 2],
+        path_range: [R; 2],
         /// Native trajectory scalar.
-        path_parameter: f64,
+        path_parameter: R,
         /// Native singularity enum.
         singularity: i64,
         /// Support surface controlling the sweep.
         support_surface: SurfaceId,
         /// Optional auxiliary curve.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         auxiliary_curve: Option<CurveId>,
         /// Native support-side boolean.
         support_flag: bool,
         /// Legacy pre-219 trailing boolean when present.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         legacy_flag: Option<bool>,
     },
     /// Explicit-prefix sweep layout controlled by recursive laws.
@@ -6733,37 +6584,38 @@ pub enum SweepSurfaceLayout {
         /// Native explicit-layout integer.
         mode: i64,
         /// Profile parameter interval.
-        profile_range: [f64; 2],
+        profile_range: [R; 2],
         /// Optional explicit profile frame.
-        profile_frame: Option<(Point3, Vector3)>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
-        origin: Point3,
+        origin: P,
         /// Three ordered sweep frame directions.
-        directions: [Vector3; 3],
+        directions: [V; 3],
         /// Leading recursive sweep law.
-        first_law: Box<LawExpression>,
+        first_law: Box<LawExpression<R, V, P>>,
         /// Native integer after the leading law.
         first_mode: i64,
         /// First law parameter interval.
-        first_range: [f64; 2],
+        first_range: [R; 2],
         /// Native law direction.
-        law_direction: Vector3,
+        law_direction: V,
         /// Native path integer.
         path_mode: i64,
         /// Native path boolean.
         path_flag: bool,
         /// Path parameter interval.
-        path_range: [f64; 2],
+        path_range: [R; 2],
         /// Native path scalar.
-        path_parameter: f64,
+        path_parameter: R,
         /// Native second-law boolean.
         second_law_flag: bool,
         /// Trailing recursive sweep law.
-        second_law: Box<LawExpression>,
+        second_law: Box<LawExpression<R, V, P>>,
         /// Native integer before the formula.
         formula_mode: i64,
         /// Parametric trajectory formula.
-        formula: LawFormula,
+        formula: LawFormula<R, V, P>,
         /// Native trailing boolean.
         trailing_flag: bool,
     },
@@ -6772,36 +6624,46 @@ pub enum SweepSurfaceLayout {
 /// Revision-gated `sweep_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SweepRevisionForm {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct SweepRevisionForm<R = f64> {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Boolean replacing the pre-revision primary enum.
     pub primary_flag: bool,
     /// Optional parameter endpoints following the embedded profile curve.
     #[serde(default)]
-    pub profile_endpoints: [Option<f64>; 2],
+    pub profile_endpoints: [Option<R>; 2],
     /// Optional parameter endpoints following the embedded path curve.
     #[serde(default)]
-    pub path_endpoints: [Option<f64>; 2],
+    pub path_endpoints: [Option<R>; 2],
     /// Approximation-cache form selected by the shared tail enum.
-    #[serde(flatten, with = "revision_surface_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
-    pub cache: RevisionCacheForm,
+    pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
 }
 
 /// Complete native `sweep_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SweepSurfaceConstruction {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(
+        bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
+    )
+)]
+pub struct SweepSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Leading native sweep enum.
     pub primary_kind: i64,
-    /// Revision-gated form fields; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision_form: Option<SweepRevisionForm>,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    pub cache: CacheContract<SweepRevisionForm<R>>,
     /// Structurally selected sweep layout.
-    pub layout: SweepSurfaceLayout,
+    pub layout: SweepSurfaceLayout<R, V, P>,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<R>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
 }
@@ -6810,18 +6672,19 @@ pub struct SweepSurfaceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BlendRadiusLaw {
     /// Constant blend radius along the whole spine.
     Constant {
         /// Signed radius, in document length units; sign selects the support offset side.
-        signed_radius: f64,
+        signed_radius: crate::scalar::Length,
     },
     /// Radius varying linearly from `start` to `end` along the spine.
     Linear {
         /// Signed radius at the spine start, in document length units.
-        start: f64,
+        start: crate::scalar::Length,
         /// Signed radius at the spine end, in document length units.
-        end: f64,
+        end: crate::scalar::Length,
     },
     /// Radius varying along the spine per an explicit law curve.
     Law {
@@ -6830,16 +6693,39 @@ pub enum BlendRadiusLaw {
     },
 }
 
+/// The refusal of a blend radius law with a non-finite radius.
+const NON_FINITE_BLEND_RADIUS: ProceduralGeometryError =
+    ProceduralGeometryError::Payload("blend radius law is not finite");
+
+impl BlendRadiusLaw {
+    /// Admit a constant law from a finite signed radius. The sign of a radius
+    /// selects the support offset side, so a negative radius is admitted.
+    pub fn constant(signed_radius: f64) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Constant {
+            signed_radius: crate::scalar::Length::new(signed_radius)
+                .ok_or(NON_FINITE_BLEND_RADIUS)?,
+        })
+    }
+
+    /// Admit a linear law from finite signed radii at the spine start and
+    /// end, with the refusal of [`BlendRadiusLaw::constant`].
+    pub fn linear(start: f64, end: f64) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Linear {
+            start: crate::scalar::Length::new(start).ok_or(NON_FINITE_BLEND_RADIUS)?,
+            end: crate::scalar::Length::new(end).ok_or(NON_FINITE_BLEND_RADIUS)?,
+        })
+    }
+}
+
 /// A neutral curve construction linked to its solved carrier.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProceduralCurve {
     /// Stable construction identity.
     pub id: ProceduralCurveId,
-    /// Neutral construction definition.
+    /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralCurveDefinition,
-    /// Fit contract of a legacy solved cache. Revision-gated forms carry the
-    /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<f64>,
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
@@ -6850,7 +6736,11 @@ pub struct SupportPcurve {
     /// UV curve carried by the support side.
     pub geometry: PcurveGeometry,
     /// Directed pcurve interval corresponding to the solved interval.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_range"
+    )]
     pub parameter_range: Option<DirectedParameterRange>,
 }
 
@@ -6864,15 +6754,6 @@ impl SupportPcurve {
         Self {
             geometry,
             parameter_range,
-        }
-    }
-
-    /// Return the mapped pcurve endpoints as an array.
-    #[must_use]
-    pub const fn parameter_range_array(&self) -> Option<[f64; 2]> {
-        match self.parameter_range {
-            Some(range) => Some(range.endpoints()),
-            None => None,
         }
     }
 }
@@ -6902,13 +6783,31 @@ impl std::fmt::Display for ParameterRangeError {
 impl std::error::Error for ParameterRangeError {}
 
 impl DirectedParameterRange {
+    /// Build from finite angle endpoints, checking only that they differ.
+    pub fn from_angle_endpoints(
+        values: [crate::scalar::Angle; 2],
+    ) -> Result<Self, ParameterRangeError> {
+        (values[0] != values[1])
+            .then_some(Self(values.map(crate::scalar::Angle::get)))
+            .ok_or(ParameterRangeError)
+    }
+
+    /// Build from finite endpoints, checking only that they differ.
+    pub fn from_finite_endpoints(
+        values: [crate::scalar::FiniteReal; 2],
+    ) -> Result<Self, ParameterRangeError> {
+        (values[0] != values[1])
+            .then_some(Self(values.map(crate::scalar::FiniteReal::get)))
+            .ok_or(ParameterRangeError)
+    }
+
     /// Construct an interval. Either ascending or descending direction is valid.
     pub fn new(values: [f64; 2]) -> Result<Self, ParameterRangeError> {
-        if values.iter().all(|value| value.is_finite()) && values[0] != values[1] {
-            Ok(Self(values))
-        } else {
-            Err(ParameterRangeError)
-        }
+        let [first, second] = values.map(FiniteReal::new);
+        let [Some(first), Some(second)] = [first, second] else {
+            return Err(ParameterRangeError);
+        };
+        Self::from_finite_endpoints([first, second])
     }
 
     /// Return the directed endpoints.
@@ -6927,81 +6826,115 @@ impl<'de> Deserialize<'de> for DirectedParameterRange {
     }
 }
 
+/// Refuse a zero-width interval under a support side with an explicit pcurve
+/// mapping.
+fn require_mapped_interval(
+    sides: &[IntcurveSupportSide; 2],
+    parameter_range: crate::topology::ParameterInterval,
+) -> Result<(), &'static str> {
+    let [start, end] = parameter_range.endpoints();
+    if start == end
+        && sides.iter().any(|side| {
+            side.pcurve
+                .as_ref()
+                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+        })
+    {
+        return Err(
+            "support context parameter_range must be nonzero for an explicit pcurve mapping",
+        );
+    }
+    Ok(())
+}
+
 /// One paired surface and parameter-space curve in an intcurve construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct IntcurveSupportSide {
     /// Supporting surface, absent for the native `null_surface` sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface"
+    )]
     pub surface: Option<SurfaceId>,
     /// UV curve on `surface`, absent for the native `nullbs` sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_intcurve_support_side_pcurve"
+    )]
     pub pcurve: Option<SupportPcurve>,
 }
 
 impl IntcurveSupportSide {
-    /// Return the mapped pcurve endpoints as an array.
+    /// Return the mapped pcurve interval, when this side's pcurve states one.
     #[must_use]
-    pub fn pcurve_parameter_range(&self) -> Option<[f64; 2]> {
+    pub fn pcurve_parameter_range(&self) -> Option<DirectedParameterRange> {
         self.pcurve
             .as_ref()
-            .and_then(SupportPcurve::parameter_range_array)
+            .and_then(|pcurve| pcurve.parameter_range)
     }
 
     /// Map one solved-curve parameter into this side's pcurve parameter.
     ///
-    /// Returns `None` when this side has no pcurve, an explicit map has an invalid
-    /// solved interval, or the mapped parameter cannot be represented as finite.
+    /// Returns `None` when this side has no pcurve, an explicit map has a
+    /// zero-width solved interval, or the mapped parameter cannot be
+    /// represented as finite. Each branch admits the parameter it returns
+    /// where it computes it.
     #[must_use]
     pub fn pcurve_parameter(
         &self,
-        solved_parameter_range: [f64; 2],
+        solved_parameter_range: crate::topology::ParameterInterval,
         parameter: f64,
-    ) -> Option<f64> {
-        if !parameter.is_finite() {
-            return None;
-        }
-        let pcurve_range = self
-            .pcurve
-            .as_ref()?
-            .parameter_range
-            .map(DirectedParameterRange::endpoints);
-        let Some(pcurve_range) = pcurve_range else {
-            return Some(parameter);
+    ) -> Option<FiniteReal> {
+        let admitted_parameter = FiniteReal::new(parameter)?;
+        let Some(pcurve_interval) = self.pcurve.as_ref()?.parameter_range else {
+            return Some(admitted_parameter);
         };
+        let [pcurve_start, pcurve_end] = pcurve_interval.finite_endpoints();
+        let pcurve_range = pcurve_interval.endpoints();
+        let solved_parameter_range = solved_parameter_range.endpoints();
         let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
-        if solved_span == 0.0
-            || solved_parameter_range
-                .iter()
-                .any(|value| !value.is_finite())
-        {
+        if solved_span == 0.0 {
             return None;
         }
         if parameter == solved_parameter_range[0] {
-            return Some(pcurve_range[0]);
+            return Some(pcurve_start);
         }
         if parameter == solved_parameter_range[1] {
-            return Some(pcurve_range[1]);
+            return Some(pcurve_end);
         }
         let offset = parameter - solved_parameter_range[0];
-        let fraction = if solved_span.is_finite() && offset.is_finite() {
-            offset / solved_span
-        } else {
-            // Halving before subtraction retains finite opposite-sign endpoints.
-            (parameter * 0.5 - solved_parameter_range[0] * 0.5)
-                / (solved_parameter_range[1] * 0.5 - solved_parameter_range[0] * 0.5)
-        };
-        if !fraction.is_finite() {
-            return None;
+        let mapped_span = pcurve_range[1] - pcurve_range[0];
+        if solved_span.is_finite() && offset.is_finite() && mapped_span.is_finite() {
+            let fraction = offset / solved_span;
+            let advance = fraction * mapped_span;
+            if fraction.is_normal() && advance.is_normal() {
+                if let Some(mapped) = fast_dot(
+                    [pcurve_range[0], advance],
+                    [1.0, 1.0],
+                    [pcurve_range[0], advance],
+                ) {
+                    return Some(mapped);
+                }
+            }
         }
-        let mapped = pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]);
-        if mapped.is_finite() {
-            Some(mapped)
-        } else {
-            let mapped = (1.0 - fraction) * pcurve_range[0] + fraction * pcurve_range[1];
-            mapped.is_finite().then_some(mapped)
-        }
+        // Evaluate the affine numerator before division. A tiny fraction can
+        // underflow even when the final mapped parameter is representable.
+        let mut numerator = ExactSignedSum::default();
+        numerator.add_product(pcurve_range[0], solved_parameter_range[1]);
+        numerator.add_product(-pcurve_range[0], parameter);
+        numerator.add_product(pcurve_range[1], parameter);
+        numerator.add_product(-pcurve_range[1], solved_parameter_range[0]);
+        let mut denominator = ExactSignedSum::default();
+        denominator.add_product(solved_parameter_range[1], 1.0);
+        denominator.add_product(-solved_parameter_range[0], 1.0);
+        let denominator = denominator.finish()?;
+        numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).ok()
+        })
     }
 }
 
@@ -7009,99 +6942,434 @@ impl IntcurveSupportSide {
 /// `law_int_cur` serializer form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LawCurveVersionFormWire")]
 pub struct LawCurveVersionForm {
     /// Serializer version stamp emitted after the subtype name.
-    pub stamp: i64,
+    stamp: i64,
     /// Native enum following the version stamp.
-    pub post_enum: i64,
+    post_enum: i64,
     /// Solved-curve interval endpoints; `None` records an unbounded bound.
-    pub parameter_range: [Option<f64>; 2],
+    parameter_range: [Option<FiniteReal>; 2],
 }
 
-/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a
-/// native intcurve subtype.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct LawCurveVersionFormWire {
+    /// Serializer version stamp emitted after the subtype name.
+    stamp: i64,
+    /// Native enum following the version stamp.
+    post_enum: i64,
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    parameter_range: [Option<f64>; 2],
+}
+
+impl TryFrom<LawCurveVersionFormWire> for LawCurveVersionForm {
+    type Error = &'static str;
+
+    fn try_from(wire: LawCurveVersionFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.stamp, wire.post_enum, wire.parameter_range)
+    }
+}
+
+impl LawCurveVersionForm {
+    /// Admit a stamped law-curve form whose interval endpoints are finite.
+    pub fn try_new(
+        stamp: i64,
+        post_enum: i64,
+        parameter_range: [Option<f64>; 2],
+    ) -> Result<Self, &'static str> {
+        let parameter_range = FiniteReal::optional(parameter_range)
+            .ok_or("law curve parameter_range bounds must be finite")?;
+        Ok(Self {
+            stamp,
+            post_enum,
+            parameter_range,
+        })
+    }
+
+    /// Serializer version stamp emitted after the subtype name.
+    #[must_use]
+    pub const fn stamp(&self) -> i64 {
+        self.stamp
+    }
+
+    /// Native enum following the version stamp.
+    #[must_use]
+    pub const fn post_enum(&self) -> i64 {
+        self.post_enum
+    }
+
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    #[must_use]
+    pub const fn parameter_range(&self) -> [Option<FiniteReal>; 2] {
+        self.parameter_range
+    }
+}
+
+/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "IntcurveSupportContextWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct IntcurveSupportContext {
-    /// Two ordered `(surface, pcurve)` support sides.
-    pub sides: [IntcurveSupportSide; 2],
-    /// Native parameter interval for the solved curve.
-    pub parameter_range: [f64; 2],
-    /// Three ordered native discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
+    sides: [IntcurveSupportSide; 2],
+    parameter_range: crate::topology::ParameterInterval,
+    discontinuities: [Vec<FiniteReal>; 3],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct IntcurveSupportContextWire {
+    /// Ordered support sides.
+    sides: [IntcurveSupportSide; 2],
+    /// Solved-curve interval.
+    parameter_range: [f64; 2],
+    /// Ordered discontinuity arrays.
+    discontinuities: [Vec<f64>; 3],
+}
+
+impl TryFrom<IntcurveSupportContextWire> for IntcurveSupportContext {
+    type Error = &'static str;
+
+    fn try_from(wire: IntcurveSupportContextWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.sides, wire.parameter_range, wire.discontinuities)
+    }
+}
+
+impl IntcurveSupportContext {
+    /// Construct a support context with a finite ordered interval and finite discontinuities.
+    pub fn try_new(
+        sides: [IntcurveSupportSide; 2],
+        parameter_range: [f64; 2],
+        discontinuities: [Vec<f64>; 3],
+    ) -> Result<Self, &'static str> {
+        let parameter_range = crate::topology::ParameterInterval::new(parameter_range)
+            .map_err(|_| "support context parameter_range must be finite and ordered")?;
+        require_mapped_interval(&sides, parameter_range)?;
+        let discontinuities = FiniteReal::lanes(discontinuities)
+            .ok_or("support context discontinuities must be finite")?;
+        Ok(Self {
+            sides,
+            parameter_range,
+            discontinuities,
+        })
+    }
+
+    /// Construct a support context from an admitted interval and admitted
+    /// discontinuities. Only the interval's width against an explicit pcurve
+    /// mapping is tested.
+    pub fn from_parts(
+        sides: [IntcurveSupportSide; 2],
+        parameter_range: crate::topology::ParameterInterval,
+        discontinuities: [Vec<FiniteReal>; 3],
+    ) -> Result<Self, &'static str> {
+        require_mapped_interval(&sides, parameter_range)?;
+        Ok(Self {
+            sides,
+            parameter_range,
+            discontinuities,
+        })
+    }
+
+    /// Build a support context over an increasing interval with no
+    /// discontinuities. The interval type states finite, ordered and nonzero
+    /// endpoints, which is the whole interval condition of [`Self::try_new`],
+    /// so nothing is checked.
+    #[must_use]
+    pub fn over_interval(
+        sides: [IntcurveSupportSide; 2],
+        parameter_range: crate::topology::IncreasingParameterInterval,
+    ) -> Self {
+        Self {
+            sides,
+            parameter_range: parameter_range.into(),
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+
+    /// Set a support surface without changing its pcurve mapping.
+    pub fn set_surface(&mut self, side: usize, surface: Option<SurfaceId>) {
+        self.sides[side].surface = surface;
+    }
+
+    /// Set a support pcurve with the solved-curve parameterization.
+    pub fn set_unmapped_pcurve(&mut self, side: usize, geometry: Option<PcurveGeometry>) {
+        self.sides[side].pcurve = geometry.map(SupportPcurve::from);
+    }
+
+    /// Copy a support pcurve under a decoder's allocation limits.
+    pub fn try_copy_pcurve_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: usize,
+        target: usize,
+    ) -> Result<(), CodecError> {
+        if source == target {
+            return Ok(());
+        }
+        let copied = self.sides[source]
+            .pcurve
+            .as_ref()
+            .map(|pcurve| {
+                Ok::<_, CodecError>(SupportPcurve::new(
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "intersection support pcurve copy")?,
+                    pcurve.parameter_range,
+                ))
+            })
+            .transpose()?;
+        self.sides[target].pcurve = copied;
+        Ok(())
+    }
+
+    /// Return the ordered support sides.
+    #[must_use]
+    pub const fn sides(&self) -> &[IntcurveSupportSide; 2] {
+        &self.sides
+    }
+
+    /// Return the solved-curve interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> crate::topology::ParameterInterval {
+        self.parameter_range
+    }
+
+    /// Return the ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 3] {
+        &self.discontinuities
+    }
+}
+
+/// Finite endpoint witnesses and distinct supports of a tolerant intersection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TolerantIntersectionConstructionWire")]
+pub struct TolerantIntersectionConstruction {
+    supports: [SurfaceId; 2],
+    endpoints: [FinitePoint3; 2],
+    tolerance: NonNegativeReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct TolerantIntersectionConstructionWire {
+    /// Distinct support surfaces of the intersection.
+    supports: [SurfaceId; 2],
+    /// Model-space endpoint witnesses.
+    endpoints: [Point3; 2],
+    /// Finite non-negative intersection tolerance.
+    tolerance: f64,
+}
+
+impl TryFrom<TolerantIntersectionConstructionWire> for TolerantIntersectionConstruction {
+    type Error = &'static str;
+    fn try_from(wire: TolerantIntersectionConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.supports, wire.endpoints, wire.tolerance)
+    }
+}
+
+impl TolerantIntersectionConstruction {
+    /// Admit distinct supports, finite endpoints, and a finite non-negative tolerance.
+    pub fn try_new(
+        supports: [SurfaceId; 2],
+        endpoints: [Point3; 2],
+        tolerance: f64,
+    ) -> Result<Self, &'static str> {
+        if supports[0] == supports[1] {
+            return Err("tolerant intersection supports must be distinct");
+        }
+        let [start, end] = endpoints.map(FinitePoint3::new);
+        let (Some(start), Some(end)) = (start, end) else {
+            return Err("tolerant intersection endpoints must be finite");
+        };
+        let endpoints = [start, end];
+        let tolerance = NonNegativeReal::new(tolerance)
+            .ok_or("tolerant intersection tolerance must be finite and non-negative")?;
+        Ok(Self {
+            supports,
+            endpoints,
+            tolerance,
+        })
+    }
+
+    /// Admit distinct supports with admitted endpoints and tolerance. The
+    /// endpoint and tolerance types state their conditions, so only the
+    /// distinctness of the supports is checked.
+    pub fn from_parts(
+        supports: [SurfaceId; 2],
+        endpoints: [FinitePoint3; 2],
+        tolerance: NonNegativeReal,
+    ) -> Result<Self, &'static str> {
+        if supports[0] == supports[1] {
+            return Err("tolerant intersection supports must be distinct");
+        }
+        Ok(Self {
+            supports,
+            endpoints,
+            tolerance,
+        })
+    }
+
+    /// Return the supports.
+    #[must_use]
+    pub const fn supports(&self) -> &[SurfaceId; 2] {
+        &self.supports
+    }
+
+    /// Return the endpoints.
+    #[must_use]
+    pub const fn endpoints(&self) -> &[FinitePoint3; 2] {
+        &self.endpoints
+    }
+
+    /// Return the admitted tolerance.
+    #[must_use]
+    pub const fn tolerance(&self) -> NonNegativeReal {
+        self.tolerance
+    }
 }
 
 /// Complete neutral parameterization of one topology-bounded intersection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TolerantIntersectionParameterizationWire")]
 pub struct TolerantIntersectionParameterization {
     /// Coincident support charts in support order.
     pub pcurves: [PcurveGeometry; 2],
+    parameter_range: crate::topology::IncreasingParameterInterval,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct TolerantIntersectionParameterizationWire {
+    /// Coincident support charts in support order.
+    pcurves: [PcurveGeometry; 2],
     /// Common finite solved-curve interval.
-    pub parameter_range: [f64; 2],
+    parameter_range: [f64; 2],
+}
+
+impl TryFrom<TolerantIntersectionParameterizationWire> for TolerantIntersectionParameterization {
+    type Error = &'static str;
+    fn try_from(wire: TolerantIntersectionParameterizationWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.pcurves, wire.parameter_range)
+    }
+}
+
+impl TolerantIntersectionParameterization {
+    /// Admit a finite strictly increasing solved-curve interval.
+    pub fn try_new(
+        pcurves: [PcurveGeometry; 2],
+        parameter_range: [f64; 2],
+    ) -> Result<Self, &'static str> {
+        let parameter_range = crate::topology::IncreasingParameterInterval::new(parameter_range)
+            .ok_or(
+                "tolerant intersection parameter_range must be finite and strictly increasing",
+            )?;
+        Ok(Self {
+            pcurves,
+            parameter_range,
+        })
+    }
+
+    /// Common finite solved-curve interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> crate::topology::IncreasingParameterInterval {
+        self.parameter_range
+    }
 }
 
 /// Cache-first shared-context fields absent from the context-first layout.
+// A source states raw scalars; a curve construction holds the admitted form,
+// whose scalars are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CacheFirstCurveForm {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct CacheFirstCurveForm<R = f64> {
     /// Positive serializer-revision integer selecting the cache-first layout.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Approximation-cache form selected by the shared context enum.
-    #[serde(flatten, with = "cache_first_curve_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CacheFirstCurveCacheSchemaWire"))]
-    pub cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    pub cache: RevisionCacheForm<CacheFirstCurveParameterization<R>>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
-    pub support_bounds: [[Option<f64>; 4]; 2],
+    pub support_bounds: [[Option<R>; 4]; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
     #[serde(default)]
-    pub solved_range: [Option<f64>; 2],
+    pub solved_range: [Option<R>; 2],
     /// Native integer ASM extension following the discontinuity arrays.
     pub extension: i64,
 }
 
 /// One support slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum SpringSupport {
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SpringSupport<R = f64> {
     /// Resolved support surface.
     Surface(SurfaceId),
     /// Native U/V ranges stored in place of `null_surface`.
-    Ranges([[f64; 2]; 2]),
+    Ranges([[R; 2]; 2]),
 }
 
 /// First pcurve slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum SpringPcurve {
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SpringPcurve<R = f64> {
     /// Resolved parameter-space curve.
     Pcurve(PcurveGeometry),
     /// Native interval stored in place of `nullbs`.
-    Range([f64; 2]),
+    Range([R; 2]),
 }
 
 /// Mutually exclusive spring construction layouts.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
-pub enum SpringLayout {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "R: JsonSchema + Serialize, I: JsonSchema + Serialize")
+)]
+pub enum SpringLayout<R = f64, I = [f64; 2]> {
     /// Support-first layout with inline null-carrier replacement ranges.
     ContextFirst {
         /// Two ordered support slots.
-        supports: [SpringSupport; 2],
+        supports: [SpringSupport<R>; 2],
         /// First pcurve or its null replacement range.
-        first_pcurve: SpringPcurve,
+        first_pcurve: Box<SpringPcurve<R>>,
         /// Nullable second pcurve slot.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         second_pcurve: Option<PcurveGeometry>,
         /// Native solved-curve parameter interval.
-        parameter_range: [f64; 2],
+        parameter_range: I,
         /// Three ordered discontinuity arrays.
-        discontinuities: [Vec<f64>; 3],
+        discontinuities: [Vec<R>; 3],
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
     },
     /// Cache-first layout, which carries no inline replacement ranges or
     /// context-first discontinuity flag.
@@ -7109,181 +7377,28 @@ pub enum SpringLayout {
         /// Shared support context following the solved cache.
         context: IntcurveSupportContext,
         /// Cache-first serializer fields.
-        form: CacheFirstCurveForm,
+        form: CacheFirstCurveForm<R>,
     },
 }
 
-impl SpringLayout {
-    /// Return the support context, deriving it for the context-first layout.
-    #[must_use]
-    pub fn support_context(&self) -> std::borrow::Cow<'_, IntcurveSupportContext> {
-        match self {
-            Self::CacheFirst { context, .. } => std::borrow::Cow::Borrowed(context),
-            Self::ContextFirst {
-                supports,
-                first_pcurve,
-                second_pcurve,
-                parameter_range,
-                discontinuities,
-                ..
-            } => std::borrow::Cow::Owned(IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: match &supports[0] {
-                            SpringSupport::Surface(surface) => Some(surface.clone()),
-                            SpringSupport::Ranges(_) => None,
-                        },
-                        pcurve: match first_pcurve {
-                            SpringPcurve::Pcurve(pcurve) => {
-                                Some(SupportPcurve::new(pcurve.clone(), None))
-                            }
-                            SpringPcurve::Range(_) => None,
-                        },
-                    },
-                    IntcurveSupportSide {
-                        surface: match &supports[1] {
-                            SpringSupport::Surface(surface) => Some(surface.clone()),
-                            SpringSupport::Ranges(_) => None,
-                        },
-                        pcurve: second_pcurve
-                            .clone()
-                            .map(|pcurve| SupportPcurve::new(pcurve, None)),
-                    },
-                ],
-                parameter_range: *parameter_range,
-                discontinuities: discontinuities.clone(),
-            }),
-        }
-    }
-
-    fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
+impl<R, I> SpringLayout<R, I> {
+    fn cache_first(&self) -> Option<&CacheFirstCurveForm<R>> {
         match self {
             Self::CacheFirst { form, .. } => Some(form),
             Self::ContextFirst { .. } => None,
         }
     }
 
-    fn cache_first_mut(&mut self) -> Option<&mut CacheFirstCurveForm> {
+    /// Write the fit tolerance of the cache-first layout's cache form.
+    ///
+    /// The narrow write route: the borrow of the form stays inside this
+    /// method, so the layout lends no interior of the admitted payload that
+    /// holds it. The context-first layout owns no cache form.
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::CacheFirst { form, .. } => Some(form),
-            Self::ContextFirst { .. } => None,
+            Self::CacheFirst { form, .. } => form.cache.write_fit_tolerance(write),
+            Self::ContextFirst { .. } => RevisionCacheWrite::NoForm,
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SpringLayoutWire {
-    context: IntcurveSupportContext,
-    surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_pcurve_parameter_range: Option<[f64; 2]>,
-    discontinuity_flag: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_first: Option<CacheFirstCurveForm>,
-}
-
-mod spring_layout_wire {
-    use super::{SpringLayout, SpringLayoutWire, SpringPcurve, SpringSupport};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &SpringLayout, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            SpringLayout::ContextFirst {
-                supports,
-                first_pcurve,
-                discontinuity_flag,
-                ..
-            } => SpringLayoutWire {
-                context: value.support_context().into_owned(),
-                surface_parameter_ranges: std::array::from_fn(|side| match &supports[side] {
-                    SpringSupport::Surface(_) => None,
-                    SpringSupport::Ranges(ranges) => Some(*ranges),
-                }),
-                first_pcurve_parameter_range: match first_pcurve {
-                    SpringPcurve::Pcurve(_) => None,
-                    SpringPcurve::Range(range) => Some(*range),
-                },
-                discontinuity_flag: *discontinuity_flag,
-                cache_first: None,
-            },
-            SpringLayout::CacheFirst { context, form } => SpringLayoutWire {
-                context: context.clone(),
-                surface_parameter_ranges: [None, None],
-                first_pcurve_parameter_range: None,
-                discontinuity_flag: false,
-                cache_first: Some(form.clone()),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SpringLayout, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = SpringLayoutWire::deserialize(deserializer)?;
-        if let Some(form) = wire.cache_first {
-            if wire.surface_parameter_ranges.iter().any(Option::is_some)
-                || wire.first_pcurve_parameter_range.is_some()
-                || wire.discontinuity_flag
-            {
-                return Err(serde::de::Error::custom(
-                    "cache_first spring cannot carry inline ranges or discontinuity_flag",
-                ));
-            }
-            return Ok(SpringLayout::CacheFirst {
-                context: wire.context,
-                form,
-            });
-        }
-        let [first_side, second_side] = wire.context.sides;
-        if first_side
-            .pcurve
-            .as_ref()
-            .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-            || second_side
-                .pcurve
-                .as_ref()
-                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-        {
-            return Err(serde::de::Error::custom(
-                "spring context sides cannot carry pcurve parameter ranges",
-            ));
-        }
-        let [first_ranges, second_ranges] = wire.surface_parameter_ranges;
-        let support = |surface, ranges, side| {
-            match (surface, ranges) {
-            (Some(surface), None) => Ok(SpringSupport::Surface(surface)),
-            (None, Some(ranges)) => Ok(SpringSupport::Ranges(ranges)),
-            _ => Err(serde::de::Error::custom(format_args!(
-                "spring support side {side} requires exactly one of surface or surface_parameter_ranges"
-            ))),
-        }
-        };
-        let first_pcurve = match (first_side.pcurve, wire.first_pcurve_parameter_range) {
-            (Some(pcurve), None) => SpringPcurve::Pcurve(pcurve.geometry),
-            (None, Some(range)) => SpringPcurve::Range(range),
-            _ => {
-                return Err(serde::de::Error::custom(
-                    "spring first pcurve requires exactly one of pcurve or first_pcurve_parameter_range",
-                ));
-            }
-        };
-        Ok(SpringLayout::ContextFirst {
-            supports: [
-                support(first_side.surface, first_ranges, 0)?,
-                support(second_side.surface, second_ranges, 1)?,
-            ],
-            first_pcurve,
-            second_pcurve: second_side.pcurve.map(|pcurve| pcurve.geometry),
-            parameter_range: wire.context.parameter_range,
-            discontinuities: wire.context.discontinuities,
-            discontinuity_flag: wire.discontinuity_flag,
-        })
     }
 }
 
@@ -7293,54 +7408,167 @@ mod spring_layout_wire {
 /// the order the fields appear below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CacheFirstCurveParameterization {
+#[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
+pub struct CacheFirstCurveParameterization<R = f64> {
     /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
     /// a false bound-presence flag.
     #[serde(default)]
-    pub interval: [Option<f64>; 2],
+    pub interval: [Option<R>; 2],
     /// Closed-form enum following the interval.
     pub closed_form: i64,
 }
 
 /// Family-independent tail fields carried by a cache-first surface curve.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SurfaceCurveTailWire")]
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
-    pub extension: i64,
+    extension: i64,
     /// Positive serializer-revision integer opening the cache-first layout.
-    pub revision: i64,
+    revision: PositiveI64,
     /// Approximation-cache form selected by the shared context enum.
-    pub cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "RevisionCacheForm<CacheFirstCurveParameterization>")
+    )]
+    cache: RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>>,
     /// Optional U/V bound fields following each ordered support surface.
-    pub support_bounds: [[Option<f64>; 4]; 2],
+    support_bounds: [RecordBounds; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
-    pub solved_range: [Option<f64>; 2],
+    #[serde(default)]
+    solved_range: [Option<FiniteReal>; 2],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SurfaceCurveTailWire {
+    /// Native integer following the discontinuity arrays.
+    extension: i64,
+    /// Positive serializer-revision integer opening the cache-first layout.
+    revision: PositiveI64,
+    /// Approximation-cache form selected by the shared context enum.
+    cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    /// Optional U/V bound fields following each ordered support surface.
+    #[serde(default)]
+    support_bounds: [[Option<f64>; 4]; 2],
+    /// Optional solved-curve interval endpoints; absent endpoints inherit the
+    /// solved NURBS domain.
+    #[serde(default)]
+    solved_range: [Option<f64>; 2],
+}
+
+impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
+    type Error = &'static str;
+
+    fn try_from(wire: SurfaceCurveTailWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.extension,
+            wire.revision,
+            wire.cache,
+            wire.support_bounds,
+            wire.solved_range,
+        )
+    }
+}
+
+impl SurfaceCurveTail {
+    /// Admit a cache-first surface-curve tail around an admitted revision.
+    /// The support bounds, the solved range and the cache interval are raw
+    /// values; a non-finite one is refused.
+    pub fn try_new(
+        extension: i64,
+        revision: PositiveI64,
+        cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+        support_bounds: [[Option<f64>; 4]; 2],
+        solved_range: [Option<f64>; 2],
+    ) -> Result<Self, &'static str> {
+        const INVALID: &str = "surface curve tail bounds must be finite";
+        let [first, second] = support_bounds.map(|bounds| RecordBounds::try_new(bounds).ok());
+        let (Some(first), Some(second), Some(solved_range), Some(cache)) = (
+            first,
+            second,
+            FiniteReal::optional(solved_range),
+            cache.admit(),
+        ) else {
+            return Err(INVALID);
+        };
+        Ok(Self {
+            extension,
+            revision,
+            cache,
+            support_bounds: [first, second],
+            solved_range,
+        })
+    }
+
+    /// Native integer following the discontinuity arrays.
+    #[must_use]
+    pub const fn extension(&self) -> i64 {
+        self.extension
+    }
+
+    /// Serializer-revision integer opening the cache-first layout.
+    #[must_use]
+    pub const fn revision(&self) -> PositiveI64 {
+        self.revision
+    }
+
+    /// Approximation-cache form selected by the shared context enum.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>> {
+        &self.cache
+    }
+
+    /// Optional U/V bound fields following each ordered support surface.
+    #[must_use]
+    pub const fn support_bounds(&self) -> &[RecordBounds; 2] {
+        &self.support_bounds
+    }
+
+    /// Optional solved-curve interval endpoints.
+    #[must_use]
+    pub const fn solved_range(&self) -> &[Option<FiniteReal>; 2] {
+        &self.solved_range
+    }
 }
 
 /// Cache-first surface-curve tail paired with its family-specific flags.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SurfaceCurveCacheFirst<F> {
     /// Family-independent cache-first fields.
-    pub tail: SurfaceCurveTail,
+    pub form: SurfaceCurveTail,
     /// Flags admitted by the selected surface-curve family.
     pub flags: F,
 }
 
 /// Two terminating flags carried only by a parametric surface curve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ParametricSurfaceCurveFlags {
     /// Support-slot selector.
     pub flag: bool,
     /// Optional later-revision terminating flag.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_second_flag"
+    )]
     pub second_flag: Option<bool>,
 }
 
 /// Mutually exclusive tail forms of a native projected intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProjectionTail {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectionTail<R = f64> {
     /// The ASM flag is followed immediately by the subtype close.
     EarlyClose {
         /// Native ASM projection flag.
@@ -7351,7 +7579,7 @@ pub enum ProjectionTail {
         /// Native ASM projection flag.
         flag: bool,
         /// Native parameter interval on the projected source curve.
-        parameter_range: [f64; 2],
+        parameter_range: [R; 2],
         /// Projection support role.
         role: ProjectionRole,
     },
@@ -7404,13 +7632,20 @@ impl<'de> Deserialize<'de> for ProjectionRole {
 
 /// Native surface-curve family with its support context and optional
 /// cache-first form.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "family", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SurfaceCurveFamily {
     /// Blend edge curve whose construction details live on its blend support.
     Blend {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tail"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
     /// Curve constrained to a support surface.
@@ -7418,6 +7653,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tail"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
     /// Parametric curve on a support surface.
@@ -7425,6 +7665,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields with the parametric-only second flag.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_curve_family_tail"
+        )]
         tail: Option<SurfaceCurveCacheFirst<ParametricSurfaceCurveFlags>>,
     },
     /// Skin curve on a support surface.
@@ -7432,6 +7677,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_tail"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
 }
@@ -7440,6 +7690,7 @@ pub enum SurfaceCurveFamily {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceCurveFamilyKind {
     /// Blend edge curve whose construction details live on its blend support.
     Blend,
@@ -7449,59 +7700,6 @@ pub enum SurfaceCurveFamilyKind {
     Parametric,
     /// Skin curve on a support surface.
     Skin,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SurfaceCurveTailWire {
-    extension: i64,
-    flag: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    second_flag: Option<bool>,
-    #[serde(default)]
-    revision: i64,
-    #[serde(flatten, with = "cache_first_curve_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CacheFirstCurveCacheSchemaWire"))]
-    cache: RevisionCacheForm<CacheFirstCurveParameterization>,
-    #[serde(default)]
-    support_bounds: [[Option<f64>; 4]; 2],
-    #[serde(default)]
-    solved_range: [Option<f64>; 2],
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SurfaceCurveFamilyWire {
-    family: SurfaceCurveFamilyKind,
-    context: IntcurveSupportContext,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    tail: Option<SurfaceCurveTailWire>,
-}
-
-impl SurfaceCurveTail {
-    fn into_wire(self, flag: bool, second_flag: Option<bool>) -> SurfaceCurveTailWire {
-        SurfaceCurveTailWire {
-            extension: self.extension,
-            flag,
-            second_flag,
-            revision: self.revision,
-            cache: self.cache,
-            support_bounds: self.support_bounds,
-            solved_range: self.solved_range,
-        }
-    }
-}
-
-impl SurfaceCurveTailWire {
-    fn into_tail(self) -> SurfaceCurveTail {
-        SurfaceCurveTail {
-            extension: self.extension,
-            revision: self.revision,
-            cache: self.cache,
-            support_bounds: self.support_bounds,
-            solved_range: self.solved_range,
-        }
-    }
 }
 
 impl SurfaceCurveFamily {
@@ -7527,35 +7725,29 @@ impl SurfaceCurveFamily {
         }
     }
 
-    /// Mutably borrow the shared support context.
-    #[must_use]
-    pub fn context_mut(&mut self) -> &mut IntcurveSupportContext {
-        match self {
-            Self::Blend { context, .. }
-            | Self::SurfaceConstrained { context, .. }
-            | Self::Parametric { context, .. }
-            | Self::Skin { context, .. } => context,
-        }
-    }
-
-    fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
+    fn revision_cache(
+        &self,
+    ) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>>> {
         match self {
             Self::Blend { tail, .. }
             | Self::SurfaceConstrained { tail, .. }
-            | Self::Skin { tail, .. } => tail.as_ref().map(|form| &form.tail.cache),
-            Self::Parametric { tail, .. } => tail.as_ref().map(|form| &form.tail.cache),
+            | Self::Skin { tail, .. } => tail.as_ref().map(|first| &first.form.cache),
+            Self::Parametric { tail, .. } => tail.as_ref().map(|first| &first.form.cache),
         }
     }
 
-    fn revision_cache_mut(
-        &mut self,
-    ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
-        match self {
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so the family lends no admitted interior for writing.
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
+        let form = match self {
             Self::Blend { tail, .. }
             | Self::SurfaceConstrained { tail, .. }
-            | Self::Skin { tail, .. } => tail.as_mut().map(|form| &mut form.tail.cache),
-            Self::Parametric { tail, .. } => tail.as_mut().map(|form| &mut form.tail.cache),
-        }
+            | Self::Skin { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
+            Self::Parametric { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
+        };
+        write_revision_form_tolerance(form, write)
     }
 
     /// Return whether two families have the same discriminant and cache-first
@@ -7577,105 +7769,20 @@ impl SurfaceCurveFamily {
     }
 }
 
-impl Serialize for SurfaceCurveFamily {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let wire = match self.clone() {
-            Self::Blend { context, tail } => SurfaceCurveFamilyWire {
-                family: SurfaceCurveFamilyKind::Blend,
-                context,
-                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
-            },
-            Self::SurfaceConstrained { context, tail } => SurfaceCurveFamilyWire {
-                family: SurfaceCurveFamilyKind::SurfaceConstrained,
-                context,
-                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
-            },
-            Self::Parametric { context, tail } => SurfaceCurveFamilyWire {
-                family: SurfaceCurveFamilyKind::Parametric,
-                context,
-                tail: tail.map(|value| {
-                    value
-                        .tail
-                        .into_wire(value.flags.flag, value.flags.second_flag)
-                }),
-            },
-            Self::Skin { context, tail } => SurfaceCurveFamilyWire {
-                family: SurfaceCurveFamilyKind::Skin,
-                context,
-                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
-            },
-        };
-        wire.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SurfaceCurveFamily {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = SurfaceCurveFamilyWire::deserialize(deserializer)?;
-        let single_tail = |tail: Option<SurfaceCurveTailWire>| {
-            tail.map(|wire| {
-                if wire.second_flag.is_some() {
-                    return Err(serde::de::Error::custom(
-                        "second_flag is valid only for a parametric surface curve",
-                    ));
-                }
-                let flag = wire.flag;
-                Ok(SurfaceCurveCacheFirst {
-                    tail: wire.into_tail(),
-                    flags: flag,
-                })
-            })
-            .transpose()
-        };
-        match wire.family {
-            SurfaceCurveFamilyKind::Blend => Ok(Self::Blend {
-                context: wire.context,
-                tail: single_tail(wire.tail)?,
-            }),
-            SurfaceCurveFamilyKind::SurfaceConstrained => Ok(Self::SurfaceConstrained {
-                context: wire.context,
-                tail: single_tail(wire.tail)?,
-            }),
-            SurfaceCurveFamilyKind::Parametric => Ok(Self::Parametric {
-                context: wire.context,
-                tail: wire.tail.map(|tail| {
-                    let flags = ParametricSurfaceCurveFlags {
-                        flag: tail.flag,
-                        second_flag: tail.second_flag,
-                    };
-                    SurfaceCurveCacheFirst {
-                        tail: tail.into_tail(),
-                        flags,
-                    }
-                }),
-            }),
-            SurfaceCurveFamilyKind::Skin => Ok(Self::Skin {
-                context: wire.context,
-                tail: single_tail(wire.tail)?,
-            }),
-        }
-    }
-}
-
 /// Native silhouette construction family and its exclusive tail fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SilhouetteKind {
     /// Standard implicit silhouette.
-    Standard,
+    Standard {},
     /// Parametric silhouette.
-    Parametric,
+    Parametric {},
     /// Draft/taper silhouette with an explicit factor.
     Taper {
         /// Native unscaled draft factor.
-        draft_factor: f64,
+        draft_factor: crate::scalar::FiniteReal,
     },
 }
 
@@ -7683,36 +7790,37 @@ pub enum SilhouetteKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DeformableCurveData {
+#[serde(deny_unknown_fields)]
+pub enum DeformableCurveData<R = f64, V = Vector3, P = Point3> {
     /// Mode 8 vector field followed by ordered scalar pairs.
     VectorField {
         /// Four ordered native vectors.
-        vectors: [Vector3; 4],
+        vectors: [V; 4],
         /// Ordered pairs from the mode-8 scalar table.
-        parameter_pairs: Vec<[f64; 2]>,
+        parameter_pairs: Vec<[R; 2]>,
     },
     /// Mode 3 fixed deformation payload.
     Mode3 {
         /// Four vectors at the start of the payload.
-        leading_vectors: [Vector3; 4],
+        leading_vectors: [V; 4],
         /// Scalar following the leading vectors.
-        leading_parameter: f64,
+        leading_parameter: R,
         /// Three flags following the leading scalar.
         leading_flags: [bool; 3],
         /// Position following the leading flags.
-        trailing_point: Point3,
+        trailing_point: P,
         /// Two vectors following the position.
-        trailing_vectors: [Vector3; 2],
+        trailing_vectors: [V; 2],
         /// Scalar following the trailing frame.
-        frame_parameter: f64,
+        frame_parameter: R,
         /// Two flags following the frame scalar.
         frame_flags: [bool; 2],
         /// Three ordered scalars following the frame flags.
-        parameters: [f64; 3],
+        parameters: [R; 3],
         /// Five flags following the ordered scalars.
         trailing_flags: [bool; 5],
         /// Final scalar before the trailing integer.
-        trailing_parameter: f64,
+        trailing_parameter: R,
         /// Integer closing the mode-3 payload.
         trailing_value: i64,
     },
@@ -7722,6 +7830,7 @@ pub enum DeformableCurveData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DeformableCurveSource {
     /// Source geometry resolved to a neutral curve carrier.
     Curve {
@@ -7738,151 +7847,106 @@ pub enum DeformableCurveSource {
 }
 
 /// Orientation carrier of a planar curve offset.
-#[derive(Debug, Clone, PartialEq)]
-pub enum OffsetSide {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "side", rename_all = "snake_case", deny_unknown_fields)]
+pub enum OffsetSide<V = Vector3> {
     /// Unit plane normal defining the positive offset side.
-    PlaneNormal(Vector3),
+    PlaneNormal {
+        /// Unit plane normal.
+        normal: V,
+    },
     /// Explicit offset direction, optionally constrained to a support surface.
     Direction {
         /// Nonzero offset direction.
-        direction: Vector3,
+        direction: V,
         /// Support surface within which the offset is measured.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset_side_support"
+        )]
         support: Option<SurfaceId>,
     },
 }
 
+/// Parameter interval and optional variable-distance law of a curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct OffsetSideWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction: Option<Vector3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    support: Option<SurfaceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    normal: Option<Vector3>,
-}
-
-impl Serialize for OffsetSide {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let wire = match self {
-            Self::PlaneNormal(normal) => OffsetSideWire {
-                direction: None,
-                support: None,
-                normal: Some(*normal),
-            },
-            Self::Direction { direction, support } => OffsetSideWire {
-                direction: Some(*direction),
-                support: support.clone(),
-                normal: None,
-            },
-        };
-        wire.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for OffsetSide {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = OffsetSideWire::deserialize(deserializer)?;
-        match (wire.direction, wire.support, wire.normal) {
-            (Some(direction), support, None) => Ok(Self::Direction { direction, support }),
-            (None, None, Some(normal)) => Ok(Self::PlaneNormal(normal)),
-            _ => Err(serde::de::Error::custom(
-                "offset direction and normal are exclusive, and support requires direction",
-            )),
-        }
-    }
-}
-
-/// Parameter interval and optional variable-distance law of a curve offset.
-#[derive(Debug, Clone, PartialEq)]
-pub enum CurveOffsetRange {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CurveOffsetRange<R = f64> {
     /// Constant-distance offset over a retained source interval.
     Uniform {
         /// Parameter interval on the source curve.
-        parameter_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        parameter_range: crate::topology::IncreasingParameterInterval,
     },
     /// Variable-distance offset over the interval used by its law.
     Variable {
         /// Parameter interval on the source curve.
-        parameter_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        parameter_range: crate::topology::IncreasingParameterInterval,
         /// Variable signed-distance law.
-        distance_law: CurveOffsetDistanceLaw,
+        distance_law: CurveOffsetDistanceLaw<R>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CurveOffsetRangeWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameter_range: Option<[f64; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance_law: Option<CurveOffsetDistanceLaw>,
+/// The refusal of a curve offset whose distance, side, range or law is
+/// invalid.
+pub(crate) const INVALID_CURVE_OFFSET: &str =
+    "curve offset distance, side, range, or law is invalid";
+
+/// Admit a curve-offset interval with the curve-offset refusal.
+fn admit_curve_offset_interval(
+    range: [f64; 2],
+) -> Result<crate::topology::IncreasingParameterInterval, ProceduralGeometryError> {
+    crate::topology::IncreasingParameterInterval::new(range)
+        .ok_or(ProceduralGeometryError::Payload(INVALID_CURVE_OFFSET))
 }
 
-mod curve_offset_range_wire {
-    use super::{CurveOffsetRange, CurveOffsetRangeWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// Read a curve-offset interval with the curve-offset refusal.
+fn deserialize_curve_offset_interval<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::topology::IncreasingParameterInterval, D::Error> {
+    crate::topology::IncreasingParameterInterval::new(<[f64; 2]>::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom(INVALID_CURVE_OFFSET))
+}
 
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(range: &Option<CurveOffsetRange>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match range {
-            None => CurveOffsetRangeWire {
-                parameter_range: None,
-                distance_law: None,
-            },
-            Some(CurveOffsetRange::Uniform { parameter_range }) => CurveOffsetRangeWire {
-                parameter_range: Some(*parameter_range),
-                distance_law: None,
-            },
-            Some(CurveOffsetRange::Variable {
-                parameter_range,
-                distance_law,
-            }) => CurveOffsetRangeWire {
-                parameter_range: Some(*parameter_range),
-                distance_law: Some(distance_law.clone()),
-            },
-        };
-        wire.serialize(serializer)
+impl CurveOffsetRange {
+    /// Admit a constant-distance range over a strictly increasing source
+    /// interval. The refusal is the one
+    /// [`OffsetCurveConstruction::try_new`](crate::geometry::curve_payloads::OffsetCurveConstruction::try_new)
+    /// states for an invalid offset.
+    pub fn uniform(parameter_range: [f64; 2]) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Uniform {
+            parameter_range: admit_curve_offset_interval(parameter_range)?,
+        })
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CurveOffsetRange>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CurveOffsetRangeWire::deserialize(deserializer)?;
-        match (wire.parameter_range, wire.distance_law) {
-            (None, None) => Ok(None),
-            (Some(parameter_range), None) => {
-                Ok(Some(CurveOffsetRange::Uniform { parameter_range }))
-            }
-            (Some(parameter_range), Some(distance_law)) => Ok(Some(CurveOffsetRange::Variable {
-                parameter_range,
-                distance_law,
-            })),
-            (None, Some(_)) => Err(serde::de::Error::custom(
-                "offset distance_law requires parameter_range",
-            )),
-        }
+    /// Admit a variable-distance range over a strictly increasing source
+    /// interval, with the refusal of [`CurveOffsetRange::uniform`].
+    pub fn variable(
+        parameter_range: [f64; 2],
+        distance_law: CurveOffsetDistanceLaw,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Variable {
+            parameter_range: admit_curve_offset_interval(parameter_range)?,
+            distance_law,
+        })
     }
 }
 
 /// Neutral semantics for a procedural curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
     /// An exact native intcurve whose solved NURBS cache is authoritative.
-    Exact,
+    Exact {
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
+    },
     /// Curve defined by recursive native law formulas.
     Law {
         /// Shared support surfaces, UV curves, interval, and discontinuities.
@@ -7893,202 +7957,67 @@ pub enum ProceduralCurveDefinition {
         /// Native ASM extension integer.
         extension: i64,
         /// Primary recursive law formula.
-        primary: LawFormula,
+        #[cfg_attr(feature = "schema", schemars(with = "LawFormula"))]
+        primary: FiniteLawFormula,
         /// Counted additional recursive law formulas.
-        additional: Vec<LawFormula>,
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<LawFormula>"))]
+        additional: Vec<FiniteLawFormula>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Ordered compound of native child curves with construction parameters.
-    Compound {
-        /// Leading native parameter array.
-        parameters: Vec<f64>,
-        /// Ordered child curves paired with their native construction scalars.
-        #[serde(flatten, with = "compound_curve_components_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundCurveComponentsWire"))]
-        components: Vec<CompoundComponent<CurveId>>,
-    },
+    Compound(CompoundCurveConstruction),
     /// Circular or conical helix around an axis.
-    Helix {
-        /// Native angular parameter interval.
-        angle_range: [f64; 2],
-        /// Axis origin at the start of the helix.
-        center: Point3,
-        /// Major profile-radius vector.
-        major: Vector3,
-        /// Minor profile-radius vector; its orientation records handedness.
-        minor: Vector3,
-        /// Axial rise vector per full revolution.
-        pitch: Vector3,
-        /// Linear radial growth per revolution fraction; zero is cylindrical.
-        apex_factor: f64,
-        /// Unit helix axis direction.
-        axis: Vector3,
-    },
+    Helix(HelixCurveConstruction),
     /// Intersection of two support surfaces.
     Intersection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
         context: IntcurveSupportContext,
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Tolerance-bounded intersection relation selected by topology endpoints.
     TolerantIntersection {
-        /// Two distinct adjacent face surfaces.
-        supports: [SurfaceId; 2],
-        /// Ordered model-space endpoint witnesses.
-        endpoints: [Point3; 2],
-        /// Maximum model-space deviation admitted by the source edge.
-        tolerance: f64,
+        /// Distinct supports and finite endpoint bounds.
+        construction: TolerantIntersectionConstruction,
         /// Atomic neutral parameterization established by validated support charts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Intersection constrained by a third ordered support surface.
-    ThreeSurfaceIntersection {
-        /// Shared first two surfaces, UV curves, interval, and discontinuities.
-        context: IntcurveSupportContext,
-        /// Native selector preceding the third support pair.
-        selector: i64,
-        /// Third `(surface, pcurve)` support pair.
-        third: IntcurveSupportSide,
-    },
+    ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
     /// Surface-related curve whose native subtype has no tail beyond the shared prefix.
     SurfaceCurve {
         /// Native family, support context, and optional cache-first tail.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "SurfaceCurveFamilyWire"))]
         family: SurfaceCurveFamily,
     },
     /// Silhouette of a cast surface in a light direction.
-    Silhouette {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Standard, parametric, or taper silhouette semantics.
-        silhouette: SilhouetteKind,
-        /// Surface whose silhouette is constructed.
-        cast_surface: SurfaceId,
-        /// Native model-space light direction.
-        light_direction: Vector3,
-    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
     /// Curve offset relative to a surface parameterization.
-    SurfaceOffset {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Native U interval on the base surface.
-        base_u_range: [f64; 2],
-        /// Native V interval on the base surface.
-        base_v_range: [f64; 2],
-        /// Embedded base curve.
-        base: CurveId,
-        /// Native interval on `base`.
-        base_range: [f64; 2],
-        /// Optional parameter endpoints following the embedded base curve in
-        /// the cache-first layout.
-        #[serde(default)]
-        base_endpoints: [Option<f64>; 2],
-        /// Cache-first shared-context fields; absent from the context-first
-        /// layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
-        /// Signed model-space offset distance.
-        distance: f64,
-        /// Native unscaled parameter shift.
-        shift: f64,
-        /// Native unscaled parameter scale.
-        scale: f64,
-    },
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     /// Blend spring guide between two support sides.
-    Spring {
-        /// Structurally selected context-first or cache-first representation.
-        #[serde(flatten, with = "spring_layout_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
-        layout: SpringLayout,
-        /// Native `CURV_DIR` enum value.
-        direction: i64,
-    },
+    Spring(curve_payloads::SpringCurvePayload),
     /// Deformation of an embedded source curve.
-    Deformable {
-        /// Shared cache-first support context.
-        context: IntcurveSupportContext,
-        /// Cache-first serializer fields surrounding the solved curve cache.
-        cache_first: CacheFirstCurveForm,
-        /// Curve being deformed or its unresolved native reference.
-        source: DeformableCurveSource,
-        /// Optional native bounds following the source curve.
-        source_parameter_range: [Option<f64>; 2],
-        /// Discriminator-specific deformation payload.
-        data: DeformableCurveData,
-    },
+    Deformable(curve_payloads::DeformableCurveConstruction),
     /// Projection of a source curve onto a support surface.
-    Projection {
-        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Curve being projected.
-        source: CurveId,
-        /// Native post-source tail form.
-        tail: ProjectionTail,
-    },
+    Projection(curve_payloads::ProjectionCurvePayload),
     /// Offset from a source curve.
-    Offset {
-        /// Curve this curve is offset from.
-        source: CurveId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Exclusive plane-normal or explicit-direction carrier.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
-        side: OffsetSide,
-        /// Retained parameter range, with its distance law when variable.
-        #[serde(flatten, with = "curve_offset_range_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
-        range: Option<CurveOffsetRange>,
-    },
+    Offset(curve_payloads::OffsetCurveConstruction),
     /// Free-space 3D offset using a reference direction.
-    SpatialOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Reference direction controlling the offset frame.
-        reference_direction: Vector3,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
     /// Intersection of two surfaces after applying independent signed offsets.
-    TwoSidedOffset {
-        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Signed offset distance for each support side, in document length units.
-        offsets: [f64; 2],
-    },
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
     /// Free-space vector offset of a source curve over a parameter interval.
-    VectorOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Native parameter interval on the source curve.
-        parameter_range: [f64; 2],
-        /// Model-space offset vector.
-        offset: Vector3,
-        /// Integer codes attached to the fixed `source` and `offset` roles.
-        #[serde(flatten, with = "vector_offset_roles_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
-        roles: VectorOffsetRoles,
-    },
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
     /// A parameter sub-range of a parent curve.
-    Subset {
-        /// Parent curve being restricted.
-        source: CurveId,
-        /// Native parameter interval retained from the parent.
-        parameter_range: [f64; 2],
-        /// Whether the subset follows increasing parent parameters.
-        #[serde(default = "default_true")]
-        sense: bool,
-    },
+    Subset(curve_payloads::SubsetCurveConstruction),
     /// Affine replica of a curve carrier, retaining the parent curve's
     /// parameter range and parameterization.
     Replica {
@@ -8111,112 +8040,190 @@ pub enum ProceduralCurveDefinition {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
 }
 
-/// Codes attached to the fixed native vector-offset role labels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VectorOffsetRoles {
-    /// Code following the `source` label.
-    pub source_code: i64,
-    /// Code following the `offset` label.
-    pub offset_code: i64,
+#[derive(Deserialize)]
+#[serde(
+    remote = "ProceduralCurveDefinition",
+    tag = "kind",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum ProceduralCurveDefinitionWire {
+    Exact {
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    Law {
+        context: IntcurveSupportContext,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_version"
+        )]
+        version: Option<LawCurveVersionForm>,
+        extension: i64,
+        primary: FiniteLawFormula,
+        additional: Vec<FiniteLawFormula>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    Compound(CompoundCurveConstruction),
+    Helix(HelixCurveConstruction),
+    Intersection {
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    TolerantIntersection {
+        construction: TolerantIntersectionConstruction,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_parameterization"
+        )]
+        parameterization: Option<TolerantIntersectionParameterization>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
+    ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
+    SurfaceCurve {
+        family: SurfaceCurveFamily,
+    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
+    Spring(curve_payloads::SpringCurvePayload),
+    Deformable(curve_payloads::DeformableCurveConstruction),
+    Projection(curve_payloads::ProjectionCurvePayload),
+    Offset(curve_payloads::OffsetCurveConstruction),
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
+    Subset(curve_payloads::SubsetCurveConstruction),
+    Replica {
+        source: CurveId,
+        transform: Transform,
+    },
+    BlendSpine {
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_blend_surface"
+        )]
+        blend_surface: Option<SurfaceId>,
+    },
+    Unknown {
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_native_kind"
+        )]
+        native_kind: Option<String>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_record"
+        )]
+        record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cache"
+        )]
+        cache: Option<LegacyCache>,
+    },
 }
 
-#[derive(Serialize, Deserialize)]
+impl<'de> Deserialize<'de> for ProceduralCurveDefinition {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        ProceduralCurveDefinitionWire::deserialize(deserializer)
+    }
+}
+
+/// Codes attached to the two native vector-offset roles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct VectorOffsetRolesWire {
-    labels: [String; 2],
-    codes: [i64; 2],
+#[serde(deny_unknown_fields)]
+pub struct VectorOffsetRoles {
+    /// Code of the source role.
+    pub source: i64,
+    /// Code of the offset role.
+    pub offset: i64,
 }
 
-mod vector_offset_roles_wire {
-    use super::{VectorOffsetRoles, VectorOffsetRolesWire};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(roles: &VectorOffsetRoles, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        VectorOffsetRolesWire {
-            labels: ["source".into(), "offset".into()],
-            codes: [roles.source_code, roles.offset_code],
+impl ProceduralCurveDefinition {
+    fn revision_cache(
+        &self,
+    ) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>>> {
+        match self {
+            Self::SurfaceCurve { family } => family.revision_cache(),
+            Self::SurfaceOffset(payload) => payload.cache_first().as_ref().map(|form| &form.cache),
+            Self::Spring(definition_payload) => {
+                let layout = definition_payload.layout();
+                layout.cache_first().map(|form| &form.cache)
+            }
+            Self::Deformable(definition_payload) => {
+                let cache_first = definition_payload.cache_first();
+                Some(&cache_first.cache)
+            }
+            _ => None,
         }
-        .serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<VectorOffsetRoles, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = VectorOffsetRolesWire::deserialize(deserializer)?;
-        if wire.labels != ["source", "offset"] {
-            return Err(serde::de::Error::custom(
-                "vector-offset labels must be [\"source\", \"offset\"]",
-            ));
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so no construction lends its admitted interior for writing.
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
+        match self {
+            Self::SurfaceCurve { family } => family.write_revision_fit_tolerance(write),
+            Self::SurfaceOffset(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Spring(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(write),
+            _ => RevisionCacheWrite::NoForm,
         }
-        Ok(VectorOffsetRoles {
-            source_code: wire.codes[0],
-            offset_code: wire.codes[1],
-        })
     }
 }
 
 impl ProceduralCurveDefinition {
-    fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
-        match self {
-            Self::SurfaceCurve { family } => family.revision_cache(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&form.cache),
-            Self::Spring { layout, .. } => layout.cache_first().map(|form| &form.cache),
-            Self::Deformable { cache_first, .. } => Some(&cache_first.cache),
-            _ => None,
-        }
-    }
-
-    fn revision_cache_mut(
-        &mut self,
-    ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
-        match self {
-            Self::SurfaceCurve { family } => family.revision_cache_mut(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&mut form.cache),
-            Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
-            Self::Deformable { cache_first, .. } => Some(&mut cache_first.cache),
-            _ => None,
-        }
+    /// Whether the construction owns a revision-gated cache form, which then
+    /// states its solved-cache fit tolerance.
+    #[must_use]
+    pub fn owns_revision_cache(&self) -> bool {
+        self.revision_cache().is_some()
     }
 }
 
 impl ProceduralCurve {
-    /// Build a procedural curve without a legacy top-level cache.
-    #[must_use]
+    /// Build a procedural curve from its construction definition.
     pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
-        Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance: None,
-        }
-    }
-
-    /// Build a procedural curve and reconcile the legacy top-level cache
-    /// field with any revision-gated cache form in its definition.
-    pub fn try_new(
-        id: ProceduralCurveId,
-        definition: ProceduralCurveDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<Self, CacheFitToleranceError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
-        Ok(Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance,
-        })
+        Self { id, definition }
     }
 
     /// Borrow the neutral construction definition.
@@ -8225,356 +8232,138 @@ impl ProceduralCurve {
         &self.definition
     }
 
-    /// Replace the construction definition and discard a legacy cache value
-    /// when the new definition owns a revision cache.
+    /// Replace the construction definition. The cache contract travels with
+    /// the definition, so nothing outside it changes.
     pub fn replace_definition(&mut self, definition: ProceduralCurveDefinition) {
-        if definition.revision_cache().is_some() {
-            self.legacy_cache_fit_tolerance = None;
-        }
         self.definition = definition;
     }
 
-    /// Replace the definition and effective cache-fit tolerance atomically.
-    pub fn try_replace_definition(
-        &mut self,
-        definition: ProceduralCurveDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
-        let legacy_cache_fit_tolerance =
-            reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
-        self.definition = definition;
-        self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
-        Ok(())
-    }
-
-    /// Edit the definition and normalize legacy cache storage before the edit
-    /// can escape this call.
+    /// Edit the definition in place.
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralCurveDefinition) -> R,
     ) -> R {
-        let result = edit(&mut self.definition);
-        if self.definition.revision_cache().is_some() {
-            self.legacy_cache_fit_tolerance = None;
+        edit(&mut self.definition)
+    }
+
+    /// Mutable checked support context of an intersection construction.
+    pub fn intersection_context_mut(&mut self) -> Option<&mut IntcurveSupportContext> {
+        match &mut self.definition {
+            ProceduralCurveDefinition::Intersection { context, .. } => Some(context),
+            _ => None,
         }
-        result
     }
 
     /// Effective fit tolerance of the solved cache.
     #[must_use]
-    pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition.revision_cache().map_or(
-            self.legacy_cache_fit_tolerance,
-            RevisionCacheForm::fit_tolerance,
-        )
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        self.definition.cache_fit_tolerance()
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
-    /// cache to acquire one or a solved revision cache to lose it.
+    /// cache to acquire one or a solved cache to lose it.
     pub fn set_cache_fit_tolerance(
         &mut self,
         value: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
-        set_cache_fit_tolerance(
-            self.definition.revision_cache_mut(),
-            &mut self.legacy_cache_fit_tolerance,
-            value,
-        )
+    ) -> Result<(), CacheContractError> {
+        let value = value.map(FitTolerance::try_new).transpose()?;
+        self.definition.set_cache_fit_tolerance(value)
     }
 
-    /// Raise the fit tolerance of an existing solved cache. Parameterized
-    /// forms have no solved cache and remain unchanged.
-    pub fn raise_cache_fit_tolerance(&mut self, value: f64) {
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
-                *fit_tolerance = (*fit_tolerance).max(value);
-            }
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                self.legacy_cache_fit_tolerance =
-                    Some(self.legacy_cache_fit_tolerance.unwrap_or(0.0).max(value));
-            }
-        }
+    /// State that a solved carrier of this construction was fitted to `value`,
+    /// raising an existing contract rather than lowering it.
+    pub fn require_cache_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+    ) -> Result<(), CacheContractError> {
+        self.definition.require_cache_fit_tolerance(value)
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) {
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => *fit_tolerance *= scale,
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                if let Some(fit_tolerance) = &mut self.legacy_cache_fit_tolerance {
-                    *fit_tolerance *= scale;
-                }
-            }
-        }
+    ///
+    /// A positive scale keeps the tolerance non-negative, so the scaled
+    /// tolerance is refused only when it overflows, with the admission's own
+    /// error.
+    pub fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        self.definition.scale_cache_fit_tolerance(scale)
     }
 }
 
-#[derive(Serialize)]
-struct ProceduralSurfaceWriteWire<'a> {
-    id: &'a ProceduralSurfaceId,
-    definition: &'a ProceduralSurfaceDefinition,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    record_bounds: Option<[Option<f64>; 4]>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ProceduralSurfaceReadWire {
+/// One procedural-surface row: the construction and the carrier it produces.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProceduralSurfaceRow {
+    /// Stable construction identity.
     id: ProceduralSurfaceId,
-    #[serde(default)]
-    surface: Option<SurfaceId>,
-    definition: serde_json::Value,
-    #[serde(default)]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(default)]
-    record_bounds: Option<[Option<f64>; 4]>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the procedural-surface wire schema")]
-struct ProceduralSurfaceSchemaWire {
-    id: ProceduralSurfaceId,
+    /// Carrier surface this construction produces.
     surface: SurfaceId,
+    /// Neutral construction definition.
     definition: ProceduralSurfaceDefinition,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    record_bounds: Option<[Option<f64>; 4]>,
+    /// Four optional U/V parameter bounds following the record's subtype scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_record_bounds"
+    )]
+    record_bounds: Option<RecordBounds>,
 }
 
-#[derive(Serialize)]
-struct ProceduralCurveWriteWire<'a> {
-    id: &'a ProceduralCurveId,
-    definition: &'a ProceduralCurveDefinition,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ProceduralCurveReadWire {
+/// One procedural-curve row: the construction and the carrier it produces.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProceduralCurveRow {
+    /// Stable construction identity.
     id: ProceduralCurveId,
-    #[serde(default)]
-    curve: Option<CurveId>,
-    definition: serde_json::Value,
-    #[serde(default)]
-    cache_fit_tolerance: Option<f64>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the procedural-curve wire schema")]
-struct ProceduralCurveSchemaWire {
-    id: ProceduralCurveId,
+    /// Carrier curve this construction produces.
     curve: CurveId,
+    /// Neutral construction definition.
     definition: ProceduralCurveDefinition,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
 }
 
-fn inject_revision_cache(
-    value: &mut serde_json::Value,
-    selector_field: &str,
-    fit_tolerance: Option<f64>,
-    stale_solved: bool,
-) -> Result<bool, String> {
-    fn visit(
-        value: &mut serde_json::Value,
-        selector_field: &str,
-        fit_tolerance: Option<f64>,
-        stale_solved: bool,
-        found: &mut bool,
-    ) -> Result<(), String> {
-        match value {
-            serde_json::Value::Array(values) => {
-                for value in values {
-                    visit(value, selector_field, fit_tolerance, stale_solved, found)?;
-                }
-            }
-            serde_json::Value::Object(fields) => {
-                if let Some(selector) = fields.get(selector_field).or_else(|| {
-                    (selector_field == "tail_enum")
-                        .then(|| fields.get("cache_selector"))
-                        .flatten()
-                }) {
-                    if *found {
-                        return Err(format!(
-                            "definition contains more than one {selector_field} cache selector"
-                        ));
-                    }
-                    *found = true;
-                    let selector = selector
-                        .as_i64()
-                        .ok_or_else(|| format!("{selector_field} must be an integer"))?;
-                    match (selector, fit_tolerance, stale_solved) {
-                        (0, Some(fit_tolerance), false) => {
-                            fields.insert(
-                                "cache_fit_tolerance".into(),
-                                serde_json::to_value(fit_tolerance)
-                                    .map_err(|error| error.to_string())?,
-                            );
-                        }
-                        (0, None, true) | (2, None, _) => {}
-                        (0, None, false) => {
-                            return Err(format!("{selector_field} 0 requires cache_fit_tolerance"))
-                        }
-                        (0, Some(_), true) => {
-                            return Err(format!(
-                            "stale variable-blend {selector_field} 0 forbids cache_fit_tolerance"
-                        ))
-                        }
-                        (2, Some(_), _) => {
-                            return Err(format!("{selector_field} 2 forbids cache_fit_tolerance"))
-                        }
-                        (selector, _, _) => {
-                            return Err(format!("{selector_field} must be 0 or 2, got {selector}"))
-                        }
-                    }
-                }
-                for value in fields.values_mut() {
-                    visit(value, selector_field, fit_tolerance, stale_solved, found)?;
-                }
-            }
-            _ => {}
+impl ProceduralSurfaceRow {
+    /// The row a construction and its carrier state.
+    pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
+        Self {
+            id: procedural.id.clone(),
+            surface,
+            definition: procedural.definition.clone(),
+            record_bounds: procedural.record_bounds,
         }
-        Ok(())
     }
 
-    let mut found = false;
-    visit(
-        value,
-        selector_field,
-        fit_tolerance,
-        stale_solved,
-        &mut found,
-    )?;
-    Ok(found)
-}
-
-fn stale_variable_blend_cache(value: &serde_json::Value) -> bool {
-    value.get("kind").and_then(serde_json::Value::as_str) == Some("variable_blend")
-        && value
-            .get("construction")
-            .and_then(|construction| construction.get("shape_prefix"))
-            .and_then(serde_json::Value::as_i64)
-            == Some(0)
-}
-
-impl ProceduralSurfaceReadWire {
-    pub(crate) fn into_parts(mut self) -> Result<(Option<SurfaceId>, ProceduralSurface), String> {
-        let stale_solved = stale_variable_blend_cache(&self.definition);
-        let revision = inject_revision_cache(
-            &mut self.definition,
-            "tail_enum",
-            self.cache_fit_tolerance,
-            stale_solved,
-        )?;
-        let definition =
-            serde_json::from_value(self.definition).map_err(|error| error.to_string())?;
-        let legacy_cache_fit_tolerance = (!revision).then_some(self.cache_fit_tolerance).flatten();
-        let procedural = ProceduralSurface::try_new(
-            self.id,
-            definition,
-            legacy_cache_fit_tolerance,
-            self.record_bounds,
+    /// The carrier and the construction this row states.
+    pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
+        (
+            self.surface,
+            ProceduralSurface::new(self.id, self.definition, self.record_bounds),
         )
-        .map_err(|error| error.to_string())?;
-        Ok((self.surface, procedural))
     }
 }
 
-impl ProceduralCurveReadWire {
-    pub(crate) fn into_parts(mut self) -> Result<(Option<CurveId>, ProceduralCurve), String> {
-        let revision = inject_revision_cache(
-            &mut self.definition,
-            "cache_enum",
-            self.cache_fit_tolerance,
-            false,
-        )?;
-        let definition =
-            serde_json::from_value(self.definition).map_err(|error| error.to_string())?;
-        let legacy_cache_fit_tolerance = (!revision).then_some(self.cache_fit_tolerance).flatten();
-        let procedural = ProceduralCurve::try_new(self.id, definition, legacy_cache_fit_tolerance)
-            .map_err(|error| error.to_string())?;
-        Ok((self.curve, procedural))
-    }
-}
-
-impl Serialize for ProceduralSurface {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ProceduralSurfaceWriteWire {
-            id: &self.id,
-            definition: &self.definition,
-            cache_fit_tolerance: self.cache_fit_tolerance(),
-            record_bounds: self.record_bounds,
+impl ProceduralCurveRow {
+    /// The row a construction and its carrier state.
+    pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
+        Self {
+            id: procedural.id.clone(),
+            curve,
+            definition: procedural.definition.clone(),
         }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProceduralSurface {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        ProceduralSurfaceReadWire::deserialize(deserializer)?
-            .into_parts()
-            .map(|(_, procedural)| procedural)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for ProceduralCurve {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ProceduralCurveWriteWire {
-            id: &self.id,
-            definition: &self.definition,
-            cache_fit_tolerance: self.cache_fit_tolerance(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProceduralCurve {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        ProceduralCurveReadWire::deserialize(deserializer)?
-            .into_parts()
-            .map(|(_, procedural)| procedural)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ProceduralSurface {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ProceduralSurface".into()
     }
 
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ProceduralSurfaceSchemaWire::json_schema(generator)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ProceduralCurve {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ProceduralCurve".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ProceduralCurveSchemaWire::json_schema(generator)
+    /// The carrier and the construction this row states.
+    pub(crate) fn into_parts(self) -> (CurveId, ProceduralCurve) {
+        (
+            self.curve,
+            ProceduralCurve {
+                id: self.id,
+                definition: self.definition,
+            },
+        )
     }
 }
 
@@ -8582,6 +8371,7 @@ impl JsonSchema for ProceduralCurve {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CurveOffsetLawBasis {
     /// Distance measured along the source curve from the offset interval start.
     ArcLength,
@@ -8589,701 +8379,256 @@ pub enum CurveOffsetLawBasis {
     Parameter,
 }
 
+/// A one-based coordinate of a curve-offset distance function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub struct CurveOffsetCoordinate(u8);
+
+impl CurveOffsetCoordinate {
+    /// Admit coordinate one, two, or three.
+    pub fn try_new(coordinate: u8) -> Result<Self, &'static str> {
+        match coordinate {
+            1..=3 => Ok(Self(coordinate)),
+            _ => Err("curve offset coordinate must be 1, 2, or 3"),
+        }
+    }
+
+    /// One-based coordinate number.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for CurveOffsetCoordinate {
+    type Error = &'static str;
+    fn try_from(coordinate: u8) -> Result<Self, Self::Error> {
+        Self::try_new(coordinate)
+    }
+}
+
+impl From<CurveOffsetCoordinate> for u8 {
+    fn from(coordinate: CurveOffsetCoordinate) -> Self {
+        coordinate.get()
+    }
+}
+
 /// Variable signed distance law for a planar curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CurveOffsetDistanceLaw {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CurveOffsetDistanceLaw<R = f64> {
     /// Linear interpolation between two distance controls.
     Linear {
         /// Independent-variable interpretation.
         basis: CurveOffsetLawBasis,
         /// Ordered signed distances in document length units.
-        distances: [f64; 2],
+        distances: [R; 2],
         /// Ordered arc-length or neutral carrier-parameter controls.
-        control_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        control_range: crate::topology::IncreasingParameterInterval,
     },
     /// One coordinate of another curve defines the signed distance.
     Coordinate {
         /// Curve carrying the distance function.
         function: CurveId,
         /// One-based coordinate number on `function`.
-        coordinate: u8,
+        coordinate: CurveOffsetCoordinate,
         /// Independent-variable interpretation.
         basis: CurveOffsetLawBasis,
         /// Function parameter at zero source parameter or arc length.
-        function_parameter_offset: f64,
+        function_parameter_offset: R,
         /// Function-parameter change per neutral source parameter or length unit.
-        function_parameter_scale: f64,
+        function_parameter_scale: R,
     },
 }
 
-/// The shape of a parameter-space (u, v) curve on a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PcurveGeometry {
-    /// A straight line in parameter space.
-    Line {
-        /// A parameter-space point on the line.
-        origin: Point2,
-        /// Parameter-space direction.
-        direction: Point2,
-    },
-    /// Polar angle and axial coordinate of a first-order harmonic spatial curve.
-    PolarHarmonic {
-        /// Radial-plane offset before the harmonic terms are applied.
-        radial_center: Point2,
-        /// Radial-plane coefficient multiplying `cos(t)`.
-        radial_cos: Point2,
-        /// Radial-plane coefficient multiplying `sin(t)`.
-        radial_sin: Point2,
-        /// Constant axial coordinate.
-        axial_origin: f64,
-        /// Axial coefficient multiplying `cos(t)`.
-        axial_cos: f64,
-        /// Axial coefficient multiplying `sin(t)`.
-        axial_sin: f64,
-    },
-    /// Polar angle and axial coordinate obtained from a rational NURBS vector.
-    PolarNurbs {
-        /// Checked polar NURBS payload.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(flatten, with = "PolarPcurveNurbsWire"))]
-        nurbs: PolarPcurveNurbs,
-    },
-    /// Great-circle locus in a sphere's azimuth/latitude parameter chart.
-    SphericalGreatCircle {
-        /// Azimuth at source parameter zero.
-        azimuth_origin: f64,
-        /// Azimuth change per source parameter unit.
-        azimuth_rate: f64,
-        /// Azimuth of the great-circle plane's maximum signed latitude.
-        plane_phase: f64,
-        /// Signed coefficient in `tan(latitude) = plane_slope·cos(azimuth-plane_phase)`.
-        plane_slope: f64,
-    },
-    /// Full circle in parameter space.
-    Circle {
-        /// Circle center.
-        center: Point2,
-        /// Zero-angle unit direction.
-        x_axis: Point2,
-        /// Positive-angle unit direction.
-        y_axis: Point2,
-        /// Circle radius.
-        radius: f64,
-    },
-    /// Full ellipse in parameter space.
-    Ellipse {
-        /// Ellipse center.
-        center: Point2,
-        /// Major-axis unit direction.
-        x_axis: Point2,
-        /// Minor-axis unit direction.
-        y_axis: Point2,
-        /// Semi-major radius.
-        major_radius: f64,
-        /// Semi-minor radius.
-        minor_radius: f64,
-    },
-    /// General first-order harmonic curve in parameter space.
-    Harmonic {
-        /// Constant coefficient.
-        center: Point2,
-        /// Coefficient multiplying `cos(t)`.
-        cosine: Point2,
-        /// Coefficient multiplying `sin(t)`.
-        sine: Point2,
-    },
-    /// Parabola in parameter space.
-    Parabola {
-        /// Parabola vertex.
-        vertex: Point2,
-        /// Axis unit direction.
-        x_axis: Point2,
-        /// Positive transverse unit direction.
-        y_axis: Point2,
-        /// Focus distance.
-        focal_distance: f64,
-    },
-    /// Hyperbola in parameter space.
-    Hyperbola {
-        /// Hyperbola center.
-        center: Point2,
-        /// Transverse-axis unit direction.
-        x_axis: Point2,
-        /// Conjugate-axis unit direction.
-        y_axis: Point2,
-        /// Semi-transverse radius.
-        major_radius: f64,
-        /// Semi-conjugate radius.
-        minor_radius: f64,
-    },
-    /// General first-order hyperbolic curve in parameter space.
-    Hyperbolic {
-        /// Constant coefficient.
-        center: Point2,
-        /// Coefficient multiplying `cosh(t)`.
-        cosine: Point2,
-        /// Coefficient multiplying `sinh(t)`.
-        sine: Point2,
-    },
-    /// A free-form NURBS curve in parameter space (control points are (u, v)).
-    Nurbs {
-        /// Checked parameter-space NURBS payload.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(flatten))]
-        nurbs: PcurveNurbs,
-    },
-    /// Affine replica of a parent pcurve in the same parameter space.
-    Transformed {
-        /// Exact parent pcurve and its parameterization.
-        basis: Box<PcurveGeometry>,
-        /// Two-dimensional affine map from parent coordinates to replica coordinates.
-        transform: Transform2,
-    },
-    /// Parameter restriction of an exact basis pcurve.
-    Trimmed {
-        /// Native parameter interval retained from the basis.
-        parameter_range: [f64; 2],
-        /// Whether the trimmed traversal follows increasing basis parameters.
-        ///
-        /// Older CADIR documents omitted this field and mean `true`.
-        #[serde(default = "default_true")]
-        same_sense: bool,
-        /// Exact basis geometry.
-        basis: Box<PcurveGeometry>,
-    },
-    /// Signed planar offset of an exact basis pcurve.
-    Offset {
-        /// Signed parameter-space distance.
-        distance: f64,
-        /// Exact basis geometry.
-        basis: Box<PcurveGeometry>,
-    },
-}
-
-/// One paired radial and axial pole of a polar parameter-space NURBS.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PolarNurbsPole {
-    /// Euclidean radial-plane pole.
-    pub radial: Point2,
-    /// Axial pole value.
-    pub axial: f64,
-}
-
-/// Checked polar parameter-space NURBS payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PolarPcurveNurbs {
-    degree: u32,
-    knots: Vec<f64>,
-    poles: Vec<PolarNurbsPole>,
-    weights: Option<Vec<f64>>,
-    periodic: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct PolarPcurveNurbsWire {
-    degree: u32,
-    knots: Vec<f64>,
-    radial_control_points: Vec<Point2>,
-    axial_control_points: Vec<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
-    #[serde(default)]
-    periodic: bool,
-}
-
-impl PolarPcurveNurbs {
-    /// Build a polar NURBS with paired radial and axial poles.
-    pub fn new(
-        degree: u32,
-        knots: Vec<f64>,
-        radial_control_points: Vec<Point2>,
-        axial_control_points: Vec<f64>,
-        weights: Option<Vec<f64>>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_length(
-            "axial_control_points",
-            axial_control_points.len(),
-            radial_control_points.len(),
-        )?;
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            radial_control_points.len(),
-            weights.as_ref().map(Vec::len),
-            "radial_control_points",
-        )?;
-        if degree == 0 {
-            return Err(NurbsError("polar NURBS degree must be positive".into()));
-        }
-        require_finite_points_2("radial_control_points", &radial_control_points)?;
-        require_finite_scalars("axial_control_points", &axial_control_points)?;
-        require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_pcurve_weights(weights)?;
-        }
-        Ok(Self {
-            degree,
-            knots,
-            poles: radial_control_points
-                .into_iter()
-                .zip(axial_control_points)
-                .map(|(radial, axial)| PolarNurbsPole { radial, axial })
-                .collect(),
-            weights,
-            periodic,
+impl CurveOffsetDistanceLaw {
+    /// Admit a linear law over strictly increasing controls, with the refusal
+    /// of [`CurveOffsetRange::uniform`]. The distances are checked by the
+    /// offset construction.
+    pub fn linear(
+        basis: CurveOffsetLawBasis,
+        distances: [f64; 2],
+        control_range: [f64; 2],
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Linear {
+            basis,
+            distances,
+            control_range: admit_curve_offset_interval(control_range)?,
         })
     }
-
-    /// Polynomial degree shared by every component.
-    pub const fn degree(&self) -> u32 {
-        self.degree
-    }
-
-    /// Expanded knot vector.
-    pub fn knots(&self) -> &[f64] {
-        &self.knots
-    }
-
-    /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
-        Ok(())
-    }
-
-    /// Paired radial and axial poles.
-    pub fn poles(&self) -> &[PolarNurbsPole] {
-        &self.poles
-    }
-
-    /// Atomically edit paired poles and preserve finite coordinates.
-    pub fn edit_poles(
-        &mut self,
-        edit: impl FnOnce(&mut [PolarNurbsPole]),
-    ) -> Result<(), NurbsError> {
-        let mut values = self.poles.clone();
-        edit(&mut values);
-        if values.iter().all(|pole| {
-            pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
-        }) {
-            self.poles = values;
-            Ok(())
-        } else {
-            Err(NurbsError("poles contain a non-finite value".into()))
-        }
-    }
-
-    /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
-    }
-
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("polar pcurve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_pcurve_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.poles.len())?;
-            require_pcurve_weights(values)?;
-        }
-        self.weights = weights;
-        Ok(())
-    }
-
-    /// Whether the NURBS parameterization is periodic.
-    pub const fn periodic(&self) -> bool {
-        self.periodic
-    }
-
-    /// Reverse paired poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
-        self.poles.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
-    }
-}
-
-impl Serialize for PolarPcurveNurbs {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        PolarPcurveNurbsWire {
-            degree: self.degree,
-            knots: self.knots.clone(),
-            radial_control_points: self.poles.iter().map(|pole| pole.radial).collect(),
-            axial_control_points: self.poles.iter().map(|pole| pole.axial).collect(),
-            weights: self.weights.clone(),
-            periodic: self.periodic,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PolarPcurveNurbs {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = PolarPcurveNurbsWire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.radial_control_points,
-            wire.axial_control_points,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Checked two-dimensional NURBS payload for pcurves and sketch curves.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PcurveNurbs {
-    degree: u32,
-    knots: Vec<f64>,
-    control_points: Vec<Point2>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
-    #[serde(default)]
-    periodic: bool,
-}
-
-impl PcurveNurbs {
-    /// Build a parameter-space NURBS with consistent cardinalities.
-    pub fn new(
-        degree: u32,
-        knots: Vec<f64>,
-        control_points: Vec<Point2>,
-        weights: Option<Vec<f64>>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            control_points.len(),
-            weights.as_ref().map(Vec::len),
-            "control_points",
-        )?;
-        if degree == 0 {
-            return Err(NurbsError("pcurve NURBS degree must be positive".into()));
-        }
-        require_finite_points_2("control_points", &control_points)?;
-        require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_pcurve_weights(weights)?;
-        }
-        Ok(Self {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        })
-    }
-
-    /// Lift each two-dimensional pole into model space without changing knot or weight cardinalities.
-    pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
-        NurbsCurve::new(
-            self.degree,
-            self.knots.clone(),
-            self.control_points.iter().copied().map(lift).collect(),
-            self.weights.clone(),
-            self.periodic,
-        )
-    }
-
-    /// Curve degree.
-    pub const fn degree(&self) -> u32 {
-        self.degree
-    }
-
-    /// Full knot vector.
-    pub fn knots(&self) -> &[f64] {
-        &self.knots
-    }
-
-    /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
-        Ok(())
-    }
-
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> &[Point2] {
-        &self.control_points
-    }
-
-    /// Atomically edit control points and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnOnce(&mut [Point2]),
-    ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        require_finite_points_2("control_points", &values)?;
-        self.control_points = values;
-        Ok(())
-    }
-
-    /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
-    }
-
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("pcurve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_pcurve_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_pcurve_weights(values)?;
-        }
-        self.weights = weights;
-        Ok(())
-    }
-
-    /// Whether the parameter-space curve is periodic.
-    pub const fn periodic(&self) -> bool {
-        self.periodic
-    }
-
-    /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
-        self.control_points.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PcurveNurbs {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            degree: u32,
-            knots: Vec<f64>,
-            control_points: Vec<Point2>,
-            #[serde(default)]
-            weights: Option<Vec<f64>>,
-            #[serde(default)]
-            periodic: bool,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.control_points,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
-    }
-}
-
-impl PcurveGeometry {
-    /// Returns the origin and direction of a line-valued pcurve.
-    ///
-    /// Trimming and affine replicas preserve a line's parameterization. An
-    /// offset does not preserve it because the offset is evaluated from the
-    /// basis tangent, so it is deliberately excluded.
-    pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
-        match self {
-            Self::Line { origin, direction } => Some((*origin, *direction)),
-            Self::Transformed { basis, transform } => {
-                let (origin, direction) = basis.line_parameters()?;
-                Some((
-                    transform.apply_point(origin),
-                    transform.apply_vector(direction),
-                ))
-            }
-            Self::Trimmed { basis, .. } => basis.line_parameters(),
-            Self::PolarHarmonic { .. }
-            | Self::PolarNurbs { .. }
-            | Self::SphericalGreatCircle { .. }
-            | Self::Circle { .. }
-            | Self::Ellipse { .. }
-            | Self::Harmonic { .. }
-            | Self::Parabola { .. }
-            | Self::Hyperbola { .. }
-            | Self::Hyperbolic { .. }
-            | Self::Nurbs { .. }
-            | Self::Offset { .. } => None,
-        }
-    }
-}
-
-/// A pcurve carrier: the 2D image of a coedge in its face's surface parameter
-/// space. Referenced by a coedge; the owning surface establishes whether a
-/// parameter dimension is a length (relevant to unit scaling, see [F3D spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#5-topology-records)).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Pcurve {
-    /// Arena id.
-    pub id: PcurveId,
-    /// Parameter-space shape.
-    pub geometry: PcurveGeometry,
-    /// Source parameterization metadata.
-    #[serde(flatten)]
-    pub metadata: PcurveMetadata,
-}
-
-impl Pcurve {
-    /// Native wrapper reversal, when the source stores one.
-    pub fn wrapper_reversed(&self) -> Option<bool> {
-        self.metadata.wrapper_reversed()
-    }
-
-    /// Four ASM booleans following an inline subtype scope.
-    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
-        self.metadata.native_tail_flags()
-    }
-
-    /// Directed native parameter interval on which this pcurve is evaluated.
-    pub fn parameter_range(&self) -> Option<[f64; 2]> {
-        self.metadata.parameter_range()
-    }
-
-    /// Parameter-space fit tolerance following a solved UV cache.
-    pub fn fit_tolerance(&self) -> Option<f64> {
-        self.metadata.fit_tolerance()
-    }
-}
-
-/// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum PcurveMetadata {
-    /// An ASM inline `exp_par_cur` record and its complete native tail.
-    AsmInline(PcurveInlineForm),
-    /// Metadata that does not assert the ASM inline-record contract.
-    General(PcurveGeneralForm),
-}
-
-impl PcurveMetadata {
-    /// Build metadata without an ASM inline-record claim.
-    pub fn general(
-        wrapper_reversed: Option<bool>,
-        parameter_range: Option<[f64; 2]>,
-        fit_tolerance: Option<f64>,
-    ) -> Self {
-        Self::General(PcurveGeneralForm {
-            wrapper_reversed,
-            parameter_range,
-            fit_tolerance,
-        })
-    }
-
-    /// Native wrapper reversal, when the source stores one.
-    pub fn wrapper_reversed(&self) -> Option<bool> {
-        match self {
-            Self::AsmInline(inline) => Some(inline.wrapper_reversed),
-            Self::General(general) => general.wrapper_reversed,
-        }
-    }
-
-    /// Four ASM booleans following an inline subtype scope.
-    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
-        match self {
-            Self::AsmInline(inline) => Some(inline.native_tail_flags),
-            Self::General(_) => None,
-        }
-    }
-
-    /// Directed native parameter interval on which this pcurve is evaluated.
-    pub fn parameter_range(&self) -> Option<[f64; 2]> {
-        match self {
-            Self::AsmInline(inline) => Some(inline.parameter_range),
-            Self::General(general) => general.parameter_range,
-        }
-    }
-
-    /// Parameter-space fit tolerance following a solved UV cache.
-    pub fn fit_tolerance(&self) -> Option<f64> {
-        match self {
-            Self::AsmInline(inline) => Some(inline.fit_tolerance),
-            Self::General(general) => general.fit_tolerance,
-        }
-    }
-}
-
-/// The fields carried together by an ASM inline `exp_par_cur` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PcurveInlineForm {
-    /// Parameterization wrapper reversal.
-    pub wrapper_reversed: bool,
-    /// Four native booleans following the inline subtype scope.
-    pub native_tail_flags: [bool; 4],
-    /// Directed native parameter interval.
-    pub parameter_range: [f64; 2],
-    /// Parameter-space fit tolerance following the solved UV cache.
-    pub fit_tolerance: f64,
-}
-
-/// Pcurve metadata with no ASM inline-record contract.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PcurveGeneralForm {
-    /// Source wrapper reversal, when stored independently of an ASM tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wrapper_reversed: Option<bool>,
-    /// Directed native parameter interval.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_range: Option<[f64; 2]>,
-    /// Parameter-space fit tolerance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fit_tolerance: Option<f64>,
 }
 
 #[cfg(test)]
 mod tests;
+
+impl CompoundCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Mutable legacy solved-cache slot this construction states.
+    const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+        &mut self.cache
+    }
+}
+
+impl HelixCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Mutable legacy solved-cache slot this construction states.
+    const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+        &mut self.cache
+    }
+}
+
+impl TSplineSurfaceConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Mutable legacy solved-cache slot, absent when a revision-gated form
+    /// states the tolerance instead.
+    fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        self.cache.legacy_cache_mut().map(LegacyCacheSlot::Optional)
+    }
+}
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_tertiary, bool, "tertiary");
+cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
+cadmpeg_core::named_optional_field!(deserialize_record, UnknownId, "record");
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_geometry_cache,
+    SolvedSurfaceGeometry,
+    "cache"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_source_object,
+    SourceObjectAssociation,
+    "source_object"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_curve_geometry_cache,
+    SolvedCurveGeometry,
+    "cache"
+);
+cadmpeg_core::named_optional_field!(deserialize_extra<R>, [R; 2], "extra");
+cadmpeg_core::named_optional_field!(deserialize_pcurve, PcurveGeometry, "pcurve");
+cadmpeg_core::named_optional_field!(deserialize_direction<V>, V, "direction");
+cadmpeg_core::named_optional_field!(deserialize_surface, SurfaceId, "surface");
+cadmpeg_core::named_optional_field!(deserialize_asm_extension, i64, "asm_extension");
+cadmpeg_core::named_optional_field!(
+    deserialize_secondary_pcurve,
+    PcurveGeometry,
+    "secondary_pcurve"
+);
+cadmpeg_core::named_optional_field!(deserialize_endpoints<R>, [Option<R>; 2], "endpoints");
+cadmpeg_core::named_optional_field!(deserialize_path<R>, LoftPathCurve<R>, "path");
+cadmpeg_core::named_optional_field!(deserialize_support, G2BlendFullSupport, "support");
+cadmpeg_core::named_optional_field!(deserialize_extension<R>, LoftBridgeToken<R>, "extension");
+cadmpeg_core::named_optional_field!(
+    deserialize_rolling_ball_side_surface<S, R>,
+    RollingBallSupportSurface<S, R>,
+    "surface"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_curve<C, R>,
+    RollingBallSupportCurve<C, R>,
+    "curve"
+);
+cadmpeg_core::named_optional_field!(deserialize_rolling_ball_side_pcurve<P>, P, "pcurve");
+cadmpeg_core::named_optional_field!(
+    deserialize_rolling_ball_side_secondary_pcurve<P>,
+    P,
+    "secondary_pcurve"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_rolling_ball_side_extension<P>,
+    RollingBallSideExtension<P>,
+    "extension"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_tertiary_pcurve,
+    PcurveGeometry,
+    "tertiary_pcurve"
+);
+cadmpeg_core::named_optional_field!(deserialize_third<V>, Box<RollingBallThirdSide<V>>, "third");
+cadmpeg_core::named_optional_field!(
+    deserialize_radius<R, V, P>,
+    Box<VariableBlendValue<R, V, P>>,
+    "radius"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_cross_section<R, V, P>,
+    VariableBlendCrossSection<R, V, P>,
+    "cross_section"
+);
+cadmpeg_core::named_optional_field!(deserialize_v_lower<R>, R, "v_lower");
+cadmpeg_core::named_optional_field!(
+    deserialize_secondary_curve<R>,
+    RollingBallSupportCurve<CurveId, R>,
+    "secondary_curve"
+);
+cadmpeg_core::named_optional_field!(deserialize_post_curve, CurveId, "post_curve");
+cadmpeg_core::named_optional_field!(deserialize_post_pcurve, PcurveGeometry, "post_pcurve");
+cadmpeg_core::named_optional_field!(deserialize_revision, PositiveI64, "revision");
+cadmpeg_core::named_optional_field!(
+    deserialize_first_scale<R, V>,
+    Box<CompoundLoftScale<R, V>>,
+    "first_scale"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_scale<R, V>,
+    Box<CompoundLoftScale<R, V>>,
+    "scale"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_parameter_ranges<R>,
+    [[R; 2]; 2],
+    "parameter_ranges"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_parameter_range,
+    DirectedParameterRange,
+    "parameter_range"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_intcurve_support_side_pcurve,
+    SupportPcurve,
+    "pcurve"
+);
+cadmpeg_core::named_optional_field!(deserialize_second_flag, bool, "second_flag");
+cadmpeg_core::named_optional_field!(deserialize_tail, SurfaceCurveCacheFirst<bool>, "tail");
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_curve_family_tail,
+    SurfaceCurveCacheFirst<ParametricSurfaceCurveFlags>,
+    "tail"
+);
+cadmpeg_core::named_optional_field!(deserialize_offset_side_support, SurfaceId, "support");
+cadmpeg_core::named_optional_field!(deserialize_version, LawCurveVersionForm, "version");
+cadmpeg_core::named_optional_field!(
+    deserialize_parameterization,
+    TolerantIntersectionParameterization,
+    "parameterization"
+);
+cadmpeg_core::named_optional_field!(deserialize_blend_surface, SurfaceId, "blend_surface");
+cadmpeg_core::named_optional_field!(deserialize_native_kind, String, "native_kind");
+cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "record_bounds");
+
+mod identity_rewrite;
+
+mod serialization;

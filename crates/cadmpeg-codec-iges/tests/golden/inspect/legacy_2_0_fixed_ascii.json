@@ -1,86 +1,99 @@
 {
   "container_kind": "fixed-ascii",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": {
-        "unverified": {
-          "using": "iges:5.3-fixed-ascii"
-        }
-      },
-      "declared": {
-        "effective_version": "2.0",
-        "representation": "fixed-ascii",
-        "version_flag": "3"
-      },
-      "dialect": "iges:2.0-fixed-ascii",
-      "format": "iges"
-    }
-  },
   "entries": [
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "start",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     },
     {
       "attributes": {
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compressed_size": 162,
       "compression": "none",
       "name": "global",
       "role": "section",
-      "uncompressed_size": 162
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
     },
     {
       "attributes": {
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compressed_size": 162,
       "compression": "none",
       "name": "directory-entry",
       "role": "section",
-      "uncompressed_size": 162
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
     },
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "parameter-data",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     },
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "terminate",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     }
   ],
-  "format": "iges",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "5.3-fixed-ascii"
+          }
+        },
+        "declared": {
+          "effective_version": "2.0",
+          "representation": "fixed-ascii",
+          "version_flag": "3"
+        },
+        "dialect": "iges:2.0-fixed-ascii"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "iges"
+        "namespace": "iges",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "IGES Global version flag 3 names effective specification version 2.0; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",
       "severity": "warning"

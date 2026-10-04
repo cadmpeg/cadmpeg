@@ -1,51 +1,53 @@
 {
   "container_kind": "cfb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": {
-        "unverified": {
-          "using": "inventor:cfb3-rse31-meta8"
-        }
-      },
-      "declared": {
-        "cfb_major_version": "3"
-      },
-      "dialect": "inventor:unknown",
-      "format": "inventor"
-    }
-  },
   "entries": [
     {
       "attributes": {
         "directory_id": "1"
       },
-      "compressed_size": 0,
       "compression": "storage",
       "name": "RSeStorage",
-      "role": "rse-storage",
-      "uncompressed_size": 0
+      "role": "rse-storage"
     },
     {
       "attributes": {
-        "allocation": "mini",
         "directory_id": "2",
         "start_sector": "4294967294"
       },
-      "compressed_size": 0,
       "compression": "stored",
       "name": "RSeStorage/RSeSegInfo",
       "role": "rse-segment-registry",
-      "uncompressed_size": 0
+      "size": {
+        "form": "exact",
+        "size": 0
+      }
     }
   ],
-  "format": "inventor",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "cfb3-rse31-meta8"
+          }
+        },
+        "declared": {
+          "cfb_major_version": "3"
+        },
+        "dialect": "inventor:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "inventor"
+        "namespace": "inventor",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "no RSe database stream declares a schema; no RSe segment metadata stream declares a marker and version; this decode applied the only Inventor grammars this codec implements — RSe database schema 31 and RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8 — to those streams, and what they did not frame is reported as an unavailable stream with its own issue record",
       "severity": "warning"

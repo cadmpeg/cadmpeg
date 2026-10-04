@@ -3,9 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::StreamName;
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::container::{ContainerScan, Section};
 use crate::layout::display_lists_inline_visual_properties_prefix as inline_visual;
 use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
@@ -18,180 +20,281 @@ const VISUAL_PROPERTIES_CLASS: &[u8] = b"moVisualProperties_c";
 pub(crate) struct AppearanceDefinition {
     pub(crate) name: String,
     pub(crate) color: Color,
-    pub(crate) source_name: String,
+    pub(crate) source_name: StreamName,
     pub(crate) record_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DisplayAppearanceTarget {
+enum DisplayAppearanceTarget {
     Body(Vec<usize>),
     Face(usize),
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DisplayAppearanceAssignment {
-    pub(crate) target: DisplayAppearanceTarget,
-    pub(crate) definition: AppearanceDefinition,
+struct DisplayAppearanceAssignment {
+    target: DisplayAppearanceTarget,
+    definition: AppearanceDefinition,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct FeatureAppearanceAssignment {
-    pub(crate) feature_source_id: u32,
-    pub(crate) feature_timestamp: u32,
-    pub(crate) packed_color: u32,
-    pub(crate) color: Color,
-    pub(crate) source_name: String,
-    pub(crate) record_offset: usize,
+    pub(crate) feature_source_id: FeatureSourceId,
+    feature_timestamp: u32,
+    packed_color: u32,
+    color: Color,
+    source_name: StreamName,
+    record_offset: usize,
 }
 
 pub(crate) struct ResolvedDisplayAppearances {
     pub(crate) by_face: BTreeMap<usize, AppearanceDefinition>,
-    pub(crate) matched_feature_sources: BTreeSet<u32>,
+    pub(crate) matched_feature_sources: BTreeSet<FeatureSourceId>,
 }
 
-pub(crate) fn packed_rgb(packed: u32) -> Color {
-    Color {
-        r: (packed & 0xff) as f32 / 255.0,
-        g: ((packed >> 8) & 0xff) as f32 / 255.0,
-        b: ((packed >> 16) & 0xff) as f32 / 255.0,
-        a: 1.0,
+fn packed_rgb(packed: u32) -> Color {
+    let [red, green, blue, _] = packed.to_le_bytes();
+    Color::from_rgba8(red, green, blue, 255)
+}
+
+pub(crate) fn definitions(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<AppearanceDefinition>, cadmpeg_core::CodecError> {
+    let mut definitions = Vec::new();
+    for section in scan.sections() {
+        let bytes = section.payload();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "scan SLDPRT appearance definitions",
+        )?;
+        for (offset, token) in bytes.windows(VISUAL_PROPERTIES_CLASS.len()).enumerate() {
+            if token != VISUAL_PROPERTIES_CLASS {
+                continue;
+            }
+            if let Some(definition) =
+                definition_at(ctx, section, offset + VISUAL_PROPERTIES_CLASS.len(), offset)?
+            {
+                ctx.push_vec(
+                    &mut definitions,
+                    definition,
+                    "collect SLDPRT appearance definitions",
+                )?;
+            }
+        }
     }
-}
-
-pub(crate) fn definitions(scan: &ContainerScan) -> Vec<AppearanceDefinition> {
-    scan.sections()
-        .flat_map(|section| {
-            let bytes = section.payload();
-            bytes
-                .windows(VISUAL_PROPERTIES_CLASS.len())
-                .enumerate()
-                .filter_map(move |(offset, token)| {
-                    (token == VISUAL_PROPERTIES_CLASS)
-                        .then(|| {
-                            definition_at(section, offset + VISUAL_PROPERTIES_CLASS.len(), offset)
-                        })
-                        .flatten()
-                })
-        })
-        .collect()
+    Ok(definitions)
 }
 
 fn definition_at(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     packed_offset: usize,
     record_offset: usize,
-) -> Option<AppearanceDefinition> {
+) -> Result<Option<AppearanceDefinition>, cadmpeg_core::CodecError> {
     let bytes = section.payload();
-    let packed_color = View::u32_le_at(bytes, packed_offset)?;
+    let Some(packed_color) = View::u32_le_at(bytes, packed_offset) else {
+        return Ok(None);
+    };
     let name_header = packed_offset + 16;
     if bytes.get(name_header..name_header + 3) != Some(&[0xff, 0xfe, 0xff]) {
-        return None;
+        return Ok(None);
     }
-    let count = usize::from(*bytes.get(name_header + 3)?);
+    let Some(count) = bytes.get(name_header + 3).map(|count| usize::from(*count)) else {
+        return Ok(None);
+    };
     let start = name_header + 4;
-    let raw_name = bytes.get(start..start.checked_add(count.checked_mul(2)?)?)?;
-    let units = raw_name
-        .chunks_exact(2)
-        .enumerate()
-        .map(|(index, _)| View::u16_le_at(raw_name, index * 2))
-        .collect::<Option<Vec<_>>>()?;
-    let name = String::from_utf16(&units).ok()?.trim().to_string();
-    if name.is_empty() {
-        return None;
+    let Some(raw_name) = count
+        .checked_mul(2)
+        .and_then(|length| start.checked_add(length))
+        .and_then(|end| bytes.get(start..end))
+    else {
+        return Ok(None);
+    };
+    let (decoded, _name_reservation) =
+        match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
+            Ok(text) => text,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(decoded.len()),
+        "trim SLDPRT appearance name",
+    )?;
+    let trimmed = decoded.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
     }
-    Some(AppearanceDefinition {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(trimmed.len()),
+        "retain SLDPRT appearance name",
+    )?;
+    let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
+    let source_name = clone_stream_name(ctx, section.source_stream())?;
+    Ok(Some(AppearanceDefinition {
         name,
         color: packed_rgb(packed_color),
-        source_name: section.display_name(),
+        source_name,
         record_offset,
+    }))
+}
+
+fn clone_stream_name(
+    ctx: &DecodeContext<'_>,
+    name: &StreamName,
+) -> Result<StreamName, cadmpeg_core::CodecError> {
+    let copy = ctx.copy_retained_text(name.as_str(), "copy SLDPRT appearance stream name")?;
+    StreamName::try_from(copy).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SLDPRT appearance stream name is empty".into())
     })
 }
 
-fn inline_definitions(section: Section<'_>, start: usize, end: usize) -> Vec<AppearanceDefinition> {
+fn copy_definition(
+    ctx: &DecodeContext<'_>,
+    definition: &AppearanceDefinition,
+) -> Result<AppearanceDefinition, cadmpeg_core::CodecError> {
+    let name = ctx.copy_retained_text(&definition.name, "copy SLDPRT appearance name")?;
+    Ok(AppearanceDefinition {
+        name,
+        color: definition.color,
+        source_name: clone_stream_name(ctx, &definition.source_name)?,
+        record_offset: definition.record_offset,
+    })
+}
+
+fn inline_definitions(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    start: usize,
+    end: usize,
+) -> Result<Vec<AppearanceDefinition>, cadmpeg_core::CodecError> {
     let Some(bytes) = section.payload().get(start..end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    bytes
-        .windows(inline_visual::MARKER_VALUE.len())
-        .enumerate()
-        .filter_map(|(relative, marker)| {
-            (marker == inline_visual::MARKER_VALUE)
-                .then(|| {
-                    let offset = start + relative;
-                    definition_at(section, offset + inline_visual::PACKED_COLOR, offset)
-                })
-                .flatten()
-        })
-        .collect()
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan inline SLDPRT appearances",
+    )?;
+    let mut definitions = Vec::new();
+    for (relative, marker) in bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate() {
+        if marker != inline_visual::MARKER_VALUE {
+            continue;
+        }
+        let offset = start + relative;
+        if let Some(definition) =
+            definition_at(ctx, section, offset + inline_visual::PACKED_COLOR, offset)?
+        {
+            ctx.push_vec(
+                &mut definitions,
+                definition,
+                "collect inline SLDPRT appearances",
+            )?;
+        }
+    }
+    Ok(definitions)
 }
 
 /// Decode body/default and face-local assignments from `DisplayLists`.
-pub(crate) fn display_assignments(
+fn display_assignments(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     faces: &[DisplayFace],
-) -> Vec<DisplayAppearanceAssignment> {
-    let classes = crate::tessellation::class_intervals(section.payload());
+) -> Result<Vec<DisplayAppearanceAssignment>, cadmpeg_core::CodecError> {
+    let classes = crate::tessellation::class_intervals(ctx, section.payload())?;
     let mut assignments = Vec::new();
     for (table_index, face) in faces.iter().enumerate() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(classes.len()),
+            "match SLDPRT face appearance classes",
+        )?;
         let Some(class) = classes.iter().find(|class| {
             class.name == "uoTempFaceTessData_c"
-                && class.content.start <= face.table.start
-                && face.table.start < class.content.end
+                && class.content.start() <= face.table.start()
+                && face.table.start() < class.content.end()
         }) else {
             continue;
         };
         let definitions = inline_definitions(
+            ctx,
             section,
-            face.metadata.start,
-            face.metadata.end.min(class.content.end),
-        );
-        if let [definition] = definitions.as_slice() {
-            assignments.push(DisplayAppearanceAssignment {
-                target: DisplayAppearanceTarget::Face(table_index),
-                definition: definition.clone(),
-            });
+            face.metadata.start(),
+            face.metadata.end().min(class.content.end()),
+        )?;
+        if definitions.len() == 1 {
+            let Some(definition) = definitions.into_iter().next() else {
+                continue;
+            };
+            ctx.push_vec(
+                &mut assignments,
+                DisplayAppearanceAssignment {
+                    target: DisplayAppearanceTarget::Face(table_index),
+                    definition,
+                },
+                "collect SLDPRT display assignments",
+            )?;
         }
     }
     for (class_index, class) in classes.iter().enumerate() {
         if class.name != "uoBodyPropInfo_c" {
             continue;
         }
-        let definitions = inline_definitions(section, class.content.start, class.content.end);
-        let [definition] = definitions.as_slice() else {
+        let definitions =
+            inline_definitions(ctx, section, class.content.start(), class.content.end())?;
+        if definitions.len() != 1 {
             continue;
-        };
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(class_index),
+            "find SLDPRT appearance body boundary",
+        )?;
         let previous_body_end = classes[..class_index]
             .iter()
             .rev()
             .find(|previous| previous.name == "uoBodyPropInfo_c")
-            .map_or(0, |previous| previous.content.end);
-        let face_indexes = faces
-            .iter()
-            .enumerate()
-            .filter(|(_, face)| {
-                previous_body_end <= face.table.start && face.table.end <= class.class_offset
-            })
-            .map(|(table_index, _)| table_index)
-            .collect::<Vec<_>>();
+            .map_or(0, |previous| previous.content.end());
+        let mut face_indexes = Vec::new();
+        for (table_index, face) in faces.iter().enumerate() {
+            ctx.charge_work(1, "match SLDPRT body appearance faces")?;
+            if previous_body_end <= face.table.start() && face.table.end() <= class.class_offset {
+                ctx.push_vec(
+                    &mut face_indexes,
+                    table_index,
+                    "collect SLDPRT body appearance faces",
+                )?;
+            }
+        }
         if !face_indexes.is_empty() {
-            assignments.push(DisplayAppearanceAssignment {
-                target: DisplayAppearanceTarget::Body(face_indexes),
-                definition: definition.clone(),
-            });
+            let Some(definition) = definitions.into_iter().next() else {
+                continue;
+            };
+            ctx.push_vec(
+                &mut assignments,
+                DisplayAppearanceAssignment {
+                    target: DisplayAppearanceTarget::Body(face_indexes),
+                    definition,
+                },
+                "collect SLDPRT display assignments",
+            )?;
         }
     }
-    assignments
+    Ok(assignments)
 }
 
 /// Decode feature-source assignments from `ThirdPtyStore/VisualStates`.
-pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearanceAssignment> {
+pub(crate) fn feature_assignments(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<FeatureAppearanceAssignment>, cadmpeg_core::CodecError> {
     let mut assignments = Vec::new();
     for section in scan
         .sections()
         .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
     {
         let bytes = section.payload();
-        let classes = crate::tessellation::class_intervals(bytes);
+        let classes = crate::tessellation::class_intervals(ctx, bytes)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "scan SLDPRT feature appearance markers",
+        )?;
         for marker_offset in bytes
             .windows(feature_visual::MARKER_VALUE.len())
             .enumerate()
@@ -205,10 +308,14 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             let Some(record) = bytes.get(record_offset..record_offset + feature_visual::LEN) else {
                 continue;
             };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(classes.len()),
+                "match SLDPRT feature appearance classes",
+            )?;
             if !classes.iter().any(|class| {
                 class.name == "moCompFeature_c"
-                    && class.content.start <= record_offset
-                    && record_offset + feature_visual::LEN <= class.content.end
+                    && class.content.start() <= record_offset
+                    && record_offset + feature_visual::LEN <= class.content.end()
             }) || View::u32_le_at(record, feature_visual::VERSION)
                 != Some(feature_visual::VERSION_VALUE)
                 || View::u32_le_at(record, feature_visual::SELECTOR_ONE_A)
@@ -227,7 +334,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             }
             let Some(feature_source_id) =
                 View::u32_le_at(record, feature_visual::FEATURE_SOURCE_ID)
-                    .filter(|value| *value != 0 && *value != u32::MAX)
+                    .and_then(|value| FeatureSourceId::try_from(value).ok())
             else {
                 continue;
             };
@@ -240,37 +347,55 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             let Some(packed_color) = View::u32_le_at(record, feature_visual::PACKED_COLOR) else {
                 continue;
             };
-            assignments.push(FeatureAppearanceAssignment {
-                feature_source_id,
-                feature_timestamp,
-                packed_color,
-                color: packed_rgb(packed_color),
-                source_name: section.display_name(),
-                record_offset,
-            });
+            let source_name = clone_stream_name(ctx, section.source_stream())?;
+            ctx.push_vec(
+                &mut assignments,
+                FeatureAppearanceAssignment {
+                    feature_source_id,
+                    feature_timestamp,
+                    packed_color,
+                    color: packed_rgb(packed_color),
+                    source_name,
+                    record_offset,
+                },
+                "collect SLDPRT feature appearances",
+            )?;
         }
     }
-    assignments
+    Ok(assignments)
 }
 
 /// Resolve the verified `DisplayLists` precedence: body, feature, then face.
 pub(crate) fn resolve_display_appearances(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     section: Section<'_>,
     faces: &[DisplayFace],
-) -> ResolvedDisplayAppearances {
-    let native_assignments = display_assignments(section, faces);
+) -> Result<ResolvedDisplayAppearances, cadmpeg_core::CodecError> {
+    let native_assignments = display_assignments(ctx, section, faces)?;
     let mut by_face = BTreeMap::new();
     for assignment in &native_assignments {
         if let DisplayAppearanceTarget::Body(face_indexes) = &assignment.target {
             for face_index in face_indexes {
-                by_face.insert(*face_index, assignment.definition.clone());
+                let definition = copy_definition(ctx, &assignment.definition)?;
+                ctx.insert_btree_map(
+                    &mut by_face,
+                    *face_index,
+                    definition,
+                    "index SLDPRT face appearances",
+                )?;
             }
         }
     }
 
-    let mut feature_by_source = HashMap::<u32, Option<FeatureAppearanceAssignment>>::new();
-    for assignment in feature_assignments(scan) {
+    let mut feature_by_source =
+        HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
+    for assignment in feature_assignments(ctx, scan)? {
+        ctx.admit_hash_map_entry(
+            &mut feature_by_source,
+            &assignment.feature_source_id,
+            "index SLDPRT feature appearances",
+        )?;
         feature_by_source
             .entry(assignment.feature_source_id)
             .and_modify(|existing| {
@@ -284,39 +409,63 @@ pub(crate) fn resolve_display_appearances(
             .or_insert_with(|| Some(assignment));
     }
     let mut matched_feature_sources = BTreeSet::new();
-    let mut faces_by_source = BTreeMap::<u32, Vec<usize>>::new();
+    let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
     for (table_index, face) in faces.iter().enumerate() {
         if let Some(source_id) = face.feature_source_id() {
-            faces_by_source
-                .entry(source_id)
-                .or_default()
-                .push(table_index);
+            ctx.push_btree_group(
+                &mut faces_by_source,
+                source_id,
+                table_index,
+                "index SLDPRT appearance face sources",
+                "collect SLDPRT appearance source faces",
+            )?;
         }
     }
     for (source_id, face_indexes) in faces_by_source {
+        const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
+
         let Some(Some(assignment)) = feature_by_source.get(&source_id) else {
             continue;
         };
-        matched_feature_sources.insert(source_id);
+        ctx.insert_btree_set(
+            &mut matched_feature_sources,
+            source_id,
+            "collect matched SLDPRT appearance sources",
+        )?;
+        let name = ctx.copy_retained_text(
+            FEATURE_APPEARANCE_NAME,
+            "retain SLDPRT feature appearance name",
+        )?;
         let definition = AppearanceDefinition {
-            name: "SolidWorks feature appearance".into(),
+            name,
             color: assignment.color,
-            source_name: assignment.source_name.clone(),
+            source_name: clone_stream_name(ctx, &assignment.source_name)?,
             record_offset: assignment.record_offset,
         };
         for face_index in face_indexes {
-            by_face.insert(face_index, definition.clone());
+            let copied = copy_definition(ctx, &definition)?;
+            ctx.insert_btree_map(
+                &mut by_face,
+                face_index,
+                copied,
+                "index SLDPRT face appearances",
+            )?;
         }
     }
     for assignment in native_assignments {
         if let DisplayAppearanceTarget::Face(face_index) = assignment.target {
-            by_face.insert(face_index, assignment.definition);
+            ctx.insert_btree_map(
+                &mut by_face,
+                face_index,
+                assignment.definition,
+                "index SLDPRT face appearances",
+            )?;
         }
     }
-    ResolvedDisplayAppearances {
+    Ok(ResolvedDisplayAppearances {
         by_face,
         matched_feature_sources,
-    }
+    })
 }
 
 #[cfg(test)]

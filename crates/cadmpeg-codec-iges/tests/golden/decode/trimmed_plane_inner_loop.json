@@ -28,28 +28,24 @@
         {
           "edge": "iges:model:edge#D15:0:0",
           "id": "iges:model:coedge#D15:0:0",
-          "next": "iges:model:coedge#D15:0:0",
           "owner_loop": "iges:model:loop#D15:0",
           "pcurves": [
             {
               "pcurve": "iges:model:pcurve#D15:0:0:0"
             }
           ],
-          "previous": "iges:model:coedge#D15:0:0",
           "radial_next": "iges:model:coedge#D15:0:0",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D15:1:0",
           "id": "iges:model:coedge#D15:1:0",
-          "next": "iges:model:coedge#D15:1:0",
           "owner_loop": "iges:model:loop#D15:1",
           "pcurves": [
             {
               "pcurve": "iges:model:pcurve#D15:1:0:0"
             }
           ],
-          "previous": "iges:model:coedge#D15:1:0",
           "radial_next": "iges:model:coedge#D15:1:0",
           "sense": "forward"
         }
@@ -58,33 +54,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.25,
-                "y": 0.25,
-                "z": 0.0
-              },
-              {
-                "x": 0.75,
-                "y": 0.25,
-                "z": 0.0
-              },
-              {
-                "x": 0.75,
-                "y": 0.75,
-                "z": 0.0
-              },
-              {
-                "x": 0.25,
-                "y": 0.75,
-                "z": 0.0
-              },
-              {
-                "x": 0.25,
-                "y": 0.25,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -96,7 +65,37 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.25,
+                  "y": 0.25,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.25,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.75,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.25,
+                  "y": 0.75,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.25,
+                  "y": 0.25,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D11",
           "source_object": {
@@ -109,33 +108,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -147,7 +119,37 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D3",
           "source_object": {
@@ -160,33 +162,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -198,7 +173,37 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D5",
           "source_object": {
@@ -211,33 +216,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.25,
-                "y": 0.25,
-                "z": 0.0
-              },
-              {
-                "x": 0.75,
-                "y": 0.25,
-                "z": 0.0
-              },
-              {
-                "x": 0.75,
-                "y": 0.75,
-                "z": 0.0
-              },
-              {
-                "x": 0.25,
-                "y": 0.75,
-                "z": 0.0
-              },
-              {
-                "x": 0.25,
-                "y": 0.25,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -249,7 +227,37 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.25,
+                  "y": 0.25,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.25,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.75,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.25,
+                  "y": 0.75,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.25,
+                  "y": 0.25,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D9",
           "source_object": {
@@ -264,68 +272,80 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D11-start",
           "id": "iges:model:edge#D11",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D11-start",
           "tolerance": 0.001
         },
         {
-          "curve": "iges:model:curve#D3",
+          "carrier": {
+            "curve": "iges:model:curve#D3",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D15:0:0",
           "id": "iges:model:edge#D15:0:0",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D15:0:0",
           "tolerance": 0.001
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D15:1:0",
           "id": "iges:model:edge#D15:1:0",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D15:1:0",
           "tolerance": 0.001
         },
         {
-          "curve": "iges:model:curve#D3",
+          "carrier": {
+            "curve": "iges:model:curve#D3",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D3-start",
           "id": "iges:model:edge#D3",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D3-start",
           "tolerance": 0.001
         },
         {
-          "curve": "iges:model:curve#D5",
+          "carrier": {
+            "curve": "iges:model:curve#D5",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D5-start",
           "id": "iges:model:edge#D5",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D5-start",
           "tolerance": 0.001
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "iges:model:vertex#D9-start",
           "id": "iges:model:edge#D9",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "iges:model:vertex#D9-start",
           "tolerance": 0.001
         }
@@ -333,10 +353,13 @@
       "faces": [
         {
           "id": "iges:model:face#D15",
-          "loops": [
-            "iges:model:loop#D15:0",
-            "iges:model:loop#D15:1"
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [
+              "iges:model:loop#D15:1"
+            ],
+            "outer": "iges:model:loop#D15:0"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D15",
           "surface": "iges:model:surface#D1",
@@ -346,18 +369,22 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D15:0:0"
-          ],
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D15:0:0"
+            ],
+            "kind": "ring"
+          },
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:0"
         },
         {
-          "boundary_role": "inner",
-          "coedges": [
-            "iges:model:coedge#D15:1:0"
-          ],
+          "boundary": {
+            "coedges": [
+              "iges:model:coedge#D15:1:0"
+            ],
+            "kind": "ring"
+          },
           "face": "iges:model:face#D15",
           "id": "iges:model:loop#D15:1"
         }
@@ -367,28 +394,6 @@
       "pcurves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 1.0,
-                "v": 0.0
-              },
-              {
-                "u": 1.0,
-                "v": 1.0
-              },
-              {
-                "u": 0.0,
-                "v": 1.0
-              },
-              {
-                "u": 0.0,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -400,38 +405,46 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:pcurve#D15:0:0:0",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.25,
-                "v": 0.25
-              },
-              {
-                "u": 0.75,
-                "v": 0.25
-              },
-              {
-                "u": 0.75,
-                "v": 0.75
-              },
-              {
-                "u": 0.25,
-                "v": 0.75
-              },
-              {
-                "u": 0.25,
-                "v": 0.25
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -443,13 +456,43 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.25,
+                  "v": 0.25
+                },
+                {
+                  "u": 0.75,
+                  "v": 0.25
+                },
+                {
+                  "u": 0.75,
+                  "v": 0.75
+                },
+                {
+                  "u": 0.25,
+                  "v": 0.75
+                },
+                {
+                  "u": 0.25,
+                  "v": 0.25
+                }
+              ]
+            }
           },
           "id": "iges:model:pcurve#D15:1:0:0",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.0
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],
@@ -527,22 +570,36 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D15"
-          ],
           "id": "iges:model:shell#D15",
+          "members": [
+            {
+              "id": "iges:model:face#D15",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D15"
         },
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D3",
-            "iges:model:edge#D5",
-            "iges:model:edge#D9",
-            "iges:model:edge#D11"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D3",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D5",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D9",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D11",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],
@@ -5504,20 +5561,21 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "effective_version": "5.3",
-            "representation": "fixed-ascii",
-            "version_flag": "11"
-          },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "fixed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -5528,22 +5586,21 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "fixed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "fixed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "entities=8",
@@ -5555,70 +5612,90 @@
       "parameter_tokens=84",
       "external_references=0"
     ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D3",
-          "target": "iges:entity:directory#3"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#3"
+          },
+          "source": "D3"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D5",
-          "target": "iges:entity:directory#5"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#5"
+          },
+          "source": "D5"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D7",
-          "target": "iges:entity:directory#7"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#7"
+          },
+          "source": "D7"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D9",
-          "target": "iges:entity:directory#9"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#9"
+          },
+          "source": "D9"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D11",
-          "target": "iges:entity:directory#11"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#11"
+          },
+          "source": "D11"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D13",
-          "target": "iges:entity:directory#13"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#13"
+          },
+          "source": "D13"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D15",
-          "target": "iges:entity:directory#15"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#15"
+          },
+          "source": "D15"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 2268,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRQQ1VSViAgICAgICAwRCAgICAgIDYKICAgICAxNDIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBPVVRCT1VORCAgICAgICAwRCAgICAgIDgKICAgICAxMDYgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgSU5NT0RFTCAgICAgICAwRCAgICAgMTAKICAgICAxMDYgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTEKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBJTlBDVVJWRSAgICAgICAwRCAgICAgMTIKICAgICAxNDIgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTMKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgSU5CT1VORCAgICAgICAwRCAgICAgMTQKICAgICAxNDQgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTUKICAgICAxNDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQU5OVUxVUyAgICAgICAwRCAgICAgMTYKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTQyLDAsMSw1LDMsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgICA5UCAgICAgIDUKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgIDExUCAgICAgIDYKMTQyLDAsMSwxMSw5LDM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKMTQ0LDEsMSwxLDcsMTM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDgKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE2UDAwMDAwMDggICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRQQ1VSViAgICAgICAwRCAgICAgIDYKICAgICAxNDIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBPVVRCT1VORCAgICAgICAwRCAgICAgIDgKICAgICAxMDYgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgSU5NT0RFTCAgICAgICAwRCAgICAgMTAKICAgICAxMDYgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTEKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBJTlBDVVJWRSAgICAgICAwRCAgICAgMTIKICAgICAxNDIgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTMKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgSU5CT1VORCAgICAgICAwRCAgICAgMTQKICAgICAxNDQgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTUKICAgICAxNDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQU5OVUxVUyAgICAgICAwRCAgICAgMTYKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTQyLDAsMSw1LDMsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgICA5UCAgICAgIDUKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgIDExUCAgICAgIDYKMTQyLDAsMSwxMSw5LDM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKMTQ0LDEsMSwxLDcsMTM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDgKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE2UDAwMDAwMDggICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "149027bd5a869d57f3fd4384723d78fb5a53228ec94d0f0c440e97c17c36c37c",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

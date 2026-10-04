@@ -2,8 +2,14 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
+use crate::test_support::tokens_test::{t_dbl, t_end, t_ident, t_long, t_ref, t_subident};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 pub(crate) fn push_revision_surface_tail(surface: &mut Vec<u8>) {
     surface.push(0x15);
@@ -49,8 +55,10 @@ pub(crate) fn synthetic_revision_surface_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -74,7 +82,7 @@ pub(crate) fn synthetic_revision_surface_smbh(
     bytes
 }
 
-pub(crate) fn scrubbed_definition(
+pub(super) fn scrubbed_definition(
     definition: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
 ) -> String {
     let text = serde_json::to_string(definition).expect("definition JSON");
@@ -144,12 +152,8 @@ pub(crate) fn push_revision_loft_body(
 /// The single revision-gated profile member of a decoded loft construction.
 pub(crate) fn decoded_revision_loft_member(
     ir: &cadmpeg_ir::document::CadIr,
-) -> &cadmpeg_ir::geometry::LoftProfileMember {
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft {
-        sections,
-        revision_form,
-        ..
-    } = &ir
+) -> cadmpeg_ir::geometry::LoftProfileMember {
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) = &ir
         .model
         .procedural_surfaces
         .first()
@@ -158,8 +162,11 @@ pub(crate) fn decoded_revision_loft_member(
     else {
         panic!("expected a loft construction")
     };
+    let sections = definition_payload.sections();
+    let revision_form = definition_payload.revision_form();
+
     assert!(revision_form.is_some());
-    &sections[0].entries[0].profile[0]
+    sections[0].entries[0].profile[0].to_raw()
 }
 
 /// Byte-exact re-emission of the decoded construction's subtype span.
@@ -175,8 +182,7 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         .iter()
         .find(|surface| ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id))
         .expect("solved surface");
-    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache()
-    else {
+    let Some(SolvedSurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache() else {
         panic!("expected a solved NURBS cache")
     };
     let mut bytes = Vec::new();
@@ -194,14 +200,17 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("subtype span")
+    .bytes()
     .to_vec()
 }
 
 /// The subtype span of the synthetic stream's revision-gated surface record.
 pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(smbh).unwrap();
-    let limit = asm_header::solved_record_limit(smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), smbh)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         smbh,
         start,
         limit,
@@ -217,6 +226,7 @@ pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap()
+    .bytes()
     .to_vec()
 }
 

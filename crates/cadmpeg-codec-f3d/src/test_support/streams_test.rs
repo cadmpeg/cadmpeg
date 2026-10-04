@@ -2,6 +2,13 @@
 //! Synthetic Design and ACT MetaStream/BulkStream payloads.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::test_support::{
+    indexed_header, lp_ascii, lp_utf16, push_marked_reference, push_reference_u64,
+    write_indexed_header, write_marked_reference,
+};
+
 /// Build one Design `MetaStream` segment with an empty primary record index.
 pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Vec<u8> {
     design_metastream_with_records(types, &[])
@@ -25,37 +32,40 @@ pub(crate) fn design_metastream_with_records(
     )
 }
 
-pub(crate) fn segment_metastream(
+fn segment_metastream(
     short_name: &str,
     full_name: &str,
     add_in: &str,
     types: &[(&str, &str, u32, &str, &[u64])],
     records: &[(u64, u64)],
 ) -> Vec<u8> {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
     let mut out = Vec::new();
-    lp(&mut out, short_name);
+    lp_ascii(&mut out, short_name);
     out.extend_from_slice(&0u32.to_le_bytes());
     let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    out.extend_from_slice(&(asset_guid.encode_utf16().count() as u32).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(asset_guid.encode_utf16().count()).expect("fixture value fits u32"))
+            .to_le_bytes(),
+    );
     for unit in asset_guid.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
     }
     out.extend_from_slice(&1234u32.to_le_bytes());
     out.extend_from_slice(&[0; 12]);
-    lp(&mut out, full_name);
-    lp(&mut out, add_in);
+    lp_ascii(&mut out, full_name);
+    lp_ascii(&mut out, add_in);
     out.extend_from_slice(&[0; 8]);
-    out.extend_from_slice(&(types.len() as u32).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(types.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (type_guid, base_type_guid, version, module, entity_ids) in types {
-        lp(&mut out, type_guid);
-        lp(&mut out, base_type_guid);
+        lp_ascii(&mut out, type_guid);
+        lp_ascii(&mut out, base_type_guid);
         out.extend_from_slice(&version.to_le_bytes());
-        lp(&mut out, module);
-        out.extend_from_slice(&(entity_ids.len() as u32).to_le_bytes());
+        lp_ascii(&mut out, module);
+        out.extend_from_slice(
+            &(u32::try_from(entity_ids.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for entity_id in *entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
         }
@@ -64,7 +74,9 @@ pub(crate) fn segment_metastream(
     // index, then the next-entity counter, the flag, and an empty property
     // block.
     out.extend_from_slice(&0_u32.to_le_bytes());
-    out.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (entity_id, bulk_offset) in records {
         out.extend_from_slice(&entity_id.to_le_bytes());
         out.extend_from_slice(&bulk_offset.to_le_bytes());
@@ -74,60 +86,60 @@ pub(crate) fn segment_metastream(
     out
 }
 
-pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Base)
 }
 
-pub(crate) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::SketchDimension,
     )
 }
 
-pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::BaseFeature,
     )
 }
 
-pub(crate) fn generated_design_base_flange_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_base_flange_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::BaseFlange,
     )
 }
 
-pub(crate) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::RemoveBody,
     )
 }
 
-pub(crate) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::SurfaceStitch,
     )
 }
 
-pub(crate) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::CopyPaste,
     )
 }
 
-pub(crate) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::CopyPasteBodies,
     )
 }
 
-pub(crate) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Form)
 }
 
@@ -251,14 +263,14 @@ fn generated_design_metastream_with_sketch_types(
             crate::design::presentation::BROWSER_NODE_TYPE_GUID,
             crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
             crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[900],
         ),
         (
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             base,
             crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_BODY,
+            crate::records::entity_header::DESIGN_MODULE_BODY,
             &[7],
         ),
         (
@@ -272,7 +284,7 @@ fn generated_design_metastream_with_sketch_types(
             crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
             crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
             crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_BODY,
+            crate::records::entity_header::DESIGN_MODULE_BODY,
             &[899],
         ),
         (
@@ -286,7 +298,7 @@ fn generated_design_metastream_with_sketch_types(
             "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
             base,
             3,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[800],
         ),
         (
@@ -309,14 +321,14 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001100",
             base,
             1,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[1100],
         ));
         types.push((
             "00000000-0000-0000-0000-000000000584",
             base,
             1,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[584],
         ));
     }
@@ -348,7 +360,7 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001400",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             feature_entity_ids,
         ));
     }
@@ -357,35 +369,35 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1601],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001403",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1602],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001404",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1603],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001405",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1604],
         ));
     } else if matches!(variant, GeneratedDesignMetastreamVariant::SurfaceStitch) {
@@ -393,21 +405,21 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1600],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1700],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001403",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1701],
         ));
     } else if matches!(variant, GeneratedDesignMetastreamVariant::CopyPaste) {
@@ -415,21 +427,21 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1600],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1601],
         ));
     }
     design_metastream_with_records(&types, records)
 }
 
-pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let entity_1 = [1];
     let entity_2 = [2];
     let entity_7 = [7];
@@ -536,25 +548,14 @@ pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     )
 }
 
-pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
+pub(super) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let mut out = Vec::new();
-    let mut records = vec![(2, out.len() as u64)];
+    let mut records = vec![(2, u64_from_index(out.len()))];
     lp_ascii(&mut out, "256");
     out.extend_from_slice(&2u32.to_le_bytes());
     out.extend_from_slice(b"decoy:ACTTable");
     out.extend_from_slice(&[0; 6]);
-    records.push((1, out.len() as u64));
+    records.push((1, u64_from_index(out.len())));
     lp_ascii(&mut out, "268");
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -578,7 +579,7 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         lp_ascii(&mut out, name);
         lp_utf16(&mut out, guid);
     }
-    records.push((9, out.len() as u64));
+    records.push((9, u64_from_index(out.len())));
     lp_ascii(&mut out, "267");
     out.extend_from_slice(&9u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -596,7 +597,7 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     out.push(1);
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 6]);
-    records.push((7, out.len() as u64));
+    records.push((7, u64_from_index(out.len())));
     lp_ascii(&mut out, "261");
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -612,24 +613,10 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     (out, records)
 }
 
-pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
+pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn reference(relation: &mut [u8], at: usize, target: u32) {
         relation[at] = 1;
         relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
-    }
-
-    fn push_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
     }
 
     fn close_current_point(out: &mut Vec<u8>, paired_reference: u32, owner_reference: u32) {
@@ -639,8 +626,8 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(&1.0f32.to_le_bytes());
         out.extend_from_slice(&1.0f32.to_le_bytes());
         out.extend_from_slice(&[0, 1, 0, 0, 0]);
-        push_reference(out, u64::from(paired_reference));
-        push_reference(out, u64::from(owner_reference));
+        push_reference_u64(out, u64::from(paired_reference));
+        push_reference_u64(out, u64::from(owner_reference));
     }
 
     fn push_point_companion(
@@ -653,7 +640,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(class_tag.as_bytes());
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; 15]);
-        push_reference(out, u64::from(point_record_index));
+        push_reference_u64(out, u64::from(point_record_index));
     }
 
     let mut out = Vec::new();
@@ -686,9 +673,9 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID,
     );
     lp_utf16(&mut out, "PrismMaterial-018");
-    push_reference(&mut out, 7);
+    push_reference_u64(&mut out, 7);
     out.push(0);
-    push_reference(&mut out, 986);
+    push_reference_u64(&mut out, 986);
     lp_utf16(&mut out, "Body");
     out.extend_from_slice(&1.0f32.to_le_bytes());
     out.extend_from_slice(&[1, 1]);
@@ -826,7 +813,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 133 + ordinal * 8;
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    push_reference(&mut curve, 277);
+    push_reference_u64(&mut curve, 277);
     out.extend_from_slice(&curve);
     records.push((
         700,
@@ -912,7 +899,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 371 + ordinal * 8;
         alternate_curve[offset..offset + 8].copy_from_slice(&coordinate.to_le_bytes());
     }
-    push_reference(&mut alternate_curve, 277);
+    push_reference_u64(&mut alternate_curve, 277);
     out.extend_from_slice(&alternate_curve);
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");
@@ -959,15 +946,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 /// entity header, points, curves, and relations; this variant closes the
 /// scope-to-placement join so the normal projection pipeline can materialize
 /// that graph as a neutral Sketch.
-pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
+fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
 
     let scope_record = 1_100_u32;
@@ -1013,18 +992,6 @@ pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
 /// Add a typed `BaseFlange` scope, its profile group, and the sketch-profile
 /// placement join to the generated Design stream.
 pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
-        bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
-        bytes[4..7].copy_from_slice(class_tag);
-        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn append_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     fn lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
         let units: Vec<u16> = value.encode_utf16().collect();
         bytes[at..at + 4].copy_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
@@ -1032,17 +999,6 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
             let offset = at + 4 + ordinal * 2;
             bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
         }
-    }
-
-    fn marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn local_reference(bytes: &mut Vec<u8>, record_index: u64) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
     }
 
     let (mut out, mut records) = generated_design_bulkstream();
@@ -1053,13 +1009,13 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     let settings_record = 1_503_u32;
 
     let placement_head_record = 2_100_u32;
-    append_header(&mut out, b"261", 800);
+    indexed_header(&mut out, *b"261", 800);
     out.extend_from_slice(&[0; 8]);
     out.push(1);
     out.extend_from_slice(&placement_head_record.to_le_bytes());
     out.extend_from_slice(&[0; 4]);
     let mut placement_head = Vec::new();
-    append_header(&mut placement_head, b"264", placement_head_record);
+    indexed_header(&mut placement_head, *b"264", placement_head_record);
     placement_head.extend_from_slice(&[0; 10]);
     placement_head.extend_from_slice(&[1, 0, 1]);
     placement_head.extend_from_slice(&[0; 4]);
@@ -1069,7 +1025,7 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
     let scope_offset = u64::try_from(out.len()).expect("synthetic BaseFlange scope offset");
     let mut scope = vec![0_u8; 416];
-    header(&mut scope, b"268", scope_record);
+    write_indexed_header(&mut scope, *b"268", scope_record);
     scope[73..77].copy_from_slice(&1_u32.to_le_bytes());
     scope[81] = 1;
     scope[82..86].copy_from_slice(&settings_record.to_le_bytes());
@@ -1090,18 +1046,18 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     .into_iter()
     .enumerate()
     {
-        marked_reference(&mut scope, 262 + ordinal * 11, record_index);
+        write_marked_reference(&mut scope, 262 + ordinal * 11, record_index);
     }
     scope[306..310].copy_from_slice(&u32::MAX.to_le_bytes());
     lp_utf16(&mut scope, 310, "BaseFlange");
     scope[334..338].copy_from_slice(&1_u32.to_le_bytes());
-    append_header(&mut scope, b"261", scope_record);
+    indexed_header(&mut scope, *b"261", scope_record);
     assert_eq!(scope.len(), 427);
     out.extend_from_slice(&scope);
     records.push((u64::from(scope_record), scope_offset));
 
     let mut group = Vec::new();
-    append_header(&mut group, b"264", profile_group_record);
+    indexed_header(&mut group, *b"264", profile_group_record);
     group.extend_from_slice(&[0; 8]);
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&1_u32.to_le_bytes());
@@ -1119,14 +1075,14 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     group.extend_from_slice(&u64::from(profile_group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(profile_group_record + 1));
+    push_reference_u64(&mut group, u64::from(profile_group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
-    append_header(&mut group, b"259", profile_group_record);
+    push_reference_u64(&mut group, u64::from(scope_record));
+    indexed_header(&mut group, *b"259", profile_group_record);
     out.extend_from_slice(&group);
 
     let mut profile = Vec::new();
-    append_header(&mut profile, b"377", profile_record);
+    indexed_header(&mut profile, *b"377", profile_record);
     profile.extend_from_slice(&[0; 10]);
     profile.push(1);
     profile.extend_from_slice(&(profile_record + 3).to_le_bytes());
@@ -1146,21 +1102,21 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     let tail_offset = profile.len();
     let tail = vec![0_u8; 94];
     profile.extend_from_slice(&tail);
-    append_header(&mut profile, b"264", profile_record);
+    indexed_header(&mut profile, *b"264", profile_record);
     assert_eq!(tail_offset + 94, profile.len() - 11);
     out.extend_from_slice(&profile);
 
     let mut thickness = vec![0_u8; 100];
-    header(&mut thickness, b"270", thickness_record);
+    write_indexed_header(&mut thickness, *b"270", thickness_record);
     thickness[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
     thickness[24] = 1;
     thickness[25..29].copy_from_slice(&scope_record.to_le_bytes());
     thickness[40..48].copy_from_slice(&0.2_f64.to_le_bytes());
-    append_header(&mut thickness, b"270", thickness_record);
+    indexed_header(&mut thickness, *b"270", thickness_record);
     out.extend_from_slice(&thickness);
 
     let mut settings = Vec::new();
-    append_header(&mut settings, b"271", settings_record);
+    indexed_header(&mut settings, *b"271", settings_record);
     settings.extend_from_slice(&[0; 20]);
     out.extend_from_slice(&settings);
 
@@ -1169,15 +1125,7 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
 /// Add the self-contained 267-byte result-body form of a `Base Feature`
 /// parameter scope to the generated Design stream.
-pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
+pub(super) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let scope_class_tag = 268_u32;
@@ -1209,21 +1157,7 @@ pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, 
 
 /// Add a `RemoveBody` scope and its single whole-body construction group to
 /// the generated Design stream.
-pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn local_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-    }
-
+pub(super) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1273,9 +1207,9 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
     group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(group_record + 1));
+    push_reference_u64(&mut group, u64::from(group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
+    push_reference_u64(&mut group, u64::from(scope_record));
     group.extend_from_slice(&3_u32.to_le_bytes());
     group.extend_from_slice(b"259");
     group.extend_from_slice(&group_record.to_le_bytes());
@@ -1332,21 +1266,7 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
 /// Add a `SurfaceStitch` scope, one face-selection group, and its tolerance
 /// and settings records to the generated Design stream.
-pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn local_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-    }
-
+pub(super) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1367,7 +1287,7 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
         u64::from(tolerance_record),
         u64::from(settings_record),
     ] {
-        local_reference(&mut scope, reference);
+        push_reference_u64(&mut scope, reference);
     }
     scope.extend_from_slice(&0_u32.to_le_bytes());
     lp_utf16(&mut scope, "SurfaceStitch");
@@ -1391,11 +1311,15 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
     group.extend_from_slice(&1_u32.to_le_bytes());
     let property_name = b"SurfaceStitchGapSettingX";
     assert_eq!(property_name.len(), 24);
-    group.extend_from_slice(&(property_name.len() as u32).to_le_bytes());
+    group.extend_from_slice(
+        &(u32::try_from(property_name.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     group.extend_from_slice(property_name);
     let property_type = b"IntrinsicMetaTypeuint64";
     assert_eq!(property_type.len(), 23);
-    group.extend_from_slice(&(property_type.len() as u32).to_le_bytes());
+    group.extend_from_slice(
+        &(u32::try_from(property_type.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     group.extend_from_slice(property_type);
     group.extend_from_slice(&[0; 8]);
     assert_eq!(group.len(), 88);
@@ -1414,9 +1338,9 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
     group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(group_record + 1));
+    push_reference_u64(&mut group, u64::from(group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
+    push_reference_u64(&mut group, u64::from(scope_record));
     group.extend_from_slice(&3_u32.to_le_bytes());
     group.extend_from_slice(b"259");
     group.extend_from_slice(&group_record.to_le_bytes());
@@ -1485,16 +1409,10 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
 
 /// Add two local component occurrences, their copy relation, and a `CopyPaste`
 /// scope with the long transform-bearing frame.
-pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     const COMPONENT_GUID: &str = "11111111-2222-3333-4444-555555555555";
     const SOURCE_OCCURRENCE_GUID: &str = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     const COPIED_OCCURRENCE_GUID: &str = "cccccccc-1111-2222-3333-dddddddddddd";
-
-    fn header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
-        bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
-        bytes[4..7].copy_from_slice(class_tag);
-        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
-    }
 
     fn guid(bytes: &mut [u8], at: usize, value: &str) {
         let units: Vec<u16> = value.encode_utf16().collect();
@@ -1538,7 +1456,7 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
 
     let source_offset = u64::try_from(out.len()).expect("synthetic source occurrence offset");
     let mut source = vec![0_u8; 229];
-    header(&mut source, b"269", source_record);
+    write_indexed_header(&mut source, *b"269", source_record);
     source[19] = 1;
     source[20..24].copy_from_slice(&1_u32.to_le_bytes());
     source[24] = 1;
@@ -1555,7 +1473,7 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
 
     let copied_offset = u64::try_from(out.len()).expect("synthetic copied occurrence offset");
     let mut copied = vec![0_u8; 357];
-    header(&mut copied, b"270", copied_record);
+    write_indexed_header(&mut copied, *b"270", copied_record);
     copied[19] = 1;
     copied[20..24].copy_from_slice(&1_u32.to_le_bytes());
     copied[24] = 1;
@@ -1572,7 +1490,7 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
 
     let relation_offset = u64::try_from(out.len()).expect("synthetic CopyPaste relation offset");
     let mut relation = vec![0_u8; 57];
-    header(&mut relation, b"264", relation_record);
+    write_indexed_header(&mut relation, *b"264", relation_record);
     relation[21] = 1;
     relation[22..26].copy_from_slice(&copied_record.to_le_bytes());
     relation[34] = 1;
@@ -1583,12 +1501,12 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
     records.push((u64::from(relation_record), relation_offset));
 
     let mut relation_pair = [0_u8; 11];
-    header(&mut relation_pair, b"259", relation_record);
+    write_indexed_header(&mut relation_pair, *b"259", relation_record);
     out.extend_from_slice(&relation_pair);
 
     let scope_offset = u64::try_from(out.len()).expect("synthetic CopyPaste scope offset");
     let mut scope = vec![0_u8; 529];
-    header(&mut scope, b"268", scope_record);
+    write_indexed_header(&mut scope, *b"268", scope_record);
     transform(&mut scope, 38, [0.0, 0.0, 0.0]);
     scope[378..382].copy_from_slice(&1_u32.to_le_bytes());
     scope[382] = 1;
@@ -1604,7 +1522,7 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
     records.push((u64::from(scope_record), scope_offset));
 
     let mut scope_pair = [0_u8; 11];
-    header(&mut scope_pair, b"261", scope_record);
+    write_indexed_header(&mut scope_pair, *b"261", scope_record);
     out.extend_from_slice(&scope_pair);
 
     (out, records)
@@ -1613,26 +1531,6 @@ pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u6
 /// Add one source-to-copy body relation and a `CopyPasteBodies` scope whose
 /// fixed relation lane is separate from the ordered body-operand table.
 pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-
     let (mut out, mut records) = generated_design_bulkstream();
     let body_map_count_at = 11 + crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN;
     let second_body_pair_at = body_map_count_at + 4 + 16;
@@ -1654,35 +1552,35 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
 
     let scope_offset = u64::try_from(out.len()).expect("synthetic CopyPasteBodies scope offset");
     let mut scope = Vec::new();
-    header(&mut scope, b"268", scope_record);
+    indexed_header(&mut scope, *b"268", scope_record);
     scope.extend_from_slice(&[0; 18]);
-    marked_reference(&mut scope, body_group_record);
-    marked_reference(&mut scope, relation_record);
+    push_marked_reference(&mut scope, body_group_record);
+    push_marked_reference(&mut scope, relation_record);
     scope.extend_from_slice(&2_u32.to_le_bytes());
-    marked_reference(&mut scope, body_group_record);
-    marked_reference(&mut scope, body_operand_record);
+    push_marked_reference(&mut scope, body_group_record);
+    push_marked_reference(&mut scope, body_operand_record);
     scope.extend_from_slice(&u32::MAX.to_le_bytes());
     lp_utf16(&mut scope, "CopyPasteBodies");
     let mut tail = vec![0_u8; 110];
     tail[0..4].copy_from_slice(&1_u32.to_le_bytes());
     tail[53..57].copy_from_slice(&u32::MAX.to_le_bytes());
     scope.extend_from_slice(&tail);
-    header(&mut scope, b"261", scope_record);
+    indexed_header(&mut scope, *b"261", scope_record);
     out.extend_from_slice(&scope);
     records.push((u64::from(scope_record), scope_offset));
 
     let body_group_offset = u64::try_from(out.len()).expect("synthetic body group offset");
     let mut body_group = Vec::new();
-    header(&mut body_group, b"264", body_group_record);
+    indexed_header(&mut body_group, *b"264", body_group_record);
     body_group.extend_from_slice(&[0; 10]);
     body_group.extend_from_slice(&1_u32.to_le_bytes());
-    marked_reference(&mut body_group, body_operand_record);
+    push_marked_reference(&mut body_group, body_operand_record);
     out.extend_from_slice(&body_group);
     records.push((u64::from(body_group_record), body_group_offset));
 
     let body_operand_offset = u64::try_from(out.len()).expect("synthetic body operand offset");
     let mut body_operand = Vec::new();
-    header(&mut body_operand, b"268", body_operand_record);
+    indexed_header(&mut body_operand, *b"268", body_operand_record);
     body_operand.extend_from_slice(&[0; 10]);
     body_operand.extend_from_slice(&1_u32.to_le_bytes());
     body_operand.extend_from_slice(&985_u64.to_le_bytes());
@@ -1691,7 +1589,7 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
 
     let relation_offset = u64::try_from(out.len()).expect("synthetic body relation offset");
     let mut relation = Vec::new();
-    header(&mut relation, b"264", relation_record);
+    indexed_header(&mut relation, *b"264", relation_record);
     relation.extend_from_slice(&[0; 8]);
     relation.push(1);
     relation.extend_from_slice(&2_u32.to_le_bytes());
@@ -1708,27 +1606,7 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
 }
 
 /// Add a compact one-cage `Form` scope and its cage-list carrier.
-pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-
+pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let cage_record = 1_500_u32;
@@ -1736,15 +1614,15 @@ pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 
     let scope_offset = u64::try_from(out.len()).expect("synthetic Form scope offset");
     let mut scope = Vec::new();
-    header(&mut scope, b"268", scope_record);
+    indexed_header(&mut scope, *b"268", scope_record);
     scope.extend_from_slice(&[0; 10]);
     scope.extend_from_slice(&1_u32.to_le_bytes());
-    marked_reference(&mut scope, cage_record);
+    push_marked_reference(&mut scope, cage_record);
     scope.extend_from_slice(&u32::MAX.to_le_bytes());
     lp_utf16(&mut scope, "Form");
     scope.extend_from_slice(&1_u32.to_le_bytes());
     scope.extend_from_slice(&[0; 78]);
-    header(&mut scope, b"261", scope_record);
+    indexed_header(&mut scope, *b"261", scope_record);
     out.extend_from_slice(&scope);
     records.push((u64::from(scope_record), scope_offset));
 
@@ -1760,10 +1638,10 @@ pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     cage[37..45].copy_from_slice(&u64::from(cage_object_record).to_le_bytes());
     cage[45..49].copy_from_slice(&[0, 0, 0xfc, 0]);
     out.extend_from_slice(&cage);
-    header(&mut out, b"261", cage_record);
+    indexed_header(&mut out, *b"261", cage_record);
     records.push((u64::from(cage_record), cage_offset));
 
-    header(&mut out, b"301", cage_object_record);
+    indexed_header(&mut out, *b"301", cage_object_record);
 
     (out, records)
 }
@@ -1771,13 +1649,7 @@ pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 /// Add paired dimensional parameters and their companion payloads to the
 /// generated Sketch stream. The payload contains a paired two-locus frame over
 /// two additional point records and one construction recipe record.
-pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn marked_reference(out: &mut Vec<u8>, target: u32) {
-        out.push(1);
-        out.extend_from_slice(&u64::from(target).to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-    }
-
+pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn append_point(
         out: &mut Vec<u8>,
         records: &mut Vec<(u64, u64)>,
@@ -1811,8 +1683,8 @@ pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         point.extend_from_slice(&1.0_f32.to_le_bytes());
         point.extend_from_slice(&1.0_f32.to_le_bytes());
         point.extend_from_slice(&[0, 1, 0, 0, 0]);
-        marked_reference(&mut point, paired_record_index);
-        marked_reference(&mut point, 277);
+        push_reference_u64(&mut point, u64::from(paired_record_index));
+        push_reference_u64(&mut point, 277);
         out.extend_from_slice(&point);
         records.push((
             u64::from(paired_record_index),
@@ -1822,7 +1694,7 @@ pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         out.extend_from_slice(b"267");
         out.extend_from_slice(&paired_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 15]);
-        marked_reference(out, record_index);
+        push_reference_u64(out, u64::from(record_index));
     }
 
     fn append_owner(

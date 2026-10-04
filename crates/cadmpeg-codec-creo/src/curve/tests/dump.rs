@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -8,7 +12,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 const EPS_HELIX_FEATURE: f64 = f64::EPSILON;
@@ -20,7 +23,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         \xe0\x0aexpression\0\xf8\x04r=5\0w=1\0theta=w*t*360\0z=71*t\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.curves.expressions.len(), 1);
     assert_eq!(scan.curves.expressions[0].entity_id, 0x094c);
     assert_eq!(scan.curves.expressions[0].lines.len(), 4);
@@ -34,9 +37,11 @@ fn decode_preserves_counted_curve_expression_programs() {
         [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]
     );
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields()["entity_id"], 0x094c);
@@ -52,16 +57,18 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
     assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
     assert_eq!(result.ir().model.features.len(), 1);
-    let cadmpeg_ir::features::FeatureDefinition::Helix {
-        axis_origin,
-        axis_direction,
-        radius,
-        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions,
-        start_angle,
-        clockwise,
-        ..
-    } = &result.ir().model.features[0].definition
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Helix {
+            axis_origin,
+            axis_direction,
+            radius,
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+            revolutions,
+            start_angle,
+            clockwise,
+            ..
+        },
+    ) = result.ir().model.features[0].evaluation.definition()
     else {
         panic!("complete curve-equation frame transfers a neutral helix");
     };
@@ -71,20 +78,22 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.x.abs() <= EPS_HELIX_FEATURE);
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.get().0 - 71.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
+    assert!((radius.get() - 5.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.get() - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((revolutions.get() - 1.0).abs() <= EPS_HELIX_FEATURE);
+    assert!(start_angle.get().abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT.as_str()
         ),
         0
     );
@@ -97,11 +106,13 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(result.ir().model.parameters[0].name, "r");
     assert_eq!(
         result.ir().model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
+        ))
     );
     assert_eq!(result.ir().model.parameters[2].name, "theta");
     assert_eq!(
-        result.ir().model.parameters[2].dependencies,
+        result.ir().model.parameters[2].dependencies.as_slice(),
         [result.ir().model.parameters[1].id.clone()]
     );
     assert_eq!(
@@ -112,7 +123,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         .properties
         .contains_key("external_dependencies"));
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        (&*result.ir().model.features[0].source_content),
         result
             .ir()
             .model
@@ -129,7 +140,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:DEPDB_DATA",
-        scan.curves.expressions[0].expression_offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.curves.expressions[0].expression_offset),
         "curve_expression_program",
         Exactness::ByteExact,
     );
@@ -141,10 +152,12 @@ fn decode_preserves_curve_expression_source_section() {
         \xe0\x0aexpression\0\xf8\x01value=5\0"
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let scan = container::scan_bytes_ok(data.clone());
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
 
     assert_eq!(records.len(), 1);
@@ -152,7 +165,7 @@ fn decode_preserves_curve_expression_source_section() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:FeatDefs",
-        scan.curves.expressions[0].expression_offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.curves.expressions[0].expression_offset),
         "curve_expression_program",
         Exactness::ByteExact,
     );
@@ -175,12 +188,12 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     assert_eq!(r.name, "r");
     assert_eq!(r.ordinal, 1);
     assert_eq!(r.value, None);
-    assert_eq!(r.dependencies, std::slice::from_ref(&a.id));
+    assert_eq!(r.dependencies.as_slice(), std::slice::from_ref(&a.id));
     assert_eq!(a.ordinal, 0);
     assert!(!r.properties.contains_key("external_dependencies"));
     assert_eq!(theta.properties["independent_variables"], "T");
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        (&*result.ir().model.features[0].source_content),
         result
             .ir()
             .model
@@ -193,7 +206,8 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
             )
             .collect::<Vec<_>>()
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -218,16 +232,24 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
     assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         0
     );
 }
@@ -263,11 +285,21 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
             .map(|parameter| parameter.value.as_ref())
             .collect::<Vec<_>>(),
         [
-            Some(&cadmpeg_ir::features::ParameterValue::Real(100.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(10.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(11.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(1.0)),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(101.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(100.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
+            )),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(101.0).unwrap()
+            )),
         ]
     );
 
@@ -299,56 +331,65 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         11.0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
-        5
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
-        5
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
         ),
-        2
+        5
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
+        5
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT.as_str()
+        ),
+        2
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT.as_str()
         ),
         0
     );
@@ -377,33 +418,43 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         values["x"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(
         values["y"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(4.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).unwrap()
+        ))
     );
     assert_eq!(
         values["sum"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(10.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
+        ))
     );
     assert_eq!(
         values["product"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(24.0))
+        Some(&cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(24.0).unwrap()
+        ))
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT.as_str()
         ),
         2
     );
@@ -435,13 +486,13 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(
         values["x"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(6.0)
+            cadmpeg_ir::scalar::Length::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(4.0)
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap()
         ))
     );
 
@@ -449,8 +500,9 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT.as_str()
         ),
         2
     );
@@ -494,12 +546,14 @@ fn decode_evaluates_dimensioned_relation_string_conversion() {
         ))
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         3
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -549,12 +603,16 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     assert_eq!(copy.name, "copy");
     assert_eq!(
         copy.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(present.name, "present");
     assert_eq!(
         present.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
+        ))
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
@@ -567,15 +625,18 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
         "width:fid_25:cid_12"
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         2
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT.as_str()
+        ),
         2
     );
 }
@@ -597,7 +658,9 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.name, "result");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
+        ))
     );
     assert_eq!(parameter.properties["external_dependencies"], "d42");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
@@ -611,15 +674,18 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
         "dimension"
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT.as_str()
+        ),
         1
     );
 }
@@ -667,15 +733,18 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(dependencies[2], "column");
     assert_eq!(dependencies[3], "driver");
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT.as_str()
+        ),
         1
     );
 }
@@ -717,26 +786,29 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(second["target"]["row"], "2");
     assert!(second["target"]["column"].is_null());
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        (&*result.ir().model.features[0].source_content),
         [cadmpeg_ir::features::FeatureSourceContent::Parameter(
             parameter.id.clone()
         )]
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT.as_str()
         ),
         2
     );
@@ -780,15 +852,19 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         .find(|parameter| parameter.name == "result")
         .expect("relation parameter");
 
-    assert_eq!(relation.dependencies, std::slice::from_ref(&dimension.id));
+    assert_eq!(
+        relation.dependencies.as_slice(),
+        std::slice::from_ref(&dimension.id)
+    );
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
+            cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -816,24 +892,30 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT.as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 active curve-equation record(s) containing prohibited datum-curve constructs \
                  were not evaluated",
             )
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 prohibited datum-curve construct(s) across active curve-equation records were \
                  not evaluated",
@@ -854,7 +936,8 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -905,13 +988,13 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(
         parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.8)
+            cadmpeg_ir::scalar::Length::new(50.8).unwrap()
         ))
     );
     let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((copy.0 - 76.2).abs() < 1.0e-12);
+    assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
@@ -936,7 +1019,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
-    assert!((angle.0 - 2.0f64.atan()).abs() < 1.0e-12);
+    assert!((angle.get() - 2.0f64.atan()).abs() < 1.0e-12);
     assert_eq!(parameters[4].properties["declared_unit"], "C");
     assert_eq!(
         parameters[4].properties["evaluated_dimension"],
@@ -966,7 +1049,10 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(parameters[2].properties["activation"], "inactive");
     assert_eq!(parameters[3].properties["activation"], "active");
     assert_eq!(parameters[3].value, None);
-    assert_eq!(parameters[3].dependencies, [parameters[1].id.clone()]);
+    assert_eq!(
+        parameters[3].dependencies.as_slice(),
+        [parameters[1].id.clone()]
+    );
     assert!(!parameters[3]
         .properties
         .contains_key("ambiguous_dependencies"));
@@ -990,15 +1076,24 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(prohibited[2], "if");
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1041,7 +1136,8 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
     assert_eq!(r.properties["cyclic_dependencies"], "a");
     assert!(a.dependencies.is_empty());
     assert_eq!(a.properties["cyclic_dependencies"], "r");
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1103,7 +1199,8 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .len(),
         4
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1119,24 +1216,25 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
-    assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center().as_raw();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
+
+    assert_eq!(angle_range.get(), [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, -2.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, -5.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 10.0));
-    assert_eq!(*apex_factor, 0.0);
+    assert_eq!(apex_factor.get(), 0.0);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
 }
 
@@ -1151,17 +1249,17 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        center,
-        major,
-        minor,
-        pitch,
-        axis,
-        ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
+    let center = helix_payload.center().as_raw();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let axis = helix_payload.axis();
+
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(0.0, 5.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));

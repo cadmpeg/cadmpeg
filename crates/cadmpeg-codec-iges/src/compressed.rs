@@ -7,63 +7,83 @@
 //! the four redundant Directory Entry fields and the fixed-card sequence
 //! fields, then delegates all semantic work to the existing parser.
 
-use cadmpeg_core::decode::DecodeContext;
+use crate::directory::DirectoryFieldSlot;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use std::num::NonZeroUsize;
+use std::rc::Rc;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
 const MAX_SEQUENCE: u32 = 9_999_999;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompressedField {
-    EntityType,
-    Structure,
-    LineFont,
-    Level,
-    View,
-    Transform,
-    LabelDisplay,
-    Status,
-    LineWeight,
-    Color,
+    Shared(DirectoryFieldSlot),
     ParameterLineCount,
-    Form,
-    ReservedFirst,
-    ReservedSecond,
-    Label,
-    Subscript,
 }
 
+const PARAMETER_LINE_COUNT_SLOT: usize = 10;
+const FIELDS: [(CompressedField, usize); 16] = [
+    (CompressedField::Shared(DirectoryFieldSlot::EntityType), 1),
+    (CompressedField::Shared(DirectoryFieldSlot::Structure), 3),
+    (CompressedField::Shared(DirectoryFieldSlot::LineFont), 4),
+    (CompressedField::Shared(DirectoryFieldSlot::Level), 5),
+    (CompressedField::Shared(DirectoryFieldSlot::View), 6),
+    (CompressedField::Shared(DirectoryFieldSlot::Transform), 7),
+    (CompressedField::Shared(DirectoryFieldSlot::LabelDisplay), 8),
+    (CompressedField::Shared(DirectoryFieldSlot::Status), 9),
+    (CompressedField::Shared(DirectoryFieldSlot::LineWeight), 12),
+    (CompressedField::Shared(DirectoryFieldSlot::Color), 13),
+    (CompressedField::ParameterLineCount, 14),
+    (CompressedField::Shared(DirectoryFieldSlot::Form), 15),
+    (
+        CompressedField::Shared(DirectoryFieldSlot::ReservedFirst),
+        16,
+    ),
+    (
+        CompressedField::Shared(DirectoryFieldSlot::ReservedSecond),
+        17,
+    ),
+    (CompressedField::Shared(DirectoryFieldSlot::Label), 18),
+    (CompressedField::Shared(DirectoryFieldSlot::Subscript), 19),
+];
+
+const _: () = {
+    let mut index = 0;
+    while index < FIELDS.len() {
+        assert!(FIELDS[index].0.slot() == index);
+        index += 1;
+    }
+};
+
 impl CompressedField {
-    fn number(self) -> usize {
+    const fn slot(self) -> usize {
         match self {
-            Self::EntityType => 1,
-            Self::Structure => 3,
-            Self::LineFont => 4,
-            Self::Level => 5,
-            Self::View => 6,
-            Self::Transform => 7,
-            Self::LabelDisplay => 8,
-            Self::Status => 9,
-            Self::LineWeight => 12,
-            Self::Color => 13,
-            Self::ParameterLineCount => 14,
-            Self::Form => 15,
-            Self::ReservedFirst => 16,
-            Self::ReservedSecond => 17,
-            Self::Label => 18,
-            Self::Subscript => 19,
+            Self::ParameterLineCount => PARAMETER_LINE_COUNT_SLOT,
+            Self::Shared(field) => {
+                let slot = field.slot();
+                if slot < PARAMETER_LINE_COUNT_SLOT {
+                    slot
+                } else {
+                    slot + 1
+                }
+            }
         }
+    }
+
+    const fn number(self) -> usize {
+        FIELDS[self.slot()].1
     }
 }
 
 #[derive(Debug, Clone)]
-struct DirectoryFields([Vec<u8>; 16]);
+struct DirectoryFields([Rc<Vec<u8>>; 16]);
 
 impl DirectoryFields {
     fn get(&self, field: CompressedField) -> &[u8] {
-        &self.0[field as usize]
+        self.0[field.slot()].as_slice()
     }
 }
 
@@ -77,24 +97,20 @@ struct DataEntity {
 #[derive(Debug)]
 struct ParsedDirectoryRecord {
     sequence: u32,
-    specs: Vec<(CompressedField, Vec<u8>)>,
+    specs: [Option<Rc<Vec<u8>>>; 16],
     next: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ParameterLexState {
-    at_field_start: bool,
-    hollerith_remaining: usize,
-    count_start: Option<usize>,
+enum ParameterLexState {
+    FieldStart { digits: Option<usize> },
+    InField,
+    Hollerith { remaining: NonZeroUsize },
 }
 
 impl Default for ParameterLexState {
     fn default() -> Self {
-        Self {
-            at_field_start: true,
-            hollerith_remaining: 0,
-            count_start: None,
-        }
+        Self::FieldStart { digits: None }
     }
 }
 
@@ -122,20 +138,29 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
             None => (source.len(), source.len()),
         };
         ctx.charge_collection_items(1, "iges_compressed_ascii_lines")?;
+
+        ctx.reserve_capacity(&mut lines, 1, "iges_compressed_ascii_line_index")?;
         lines.push(&source[start..end]);
         start = next;
     }
     Ok(lines)
 }
 
-fn logical_global_stream(cards: &[&[u8]]) -> Result<Vec<u8>, CodecError> {
-    let mut stream = Vec::new();
-    let mut pending_digits = Vec::new();
-    let mut hollerith_remaining = 0_usize;
-    for card in cards {
+fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+    let length = cards.iter().try_fold(0_usize, |length, card| {
         if card.len() != CARD_WIDTH {
             return Err(malformed("Start and Global records must be 80 columns"));
         }
+        length.checked_add(CARD_DATA_WIDTH).ok_or_else(|| {
+            CodecError::NotImplemented("IGES Compressed ASCII Global stream exceeds usize".into())
+        })
+    })?;
+    let (mut stream, _stream_storage) =
+        ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
+    let (mut pending_digits, _digits_storage) =
+        ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
+    let mut hollerith_remaining = 0_usize;
+    for card in cards {
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
             if hollerith_remaining > 0 {
                 stream.push(byte);
@@ -195,8 +220,8 @@ fn hollerith_at(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, Co
     Ok(Some((cursor + 1, payload_end)))
 }
 
-fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
-    let bytes = logical_global_stream(cards)?;
+fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8, u8), CodecError> {
+    let bytes = logical_global_stream(cards, ctx)?;
     let (parameter_delimiter, cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
@@ -254,9 +279,11 @@ fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize
     Ok((value, end))
 }
 
-fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, CodecError> {
-    let mut specs = Vec::new();
-    let mut specified = [false; 21];
+fn parse_field_specs(
+    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<[Option<Rc<Vec<u8>>>; 16], CodecError> {
+    let mut specs = std::array::from_fn(|_| None);
     let mut cursor = 0_usize;
     while cursor < bytes.len() {
         if bytes[cursor] != b'@' {
@@ -276,46 +303,31 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
             .map_err(|_| malformed("Directory field number is not ASCII"))?
             .parse::<usize>()
             .map_err(|_| malformed("Directory field number is out of range"))?;
-        let compressed_field = match field {
-            1 => CompressedField::EntityType,
-            3 => CompressedField::Structure,
-            4 => CompressedField::LineFont,
-            5 => CompressedField::Level,
-            6 => CompressedField::View,
-            7 => CompressedField::Transform,
-            8 => CompressedField::LabelDisplay,
-            9 => CompressedField::Status,
-            12 => CompressedField::LineWeight,
-            13 => CompressedField::Color,
-            14 => CompressedField::ParameterLineCount,
-            15 => CompressedField::Form,
-            16 => CompressedField::ReservedFirst,
-            17 => CompressedField::ReservedSecond,
-            18 => CompressedField::Label,
-            19 => CompressedField::Subscript,
-            2 | 10 | 11 | 20 => {
-                return Err(malformed(format!(
-                    "Directory field {field} is redundant in Compressed ASCII"
-                )));
-            }
-            _ => {
-                return Err(malformed(format!(
-                    "Directory field number {field} is outside 1 through 20"
-                )));
-            }
-        };
-        if specified[field] {
+        let compressed_field = FIELDS
+            .iter()
+            .find_map(|(candidate, number)| (*number == field).then_some(*candidate))
+            .ok_or_else(|| {
+                if matches!(field, 2 | 10 | 11 | 20) {
+                    malformed(format!(
+                        "Directory field {field} is redundant in Compressed ASCII"
+                    ))
+                } else {
+                    malformed(format!(
+                        "Directory field number {field} is outside 1 through 20"
+                    ))
+                }
+            })?;
+        if specs[compressed_field.slot()].is_some() {
             return Err(malformed(format!(
                 "Directory field {field} is specified more than once"
             )));
         }
-        specified[field] = true;
         cursor += 1;
         let value_start = cursor;
         while bytes.get(cursor).is_some_and(|byte| *byte != b'@') {
             cursor += 1;
         }
-        let value = bytes[value_start..cursor].to_vec();
+        let value = &bytes[value_start..cursor];
         if value
             .iter()
             .any(|byte| !byte.is_ascii() || byte.is_ascii_control())
@@ -324,7 +336,12 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
                 "Directory field {field} contains a non-printable byte"
             )));
         }
-        specs.push((compressed_field, value));
+        let value = ctx.copy_retained(value, "iges_compressed_directory_field")?;
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<Vec<u8>>() + 2 * std::mem::size_of::<usize>()),
+            "iges_compressed_directory_field_owner",
+        )?;
+        specs[compressed_field.slot()] = Some(Rc::new(value));
     }
     Ok(specs)
 }
@@ -333,6 +350,7 @@ fn parse_directory_record(
     lines: &[&[u8]],
     start: usize,
     record_delimiter: u8,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ParsedDirectoryRecord, CodecError> {
     let first = lines
         .get(start)
@@ -344,22 +362,32 @@ fn parse_directory_record(
         return Err(malformed("Directory field line exceeds 72 columns"));
     }
     let (sequence, cursor) = parse_sequence(first, 1, "Data record")?;
-    let mut spec_bytes = first[cursor..].to_vec();
+    let mut length = 0_usize;
     let mut line_index = start;
-    loop {
-        if let Some(delimiter) = spec_bytes.iter().position(|byte| *byte == record_delimiter) {
-            if spec_bytes[delimiter + 1..].iter().any(|byte| *byte != b' ') {
+    let delimiter_offset = loop {
+        let line = if line_index == start {
+            &first[cursor..]
+        } else {
+            lines[line_index]
+        };
+        if let Some(delimiter) = line.iter().position(|byte| *byte == record_delimiter) {
+            if line[delimiter + 1..].iter().any(|byte| *byte != b' ') {
                 return Err(malformed(
                     "Directory field record has data after its record delimiter",
                 ));
             }
-            spec_bytes.truncate(delimiter);
-            return Ok(ParsedDirectoryRecord {
-                sequence,
-                specs: parse_field_specs(&spec_bytes)?,
-                next: line_index + 1,
-            });
+            length = length.checked_add(delimiter).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Directory record exceeds usize".into(),
+                )
+            })?;
+            break delimiter;
         }
+        length = length.checked_add(line.len()).ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES Compressed ASCII Directory record exceeds usize".into(),
+            )
+        })?;
         line_index += 1;
         let continuation = lines
             .get(line_index)
@@ -372,27 +400,40 @@ fn parse_directory_record(
                 "Directory field continuation does not begin with @",
             ));
         }
-        spec_bytes.extend_from_slice(continuation);
+    };
+    let (mut spec_bytes, _spec_storage) =
+        ctx.scoped_vector_storage(length, "iges_compressed_directory_spec_bytes")?;
+    if line_index == start {
+        spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
+    } else {
+        spec_bytes.extend_from_slice(&first[cursor..]);
+        for continuation in lines.iter().take(line_index).skip(start + 1) {
+            spec_bytes.extend_from_slice(continuation);
+        }
+        spec_bytes.extend_from_slice(&lines[line_index][..delimiter_offset]);
     }
+    Ok(ParsedDirectoryRecord {
+        sequence,
+        specs: parse_field_specs(&spec_bytes, ctx)?,
+        next: line_index + 1,
+    })
 }
 
 fn apply_field_specs(
     previous: Option<&DirectoryFields>,
-    specs: Vec<(CompressedField, Vec<u8>)>,
+    specs: [Option<Rc<Vec<u8>>>; 16],
 ) -> Result<DirectoryFields, CodecError> {
     if let Some(previous) = previous {
         let mut fields = previous.clone();
-        for (field, value) in specs {
-            fields.0[field as usize] = value;
+        for (index, value) in specs.into_iter().enumerate() {
+            if let Some(value) = value {
+                fields.0[index] = value;
+            }
         }
         return Ok(fields);
     }
-    let mut fields: [Option<Vec<u8>>; 16] = std::array::from_fn(|_| None);
-    for (field, value) in specs {
-        fields[field as usize] = Some(value);
-    }
     let [Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7), Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15)] =
-        fields
+        specs
     else {
         return Err(malformed(
             "the first Data record does not specify every non-redundant Directory field",
@@ -425,23 +466,8 @@ fn field_i64(
     })
 }
 
-fn fixed_field(field: usize, bytes: &[u8]) -> Result<[u8; 8], CodecError> {
-    if bytes.len() > 8 {
-        return Err(malformed(format!(
-            "Directory field {field} exceeds eight columns"
-        )));
-    }
-    let mut output = [b' '; 8];
-    if matches!(field, 16 | 17) {
-        output[..bytes.len()].copy_from_slice(bytes);
-    } else {
-        output[8 - bytes.len()..].copy_from_slice(bytes);
-    }
-    Ok(output)
-}
-
 fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
-    fixed_field(0, value.to_string().as_bytes())
+    crate::directory::render_field(value.to_string().as_bytes())
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
@@ -486,28 +512,86 @@ fn append_directory_cards(
     entity: &DataEntity,
     parameter_start: u32,
 ) -> Result<(), CodecError> {
-    let entity_type = entity.fields.get(CompressedField::EntityType);
+    let entity_type = entity
+        .fields
+        .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
     let first_fields = [
-        fixed_field(1, entity_type)?,
+        crate::directory::render_field(entity_type)?,
         fixed_number(i64::from(parameter_start))?,
-        fixed_field(3, entity.fields.get(CompressedField::Structure))?,
-        fixed_field(4, entity.fields.get(CompressedField::LineFont))?,
-        fixed_field(5, entity.fields.get(CompressedField::Level))?,
-        fixed_field(6, entity.fields.get(CompressedField::View))?,
-        fixed_field(7, entity.fields.get(CompressedField::Transform))?,
-        fixed_field(8, entity.fields.get(CompressedField::LabelDisplay))?,
-        fixed_field(9, entity.fields.get(CompressedField::Status))?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Structure)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LineFont)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Level)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::View)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Transform)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LabelDisplay)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Status)),
+        )?,
     ];
     let second_fields = [
-        fixed_field(11, entity_type)?,
-        fixed_field(12, entity.fields.get(CompressedField::LineWeight))?,
-        fixed_field(13, entity.fields.get(CompressedField::Color))?,
-        fixed_field(14, entity.fields.get(CompressedField::ParameterLineCount))?,
-        fixed_field(15, entity.fields.get(CompressedField::Form))?,
-        fixed_field(16, entity.fields.get(CompressedField::ReservedFirst))?,
-        fixed_field(17, entity.fields.get(CompressedField::ReservedSecond))?,
-        fixed_field(18, entity.fields.get(CompressedField::Label))?,
-        fixed_field(19, entity.fields.get(CompressedField::Subscript))?,
+        crate::directory::render_field(entity_type)?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::LineWeight)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Color)),
+        )?,
+        crate::directory::render_field(entity.fields.get(CompressedField::ParameterLineCount))?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Form)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::ReservedFirst)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::ReservedSecond)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Label)),
+        )?,
+        crate::directory::render_field(
+            entity
+                .fields
+                .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),
+        )?,
     ];
     let mut first = [b' '; CARD_DATA_WIDTH];
     let mut second = [b' '; CARD_DATA_WIDTH];
@@ -525,51 +609,66 @@ fn append_directory_cards(
     append_card(output, &second, b'D', even_sequence)
 }
 
+/// Advances the parameter lexer across one card and states whether the record
+/// delimiter is on it.
+///
+/// A digit run is a Hollerith character count when an `H` closes it, so the
+/// accumulator holds a count. A run that leaves the `usize` range states no
+/// count that any record can carry, and this refuses it.
 fn parameter_record_terminator(
     line: &[u8],
     state: &mut ParameterLexState,
     parameter_delimiter: u8,
     record_delimiter: u8,
-) -> bool {
+) -> Result<bool, CodecError> {
     for byte in line.iter().copied() {
-        if state.hollerith_remaining > 0 {
-            state.hollerith_remaining -= 1;
-            continue;
-        }
-        if state.at_field_start {
-            if byte == b' ' {
+        match *state {
+            ParameterLexState::Hollerith { remaining } => {
+                *state = NonZeroUsize::new(remaining.get() - 1)
+                    .map_or(ParameterLexState::InField, |remaining| {
+                        ParameterLexState::Hollerith { remaining }
+                    });
                 continue;
             }
-            if byte.is_ascii_digit() {
-                state.count_start = Some(
-                    state
-                        .count_start
-                        .unwrap_or_default()
-                        .saturating_mul(10)
-                        .saturating_add(usize::from(byte - b'0')),
-                );
-                continue;
-            }
-            if matches!(byte, b'H' | b'h') {
-                let Some(count) = state.count_start.take() else {
-                    state.at_field_start = false;
+            ParameterLexState::FieldStart { digits } => {
+                if byte == b' ' {
                     continue;
-                };
-                state.hollerith_remaining = count;
-                state.at_field_start = false;
-                continue;
+                }
+                if byte.is_ascii_digit() {
+                    let declared = digits
+                        .unwrap_or_default()
+                        .checked_mul(10)
+                        .and_then(|value| value.checked_add(usize::from(byte - b'0')))
+                        .ok_or_else(|| {
+                            malformed(format!(
+                                "Parameter Data decimal field exceeds {}",
+                                usize::MAX
+                            ))
+                        })?;
+                    *state = ParameterLexState::FieldStart {
+                        digits: Some(declared),
+                    };
+                    continue;
+                }
+                if matches!(byte, b'H' | b'h') {
+                    *state = digits
+                        .and_then(NonZeroUsize::new)
+                        .map_or(ParameterLexState::InField, |remaining| {
+                            ParameterLexState::Hollerith { remaining }
+                        });
+                    continue;
+                }
+                *state = ParameterLexState::InField;
             }
-            state.count_start = None;
-            state.at_field_start = false;
+            ParameterLexState::InField => {}
         }
         if byte == parameter_delimiter {
-            state.at_field_start = true;
-            state.count_start = None;
+            *state = ParameterLexState::FieldStart { digits: None };
         } else if byte == record_delimiter {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 fn parse_data_entity(
@@ -578,12 +677,17 @@ fn parse_data_entity(
     previous: Option<&DirectoryFields>,
     parameter_delimiter: u8,
     record_delimiter: u8,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(DataEntity, usize), CodecError> {
-    let directory = parse_directory_record(lines, start, record_delimiter)?;
+    let directory = parse_directory_record(lines, start, record_delimiter, ctx)?;
     let fields = apply_field_specs(previous, directory.specs)?;
     let sequence = directory.sequence;
     let mut cursor = directory.next;
-    let entity_type = field_i64(&fields, CompressedField::EntityType, "entity type")?;
+    let entity_type = field_i64(
+        &fields,
+        CompressedField::Shared(DirectoryFieldSlot::EntityType),
+        "entity type",
+    )?;
     let line_count = field_i64(
         &fields,
         CompressedField::ParameterLineCount,
@@ -603,9 +707,25 @@ fn parse_data_entity(
         let source_lines = lines
             .get(cursor..end)
             .ok_or_else(|| malformed("Parameter Data lines end before the declared count"))?;
+        let headers = line_count
+            .checked_mul(std::mem::size_of::<Vec<u8>>())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Parameter Data line storage exceeds usize".into(),
+                )
+            })?;
+        ctx.charge_retained(
+            u64_from_index(headers),
+            "iges_compressed_parameter_line_headers",
+        )?;
+        parameter_lines = ctx.alloc_filled(
+            line_count,
+            Vec::<u8>::new(),
+            "iges_compressed_parameter_lines",
+        )?;
         let mut state = ParameterLexState::default();
         let mut terminated = false;
-        for line in source_lines {
+        for (index, line) in source_lines.iter().enumerate() {
             if line.len() > PARAMETER_DATA_WIDTH {
                 return Err(malformed("Parameter Data line exceeds 64 columns"));
             }
@@ -615,11 +735,11 @@ fn parse_data_entity(
                     &mut state,
                     parameter_delimiter,
                     record_delimiter,
-                )
+                )?
             {
                 terminated = true;
             }
-            parameter_lines.push((*line).to_vec());
+            parameter_lines[index] = ctx.copy_retained(line, "iges_compressed_parameter_line")?;
         }
         if !terminated {
             return Err(malformed(
@@ -682,10 +802,7 @@ fn append_terminate(
 }
 
 fn charge_normalization(ctx: &DecodeContext<'_>, bytes: usize) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64::try_from(bytes).unwrap_or(u64::MAX),
-        "iges_compressed_ascii_normalization",
-    )
+    ctx.charge_work(u64_from_index(bytes), "iges_compressed_ascii_normalization")
 }
 
 /// Expand one Compressed ASCII source into the fixed-card input consumed by
@@ -733,19 +850,25 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .map(|index| data_begin + index)
         .ok_or_else(|| malformed("Terminate section is missing"))?;
 
-    let global_cards = lines[global_begin..data_begin].to_vec();
-    let (parameter_delimiter, record_delimiter) = compressed_delimiters(&global_cards)?;
-    let mut previous = None;
+    let global_cards = &lines[global_begin..data_begin];
+    let (parameter_delimiter, record_delimiter) = compressed_delimiters(global_cards, ctx)?;
     let mut entities = Vec::new();
     let mut data_cursor = data_begin;
     let mut expected_sequence = 1_u32;
+    charge_normalization(ctx, source.len())?;
     while data_cursor < terminate_index {
+        ctx.charge_collection_items(1, "iges_compressed_entities")?;
+
+        ctx.reserve_capacity(&mut entities, 1, "iges_compressed_entity_record")?;
         let (entity, next) = parse_data_entity(
             &lines,
             data_cursor,
-            previous.as_ref(),
+            entities
+                .last()
+                .map(|previous: &DataEntity| &previous.fields),
             parameter_delimiter,
             record_delimiter,
+            ctx,
         )?;
         if entity.sequence != expected_sequence || entity.sequence % 2 == 0 {
             return Err(malformed(format!(
@@ -756,19 +879,22 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         expected_sequence = expected_sequence
             .checked_add(2)
             .ok_or_else(|| malformed("Directory sequence overflows"))?;
-        previous = Some(entity.fields.clone());
         entities.push(entity);
         data_cursor = next;
     }
 
-    let parameter_count = entities
-        .iter()
-        .map(|entity| entity.parameter_lines.len())
-        .sum::<usize>();
-    let directory_count = entities
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| malformed("Directory section count overflows"))?;
+    let parameter_count = entities.iter().try_fold(0_usize, |count, entity| {
+        count
+            .checked_add(entity.parameter_lines.len())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Parameter Data section exceeds usize".into(),
+                )
+            })
+    })?;
+    let directory_count = entities.len().checked_mul(2).ok_or_else(|| {
+        CodecError::NotImplemented("IGES Compressed ASCII Directory section exceeds usize".into())
+    })?;
     let output_estimate = start_begin
         .checked_add(global_cards.len())
         .and_then(|count| count.checked_add(directory_count))
@@ -776,17 +902,22 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .and_then(|count| count.checked_add(1))
         .and_then(|count| count.checked_mul(CARD_WIDTH + 1))
         .and_then(|size| size.checked_add(source.len()))
-        .ok_or_else(|| malformed("normalized source size overflows"))?;
-    charge_normalization(ctx, source.len().saturating_add(output_estimate))?;
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES Compressed ASCII normalized output exceeds usize".into(),
+            )
+        })?;
+    charge_normalization(ctx, output_estimate)?;
+    let mut output = ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
 
-    let mut output = Vec::with_capacity(output_estimate);
     for line in &lines[start_begin..global_begin] {
         append_source_card(&mut output, line, b'S')?;
     }
     for line in &lines[global_begin..data_begin] {
         append_source_card(&mut output, line, b'G')?;
     }
-    let mut parameter_starts = Vec::with_capacity(entities.len());
+    let mut parameter_starts =
+        ctx.collection_vec(entities.len(), "iges_compressed_parameter_starts")?;
     let mut parameter_sequence = 1_u32;
     for entity in &entities {
         let parameter_start = if entity.parameter_lines.is_empty() {

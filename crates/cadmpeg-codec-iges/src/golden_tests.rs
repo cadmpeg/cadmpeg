@@ -9,7 +9,7 @@
 //! Shared harness: [`cadmpeg_test_support::golden`].
 
 use crate::IgesVersion;
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;

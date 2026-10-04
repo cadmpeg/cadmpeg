@@ -624,6 +624,7 @@ not require that UUID to occur in only one record and does not carry a producer
 selector for an antecedent. Multiple records can therefore produce the same
 descendant UUID without a unique history dependency in the bytes.
 `record_type` is 0 for update history parameters and 1 for feature parameters.
+Other serialized record-type values make the complete history record malformed.
 
 The values wrapper and every history value are independent anonymous chunks.
 The writer emits version 1.0 for both. Each history value is an anonymous
@@ -737,6 +738,7 @@ archive array of u8 persistent_edge_orientations
 
 Both archive-array counts must equal `edge_count`. Orientations are 0 for
 forward and 1 for reversed traversal.
+Other orientation bytes make the complete history record malformed.
 
 The object-evaluation chunk contains `i32 evaluation_type`, an
 `ON_ComponentIndex`, four `f64` evaluation parameters, and three
@@ -1275,7 +1277,13 @@ The XML document has root `xml` and a direct child named
 `new-displacement-object-data`. Parameter and property names are matched
 case-insensitively. A parameter with no `type` property is absent to the
 parameter reader. Unknown child elements are ignored. Missing parameters use
-the class getter defaults below; a nil UUID is no texture:
+the class getter defaults below; a nil UUID is no texture.
+
+A present typed Boolean, integer, or real parameter with text outside its
+declared value grammar makes that userdata item malformed. Getter defaults
+apply only when the typed parameter is absent.
+
+The displacement parameters are:
 
 | XML child | Type | Meaning | Missing value |
 | --- | --- | --- | ---: |
@@ -2351,6 +2359,8 @@ has an effective mask only when its viewport ID is non-nil and at least one
 override is effective. `ON_UNSET_COLOR` means use the layer color or plot
 color. A plot weight is effective for a finite value `>= 0.0` or `-1.0`;
 `0.0` selects the application default pen and `-1.0` suppresses plotting.
+Other plot-weight values and visibility bytes other than 1 or 2 make the
+per-viewport userdata malformed.
 The first visible byte is the effective visibility. Minor 1 writes that byte
 twice so a minor-0 reader can consume the first value; the minor-1 reader
 consumes the second as its compatibility persistent value. Minor 2 adds the
@@ -5013,7 +5023,14 @@ detail, file-reference, content-hash, SHA-1, and referenced-component-settings
 children are each bounded anonymous major-1 chunks. Model-component attributes
 consume status bytes for model serials, UUID, component type, index, and name;
 the instance-definition writer selects only index, UUID, and name. Unit-system
-detail consumes a unit enum, meters-per-unit value, and custom-unit name.
+detail consumes a `u32` unit enum, an `f64` meters-per-unit value, and a custom-unit
+name. For custom units (enum 11), the scale must be greater than zero and less
+than the positive unset sentinel `1.23432101234321e308`. For all other unit
+enums, the stored scale and name are redundant; the unit enum
+determines the unit system. A redundant scale can have any binary64 bit pattern.
+Enum 255 denotes unset units. Unrecognized enum values also denote unset
+units. In the packed V5 layout, the minor-1.4 unit-system detail replaces the
+minor-1.2 enum and minor-1.3 scale.
 File-reference minor 1 adds the embedded-file UUID; content-hash and SHA-1
 writers use minor 0. Each reader closes its own chunk after its known prefix,
 so later-minor direct bytes remain at that child boundary.

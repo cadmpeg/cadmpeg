@@ -8,7 +8,9 @@ use std::io::{Cursor, Read, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
@@ -16,7 +18,7 @@ use crate::writer::primitives::{
 use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
-pub(crate) mod geometry;
+mod geometry;
 pub(crate) mod records;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
@@ -59,11 +61,20 @@ use records::{
 /// this binary, which is the only setting in which
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
-pub fn write_semantic(
+pub(crate) fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,
+    notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
+    // Semantic patching reserializes native records under the same desktop
+    // decode policy used for the source-image salvage decode below.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source_image,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
@@ -75,9 +86,9 @@ pub fn write_semantic(
         .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
-            _ => {
-                unreachable!("the fixed salvage decode cannot produce a strict refusal")
-            }
+            other => CodecError::malformed(format!(
+                "the salvage decode of the source image refused: {other}"
+            )),
         })?;
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
@@ -97,13 +108,7 @@ pub fn write_semantic(
         .iter()
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
-    if baseline_point_ids != target_point_ids
-        || target.model.points.iter().any(|point| {
-            !point.position.x.is_finite()
-                || !point.position.y.is_finite()
-                || !point.position.z.is_finite()
-        })
-    {
+    if baseline_point_ids != target_point_ids {
         return Err(CodecError::NotImplemented(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"
                 .into(),
@@ -114,32 +119,30 @@ pub fn write_semantic(
         .model
         .curves
         .iter()
-        .filter_map(
-            |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
-                    let before = baseline
-                        .ir()
-                        .model
-                        .curves
-                        .iter()
-                        .find(|before| before.id == curve.id)?;
-                    let CurveGeometry::Nurbs(before) =
-                        before.geometry.solved_cache().unwrap_or(&before.geometry)
-                    else {
-                        return None;
-                    };
-                    Some((
-                        curve.id.as_str().to_owned(),
-                        NurbsCurveEdit {
-                            curve: nurbs.clone(),
-                            periodic: (before.periodic() != nurbs.periodic())
-                                .then_some(nurbs.periodic()),
-                        },
-                    ))
-                }
-                _ => None,
-            },
-        )
+        .filter_map(|curve| match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Nurbs(nurbs))
+                if edited_curves.contains(curve.id.as_str()) =>
+            {
+                let before = baseline
+                    .ir()
+                    .model
+                    .curves
+                    .iter()
+                    .find(|before| before.id == curve.id)?;
+                let Some(SolvedCurveGeometry::Nurbs(before)) = before.geometry.solved() else {
+                    return None;
+                };
+                Some((
+                    curve.id.as_str().to_owned(),
+                    NurbsCurveEdit {
+                        curve: nurbs.clone(),
+                        periodic: (before.periodic() != nurbs.periodic())
+                            .then_some(nurbs.periodic()),
+                    },
+                ))
+            }
+            _ => None,
+        })
         .collect::<BTreeMap<_, _>>();
     let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
     let edited_surfaces =
@@ -148,33 +151,31 @@ pub fn write_semantic(
         .model
         .surfaces
         .iter()
-        .filter_map(
-            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
-                    let before = baseline
-                        .ir()
-                        .model
-                        .surfaces
-                        .iter()
-                        .find(|before| before.id == surface.id)?;
-                    let SurfaceGeometry::Nurbs(before) =
-                        before.geometry.solved_cache().unwrap_or(&before.geometry)
-                    else {
-                        return None;
-                    };
-                    Some((
-                        surface.id.as_str().to_owned(),
-                        NurbsSurfaceEdit {
-                            surface: nurbs.clone(),
-                            periodic: (before.u_periodic() != nurbs.u_periodic()
-                                || before.v_periodic() != nurbs.v_periodic())
-                            .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
-                        },
-                    ))
-                }
-                _ => None,
-            },
-        )
+        .filter_map(|surface| match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Nurbs(nurbs))
+                if edited_surfaces.contains(surface.id.as_str()) =>
+            {
+                let before = baseline
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|before| before.id == surface.id)?;
+                let Some(SolvedSurfaceGeometry::Nurbs(before)) = before.geometry.solved() else {
+                    return None;
+                };
+                Some((
+                    surface.id.as_str().to_owned(),
+                    NurbsSurfaceEdit {
+                        surface: nurbs.clone(),
+                        periodic: (before.u_periodic() != nurbs.u_periodic()
+                            || before.v_periodic() != nurbs.v_periodic())
+                        .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
+                    },
+                ))
+            }
+            _ => None,
+        })
         .collect::<BTreeMap<_, _>>();
     let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
     let procedural_surface_fit_edits =
@@ -237,10 +238,14 @@ pub fn write_semantic(
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
-            .and_then(|edge| edge.curve.as_ref())
+            .and_then(|edge| edge.curve())
             .is_some_and(|curve_id| {
                 target.model.curves.iter().any(|curve| {
-                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
+                    curve.id == *curve_id
+                        && matches!(
+                            curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                        )
                 })
             });
         if is_line {
@@ -402,9 +407,9 @@ pub fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(supported_target.native.namespace_mut("f3d"))?;
+        supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
-    if decode::document_local_sha256(&supported_target) != decode::document_local_sha256(target) {
+    if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),
@@ -421,16 +426,20 @@ pub fn write_semantic(
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str().to_owned(), point.position))
+        .map(|point| (point.id.as_str().to_owned(), point.position().get()))
         .collect::<BTreeMap<_, _>>();
     let lines = target
         .model
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Line { origin, direction } => edited_curves
-                .contains(curve.id.as_str())
-                .then(|| (curve.id.as_str().to_owned(), (origin, direction))),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
+                edited_curves
+                    .contains(curve.id.as_str())
+                    .then(|| (curve.id.as_str().to_owned(), (origin, direction)))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -439,29 +448,31 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_curves.contains(curve.id.as_str()).then(|| {
-                (
-                    curve.id.as_str().to_owned(),
-                    (center, axis, ref_direction, radius, radius),
-                )
-            }),
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => edited_curves.contains(curve.id.as_str()).then(|| {
-                (
-                    curve.id.as_str().to_owned(),
-                    (center, axis, major_direction, major_radius, minor_radius),
-                )
-            }),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let center = circle_curve.center().get();
+                let axis = *circle_curve.frame().axis().as_raw();
+                let ref_direction = *circle_curve.frame().reference().as_raw();
+                let radius = circle_curve.radius().get();
+                edited_curves.contains(curve.id.as_str()).then(|| {
+                    (
+                        curve.id.as_str().to_owned(),
+                        (center, axis, ref_direction, radius, radius),
+                    )
+                })
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+                let center = ellipse_curve.center().get();
+                let axis = *ellipse_curve.frame().axis().as_raw();
+                let major_direction = *ellipse_curve.frame().reference().as_raw();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
+                edited_curves.contains(curve.id.as_str()).then(|| {
+                    (
+                        curve.id.as_str().to_owned(),
+                        (center, axis, major_direction, major_radius, minor_radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -470,9 +481,12 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Degenerate { point } => edited_curves
-                .contains(curve.id.as_str())
-                .then(|| (curve.id.as_str().to_owned(), point)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
+                let point = degenerate_curve.point().get();
+                edited_curves
+                    .contains(curve.id.as_str())
+                    .then(|| (curve.id.as_str().to_owned(), point))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -481,13 +495,14 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis))),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+                let origin = plane_surface.origin().get();
+                let normal = *plane_surface.frame().axis().as_raw();
+                let u_axis = *plane_surface.frame().reference().as_raw();
+                edited_surfaces
+                    .contains(surface.id.as_str())
+                    .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis)))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -496,17 +511,18 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (center, axis, ref_direction, radius),
-                )
-            }),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
+                let center = sphere_surface.center().get();
+                let axis = *sphere_surface.frame().axis().as_raw();
+                let ref_direction = *sphere_surface.frame().reference().as_raw();
+                let radius = sphere_surface.radius().get();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (center, axis, ref_direction, radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -515,18 +531,19 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (center, axis, ref_direction, major_radius, minor_radius),
-                )
-            }),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+                let center = torus_surface.center().get();
+                let axis = *torus_surface.frame().axis().as_raw();
+                let ref_direction = *torus_surface.frame().reference().as_raw();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (center, axis, ref_direction, major_radius, minor_radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -535,30 +552,32 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (origin, axis, ref_direction, radius, 1.0, 0.0),
-                )
-            }),
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (origin, axis, ref_direction, radius, ratio, half_angle),
-                )
-            }),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+                let origin = cylinder_surface.origin().get();
+                let axis = *cylinder_surface.frame().axis().as_raw();
+                let ref_direction = *cylinder_surface.frame().reference().as_raw();
+                let radius = cylinder_surface.radius().get();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (origin, axis, ref_direction, radius, 1.0, 0.0),
+                    )
+                })
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
+                let origin = cone_surface.origin().get();
+                let axis = *cone_surface.frame().axis().as_raw();
+                let ref_direction = *cone_surface.frame().reference().as_raw();
+                let radius = cone_surface.radius().get();
+                let ratio = cone_surface.ratio().get();
+                let half_angle = cone_surface.half_angle().get();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (origin, axis, ref_direction, radius, ratio, half_angle),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -581,17 +600,18 @@ pub fn write_semantic(
             })?;
             continue;
         }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        let mut bytes = Vec::new();
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = entry.read(&mut chunk)?;
             if read == 0 {
                 break;
             }
-            bytes.try_reserve(read).map_err(|_| {
-                CodecError::malformed(format_args!("cannot allocate ZIP entry {name}"))
-            })?;
-            bytes.extend_from_slice(&chunk[..read]);
+            encode_ctx.extend_retained_bytes(
+                &mut bytes,
+                &chunk[..read],
+                "retain F3D patch ZIP entry",
+            )?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
@@ -637,8 +657,11 @@ pub fn write_semantic(
             }
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
-                let (patched_bytes, patched_guids) =
-                    crate::materials::patch_protein_appearances(&bytes, &protein_appearance_edits)?;
+                let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
+                    &bytes,
+                    &protein_appearance_edits,
+                    notes,
+                )?;
                 bytes = patched_bytes;
                 patched_protein_appearances.extend(patched_guids);
             }
@@ -705,3 +728,6 @@ pub fn write_semantic(
     writer.write_all(&output)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

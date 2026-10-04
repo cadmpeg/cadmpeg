@@ -4,19 +4,36 @@ use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
+use super::{raw2, raw_link};
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
+use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
     SketchInputKind, SketchRelationKind,
 };
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
+use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
+use crate::resolved_features::markers::admit_sketch_input_entities;
+use crate::resolved_features::markers::compact_legacy_profile_vertex;
+use crate::resolved_features::markers::linked_profile_point;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::marker_local_id;
+use crate::resolved_features::markers::marker_object_index;
+use crate::resolved_features::markers::marker_spatial_coordinates;
+use crate::resolved_features::markers::reference_cells_charged;
+use crate::resolved_features::markers::relation_bindings_charged;
+use crate::resolved_features::markers::relation_bindings_scoped;
+use crate::resolved_features::markers::sketch_input_entities;
+use crate::resolved_features::markers::spatial_sketches;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::sketches::SpatialSketchGeometry;
+use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 use std::collections::BTreeMap;
 
 fn current_compact_spatial_point_marker(
@@ -41,10 +58,135 @@ fn current_compact_spatial_point_marker(
     marker
 }
 
+fn spatial_projection_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let native_ref = "sldprt:history:feature#spatial-limit";
+    let lane_id = "sldprt:feature-input:resolved-features#spatial-limit";
+    let mut payload = 1u32.to_le_bytes().to_vec();
+    payload.extend(current_compact_spatial_point_marker(
+        0,
+        [0x04, 0x00, 0x02, 0x00],
+        [0.0, 0.015, 0.005],
+    ));
+    let mut sketch_entities = sketch_input_entities(&payload, lane_id);
+    sketch_entities[0].feature_ref = Some(native_ref.into());
+    let lane = FeatureInputLane {
+        id: lane_id.into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities,
+    };
+    let history = FeatureHistory {
+        id: "sldprt:history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![NativeFeature {
+            id: native_ref.into(),
+            parent: "sldprt:history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "3D Sketch".into(),
+            kind: "3D Sketch".into(),
+            input_class: Some("mo3DProfileFeature_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("sldprt:model:feature#spatial-limit").expect("identity grammar"),
+        ordinal: 0,
+        name: Some("3D Sketch".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
+        ),
+        native_ref: Some(native_ref.into()),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+        .expect("spatial input fits root policy");
+    spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+        .expect_err("spatial projection must refuse the configured limit")
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_collection_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_collection_items = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse collection limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_retained_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse retained limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_work_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_work_units = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse work limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn sketch_marker_identity_refuses_retained_limit() {
+    let payload =
+        current_compact_spatial_point_marker(1, [0x04, 0x00, 0x02, 0x00], [0.125, -0.25, 0.375]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("marker payload fits root policy");
+    let Err(CodecError::ResourceLimit(limit)) = admit_sketch_input_entities(&ctx, &payload, "lane")
+    else {
+        panic!("sketch marker identity must use retained budget");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let parent = "sldprt:feature-input:resolved-features#synthetic";
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
         offset,
         reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
@@ -60,7 +202,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 100,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![reference(143), reference(287)],
@@ -73,7 +215,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "sgEntHandle".into(),
     }];
 
-    let references = reference_cells(&scalars, &classes);
+    let references = reference_cells_charged(&ctx, &scalars, &classes).unwrap();
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -88,9 +230,60 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 299,
         name: "sgArcHandle".into(),
     });
-    assert!(reference_cells(&scalars, &ambiguous_classes)
+    assert!(reference_cells_charged(&ctx, &scalars, &ambiguous_classes)
+        .unwrap()
         .iter()
         .all(|reference| reference.class_ref.is_none()));
+}
+
+#[test]
+fn reference_cells_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let kind = FeatureInputOperandKind::D6;
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset: 100,
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+        role: FeatureInputScalarRole::Driving,
+        operands: vec![FeatureInputOperand {
+            offset: 143,
+            reference_ref: "reference".into(),
+            kind,
+            entity_index: 7,
+            entity_ref: None,
+        }],
+    };
+    let arena = DecodeArena::new();
+    let mut limited_policy = DecodePolicy::service();
+    limited_policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+    let error = reference_cells_charged(&limited, std::slice::from_ref(&scalar), &[]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT reference cells"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        reference_cells_charged(&service, std::slice::from_ref(&scalar), &[]).unwrap(),
+        vec![crate::records::FeatureInputReference {
+            id: scalar.operands[0].reference_ref.clone(),
+            parent: scalar.parent,
+            feature_ref: scalar.feature_ref,
+            ordinal: 0,
+            offset: scalar.operands[0].offset,
+            kind: scalar.operands[0].kind,
+            class_ref: None,
+            object_index: scalar.operands[0].entity_index,
+        }]
+    );
 }
 
 #[test]
@@ -261,8 +454,8 @@ fn current_compact_spatial_points_decode_without_object_indices() {
         let [entity] = entities.as_slice() else {
             panic!("expected one compact spatial point marker");
         };
-        assert_eq!(entity.kind, SketchInputKind::Point);
-        assert_eq!(entity.object_index, None);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
+        assert_eq!(entity.object_index(), None);
     }
 
     let mut planar =
@@ -301,13 +494,13 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     ));
     let mut sketch_entities = sketch_input_entities(&payload, lane_id);
     assert_eq!(sketch_entities.len(), 4);
-    assert_eq!(sketch_entities[0].object_index, Some(1));
-    assert_eq!(sketch_entities[1].object_index, None);
-    assert_eq!(sketch_entities[2].object_index, Some(3));
-    assert_eq!(sketch_entities[3].object_index, None);
+    assert_eq!(sketch_entities[0].object_index(), Some(1));
+    assert_eq!(sketch_entities[1].object_index(), None);
+    assert_eq!(sketch_entities[2].object_index(), Some(3));
+    assert_eq!(sketch_entities[3].object_index(), None);
     for entity in &mut sketch_entities {
         entity.feature_ref = Some(native_ref.into());
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
     }
 
     let lane = FeatureInputLane {
@@ -337,7 +530,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
             parent: "sldprt:history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("spatial".into()),
+            source_id: FeatureSource::from_value(1),
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "3D Sketch".into(),
@@ -355,34 +548,40 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
+            .expect("spatial marker input fits policy");
+    let (sketches, entities) =
+        spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+            .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial"
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch) })
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial"
     ));
 }
 
@@ -405,13 +604,13 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     assert_eq!(
         sketch_entities
             .iter()
-            .map(|entity| entity.object_index)
+            .map(crate::records::SketchInputEntity::object_index)
             .collect::<Vec<_>>(),
         vec![Some(2), Some(3)]
     );
     for entity in &mut sketch_entities {
         entity.feature_ref = Some(native_ref.into());
-        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.kind(), SketchInputKind::Point);
     }
 
     let lane = FeatureInputLane {
@@ -441,7 +640,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
             parent: "sldprt:history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("spatial-indexed-profile".into()),
+            source_id: FeatureSource::from_value(1),
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "Sketch".into(),
@@ -460,34 +659,40 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
+            .expect("spatial marker input fits policy");
+    let (sketches, entities) =
+        spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+            .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial-indexed-profile"
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch) })
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));
 }
 
@@ -642,27 +847,74 @@ fn relation_binding_requires_family_operand_signature() {
         offset: 20,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(kind, 0), operand(kind, 1)],
     };
 
     assert_eq!(
-        relation_bindings(
+        relation_bindings_charged(
+            &cadmpeg_test_support::service_decode_context(),
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
         )
+        .unwrap()
         .len(),
         1
     );
-    assert!(relation_bindings(
+    assert!(relation_bindings_charged(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
-        &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+        &[scalar(FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_8DDA
+        ))],
     )
+    .unwrap()
     .is_empty());
+}
+
+#[test]
+fn relation_binding_identity_refuses_retained_limit() {
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 10,
+        name: "sgLLDist".into(),
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::E1,
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset: 20,
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
+        role: FeatureInputScalarRole::Driving,
+        operands: vec![operand(0), operand(1)],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    let Err(CodecError::ResourceLimit(limit)) =
+        relation_bindings_charged(&ctx, "lane", &[class], &[scalar])
+    else {
+        panic!("relation binding identity must use retained budget");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
 #[test]
@@ -677,7 +929,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
         reference_ref: String::new(),
-        kind: FeatureInputOperandKind::Native(0x8152),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
         entity_ref: None,
     };
@@ -689,17 +941,19 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         offset: 30,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings(
+    assert!(relation_bindings_charged(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
     )
+    .unwrap()
     .is_empty());
 }
 
@@ -715,7 +969,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
         reference_ref: String::new(),
-        kind: FeatureInputOperandKind::Native(0x8152),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
         entity_ref: None,
     };
@@ -727,18 +981,20 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         offset: 120,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],
     };
 
     assert!(relation_bindings_scoped(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
         &[scalar],
-        &[(0, 100, "first".into()), (100, u64::MAX, "second".into())],
+        &[(0, Some(100), "first".into()), (100, None, "second".into())],
     )
+    .unwrap()
     .is_empty());
 }
 
@@ -805,8 +1061,13 @@ fn legacy_sketch_prefix_uses_the_shared_entity_body() {
     let entities = sketch_input_entities(&payload, "lane");
 
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
-    assert_eq!(entities[0].local_id, Some(41));
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
+    assert_eq!(entities[0].local_id(), Some(41));
 }
 
 #[test]
@@ -835,12 +1096,17 @@ fn terminal_wide_geometry_locus_coordinate_record_is_a_point() {
         let [entity] = entities.as_slice() else {
             panic!("expected one marker entity");
         };
-        assert_eq!(entity.kind, SketchInputKind::Point);
-        assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
+        assert_eq!(entity.kind(), SketchInputKind::Point);
+        assert_eq!(
+            entity
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.025, -0.004])
+        );
 
         payload[134..138].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
+            sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::Point
         );
         payload[133] = 1;
@@ -864,21 +1130,21 @@ fn compact_legacy_profile_coordinate_pairings_carry_points() {
     payload[52..60].copy_from_slice(&(-0.004f64).to_le_bytes());
     payload[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::Point);
+    assert_eq!(entities[0].kind(), SketchInputKind::Point);
 
     payload[19..23].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
     payload[13..17].copy_from_slice(&1u32.to_le_bytes());
     payload[19..23].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -896,12 +1162,22 @@ fn packed_legacy_geometry_locus_carries_profile_coordinates() {
     payload[58..66].copy_from_slice(&(-0.004f64).to_le_bytes());
     payload[126..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].kind, SketchInputKind::Point);
-    assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
-    assert_eq!(entities[0].state_value, Some(1.0));
+    assert_eq!(entities[0].kind(), SketchInputKind::Point);
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.025, -0.004])
+    );
+    assert_eq!(
+        entities[0]
+            .state_value
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(1.0)
+    );
 }
 
 #[test]
@@ -920,7 +1196,7 @@ fn compact_profile_curve_role_distinguishes_non_coordinate_lines() {
 
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].coordinates_m, None);
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 }
 
 #[test]
@@ -948,12 +1224,12 @@ fn geometry_marker_coordinates_are_selected_by_layout() {
     payload[64..66].copy_from_slice(&[0x1e, 0x00]);
     payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
     payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     payload[64..66].copy_from_slice(&[0x14, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
     payload[64..66].copy_from_slice(&[0x1e, 0x00]);
     payload[5] = 0;
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -968,21 +1244,21 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
     payload[58..66].copy_from_slice(&1.25f64.to_le_bytes());
     payload[66..74].copy_from_slice(&(-2.5f64).to_le_bytes());
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     let entities = sketch_input_entities(&payload, "lane");
-    assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[17..21].copy_from_slice(&0u32.to_le_bytes());
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
 
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(
-        entities[0].kind,
+        entities[0].kind(),
         SketchInputKind::Relation(SketchRelationKind::Distance)
     );
 
@@ -990,18 +1266,18 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
     payload[27..29].copy_from_slice(&1u16.to_le_bytes());
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(
-        entities[0].kind,
+        entities[0].kind(),
         SketchInputKind::Relation(SketchRelationKind::Horizontal)
     );
 
     payload.resize(154 + LEGACY_SKETCH_MARKER.len(), 0);
     payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
 
     for size in [161, 162] {
         payload.resize(size + LEGACY_SKETCH_MARKER.len(), 0);
         payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
-        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     }
 }
 
@@ -1018,13 +1294,13 @@ fn compact_legacy_coordinate_value_one_is_a_profile_vertex() {
     payload[44..52].copy_from_slice(&1.25f64.to_le_bytes());
     payload[52..60].copy_from_slice(&(-2.5f64).to_le_bytes());
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     assert!(compact_legacy_profile_vertex(&payload, 0));
     let entities = sketch_input_entities(&payload, "lane");
     let [entity] = entities.as_slice() else {
         panic!("expected one compact marker");
     };
-    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.kind(), SketchInputKind::Point);
 }
 
 #[test]
@@ -1048,13 +1324,23 @@ fn extended_geometry_values_share_the_coordinate_record_layout() {
 
         for native_code in 0u32..=2 {
             payload[offset + 17..offset + 21].copy_from_slice(&native_code.to_le_bytes());
-            assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+            assert_eq!(
+                raw2(marker_coordinates(&payload, offset)),
+                Some([1.25, -2.5])
+            );
         }
     }
 }
 
 #[test]
 fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &link_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let offset = 4;
     let mut payload = vec![0; offset + 154 + SKETCH_MARKER.len()];
     payload[..offset].copy_from_slice(&7u32.to_le_bytes());
@@ -1079,28 +1365,36 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         payload[offset + 154..offset + 154 + prefix.len()].copy_from_slice(prefix);
 
         assert_eq!(
-            linked_profile_point(&payload, offset),
+            raw_link(linked_profile_point(&payload, offset)),
             Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
         );
-        assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+        assert_eq!(
+            raw2(marker_coordinates(&payload, offset)),
+            Some([1.25, -2.5])
+        );
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
-            .find(|entity| entity.offset == offset as u64)
+            .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
             .expect("linked profile point");
-        assert_eq!(point.kind, SketchInputKind::Point);
-        assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+        assert_eq!(point.kind(), SketchInputKind::Point);
+        assert_eq!(
+            point
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.25, -2.5])
+        );
     }
     payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
     payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[offset + 154..offset + 154 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&payload, offset),
+        raw_link(linked_profile_point(&payload, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&payload, "lane")[0].kind,
+        super::sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -1111,11 +1405,11 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
     payload[offset + 92..offset + 94].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
-        linked_profile_point(&payload, offset),
+        raw_link(linked_profile_point(&payload, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 4)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&payload, "lane")[0].kind,
+        super::sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
     );
     payload[offset + 17..offset + 21].fill(0);
@@ -1125,18 +1419,22 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     payload[offset + 74..offset + 78].copy_from_slice(&[0x01, 0x00, 0x03, 0x00]);
     assert_eq!(
-        additional_linked_profile_point_coordinates(&payload, offset),
+        raw2(additional_linked_profile_point_coordinates(
+            &payload, offset
+        )),
         Some([1.25, -2.5])
     );
-    assert_eq!(linked_profile_point(&payload, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&payload, offset)), None);
     payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[offset + 74..offset + 78].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     assert_eq!(
-        additional_linked_profile_point_coordinates(&payload, offset),
+        raw2(additional_linked_profile_point_coordinates(
+            &payload, offset
+        )),
         Some([1.25, -2.5])
     );
-    assert_eq!(linked_profile_point(&payload, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&payload, offset)), None);
     payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
 
     let mut extended = vec![0; offset + 158 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
@@ -1149,26 +1447,34 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     extended[offset + 158..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
-    assert_eq!(marker_coordinates(&extended, offset), Some([1.25, -2.5]));
+    assert_eq!(
+        raw2(marker_coordinates(&extended, offset)),
+        Some([1.25, -2.5])
+    );
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
-        .find(|entity| entity.offset == offset as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("extended-tail linked profile point");
-    assert_eq!(point.kind, SketchInputKind::Point);
-    assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(point.kind(), SketchInputKind::Point);
+    assert_eq!(
+        point
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 
     extended[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     extended[offset + 158..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&extended, "lane")[0].kind,
+        super::sketch_input_entities(&extended, "lane")[0].kind(),
         SketchInputKind::Point
     );
 
@@ -1177,29 +1483,29 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     extended[offset + 154..offset + 158].fill(0xff);
     extended[offset + 158..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
-        super::sketch_input_entities(&extended, "lane")[0].kind,
+        super::sketch_input_entities(&extended, "lane")[0].kind(),
         SketchInputKind::Point
     );
     extended[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     extended[offset + 17..offset + 21].fill(0);
-    assert_eq!(linked_profile_point(&extended, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&extended, offset)), None);
     extended[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
     extended[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     extended[offset + 76..offset + 78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     extended[offset + 144..offset + 148].fill(0);
-    assert_eq!(linked_profile_point(&extended, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&extended, offset)), None);
 
     let mut legacy_geometry = vec![0; offset + 154 + LEGACY_SKETCH_MARKER.len()];
     legacy_geometry[..offset].copy_from_slice(&7u32.to_le_bytes());
@@ -1230,23 +1536,28 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     legacy_geometry[offset + 154..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&legacy_geometry, offset),
+        raw_link(linked_profile_point(&legacy_geometry, offset)),
         Some(([1.25, -2.5], [(0x8139, 1), (0x8139, 0)]))
     );
     assert_eq!(
-        coordinate_marker_local_links(&legacy_geometry, offset),
+        coordinate_marker_local_links(&link_ctx, &legacy_geometry, offset).unwrap(),
         Some((vec![1, 0], 0x8139))
     );
     assert_eq!(
-        marker_coordinates(&legacy_geometry, offset),
+        raw2(marker_coordinates(&legacy_geometry, offset)),
         Some([1.25, -2.5])
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
         .into_iter()
-        .find(|entity| entity.offset == offset as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("legacy geometry linked profile point");
-    assert_eq!(entity.kind, SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(entity.kind(), SketchInputKind::Point);
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 }
 
 #[test]
@@ -1262,9 +1573,25 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         payload.extend(value.to_le_bytes());
     }
     assert_eq!(
-        crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
-        vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
+        crate::resolved_features::markers::spatial_vertex_coordinates_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload
+        )
+        .unwrap(),
+        vec![
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.25, -2.5, 3.75
+            ))
+            .expect("finite spatial vertex")
+        ]
     );
     payload[7 + 43] = 0x1e;
-    assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
+    assert!(
+        crate::resolved_features::markers::spatial_vertex_coordinates_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload
+        )
+        .unwrap()
+        .is_empty()
+    );
 }

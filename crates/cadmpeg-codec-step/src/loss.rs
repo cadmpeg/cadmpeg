@@ -13,14 +13,22 @@
 //! leaves only the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `step` namespace.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
+    Severity,
+};
+
+const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
+    Ok(namespace) => namespace,
+    Err(_) => panic!("reserved codec namespace"),
+};
 
 /// A stable, machine-readable identifier for one STEP / `.stp` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`StepLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StepLossCode {
+pub(crate) enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
     ParseNoncanonicalSyntax,
     /// A decode stage surfaced a per-record warning.
@@ -97,6 +105,8 @@ pub enum StepLossCode {
     PmiLengthUnitUnresolved,
     /// A PMI angle measure unit scale did not resolve.
     PmiAngleUnitUnresolved,
+    /// A datum system has inconsistent precedence compartments.
+    PmiDatumSystemInvalid,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
@@ -107,6 +117,8 @@ pub enum StepLossCode {
     ContextDependentStyleUnresolved,
     /// A drawing record has too few parameters and was retained opaque.
     DrawingRecordTooFewParameters,
+    /// A drawing's position in the stored order passes the stated order width.
+    DrawingOrderUnstatable,
     /// A drawing relationship references a source-typed record without identity.
     DrawingRelationshipUntypedTarget,
     /// A drawing relationship references a source record with multiple identities.
@@ -121,6 +133,8 @@ pub enum StepLossCode {
     DraughtingAssociatedItemUntyped,
     /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
+    /// A tessellation payload fails numeric or structural admission.
+    TessellationInvalidPayload,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
     /// A repositioned tessellation item has no valid placement.
@@ -243,6 +257,8 @@ pub enum StepLossCode {
     PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
+    /// A wire body's direct color alpha was omitted from RGB curve styling.
+    WireBodyTransparencyOmitted,
     /// Appearance assets were reduced to `STYLED_ITEM` base colors.
     AppearanceReducedToBaseColor,
     /// Appearance bindings carry source object or channel metadata.
@@ -302,7 +318,7 @@ pub enum StepLossCode {
 impl StepLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [StepLossCode] = &[
+    const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
@@ -341,11 +357,13 @@ impl StepLossCode {
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
+        Self::PmiDatumSystemInvalid,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
         Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
+        Self::DrawingOrderUnstatable,
         Self::DrawingRelationshipUntypedTarget,
         Self::DrawingRelationshipTargetAmbiguous,
         Self::DrawingSheetRevisionUnresolved,
@@ -353,6 +371,7 @@ impl StepLossCode {
         Self::DraughtingSemanticDefinitionUntyped,
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
+        Self::TessellationInvalidPayload,
         Self::TessellationItemUndeclared,
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
@@ -414,6 +433,7 @@ impl StepLossCode {
         Self::SourceAssociationOmitted,
         Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
+        Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
@@ -445,7 +465,7 @@ impl StepLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
             Self::DecodeWarning => "decode.warning",
@@ -493,6 +513,7 @@ impl StepLossCode {
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
+            Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
@@ -500,6 +521,7 @@ impl StepLossCode {
                 "presentation.context-dependent-style-unresolved"
             }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
+            Self::DrawingOrderUnstatable => "drawing.order-unstatable",
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
             Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
@@ -508,6 +530,7 @@ impl StepLossCode {
                 "drawing.draughting-semantic-definition-untyped"
             }
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
+            Self::TessellationInvalidPayload => "tessellation.invalid-payload",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
@@ -578,6 +601,7 @@ impl StepLossCode {
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
+            Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
@@ -610,7 +634,7 @@ impl StepLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ByteAccountingUnclassified
             | Self::DocumentLengthUnitUnresolved
@@ -653,6 +677,7 @@ impl StepLossCode {
             | Self::SourceAssociationOmitted
             | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
+            | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
@@ -670,9 +695,9 @@ impl StepLossCode {
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
-            Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::OpaqueRecordPreserved
+            | Self::DrawingRecordTooFewParameters
+            | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
             Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -784,9 +809,9 @@ impl StepLossCode {
             Self::RootOccurrencePlacementNotRepresentable
             | Self::OccurrencePlacementNotRigid
             | Self::BodyNonRigidTransform => LossTaxonomy::BodyTransformNotApplied,
-            Self::TessellationRequiresAp242 | Self::TessellationInvalidCardinality => {
-                LossTaxonomy::TessellationOmitted
-            }
+            Self::TessellationRequiresAp242
+            | Self::TessellationInvalidCardinality
+            | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
             Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
@@ -794,14 +819,15 @@ impl StepLossCode {
             Self::HiddenBodyOmitted => LossTaxonomy::HiddenBodyOmitted,
             Self::AppearanceBindingMissingAsset
             | Self::AppearanceBindingNoBaseColor
-            | Self::AppearanceBindingTargetConflict => LossTaxonomy::MaterialNotTransferred,
+            | Self::AppearanceBindingTargetConflict
+            | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
             }
-            Self::SemanticAnnotationOmitted | Self::PmiAnnotationNotWritten => {
-                LossTaxonomy::PmiOmitted
-            }
+            Self::SemanticAnnotationOmitted
+            | Self::PmiAnnotationNotWritten
+            | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -815,8 +841,8 @@ impl StepLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("step", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -824,7 +850,7 @@ impl StepLossCode {
     /// The structured code is `step/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -832,7 +858,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{Severity, StrictConsequence};
+    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -880,11 +906,13 @@ mod tests {
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
+                "pmi.datum-system-invalid",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
                 "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
+                "drawing.order-unstatable",
                 "drawing.relationship-untyped-target",
                 "drawing.relationship-target-ambiguous",
                 "drawing.sheet-revision-unresolved",
@@ -892,6 +920,7 @@ mod tests {
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
+                "tessellation.invalid-payload",
                 "tessellation.item-undeclared",
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
@@ -953,6 +982,7 @@ mod tests {
                 "source.association-omitted",
                 "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
+                "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",

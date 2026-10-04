@@ -41,27 +41,21 @@
         {
           "edge": "step:data:edge#26",
           "id": "step:data:coedge#29-face-36",
-          "next": "step:data:coedge#30-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#31-face-36",
           "radial_next": "step:data:coedge#29-face-36",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#27",
           "id": "step:data:coedge#30-face-36",
-          "next": "step:data:coedge#31-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#29-face-36",
           "radial_next": "step:data:coedge#30-face-36",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#28",
           "id": "step:data:coedge#31-face-36",
-          "next": "step:data:coedge#29-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#30-face-36",
           "radial_next": "step:data:coedge#31-face-36",
           "sense": "forward"
         }
@@ -120,42 +114,50 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "step:data:curve#23",
+          "carrier": {
+            "curve": "step:data:curve#23",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#14",
           "id": "step:data:edge#26",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#13"
         },
         {
-          "curve": "step:data:curve#24",
+          "carrier": {
+            "curve": "step:data:curve#24",
+            "param_range": [
+              0.0,
+              14.142135623730953
+            ]
+          },
           "end": "step:data:vertex#15",
           "id": "step:data:edge#27",
-          "param_range": [
-            0.0,
-            14.142135623730953
-          ],
           "start": "step:data:vertex#14"
         },
         {
-          "curve": "step:data:curve#25",
+          "carrier": {
+            "curve": "step:data:curve#25",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#13",
           "id": "step:data:edge#28",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#15"
         }
       ],
       "faces": [
         {
           "id": "step:data:face#36",
-          "loops": [
-            "step:data:loop#32-face-36"
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "step:data:loop#32-face-36"
+          },
           "sense": "forward",
           "shell": "step:data:shell#37",
           "surface": "step:data:surface#35"
@@ -164,12 +166,14 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "outer",
-          "coedges": [
-            "step:data:coedge#29-face-36",
-            "step:data:coedge#30-face-36",
-            "step:data:coedge#31-face-36"
-          ],
+          "boundary": {
+            "coedges": [
+              "step:data:coedge#29-face-36",
+              "step:data:coedge#30-face-36",
+              "step:data:coedge#31-face-36"
+            ],
+            "kind": "ring"
+          },
           "face": "step:data:face#36",
           "id": "step:data:loop#32-face-36"
         }
@@ -221,10 +225,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#36"
-          ],
           "id": "step:data:shell#37",
+          "members": [
+            {
+              "id": "step:data:face#36",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#38"
         }
       ],
@@ -263,118 +270,132 @@
           "body": "step:data:body#38",
           "channels": [],
           "id": "step:tessellation:mesh#4",
-          "normals": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            }
-          ],
-          "strip_lengths": [],
-          "triangles": [
-            [
-              0,
-              1,
-              2
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              }
             ]
-          ],
-          "vertices": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
-            }
-          ]
+          }
         },
         {
           "channels": [],
           "id": "step:tessellation:mesh#7",
-          "normals": [
-            {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            }
-          ],
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                2,
+                1,
+                3
+              ],
+              [
+                0,
+                1,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 10.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": -1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              }
+            ]
+          },
           "source_object": {
             "format": "step",
             "object_id": "#7"
-          },
-          "strip_lengths": [],
-          "triangles": [
-            [
-              0,
-              1,
-              2
-            ],
-            [
-              2,
-              1,
-              3
-            ],
-            [
-              0,
-              1,
-              3
-            ]
-          ],
-          "vertices": [
-            {
-              "x": 10.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          ]
+          }
         }
       ],
       "vertices": [
@@ -393,11 +414,7 @@
       ],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -408,19 +425,20 @@
         "entity_instances": "67",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -431,36 +449,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
-      {
-        "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step"
-        },
-        "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "tessellation.item-undeclared",
           "kind": "reference_graph_not_closed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
         "severity": "warning"
@@ -469,7 +479,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -481,7 +493,11 @@
       "geometric validation volume open sheet volume: expected 0, tessellation approximation 0",
       "geometric validation surface area intentional mismatch: expected 51, tessellation approximation 50",
       "byte accounting: 329 structural, 3013 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

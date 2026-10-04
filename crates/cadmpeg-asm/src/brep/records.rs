@@ -5,16 +5,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 
 /// Source namespaces used to derive native record ids.
 pub mod identity;
-
-// Serde requires a borrowed skip predicate.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false(value: &bool) -> bool {
-    !*value
-}
 
 macro_rules! native_record {
     (
@@ -53,22 +47,26 @@ macro_rules! native_record {
         }
 
         mod $wire {
-            use super::*;
+            #[cfg(feature = "schema")]
+            use schemars::JsonSchema;
+            use serde::Deserialize;
 
             $(#[doc = $record_doc])*
             #[derive(Deserialize)]
             #[cfg_attr(feature = "schema", derive(JsonSchema))]
+            #[serde(deny_unknown_fields)]
             pub(super) struct Wire {
                 /// Globally unique deterministic identifier for this native record.
-                pub id: String,
+                #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
+                pub(super) id: String,
                 $(#[doc = $entity_doc])*
-                pub $entity: $entity_ty,
+                pub(super) $entity: $entity_ty,
                 #[doc = $index_doc]
-                pub record_index: u32,
+                pub(super) record_index: u32,
                 $(
                     $(#[doc = $field_doc])*
                     $($(#[$wire_attr])*)?
-                    pub $field: $field_ty,
+                    pub(super) $field: $field_ty,
                 )*
             }
         }
@@ -77,7 +75,7 @@ macro_rules! native_record {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 #[derive(Serialize)]
                 struct Wire<'a> {
-                    id: String,
+                    id: identity::NativeRecordIdentity<'a>,
                     $entity: &'a $entity_ty,
                     record_index: u32,
                     $(
@@ -86,7 +84,7 @@ macro_rules! native_record {
                     )*
                 }
                 Wire {
-                    id: self.id(),
+                    id: self.source_namespace.serialized_id($kind, self.record_index),
                     $entity: &self.$entity,
                     record_index: self.record_index,
                     $($field: &self.$field,)*
@@ -105,6 +103,25 @@ macro_rules! native_record {
                     $entity: wire.$entity,
                     $($field: wire.$field,)*
                 })
+            }
+        }
+
+        impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $name {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk ASM native references")?;
+                ctx.charge_work(1, "walk ASM native references")?;
+                self.source_namespace.visit(ctx, $kind, self.record_index, visitor)?;
+                cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$entity, ctx, visitor)?;
+                $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
+                Ok(())
+            }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("rewrite ASM native fields")?;
+                ctx.charge_work(1, "rewrite ASM native fields")?;
+                self.source_namespace = self.source_namespace.rewrite(ctx, $kind, self.record_index, map)?;
+                self.$entity = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$entity, ctx, map)?;
+                $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*
+                Ok(self)
             }
         }
 
@@ -127,7 +144,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the classification.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Native curve-parameterization sense before IR carrier normalization.
     sense: cadmpeg_ir::topology::Sense,
     /// Native continuity token, normally `tangent` or `unknown`.
@@ -140,9 +157,9 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the selector.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Selected coedge, or null when the native edge has no owner back-reference.
-    owner_coedge: Option<CoedgeId> [serde(default, skip_serializing_if = "Option::is_none")],
+    owner_coedge: Option<cadmpeg_ir::ids::CoedgeId> [serde(default, skip_serializing_if = "Option::is_none")],
 }
 
 native_record! {
@@ -151,11 +168,11 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep vertex carrying the fields.
-    vertex: VertexId,
+    vertex: cadmpeg_ir::ids::VertexId,
     /// Edge selected as this vertex record's native owner.
-    owning_edge: EdgeId,
+    owning_edge: cadmpeg_ir::ids::EdgeId,
     /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
-    endpoint_index: EndpointSlot,
+    endpoint_index: crate::brep::records::EndpointSlot,
 }
 
 /// Endpoint selected by a native vertex ownership record.
@@ -209,19 +226,136 @@ pub enum FaceContainment {
     Out,
 }
 
-native_record! {
-    /// Native sidedness fields stored on one ASM face record.
-    FaceSidedness, face_sidedness, "face-sidedness",
+/// Native sidedness fields stored on one ASM face record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceSidedness {
+    /// Source namespace of the native record.
+    pub source_namespace: identity::NativeRecordNamespace,
     /// Source SAB record index.
-    record_index,
+    pub record_index: u32,
     /// Solved B-rep face carrying the fields.
-    face: FaceId,
+    pub face: FaceId,
     /// Sense token stored in the native face record before carrier normalization.
-    native_sense: cadmpeg_ir::topology::Sense,
-    /// IR sense produced when `native_sense` was decoded.
-    normalized_sense: cadmpeg_ir::topology::Sense,
+    pub native_sense: cadmpeg_ir::topology::Sense,
+    /// Whether decoding reversed the native surface carrier orientation.
+    pub carrier_flipped: bool,
     /// Conditional containment direction; absence denotes a single-sided face.
-    containment: Option<FaceContainment> [serde(default, skip_serializing_if = "Option::is_none")],
+    pub containment: Option<FaceContainment>,
+}
+
+impl Serialize for FaceSidedness {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: identity::NativeRecordIdentity<'a>,
+            face: &'a FaceId,
+            record_index: u32,
+            native_sense: cadmpeg_ir::topology::Sense,
+            normalized_sense: cadmpeg_ir::topology::Sense,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            containment: Option<FaceContainment>,
+        }
+        Wire {
+            id: self
+                .source_namespace
+                .serialized_id("face-sidedness", self.record_index),
+            face: &self.face,
+            record_index: self.record_index,
+            native_sense: self.native_sense,
+            normalized_sense: self.normalized_sense(),
+            containment: self.containment,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FaceSidedness {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        FaceSidednessWire::deserialize(deserializer)
+            .and_then(|w| FaceSidedness::try_from(w).map_err(serde::de::Error::custom))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for FaceSidedness {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FaceSidedness".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        FaceSidednessWire::json_schema(generator)
+    }
+}
+
+impl FaceSidedness {
+    fn normalized_sense(&self) -> cadmpeg_ir::topology::Sense {
+        use cadmpeg_ir::topology::Sense;
+        match (self.native_sense, self.carrier_flipped) {
+            (Sense::Forward, true) => Sense::Reversed,
+            (Sense::Reversed, true) => Sense::Forward,
+            (sense, false) => sense,
+        }
+    }
+
+    /// Derive the native record id from its source identity.
+    #[must_use]
+    pub fn id(&self) -> String {
+        self.source_namespace
+            .id("face-sidedness", self.record_index)
+    }
+}
+
+/// Serialized face sidedness with the native and normalized senses.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct FaceSidednessWire {
+    #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
+    id: String,
+    face: FaceId,
+    record_index: u32,
+    native_sense: cadmpeg_ir::topology::Sense,
+    normalized_sense: cadmpeg_ir::topology::Sense,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_containment"
+    )]
+    containment: Option<FaceContainment>,
+}
+
+impl From<FaceSidedness> for FaceSidednessWire {
+    fn from(value: FaceSidedness) -> Self {
+        let normalized_sense = value.normalized_sense();
+        Self {
+            id: value.id(),
+            face: value.face,
+            record_index: value.record_index,
+            native_sense: value.native_sense,
+            normalized_sense,
+            containment: value.containment,
+        }
+    }
+}
+
+impl TryFrom<FaceSidednessWire> for FaceSidedness {
+    type Error = String;
+
+    fn try_from(value: FaceSidednessWire) -> Result<Self, Self::Error> {
+        let source_namespace = identity::NativeRecordNamespace::from_wire(
+            &value.id,
+            value.record_index,
+            "face-sidedness",
+        )?;
+        Ok(Self {
+            source_namespace,
+            record_index: value.record_index,
+            face: value.face,
+            native_sense: value.native_sense,
+            carrier_flipped: value.native_sense != value.normalized_sense,
+            containment: value.containment,
+        })
+    }
 }
 
 native_record! {
@@ -230,9 +364,55 @@ native_record! {
     /// Source SAB face record index.
     record_index,
     /// Solved face carrying the key.
-    face: FaceId,
+    face: cadmpeg_ir::ids::FaceId,
     /// Non-negative Design-join key; absence is the native `-1` null value.
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
+}
+
+/// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
+/// with the version-gated LONG that follows the slot when it is present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", tag = "slot", deny_unknown_fields)]
+pub enum EvaluatedToleranceSlot {
+    /// The record ends before the slot; the vertex carries no tolerance and
+    /// there is no trailing field.
+    Absent {},
+    /// The slot holds the `-1` unset sentinel; the vertex carries no tolerance.
+    Unset {
+        /// Trailing LONG following the slot, retained verbatim; absent in
+        /// older streams, a small non-negative per-entity change counter when
+        /// present.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_trailing"
+        )]
+        trailing: Option<i64>,
+    },
+    /// The slot holds a tolerance, stored on the vertex.
+    Evaluated {
+        /// Trailing LONG following the slot, retained verbatim; absent in
+        /// older streams, a small non-negative per-entity change counter when
+        /// present.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_trailing"
+        )]
+        trailing: Option<i64>,
+    },
+}
+
+impl EvaluatedToleranceSlot {
+    /// The trailing LONG following the slot, when the slot is present.
+    #[must_use]
+    pub fn trailing(self) -> Option<i64> {
+        match self {
+            Self::Absent {} => None,
+            Self::Unset { trailing } | Self::Evaluated { trailing } => trailing,
+        }
+    }
 }
 
 native_record! {
@@ -245,18 +425,15 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep vertex carrying the tolerant record.
-    vertex: VertexId,
+    vertex: cadmpeg_ir::ids::VertexId,
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
-    leading_tolerances: [f64; 2],
-    /// Version-gated trailing LONG following the evaluated tolerance,
-    /// retained verbatim; absent in older streams, a small non-negative
-    /// per-entity change counter when present.
-    trailing_field: Option<i64> [serde(default, skip_serializing_if = "Option::is_none")],
-    /// Whether the evaluated tolerance slot holds the `-1` unset sentinel.
-    /// The sentinel is a marker rather than a length, so the neutral vertex
-    /// carries no tolerance and this record keeps the fact.
-    evaluated_unset: bool [serde(default, skip_serializing_if = "is_false")],
+    leading_tolerances: [cadmpeg_ir::scalar::FiniteReal; 2],
+    /// Shape of the evaluated tolerance slot, carrying the trailing LONG that
+    /// follows it. The unset sentinel is a marker rather than a length, so the
+    /// neutral vertex carries no tolerance and this record keeps whether the
+    /// slot was unset or absent.
+    evaluated_slot: crate::brep::records::EvaluatedToleranceSlot,
 }
 
 native_record! {
@@ -266,7 +443,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the tolerant record.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Per-entity serializer revision stamp following the model-space
     /// tolerance, matching the stream's revision value space.
     entity_revision: i64,
@@ -282,43 +459,51 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep coedge carrying the tolerant interval.
-    coedge: CoedgeId,
+    coedge: cadmpeg_ir::ids::CoedgeId,
     /// Native start and end parameters following the base coedge fields.
-    parameter_range: [f64; 2],
+    parameter_range: cadmpeg_ir::units::FiniteVector<2>,
     /// Release-selected fixed fields following the parameter interval.
-    extension: TolerantCoedgeExtension [serde(default)],
+    extension: crate::brep::records::TolerantCoedgeExtension [serde(default)],
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "layout")]
+#[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
     /// Releases below 215 have no fixed extension fields.
-    #[default]
-    None,
+    None {},
     /// Releases 215 through 219 carry one nullable entity reference.
     Reference {
         /// Referenced record index; `None` is the native null reference.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry no embedded tolerant-curve payload.
     Empty {
         /// Nullable record reference preceding the zero selector.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry one balanced embedded tolerant-curve payload.
     EmbeddedCurve {
         /// Nullable record reference preceding the one selector.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
         /// Whether the embedded intcurve is evaluated with parameter negation.
-        #[serde(alias = "flag")]
         curve_reversed: bool,
         /// Number of tokens inside the balanced outer subtype delimiters.
         payload_token_count: u32,
         /// Optional parameter interval following the embedded subtype.
-        parameter_range: Option<[f64; 2]>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
     },
+}
+
+impl Default for TolerantCoedgeExtension {
+    fn default() -> Self {
+        Self::None {}
+    }
 }
 
 native_record! {
@@ -327,7 +512,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Unknown exact-surface placeholder emitted for the sentinel record.
-    surface: SurfaceId,
+    surface: cadmpeg_ir::ids::SurfaceId,
 }
 
 /// Native side classification stored on an ASM wire record.
@@ -347,11 +532,11 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Neutral shell containing the wire.
-    shell: ShellId,
+    shell: cadmpeg_ir::ids::ShellId,
     /// Edge ring or isolated vertex owned by the native wire.
-    members: WireMembers [serde(flatten)],
+    members: crate::brep::records::WireMembers [serde(flatten)],
     /// Native side classification.
-    side: WireSide,
+    side: crate::brep::records::WireSide,
 }
 
 /// Mutually exclusive native wire members.
@@ -387,10 +572,17 @@ impl WireMembers {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct WireMembersWire {
+    /// Ordered edges reached from the first coedge; empty when none resolve.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<EdgeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Isolated vertex of a wire with no first coedge.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_free_vertex"
+    )]
     free_vertex: Option<VertexId>,
 }
 
@@ -426,9 +618,9 @@ native_record! {
     /// Source SAB body record index.
     record_index,
     /// Solved body carrying the key.
-    body: BodyId,
+    body: cadmpeg_ir::ids::BodyId,
     /// Zero-based body-record position within the BREP blob.
-    body_ordinal: u32 [serde(default)],
+    body_ordinal: u32,
     /// Basename of the BREP blob containing this body.
     source_brep: Option<String> [serde(default, skip_serializing_if = "Option::is_none")],
     /// Non-negative Design-join key; absence is the native `-1` null value.
@@ -441,7 +633,7 @@ native_record! {
     /// Source SAB transform record index.
     record_index,
     /// Solved body referencing the transform record.
-    body: BodyId,
+    body: cadmpeg_ir::ids::BodyId,
     /// The linear transform includes rotation.
     rotation: bool,
     /// The linear transform includes reflection.
@@ -452,9 +644,184 @@ native_record! {
 
 #[cfg(test)]
 mod tests {
-    use super::{EndpointSlot, WireMembers};
+    use super::{EndpointSlot, TolerantCoedgeParameters, TolerantVertexTail, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    #[test]
+    fn tolerant_vertex_tail_json_keeps_sentinel_and_refuses_nonfinite_value() {
+        use serde_value::Value;
+
+        let json = serde_json::json!({
+            "id": "f3d:asm:tolerant-vertex-tail#1",
+            "record_index": 1,
+            "vertex": "f3d:brep:entity#1",
+            "leading_tolerances": [-1.0, 0.03],
+            "evaluated_slot": {"slot": "unset", "trailing": 0},
+        });
+        let tail: TolerantVertexTail = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&tail).unwrap(), json);
+
+        let mut wire = serde_value::to_value(&tail).unwrap();
+        let Value::Map(ref mut members) = wire else {
+            panic!("native record wire must be a map");
+        };
+        members.insert(
+            Value::String("leading_tolerances".into()),
+            Value::Seq(vec![Value::F64(f64::INFINITY), Value::F64(-1.0)]),
+        );
+        let error = TolerantVertexTail::deserialize(wire).unwrap_err();
+        assert!(error.to_string().contains("FiniteReal must be finite"));
+    }
+
+    #[test]
+    fn tolerant_coedge_interval_json_refuses_nonfinite_endpoints() {
+        use serde_value::Value;
+
+        let json = serde_json::json!({
+            "id": "f3d:asm:tolerant-coedge-parameters#1",
+            "record_index": 1,
+            "coedge": "f3d:brep:entity#1",
+            "parameter_range": [-1.0, 2.0],
+            "extension": {"layout": "none"},
+        });
+        let parameters: TolerantCoedgeParameters = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parameters).unwrap(), json);
+
+        let mut wire = serde_value::to_value(&parameters).unwrap();
+        let Value::Map(ref mut members) = wire else {
+            panic!("native record wire must be a map");
+        };
+        members.insert(
+            Value::String("parameter_range".into()),
+            Value::Seq(vec![Value::F64(f64::INFINITY), Value::F64(2.0)]),
+        );
+        let error = TolerantCoedgeParameters::deserialize(wire).unwrap_err();
+        assert!(error.to_string().contains("finite"));
+    }
+
+    fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: &serde_json::Value)
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
+    {
+        let mut document = serde_json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
+        document["native"] = serde_json::json!({"f3d": {arena: [record.clone()]}});
+        let admitted: cadmpeg_ir::CadIr = serde_json::from_value(document.clone()).unwrap();
+        let typed: Vec<T> = admitted
+            .native
+            .namespace("f3d")
+            .unwrap()
+            .arena_as(arena)
+            .unwrap();
+        assert_eq!(&serde_json::to_value(&typed[0]).unwrap(), record);
+
+        for extra in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(0),
+            serde_json::json!(1.25),
+            serde_json::json!("extra"),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let mut invalid = document.clone();
+            invalid["native"]["f3d"][arena][0][field]["zz_bogus"] = extra;
+            let admitted: cadmpeg_ir::CadIr = serde_json::from_value(invalid).unwrap();
+            let error = admitted
+                .native
+                .namespace("f3d")
+                .unwrap()
+                .arena_as::<T>(arena)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("zz_bogus"), "{error}");
+            assert!(error.contains(arena), "{error}");
+            assert!(error.contains(record["id"].as_str().unwrap()), "{error}");
+        }
+    }
+
+    #[test]
+    fn absent_vertex_tolerance_refuses_extra_keys_after_document_admission() {
+        assert_empty_slot_refuses_extra_keys::<super::TolerantVertexTail>(
+            "tolerant_vertex_tails",
+            "evaluated_slot",
+            &serde_json::json!({
+                "id": "f3d:asm:tolerant-vertex-tail#1",
+                "record_index": 1,
+                "vertex": "f3d:brep:entity#1",
+                "leading_tolerances": [-1.0, -1.0],
+                "evaluated_slot": {"slot": "absent"},
+            }),
+        );
+    }
+
+    #[test]
+    fn absent_coedge_extension_refuses_extra_keys_after_document_admission() {
+        assert_empty_slot_refuses_extra_keys::<super::TolerantCoedgeParameters>(
+            "tolerant_coedge_parameters",
+            "extension",
+            &serde_json::json!({
+                "id": "f3d:asm:tolerant-coedge-parameters#1",
+                "record_index": 1,
+                "coedge": "f3d:brep:entity#1",
+                "parameter_range": [0.0, 1.0],
+                "extension": {"layout": "none"},
+            }),
+        );
+    }
+
+    #[test]
+    fn tolerant_coedge_curve_sense_requires_the_current_wire_name() {
+        let extension = super::TolerantCoedgeExtension::EmbeddedCurve {
+            target: None,
+            curve_reversed: true,
+            payload_token_count: 0,
+            parameter_range: None,
+        };
+        let wire = serde_value::to_value(&extension).unwrap();
+        assert_eq!(
+            super::TolerantCoedgeExtension::deserialize(wire.clone()).unwrap(),
+            extension
+        );
+        let serde_value::Value::Map(mut fields) = wire else {
+            panic!("extension map")
+        };
+        let value = fields
+            .remove(&serde_value::Value::String("curve_reversed".into()))
+            .unwrap();
+        fields.insert(serde_value::Value::String("flag".into()), value);
+        let error = super::TolerantCoedgeExtension::deserialize(serde_value::Value::Map(fields))
+            .unwrap_err();
+        assert!(error.to_string().contains("curve_reversed"));
+    }
+
+    #[test]
+    fn body_native_key_requires_explicit_body_ordinal() {
+        let key = super::BodyNativeKey {
+            source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                "f3d"
+            )),
+            record_index: 17,
+            body: cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#17").unwrap(),
+            body_ordinal: 0,
+            source_brep: Some("Body1.sab".into()),
+            asm_body_key: None,
+        };
+        let wire = serde_value::to_value(&key).unwrap();
+        assert_eq!(
+            super::BodyNativeKey::deserialize(wire.clone()).unwrap(),
+            key
+        );
+        let serde_value::Value::Map(mut fields) = wire else {
+            panic!("record map")
+        };
+        assert_eq!(
+            fields.remove(&serde_value::Value::String("body_ordinal".into())),
+            Some(serde_value::Value::U32(0))
+        );
+        let error = super::BodyNativeKey::deserialize(serde_value::Value::Map(fields)).unwrap_err();
+        assert!(error.to_string().contains("body_ordinal"));
+    }
 
     #[test]
     fn endpoint_slot_preserves_numeric_wire_and_rejects_other_indices() {
@@ -516,4 +883,73 @@ mod tests {
         let error = WireMembers::deserialize(mixed).expect_err("mixed wire members");
         assert!(error.to_string().contains("edges and free_vertex"));
     }
+    /// `free_vertex` is written by omission, so absence is the one spelling of
+    /// an edge-ring wire and a stated `null` is refused by name.
+    #[test]
+    fn a_stated_null_free_vertex_is_refused() {
+        let error = serde_json::from_str::<WireMembers>("{\"free_vertex\":null}")
+            .expect_err("a stated null is not a second spelling of absence")
+            .to_string();
+        assert!(
+            error.contains("this key states a value or is left out; it does not state null"),
+            "{error}"
+        );
+        assert_eq!(
+            serde_json::from_str::<WireMembers>("{}").expect("an omitted free_vertex"),
+            WireMembers::Edges(Vec::new())
+        );
+    }
+
+    /// `WireMembers` writes a map keyed by `edges` or `free_vertex`, and the
+    /// `JsonSchema` derive reads `#[serde(try_from = "WireMembersWire")]`, so
+    /// the published schema states those two properties rather than the
+    /// neutral enum's `Edges` and `Vertex` arms.
+    #[cfg(feature = "schema")]
+    #[test]
+    fn the_wire_member_schema_states_the_keys_the_writer_states() {
+        let schema =
+            serde_json::to_value(schemars::schema_for!(WireMembers)).expect("members schema");
+        let properties: std::collections::BTreeSet<String> = schema["properties"]
+            .as_object()
+            .expect("the members schema states properties")
+            .keys()
+            .cloned()
+            .collect();
+        let edge = EdgeId::mint("asm:test:edge#1").expect("edge id");
+        let vertex = VertexId::mint("asm:test:vertex#2").expect("vertex id");
+        let written: std::collections::BTreeSet<String> =
+            [WireMembers::Edges(vec![edge]), WireMembers::Vertex(vertex)]
+                .iter()
+                .flat_map(|members| {
+                    serde_json::to_value(members)
+                        .expect("serialize members")
+                        .as_object()
+                        .expect("members write a map")
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+        assert_eq!(properties, written);
+    }
+
+    /// `target` carries no `skip_serializing_if`, so its writer states `null`
+    /// for the native null reference and the reader admits that spelling.
+    #[test]
+    fn a_stated_null_tolerant_coedge_target_is_the_native_null_reference() {
+        assert_eq!(
+            serde_json::from_str::<super::TolerantCoedgeExtension>(
+                "{\"layout\":\"reference\",\"target\":null}"
+            )
+            .expect("a stated null target"),
+            super::TolerantCoedgeExtension::Reference { target: None }
+        );
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_containment, FaceContainment, "containment");
+cadmpeg_core::named_optional_field!(deserialize_trailing, i64, "trailing");
+cadmpeg_core::named_optional_field!(deserialize_free_vertex, VertexId, "free_vertex");
+
+mod identity_rewrite;

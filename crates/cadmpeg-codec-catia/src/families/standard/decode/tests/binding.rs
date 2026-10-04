@@ -1,35 +1,288 @@
-use super::*;
+use crate::assemble::circle_parameter_range_from_surface_branch;
+use crate::assemble::ordered_range;
+use crate::families::b2::records::B2OwnerReferenceEncoding;
+use crate::families::b5::graph::B5LogicalVertex;
+use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ball_jets;
+use crate::families::standard::decode::associate_standard_freeform_e5_surfaces;
+use crate::families::standard::decode::bind_standard_a5_owner_surfaces;
+use crate::families::standard::decode::combine_propagated_endpoint_pairs;
+use crate::families::standard::decode::corroborate_successor_endpoint_points;
+use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
+use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::edge_geometry::plane_intersection_line;
+use crate::families::standard::decode::edge_geometry::standard_analytic_curve_parameter_range;
+use crate::families::standard::decode::edge_geometry::standard_oriented_analytic_curve_parameter_range;
+use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
+use crate::families::standard::decode::edge_geometry::witness_arc_end;
+use crate::families::standard::decode::emit_standard_topology;
+use crate::families::standard::decode::include_native_endpoint_pairs;
+use crate::families::standard::decode::intersection_line_direction;
+use crate::families::standard::decode::invariant_face_carrier_bindings;
+use crate::families::standard::decode::merge_derived_endpoint_pair;
+use crate::families::standard::decode::merge_native_endpoint_evidence;
+use crate::families::standard::decode::merge_standard_edge_vertex_references;
+use crate::families::standard::decode::owner_contains_face_bounds;
+use crate::families::standard::decode::owner_matches_a5_carrier;
+use crate::families::standard::decode::point_on_standard_face;
+use crate::families::standard::decode::same_cone_generator_pair;
+use crate::families::standard::decode::standard_circle_endpoint_candidates;
+use crate::families::standard::decode::standard_curve_edge_classes;
+use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
+use crate::families::standard::decode::standard_endpoint_pair_supports_topology as charged_endpoint_pair_supports_topology;
+use crate::families::standard::decode::standard_face_boundary_witnesses;
+use crate::families::standard::decode::standard_face_point_membership;
+use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
+use crate::families::standard::decode::standard_id;
+use crate::families::standard::decode::standard_native_support_edge_ids;
+use crate::families::standard::decode::standard_serialized_endpoint_pairs;
+use crate::families::standard::decode::standard_successor_endpoint_points;
+use crate::families::standard::decode::unique_native_identity_points;
+use crate::families::standard::decode::StandardConsolidatedSource;
+use crate::families::standard::decode::StandardRollingBallSource;
+use crate::families::standard::decode::StandardSurfaceProcedure;
+use crate::families::standard::records::StandardCurveGeometry;
+use crate::families::standard::records::StandardCurveSupport;
+use crate::families::standard::records::StandardFaceBounds;
+use crate::families::standard::records::StandardSurfaceRecord;
+use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
+use crate::test_support::test_e5::{append_e5_record, e5_d8_rolling_ball_stream, e5_torus_stream};
+use cadmpeg_ir::document::CadIr;
+
+#[test]
+fn standard_topology_identity_refuses_retained_limit() {
+    use cadmpeg_ir::ids::LoopId;
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        standard_id(
+            ctx,
+            "loop",
+            format_args!("0:0"),
+            LoopId::mint,
+            "catia_standard_loop_identity",
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_loop_identity")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        standard_id(
+            ctx,
+            "loop",
+            format_args!("0:0"),
+            LoopId::mint,
+            "catia_standard_loop_identity",
+        )
+    })
+    .expect("service profile admits loop identity");
+    assert_eq!(admitted.as_str(), "catia:standard:loop#0:0");
+}
+
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::ids::ShellId;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::ids::VertexId;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Face;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::AnnotationBuilder;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
+
+fn rational_pcurve_arc(
+    center: [f64; 2],
+    radius: f64,
+    range: [f64; 2],
+    refusal: &mut crate::nurbs::LaneRefusals,
+    record: &str,
+) -> Option<PcurveGeometry> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::assemble::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
+    })
+    .expect("service budget admits rational arc")
+}
+
+fn standard_pcurve_geometry(
+    surface: &SurfaceGeometry,
+    support: &StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+    witness: Option<FinitePoint3>,
+    edge_curve: Option<&CurveGeometry>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_standard_pcurve_geometry(
+            ctx,
+            surface,
+            support,
+            (start, end),
+            witness,
+            edge_curve,
+            refusal,
+        )
+    })
+    .expect("service budget admits standard pcurve")
+}
+
+fn standard_endpoint_pair_supports_topology(
+    surface: &SurfaceGeometry,
+    support: &StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+    witness: Option<FinitePoint3>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        charged_endpoint_pair_supports_topology(ctx, surface, support, start, end, witness, refusal)
+    })
+    .expect("service budget admits endpoint topology")
+}
+
+fn arc_support_fixture() -> (SurfaceGeometry, StandardCurveSupport, Point3, Point3) {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            center,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid plane fixture"),
+    ));
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 0],
+        geometry: super::checked_circle(center, 2.0),
+    };
+    (
+        surface,
+        support,
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    )
+}
+
+#[test]
+fn standard_pcurve_propagates_arc_collection_refusal() {
+    let (surface, support, start, end) = arc_support_fixture();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_standard_pcurve_geometry(
+            ctx,
+            &surface,
+            &support,
+            (start, end),
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_rational_arc_controls")
+    );
+    assert!(standard_pcurve_geometry(
+        &surface,
+        &support,
+        start,
+        end,
+        None,
+        None,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_some());
+}
+
+#[test]
+fn standard_endpoint_filter_propagates_arc_collection_refusal() {
+    let (surface, support, start, end) = arc_support_fixture();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_endpoint_pair_supports_topology(
+            ctx,
+            &surface,
+            &support,
+            start,
+            end,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_rational_arc_controls")
+    );
+    assert!(standard_endpoint_pair_supports_topology(
+        &surface,
+        &support,
+        start,
+        end,
+        None,
+        &mut crate::nurbs::LaneRefusals::new()
+    ));
+}
 
 fn unit_square_surface() -> NurbsSurface {
-    NurbsSurface::new(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        2,
-        2,
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        None,
-        false,
-        false,
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid unit-square surface")
 }
 
-fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> B2OwnerNumericTail {
-    B2OwnerNumericTail {
-        header: [0x84, 0x41, 0, 0, 0x0d],
-        lower,
-        upper,
-        bounds,
+#[test]
+fn standard_e5_carrier_identity_maps_refuse_before_growth() {
+    let mut stream = e5_torus_stream();
+    let mut wrapper = vec![0x85, 0xaa, 0x81, 0x82, 0x83, 0x84];
+    wrapper.extend_from_slice(&[0; 38]);
+    append_e5_record(&mut stream, 0xf1, 8, &wrapper);
+    append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_freeform_e5_carrier_ids(
+            ctx, &stream
+        ))
+        .expect("service resource budget")
+        .get(&7),
+        Some(&42)
+    );
+    for (cap, operation) in [
+        (0, "catia_e5_face_surfaces"),
+        (1, "catia_e5_surface_wrappers"),
+        (2, "catia_e5_wrapper_surfaces"),
+        (3, "catia_e5_face_carriers"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, |ctx| standard_freeform_e5_carrier_ids(ctx, &stream)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
     }
+}
+
+fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> CatiaOwnerNumericTail {
+    CatiaOwnerNumericTail::new([0x84, 0x41, 0, 0, 0x0d], lower, upper, bounds)
+        .expect("increasing owner numeric tail")
 }
 
 #[test]
@@ -51,12 +304,30 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
         [[0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
     );
 
-    assert!(owner_matches_a5_carrier(&admitted, &surface));
-    assert!(!owner_matches_a5_carrier(
-        &outside_parameter_domain,
-        &surface
-    ));
-    assert!(!owner_matches_a5_carrier(&clipped_model_bounds, &surface));
+    assert_eq!(
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &admitted,
+            &surface
+        ),
+        Ok(true)
+    );
+    assert_eq!(
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &outside_parameter_domain,
+            &surface
+        ),
+        Ok(false)
+    );
+    assert_eq!(
+        owner_matches_a5_carrier(
+            &cadmpeg_test_support::service_decode_context(),
+            &clipped_model_bounds,
+            &surface
+        ),
+        Ok(false)
+    );
 }
 
 #[test]
@@ -67,13 +338,29 @@ fn owner_face_candidate_requires_complete_trimmed_bounds_containment() {
         [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
     );
     let contained = StandardFaceBounds {
-        aabb_center: [0.0, 0.0, 0.0],
-        aabb_half_extents: [0.5, 1.5, 2.5],
-        sphere_center: [0.0, 0.0, 0.0],
-        sphere_radius: 3.0,
+        aabb_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.0),
     };
     let protruding = StandardFaceBounds {
-        aabb_half_extents: [1.5, 1.5, 2.5],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
         ..contained
     };
 
@@ -97,10 +384,22 @@ fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
         [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
     );
     let face = StandardFaceBounds {
-        aabb_center: [0.0, 0.0, 0.0],
-        aabb_half_extents: [0.5, 1.5, 2.5],
-        sphere_center: [0.0, 0.0, 0.0],
-        sphere_radius: 3.0,
+        aabb_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.0),
     };
 
     for encoding in [
@@ -113,45 +412,194 @@ fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
 
 #[test]
 fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![7]), (2, vec![7])],
         vec![(0, vec![7]), (1, vec![7])],
     ];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 3, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 3, None)
+            .expect("binding fits the service profile"),
         Some(vec![Some(7), Some(7)])
     );
 }
 
 #[test]
+fn a5_owner_domain_entries_refuse_before_normalization() {
+    let domains = vec![vec![(0, vec![7])]];
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        invariant_face_carrier_bindings(ctx, &domains, 1, None)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            invariant_face_carrier_bindings(ctx, &domains, 1, None)
+        })
+        .expect("service context admits one owner domain"),
+        Some(vec![Some(7)])
+    );
+}
+
+#[test]
+fn a5_face_witness_index_refuses_before_point_map_growth() {
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
+        FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite point"),
+        None,
+    ));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        standard_face_boundary_witnesses(ctx, &ir)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_face_boundary_witnesses(ctx, &ir)
+    })
+    .expect("service context admits witness index")
+    .is_empty());
+}
+
+#[test]
+fn a5_owner_binding_refuses_before_carrier_row_growth() {
+    let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    })
+    .is_empty());
+    assert!(
+        !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+    let mut ir = CadIr::empty();
+    let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.faces.push(Face {
+        id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+        shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    let source = StandardConsolidatedSource {
+        data: &bytes,
+        records: &records,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        bind_standard_a5_owner_surfaces(
+            ctx,
+            &mut ir.clone(),
+            &mut AnnotationBuilder::new(),
+            source,
+            &[],
+            &cadmpeg_core::decode::WorkBudget::new(100),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            bind_standard_a5_owner_surfaces(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                source,
+                &[],
+                &cadmpeg_core::decode::WorkBudget::new(100),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service context admits owner search"),
+        0
+    );
+}
+
+#[test]
 fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![9])],
         vec![(0, vec![9]), (1, vec![7])],
     ];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 2, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
         Some(vec![None, None])
     );
 }
 
 #[test]
 fn owner_face_matching_removes_labels_outside_every_complete_matching() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7]), (1, vec![99])], vec![(1, vec![11])]];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 2, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
         Some(vec![Some(7), Some(11)])
     );
 }
 
 #[test]
 fn owner_face_matching_requires_every_face_to_have_a_distinct_owner() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7])], Vec::new()];
 
-    assert_eq!(invariant_face_carrier_bindings(&domains, 2, None), None);
+    assert_eq!(
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
+        None
+    );
 }
 
 #[test]
@@ -166,13 +614,101 @@ fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position(
     let roster = [100, 300, 500];
 
     assert_eq!(
-        standard_serialized_endpoint_pairs(&supports, &native_edges, &roster),
+        crate::test_support::with_service_context(|ctx| standard_serialized_endpoint_pairs(
+            ctx,
+            &supports,
+            &native_edges,
+            &roster
+        ))
+        .expect("service budget"),
         Some(vec![Some([2, 1]), Some([0, 2]), None])
     );
 
     assert!(
-        standard_serialized_endpoint_pairs(&supports, &native_edges, &[100, 300, 100]).is_none()
+        crate::test_support::with_service_context(|ctx| standard_serialized_endpoint_pairs(
+            ctx,
+            &supports,
+            &native_edges,
+            &[100, 300, 100]
+        ))
+        .expect("service budget")
+        .is_none()
     );
+}
+
+#[test]
+fn standard_native_binding_arrays_refuse_before_each_collection() {
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 70,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    }];
+    let native_edges = BTreeMap::from([(70, [100, 300])]);
+    let native_support_ids = HashSet::from([70]);
+    let mut operations = HashSet::new();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &[100, 300])
+        }) {
+            Err(CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected roster binding: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_roster_point_identities",
+        "catia_roster_endpoint_pairs",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    operations.clear();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            standard_native_support_edge_ids(ctx, &supports, &native_support_ids)
+        }) {
+            Err(CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(ids) if ids == [Some(70)] => break,
+            outcome => panic!("unexpected support binding: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_native_support_row_counts",
+        "catia_native_support_edge_ids",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    operations.clear();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            standard_successor_endpoint_points(ctx, &supports, &[71, 72])
+        }) {
+            Err(CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(points) if points == [[Some(0), Some(1)]] => break,
+            outcome => panic!("unexpected successor binding: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_successor_point_identities",
+        "catia_successor_endpoint_points",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    let mut candidates = [Vec::new()];
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| include_native_endpoint_pairs(ctx, &mut candidates, &[Some([0, 1])])),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_domain_points"
+    ));
+    assert!(candidates[0].is_empty());
 }
 
 #[test]
@@ -191,14 +727,17 @@ fn standard_object_journal_merges_matching_edge_dialects_and_rejects_conflicts()
 
 #[test]
 fn same_cone_generator_requires_an_apex_collinear_endpoint_pair() {
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
     assert!(same_cone_generator_pair(
         &cone,
         &cone,
@@ -231,7 +770,12 @@ fn standard_edge_successor_points_are_only_domain_corroboration() {
     ];
 
     assert_eq!(
-        standard_successor_endpoint_points(&supports, &[99, 101, 102]),
+        crate::test_support::with_service_context(|ctx| standard_successor_endpoint_points(
+            ctx,
+            &supports,
+            &[99, 101, 102]
+        ))
+        .expect("service budget"),
         [[Some(1), Some(2)], [None, None]]
     );
 }
@@ -261,86 +805,166 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
 
 #[test]
 fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 7.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.01, 7.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 7.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.01, 7.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ];
     assert_eq!(
-        standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0, None,),
+        standard_circle_endpoint_candidates(&ctx, &points, Point3::new(0.0, 0.0, 7.0), 5.0, None,)
+            .expect("service budget"),
         [0]
     );
 }
 
 #[test]
-fn standard_circle_endpoint_domain_requires_both_face_carriers() {
-    let points = [
-        Point {
-            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string())
-                .expect("identity grammar"),
-            position: Point3::new(3.0, -4.0, 0.0),
-            source_object: None,
-        },
-    ];
-    let left = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+fn standard_endpoint_and_edge_builders_refuse_before_collection_growth() {
+    use cadmpeg_core::CodecError;
+
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
     };
-    let right = SurfaceGeometry::Unknown { record: None };
+    let supports = [support];
+    let point = Point::new(
+        PointId::mint("catia:test:point#builder".to_string()).expect("identity grammar"),
+        FinitePoint3::new(Point3::new(3.0, 4.0, 0.0)).expect("finite point"),
+        None,
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_curve_edge_classes(ctx, &supports)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_edge_classes"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_curve_geometry_gauge_keys(ctx, &supports)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_geometry_gauge_keys"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_circle_endpoint_candidates(ctx, &[point], Point3::new(0.0, 0.0, 0.0), 5.0, None)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_circle_endpoint_candidates"
+    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            standard_curve_edge_classes(ctx, &supports).expect("service budget"),
+            [0]
+        );
+        assert_eq!(
+            standard_curve_geometry_gauge_keys(ctx, &supports)
+                .expect("service budget")
+                .len(),
+            1
+        );
+    });
+}
+
+#[test]
+fn standard_circle_endpoint_domain_requires_both_face_carriers() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
+    let points = [
+        Point::new(
+            PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("catia:test:point#other-occurrence".to_string())
+                .expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+    ];
+    let left = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let right = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
         standard_circle_endpoint_candidates(
+            &ctx,
             &points,
             Point3::new(0.0, 0.0, 0.0),
             5.0,
             Some([(&left, None), (&right, None)]),
-        ),
+        )
+        .expect("service budget"),
         [0]
     );
 }
 
 #[test]
 fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+        Point::new(
+            PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("catia:test:point#other-occurrence".to_string())
                 .expect("identity grammar"),
-            position: Point3::new(3.0, -4.0, 0.0),
-            source_object: None,
-        },
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ];
-    let surface = SurfaceGeometry::Unknown { record: None };
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let bounds = crate::families::standard::records::StandardFaceBounds {
-        aabb_center: [3.0, 4.0, 0.0],
-        aabb_half_extents: [0.1, 0.1, 0.1],
-        sphere_center: [3.0, 4.0, 0.0],
-        sphere_radius: 0.2,
+        aabb_center: [
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.1),
+            crate::test_support::test_b5::nonnegative_length(0.1),
+            crate::test_support::test_b5::nonnegative_length(0.1),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(0.2),
     };
 
     assert_eq!(
         standard_circle_endpoint_candidates(
+            &ctx,
             &points,
             Point3::new(0.0, 0.0, 0.0),
             5.0,
             Some([(&surface, Some(bounds)), (&surface, Some(bounds))]),
-        ),
+        )
+        .expect("service budget"),
         [0]
     );
 }
@@ -348,7 +972,10 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
 #[test]
 fn native_endpoint_pairs_extend_geometric_candidate_domains() {
     let mut candidates = vec![vec![1], Vec::new()];
-    include_native_endpoint_pairs(&mut candidates, &[Some([1, 2]), Some([3, 4])]);
+    crate::test_support::with_service_context(|ctx| {
+        include_native_endpoint_pairs(ctx, &mut candidates, &[Some([1, 2]), Some([3, 4])])
+    })
+    .expect("service budget");
     assert_eq!(candidates, [vec![1, 2], vec![3, 4]]);
 }
 
@@ -357,11 +984,21 @@ fn native_endpoint_evidence_rejects_directed_pair_conflicts() {
     let graph = [Some([0, 1]), None];
     let roster = [Some([0, 1]), Some([2, 3])];
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(
+            ctx,
+            Some(&graph),
+            Some(&roster)
+        ))
+        .expect("service budget"),
         Ok(Some(vec![Some([0, 1]), Some([2, 3])]))
     );
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&[Some([1, 0]), None])),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(
+            ctx,
+            Some(&graph),
+            Some(&[Some([1, 0]), None])
+        ))
+        .expect("service budget"),
         Err("conflicting native endpoint evidence")
     );
 }
@@ -379,8 +1016,48 @@ fn complete_vertex_roster_supersedes_partial_graph_coordinates() {
     let graph = [Some([4, 5]), None];
     let roster = [Some([0, 1]), Some([2, 3])];
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(
+            ctx,
+            Some(&graph),
+            Some(&roster)
+        ))
+        .expect("service budget"),
         Ok(Some(roster.to_vec()))
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_roster_evidence_copy"
+    ));
+}
+
+#[test]
+fn native_endpoint_evidence_refuses_before_merge_and_copy() {
+    use cadmpeg_core::CodecError;
+
+    let graph = [Some([0, 1]), None];
+    let roster = [Some([0, 1]), Some([2, 3])];
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&[None, None]))),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_merged_evidence"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, None, Some(&roster))),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_evidence_copy"
+    ));
+    let raw = Some(vec![Some([0, 1]), None]);
+    let mesh = Some(vec![None, Some([2, 3])]);
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| combine_propagated_endpoint_pairs(ctx, raw, mesh)),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_propagated_pair_merge"
+    ));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(
+            ctx,
+            Some(vec![Some([0, 1]), None]),
+            Some(vec![None, Some([2, 3])])
+        ))
+        .expect("service budget"),
+        Some(vec![Some([0, 1]), Some([2, 3])])
     );
 }
 
@@ -389,48 +1066,95 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
     let raw = Some(vec![Some([0, 1]), Some([2, 3])]);
     let mesh = Some(vec![Some([0, 1]), Some([1, 2])]);
     assert_eq!(
-        combine_propagated_endpoint_pairs(raw, mesh),
+        crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(
+            ctx, raw, mesh
+        ))
+        .expect("service budget"),
         Some(vec![Some([0, 1]), Some([1, 2])])
+    );
+}
+
+#[test]
+fn propagated_endpoint_sources_reject_mismatched_edge_counts() {
+    let raw = Some(vec![Some([0, 1]), None]);
+    let mesh = Some(vec![None]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(
+            ctx, raw, mesh
+        ))
+        .expect("service budget"),
+        None
     );
 }
 
 #[test]
 fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
-            position: Point3::new(1.01, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.01, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ];
-    let tolerances = [(2usize, 0.02)].into_iter().collect();
+    let tolerances = [(2usize, crate::test_support::test_b5::positive(0.02))]
+        .into_iter()
+        .collect();
     let vertices = [B5LogicalVertex {
         object_id: 7,
-        point: [1.0, 0.0, 0.0],
+        point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
     }];
-    let ambiguous = unique_native_identity_points(&vertices, 2, &tolerances, &points);
+    let ambiguous = crate::test_support::with_service_context(|ctx| {
+        unique_native_identity_points(ctx, &vertices, 2, &tolerances, &points)
+    })
+    .expect("service budget");
     assert!(ambiguous.is_empty());
 
-    let exact = unique_native_identity_points(&vertices, 2, &BTreeMap::new(), &points);
+    let exact = crate::test_support::with_service_context(|ctx| {
+        unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)
+    })
+    .expect("service budget");
     assert_eq!(exact.get(&7), Some(&0));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_identity_points"
+    ));
 }
 
 #[test]
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
-    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("reverse semicircle");
+    let arc = rational_pcurve_arc(
+        [0.0, 0.0],
+        2.0,
+        range,
+        &mut crate::nurbs::LaneRefusals::new(),
+        "test record",
+    )
+    .expect("reverse semicircle");
     let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };
     assert!(nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
-    let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
-    let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &arc,
+        range[0],
+    )
+    .expect("start evaluation");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &arc,
+        range[1],
+    )
+    .expect("end evaluation");
     assert!((start.u + 2.0).abs() < 1.0e-12);
     assert!(start.v.abs() < 1.0e-12);
     assert!((end.u - 2.0).abs() < 1.0e-12);
@@ -448,26 +1172,35 @@ fn canonical_periodic_range_snaps_roundoff_at_the_turn_seam() {
 
 #[test]
 fn coincident_planes_do_not_impose_a_line_direction() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     assert!(intersection_line_direction(&plane, &plane).is_none());
 }
 
 #[test]
 fn plane_intersection_preserves_tiny_nonzero_direction() {
-    let left = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(1.0, 0.0, 0.0),
-        u_axis: Vector3::new(0.0, 1.0, 0.0),
-    };
-    let right = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(1.0, 1e-200, 0.0),
-        u_axis: Vector3::new(0.0, 0.0, 1.0),
-    };
+    let left = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let right = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1e-200, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     assert_eq!(
         intersection_line_direction(&left, &right),
         Some(Vector3::new(0.0, 0.0, 1e-200))
@@ -490,22 +1223,33 @@ fn plane_intersection_preserves_tiny_nonzero_angle_and_finite_origin() {
 
 #[test]
 fn cylinder_generator_direction_requires_compatible_support_axes() {
-    let cylinder = |axis| SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
+    let cylinder = |axis| {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                axis,
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        ))
     };
-    let containing_plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let transverse_plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let containing_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let transverse_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     let axial = cylinder(Vector3::new(0.0, 0.0, 1.0));
     let oblique = cylinder(Vector3::new(0.0, 1.0, 0.0));
 
@@ -520,26 +1264,34 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 #[test]
 fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
-        &SurfaceGeometry::Unknown { record: None },
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
-    ));
-    let nurbs = SurfaceGeometry::Nurbs(unit_square_surface());
+    )
+    .expect("surface evaluator accepts the fixture"));
+    let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
     assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
         None,
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
         None,
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &nurbs,
         None,
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
 }
 
 #[test]
@@ -554,18 +1306,38 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         pos: 0,
         tag: 7,
         bounds: StandardFaceBounds {
-            aabb_center: [0.0, 0.0, 0.0],
-            aabb_half_extents: [1.0, 1.0, 1.0],
-            sphere_center: [0.0, 0.0, 0.0],
-            sphere_radius: 1.0,
+            aabb_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            aabb_half_extents: [
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+            ],
+            sphere_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            sphere_radius: crate::test_support::test_b5::nonnegative_length(1.0),
         },
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_surfaces(&records, &stream);
+    let associated = crate::test_support::with_service_context(|ctx| {
+        associate_standard_freeform_e5_surfaces(
+            ctx,
+            &records,
+            &stream,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
-        Some(SurfaceGeometry::Torus { .. })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
     ));
 }
 
@@ -581,37 +1353,61 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         pos: 0,
         tag: 7,
         bounds: StandardFaceBounds {
-            aabb_center: [0.0, 0.0, 0.0],
-            aabb_half_extents: [1.0, 1.0, 1.0],
-            sphere_center: [0.0, 0.0, 0.0],
-            sphere_radius: 1.0,
+            aabb_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            aabb_half_extents: [
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+            ],
+            sphere_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            sphere_radius: crate::test_support::test_b5::nonnegative_length(1.0),
         },
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &stream,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("synthetic E5 stream fits the service profile");
+    let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
+        .expect("two E5 stations fit the collection limit");
+    let associated =
+        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &stream, &jets)
+            .expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
         Some(StandardSurfaceProcedure::RollingBall {
             carrier_object_id: 42,
             source: StandardRollingBallSource::E5D8,
-            definition: ProceduralSurfaceDefinition::RollingBallJet {
-                degree: 5,
-                stations,
-            },
-    }) if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == vec![2.0, 5.0]
-            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
-            && stations.len() == 2
-    ));
+            definition,
+    }) if matches!(definition.as_ref(), ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == vec![2.0, 5.0]
+            && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
+            && jet.stations().len() == 2)));
 
-    let mut opposite_records = records.clone();
+    let mut opposite_records = records;
     let StandardSurfaceRecord::Freeform { forward, .. } = &mut opposite_records[0] else {
         unreachable!("synthetic D8 face record");
     };
     *forward = false;
-    assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream).is_empty()
-    );
+    assert!(associate_standard_freeform_e5_rolling_ball_jets(
+        &ctx,
+        &opposite_records,
+        &stream,
+        &jets
+    )
+    .expect("service resource budget")
+    .is_empty());
 
     let mut reverse_stream = stream.clone();
     let d8_payload_size = usize::from(u16::from_le_bytes(
@@ -624,91 +1420,166 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     assert_eq!(Some(sense_offset), encoded_sense_offset);
     reverse_stream[sense_offset..sense_offset + std::mem::size_of::<i32>()]
         .copy_from_slice(&1_i32.to_le_bytes());
+    let reverse_jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &reverse_stream)
+        .expect("reverse stream has two admitted stations");
     assert_eq!(
-        crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
+        reverse_jets[0].sense,
         crate::families::e5::graph::Sign::Positive
     );
-    assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
-            .contains_key(&7)
-    );
+    assert!(associate_standard_freeform_e5_rolling_ball_jets(
+        &ctx,
+        &opposite_records,
+        &reverse_stream,
+        &reverse_jets
+    )
+    .expect("service resource budget")
+    .contains_key(&7));
 }
 
 #[test]
 fn cached_face_point_membership_matches_the_source_predicate() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("service decode context");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-            position: Point3::new(1.0, 2.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-            position: Point3::new(1.0, 2.0, 1.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#point-0").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("catia:test:point#point-1").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 1.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
-    let membership = standard_face_point_membership(&ir, &bindings, &surface_indices, None)
-        .expect("complete face membership");
+    let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
+        .expect("service decode");
 
     assert!(membership[0][0]);
     assert!(!membership[0][1]);
     assert!(membership[0].iter().enumerate().all(|(point, cached)| {
         *cached
             == point_on_standard_face(
-                ir.model.points[point].position,
+                &ctx,
+                ir.model.points[point].position().get(),
                 &ir.model.surfaces[0].geometry,
                 None,
             )
+            .expect("surface evaluator accepts the fixture")
     }));
+}
+
+#[test]
+fn standard_face_membership_refuses_point_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut ir = CadIr::empty();
+    for index in 0..2 {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+            FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0)).expect("finite position"),
+            None,
+        ));
+    }
+    let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let bindings = [(surface_id.clone(), false, 0)];
+    let surface_indices = HashMap::from([(surface_id, 0)]);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
+        .expect_err("two point memberships exceed the remaining collection allowance");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_face_point_membership"));
 }
 
 #[test]
 fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     let bounds = StandardFaceBounds {
-        aabb_center: [2.0, 3.0, 4.0],
-        aabb_half_extents: [1.0, 2.0, 3.0],
-        sphere_center: [2.0, 3.0, 4.0],
-        sphere_radius: 3.5,
+        aabb_center: [
+            crate::test_support::test_b5::finite(2.0),
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(1.0),
+            crate::test_support::test_b5::nonnegative_length(2.0),
+            crate::test_support::test_b5::nonnegative_length(3.0),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(2.0),
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.5),
     };
-    let surface = SurfaceGeometry::Unknown { record: None };
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert!(point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(2.0, 4.0, 6.0),
         &surface,
         Some(bounds),
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(3.01, 3.0, 4.0),
         &surface,
         Some(bounds),
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
+        &cadmpeg_test_support::service_decode_context(),
         Point3::new(3.0, 5.0, 7.0),
         &surface,
         Some(bounds),
-    ));
+    )
+    .expect("surface evaluator accepts the fixture"));
 }
 
 #[test]
 fn standard_plane_line_inverts_to_exact_parameter_line() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -722,41 +1593,50 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
         Point3::new(5.0, 8.0, 3.0),
         None,
         None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("plane line pcurve");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-            direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                cadmpeg_ir::math::Point2::new(3.0, 4.0)
+            )
+            .expect("valid LinePcurve fixture")
+        )
     );
 }
 
 #[test]
-fn standard_emission_reverses_only_face_pcurve_use_range() {
+fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
     for reversed in [false, true] {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
-            Point {
-                id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-                position: Point3::new(0.0, 0.0, 0.0),
-                source_object: None,
-            },
-            Point {
-                id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-                position: Point3::new(1.0, 0.0, 0.0),
-                source_object: None,
-            },
+            Point::new(
+                PointId::mint("catia:test:point#point-0").expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
+            Point::new(
+                PointId::mint("catia:test:point#point-1").expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
         ]);
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
         ir.model.faces.push(Face {
@@ -764,7 +1644,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
             surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -781,47 +1661,97 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             faces: [0, 0],
             geometry: StandardCurveGeometry::Line,
         }];
-        let topology = crate::families::standard::topology::StandardTopology {
-            faces: vec![crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary {
-                    coedges: vec![crate::families::standard::topology::CoedgeUse {
-                        edge_row: 0,
-                        reversed,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    }],
-                }],
+        let topology = crate::families::standard::topology::StandardTopologyDraft {
+            faces: vec![crate::families::standard::topology::FaceTopologyDraft {
+                boundaries: vec![
+                    crate::families::standard::topology::BoundaryDraft::new(vec![
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed: !reversed,
+                            start_vertex: 1,
+                            end_vertex: 0,
+                        },
+                    ])
+                    .expect("nonempty topology boundary"),
+                ],
             }],
-            edge_rows: vec![crate::families::standard::topology::EdgeRow {
-                kind: 1,
-                handles: vec![0, 1],
-                boundary_layout:
-                    crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
-            }],
+            edge_rows: vec![crate::families::standard::topology::EdgeRow::new(
+                1,
+                vec![0, 1],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")],
             vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             logical_vertex_count: 2,
         };
+        let topology = crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
+        })
+        .expect("service admission")
+        .expect("closed topology");
         let mut annotations = AnnotationBuilder::new();
-        emit_standard_topology(
-            &mut ir,
-            &mut annotations,
-            &bindings,
-            &[],
-            &surface_indices,
-            &supports,
-            &[[0, 1]],
-            &[0, 1],
-            &topology,
-            &[None],
-            &[None],
-            &[],
-        );
+        let mut limited_ir = ir.clone();
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_standard_topology(
+                ctx,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut limited_ir,
+                    annotations: &mut AnnotationBuilder::new(),
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
+            )
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_standard_topology(
+                ctx,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut ir,
+                    annotations: &mut annotations,
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
+            )
+        })
+        .expect("valid source object identity");
 
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
         };
-        let [vertex_use] = loop_.anchored_vertex_uses() else {
-            panic!("standard edge emission must retain one vertex use");
+        let [vertex_use, closing_use] = loop_.anchored_vertex_uses() else {
+            panic!("standard edge emission must retain both closed-cycle vertex uses");
         };
         assert_eq!(
             vertex_use.vertex,
@@ -833,42 +1763,81 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
                 .expect("identity grammar")
         );
 
+        assert_eq!(
+            closing_use.vertex,
+            VertexId::mint("catia:standard:v#0".to_string()).expect("identity grammar")
+        );
+        assert_eq!(
+            closing_use.after,
+            cadmpeg_ir::ids::CoedgeId::mint("catia:standard:coedge#0:0:1".to_string())
+                .expect("identity grammar")
+        );
+
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
             panic!("standard line occurrence must retain its pcurve");
         };
-        assert_eq!(pcurve.parameter_range, reversed.then_some([1.0, 0.0]));
+        assert_eq!(
+            pcurve
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            reversed.then_some([1.0, 0.0])
+        );
     }
 }
 
 #[test]
 fn standard_plane_circle_pcurve_preserves_contained_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            center,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
     let start = Point3::new(radius, 0.0, 0.0);
     let end = Point3::new(0.0, radius, 0.0);
-    let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
-            .expect("contained plane circle pcurve");
+    let (geometry, range) = standard_pcurve_geometry(
+        &surface,
+        &support,
+        start,
+        end,
+        None,
+        Some(&carrier),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("contained plane circle pcurve");
     let mapped = range.map(|parameter| {
-        let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
-        surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        )
+        .expect("plane circle pcurve endpoint");
+        cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("plane circle surface endpoint")
     });
     assert!(mapped[0].distance(start) <= 1.0e-9);
     assert!(mapped[1].distance(end) <= 1.0e-9);
@@ -876,11 +1845,14 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
 
 #[test]
 fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
     let start = Point3::new(radius, 0.0, 0.0);
@@ -888,17 +1860,27 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
-    let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
-            .expect("closed contained plane circle pcurve");
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            center,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    let (geometry, range) = standard_pcurve_geometry(
+        &surface,
+        &support,
+        start,
+        start,
+        None,
+        Some(&carrier),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("closed contained plane circle pcurve");
     assert_eq!(range, [0.0, std::f64::consts::TAU]);
     let PcurveGeometry::Nurbs { nurbs } = &geometry else {
         panic!("closed plane circle must use a rational arc");
@@ -906,532 +1888,80 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
     assert_eq!(nurbs.degree(), 2);
     assert_eq!(nurbs.knots().len(), 12);
     assert_eq!(nurbs.control_points().len(), 9);
-    assert_eq!(nurbs.weights().map(<[f64]>::len), Some(9));
+    assert_eq!(nurbs.weights().map(|weights| weights.len()), Some(9));
     for parameter in [range[0], range[1]] {
-        let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
-        let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        )
+        .expect("closed pcurve endpoint");
+        let point = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("closed surface endpoint");
         assert!(point.distance(start) <= 1.0e-9);
     }
-    let midpoint_uv = pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
-    let midpoint =
-        surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
+    let midpoint_uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        std::f64::consts::PI,
+    )
+    .expect("closed pcurve midpoint");
+    let midpoint = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        midpoint_uv.u,
+        midpoint_uv.v,
+    )
+    .expect("closed surface midpoint");
     assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1.0e-9);
 }
 
-#[test]
-fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() {
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
-    let section_radius = 21.0_f64.sqrt();
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 2.0, 0.0),
-            radius: section_radius,
-        },
-    };
-    let start = Point3::new(section_radius, 2.0, 0.0);
-    let end = Point3::new(0.0, 2.0, section_radius);
-
-    assert!(standard_pcurve_geometry(&surface, &support, start, end, None, None).is_none());
-    assert!(standard_endpoint_pair_supports_topology(
-        &surface, &support, start, end, None
-    ));
-}
+mod curve_bindings;
 
 #[test]
-fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
-    let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-        position: Point3::new(2.0, 0.0, 0.0),
-        source_object: None,
-    });
-    let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    });
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 0],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 2.0,
-        },
-    };
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[(surface_id.clone(), false, 0)],
-        &HashMap::from([(surface_id, 0)]),
-        &[],
-        &support,
-        [0, 0],
-        None,
-        None,
+fn owner_carrier_helper_preserves_session_depth_refusal() {
+    let surface = unit_square_surface();
+    let tail = owner_tail(
+        [0.25, 0.25],
+        [0.75, 0.75],
+        [[0.2, 0.8], [0.2, 0.8], [-0.1, 0.1]],
     );
-    assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
-    let curve = curve.expect("closed circle support identifies a curve");
-    assert!(matches!(
-        ir.model.curves.iter().find(|candidate| candidate.id == curve),
-        Some(Curve {
-            geometry: CurveGeometry::Circle {
-                axis,
-                ref_direction,
-                radius,
-                ..
-            },
-            ..
-        }) if *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && *radius == 2.0
-    ));
-}
-
-#[test]
-fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let center = Point3::new(0.0, 0.0, 1.0);
-    let radius = 2.0_f64.sqrt();
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
-    };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius,
-    };
-    assert!(standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(0.0, 1.0, 0.0),
-        Point3::new(0.0, -1.0, 0.0),
-        None,
-        Some(&carrier),
-    )
-    .is_none());
-}
-
-#[test]
-fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let center = Point3::new(0.0, 0.0, 0.0);
-    let radius = 2.0;
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
-    };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius,
-    };
-    assert!(standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(0.0, radius, 0.0),
-        Point3::new(0.0, -radius, 0.0),
-        None,
-        Some(&carrier),
-    )
-    .is_none());
-}
-
-#[test]
-fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Bspline,
-    };
-    let start = Point3::new(2.0, 4.0, 3.0);
-    let end = Point3::new(5.0, 8.0, 3.0);
-    let carrier = CurveGeometry::Line {
-        origin: start,
-        direction: Vector3::new(3.0, 4.0, 0.0),
-    };
-    let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
-            .expect("solved spline line pcurve");
-
-    assert_eq!(range, [0.0, 1.0]);
-    assert_eq!(
-        geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(1.0, 2.0),
-            direction: Point2::new(3.0, 4.0),
-        }
-    );
-}
-
-#[test]
-fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Line,
-    };
-    assert!(standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 2.0, 0.0),
-        None,
-        None,
-    )
-    .is_none());
-}
-
-#[test]
-fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
-    for half_angle in [0.25f64, 1e-200] {
-        let surface = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle,
-        };
-        let support = StandardCurveSupport {
-            pos: 0,
-            tag: 1,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        };
-        let height = 4.0;
-        let radius = height * half_angle.tan();
-        let (geometry, range) = standard_pcurve_geometry(
-            &surface,
-            &support,
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, radius, height),
-            None,
-            None,
-        )
-        .expect("cone generator through the apex");
-        assert_eq!(range, [0.0, 1.0]);
+    crate::test_support::with_work_limit(0, |ctx| {
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface)
+            .expect_err("control traversal refuses work");
         assert_eq!(
-            geometry,
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-                direction: cadmpeg_ir::math::Point2::new(0.0, height),
-            }
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
         );
-    }
-}
-
-#[test]
-fn standard_cone_latitude_inverts_to_isoparametric_line() {
-    let half_angle = 0.25f64;
-    let radius = 3.0 + 2.0 * half_angle.tan();
-    let surface = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-        ratio: 1.0,
-        half_angle,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 2.0),
-            radius,
-        },
-    };
-    let (geometry, range) = standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(radius, 0.0, 2.0),
-        Point3::new(0.0, radius, 2.0),
-        None,
-        None,
-    )
-    .expect("cone latitude pcurve");
-    assert_eq!(range, [0.0, 1.0]);
-    assert_eq!(
-        geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 2.0),
-            direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-        }
-    );
-}
-
-#[test]
-fn standard_cylinder_witness_selects_complementary_arc() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 3.0),
-            radius: 2.0,
-        },
-    };
-    let (geometry, _) = standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(2.0, 0.0, 3.0),
-        Point3::new(0.0, 2.0, 3.0),
-        Some(Point3::new(-2.0, 0.0, 3.0)),
-        None,
-    )
-    .expect("witnessed cylinder section");
-    assert_eq!(
-        geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-            direction: cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,),
-        }
-    );
-}
-
-#[test]
-fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 3.0),
-            radius: 2.0,
-        },
-    };
-    let (geometry, _) = standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(-2.0, 0.0, 3.0),
-        Point3::new(0.0, -2.0, 3.0),
-        Some(Point3::new(-1.0, 0.0, 4.0)),
-        None,
-    )
-    .expect("endpoint-aligned witness does not reject the arc");
-    assert_eq!(
-        geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(std::f64::consts::PI, 3.0),
-            direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-        }
-    );
-}
-
-#[test]
-fn standard_torus_witness_selects_complementary_latitude_arc() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 7.0,
-        },
-    };
-    let (geometry, _) = standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(7.0, 0.0, 0.0),
-        Point3::new(0.0, 7.0, 0.0),
-        Some(Point3::new(-7.0, 0.0, 0.0)),
-        None,
-    )
-    .expect("witnessed torus latitude");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
-        panic!("expected torus chart line");
-    };
-    assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(
-        direction,
-        cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
-    );
-    let range = circle_parameter_range_from_surface_branch(
-        &surface,
-        Point3::new(0.0, 0.0, 0.0),
-        7.0,
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        Point3::new(7.0, 0.0, 0.0),
-        Point3::new(0.0, 7.0, 0.0),
-        origin,
-        direction,
-    )
-    .expect("torus circle range");
-    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-}
-
-#[test]
-fn standard_torus_witness_selects_complementary_meridian_arc() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(5.0, 0.0, 0.0),
-            radius: 2.0,
-        },
-    };
-    let start = Point3::new(7.0, 0.0, 0.0);
-    let end = Point3::new(5.0, 0.0, 2.0);
-    let witness = Point3::new(5.0, 0.0, -2.0);
-    let (geometry, _) =
-        standard_pcurve_geometry(&surface, &support, start, end, Some(witness), None)
-            .expect("witnessed torus meridian");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
-        panic!("expected torus meridian chart line");
-    };
-    let long_sweep = std::f64::consts::FRAC_PI_2 - std::f64::consts::TAU;
-    assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
-
-    let range = circle_parameter_range_from_surface_branch(
-        &surface,
-        Point3::new(5.0, 0.0, 0.0),
-        2.0,
-        Vector3::new(0.0, -1.0, 0.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        start,
-        end,
-        origin,
-        direction,
-    )
-    .expect("torus meridian circle range");
-    assert_eq!(range, [0.0, long_sweep]);
-}
-
-#[test]
-fn arc_witness_selects_tiny_nonzero_sweep() {
-    let sweep = 1e-200;
-    assert_eq!(witness_arc_end(0.0, sweep, sweep * 0.5), Some(sweep));
-}
-
-#[test]
-fn standard_sphere_latitude_inverts_to_isoparametric_line() {
-    let latitude = 0.4f64;
-    let radius = 5.0;
-    let ring = radius * latitude.cos();
-    let height = radius * latitude.sin();
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
-    let support = StandardCurveSupport {
-        pos: 0,
-        tag: 1,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, height),
-            radius: ring,
-        },
-    };
-    let (geometry, _) = standard_pcurve_geometry(
-        &surface,
-        &support,
-        Point3::new(ring, 0.0, height),
-        Point3::new(0.0, ring, height),
-        None,
-        None,
-    )
-    .expect("sphere latitude pcurve");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
-        panic!("expected line pcurve");
-    };
-    assert!(origin.u.abs() < 1.0e-12);
-    assert!((origin.v - latitude).abs() < 1.0e-12);
-    assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!(direction.v.abs() < 1.0e-12);
-}
-
-#[test]
-fn generated_analytic_curve_ranges_use_angular_parameters() {
-    const ANGLE_TOLERANCE: f64 = 1e-12;
-
-    let geometry = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    };
-    let start = curve_point(&geometry, 0.0).expect("ellipse start");
-    let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
-    let witness = curve_point(&geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");
-    let short = standard_analytic_curve_parameter_range(&geometry, start, end, None)
-        .expect("short angular range");
-    let mut oriented = geometry.clone();
-    let long = standard_oriented_analytic_curve_parameter_range(&mut oriented, start, end, witness)
-        .expect("witnessed angular range");
-    assert!((short[0] - 0.0).abs() < ANGLE_TOLERANCE);
-    assert!((short[1] - std::f64::consts::FRAC_PI_2).abs() < ANGLE_TOLERANCE);
-    assert!((long[1] - 1.5 * std::f64::consts::PI).abs() < ANGLE_TOLERANCE);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, "IR homogeneous pole traversal");
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe owner work refusal"),
+            Err(limit)
+        );
+    });
+    crate::test_support::with_depth_limit(0, |ctx| {
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Ok(true));
+        let original = ctx
+            .enter_nested_limit("owner test outer frame")
+            .expect_err("outer frame refuses");
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface)
+            .expect_err("first evaluator frame refuses");
+        assert_eq!(limit, original);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe owner refusal"),
+            Err(limit)
+        );
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
+    });
 }

@@ -1,4 +1,12 @@
-use super::*;
+use crate::native::projection::{zero_entity_record, zero_entity_vertex_owner};
+use crate::native::{
+    zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
+    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
+    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
+    CatiaZeroEntityVertexIncidence,
+};
+use std::collections::HashSet;
 
 pub(super) fn validate_zero_entity_support_runs(
     runs: &[CatiaZeroEntitySupportRun],
@@ -125,11 +133,16 @@ pub(super) fn validate_zero_entity_support_runs(
                                                     .and_then(|support| support.model_endpoints)
                                             })
                                             .collect::<Vec<_>>();
-                                        let expected = crate::families::zero_entity::records::
-                                            oriented_closed_model_endpoints(
-                                                &endpoints,
-                                                &loop_record.forward_senses,
-                                            )
+                                        let expected =
+                                            crate::test_support::with_service_context(|ctx| {
+                                                crate::families::zero_entity::records::
+                                                    oriented_closed_model_endpoints(
+                                                        ctx,
+                                                        &endpoints,
+                                                        &loop_record.forward_senses,
+                                                    )
+                                            })
+                                            .expect("native test endpoints fit the service profile")
                                             .unwrap_or_default();
                                         loop_record.oriented_model_endpoints == expected
                                     }
@@ -180,23 +193,17 @@ pub(super) fn validate_zero_entity_support_runs(
                     let endpoints_valid = match (support.tag, support.uv_endpoints) {
                         (
                             [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8],
-                            Some(endpoints),
-                        ) => endpoints.iter().flatten().all(|value| value.is_finite()),
+                            Some(_),
+                        ) => true,
                         ([0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8], None) => {
                             false
                         }
                         ([0x21, _], None) => true,
                         _ => false,
                     };
-                    let model_endpoints_valid = support.model_endpoints.is_none_or(|endpoints| {
-                        support.uv_endpoints.is_some()
-                            && endpoints.iter().all(|point| {
-                                [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                            })
-                    });
-                    let model_midpoint_valid = support.model_midpoint.is_none_or(|point| {
-                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                    });
+                    let model_endpoints_valid = support
+                        .model_endpoints
+                        .is_none_or(|_| support.uv_endpoints.is_some());
                     let model_curve_valid =
                         validate_zero_entity_model_curve(carrier_tag, support.model_curve.as_ref());
                     let model_curve_construction_valid =
@@ -208,15 +215,14 @@ pub(super) fn validate_zero_entity_support_runs(
                     let has_model_carrier =
                         support.model_curve.is_some() || support.model_curve_construction.is_some();
                     let has_pcurve = support.pcurve.is_some();
-                    let model_parameters_valid =
-                        support.model_parameters.is_some_and(|parameters| {
-                            parameters.into_iter().all(f64::is_finite)
-                                && parameters[0] != parameters[1]
-                        }) == has_model_carrier;
+                    let model_parameters_valid = support
+                        .model_parameters
+                        .is_some_and(|parameters| parameters[0] != parameters[1])
+                        == has_model_carrier;
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8)],
-                            Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }),
+                            Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }),
                         ) => {
                             let (
                                 expected_degree,
@@ -237,28 +243,20 @@ pub(super) fn validate_zero_entity_support_runs(
                             let knots = nurbs.knots();
                             nurbs.degree() == expected_degree
                                 && nurbs.control_points().len() == expected_controls
-                                && knots.iter().all(|knot| knot.is_finite())
-                                && knots_nondecreasing(knots)
-                                && knots[..=expected_degree as usize]
+                                && knots[..=cadmpeg_core::decode::index_from_u32(expected_degree)]
                                     .iter()
                                     .all(|knot| *knot == knots[0])
                                 && knots[expected_controls..]
                                     .iter()
                                     .all(|knot| *knot == knots[expected_controls])
-                                && knots[expected_degree as usize] < knots[expected_controls]
+                                && knots[cadmpeg_core::decode::index_from_u32(expected_degree)]
+                                    < knots[expected_controls]
                                 && knots
                                     .chunk_by(|left, right| left == right)
                                     .map(<[f64]>::len)
                                     .eq(expected_multiplicities.iter().copied())
-                                && nurbs
-                                    .control_points()
-                                    .iter()
-                                    .all(|point| point.u.is_finite() && point.v.is_finite())
                                 && nurbs.weights().is_some_and(|weights| {
-                                    rational
-                                        && weights
-                                            .iter()
-                                            .all(|weight| weight.is_finite() && *weight > 0.0)
+                                    rational && weights.iter().all(|weight| weight.get() > 0.0)
                                 }) == rational
                                 && !nurbs.periodic()
                         }
@@ -287,7 +285,6 @@ pub(super) fn validate_zero_entity_support_runs(
                         && model_curve_construction_valid
                         && model_parameters_valid
                         && support.model_midpoint.is_some() == has_pcurve
-                        && model_midpoint_valid
                         && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
@@ -316,12 +313,8 @@ fn validate_zero_entity_model_curve_construction(
     model_curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
     construction: Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition>,
 ) -> bool {
-    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
-    };
+    let nonzero_vector =
+        |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z) > 0.0;
     let norm = |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z);
     let normalized_dot = |left: &cadmpeg_ir::math::Vector3, right: &cadmpeg_ir::math::Vector3| {
         (left.x * right.x + left.y * right.y + left.z * right.z) / (norm(left) * norm(right))
@@ -330,26 +323,18 @@ fn validate_zero_entity_model_curve_construction(
         (
             Some([0x29, 0xb8]),
             None,
-            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-                angle_range,
-                center,
-                major,
-                minor,
-                pitch,
-                apex_factor,
-                axis,
-            }),
+            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload)),
         ) => {
-            angle_range.iter().copied().all(f64::is_finite)
-                && angle_range[0] < angle_range[1]
-                && [center.x, center.y, center.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                && finite_vector(major)
-                && finite_vector(minor)
-                && [pitch.x, pitch.y, pitch.z].into_iter().all(f64::is_finite)
-                && apex_factor.is_finite()
-                && finite_vector(axis)
+            let angle_range = helix_payload.angle_range();
+            let major = helix_payload.major();
+            let minor = helix_payload.minor();
+            let pitch = helix_payload.pitch();
+            let axis = helix_payload.axis();
+
+            angle_range[0] < angle_range[1]
+                && nonzero_vector(major)
+                && nonzero_vector(minor)
+                && nonzero_vector(axis)
                 && (norm(axis) - 1.0).abs() <= 1.0e-9
                 && (norm(major) - norm(minor)).abs() <= 1.0e-9 * norm(major).max(norm(minor))
                 && normalized_dot(major, minor).abs() <= 1.0e-9
@@ -378,48 +363,27 @@ fn validate_zero_entity_model_curve(
     carrier_tag: Option<[u8; 2]>,
     curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
 ) -> bool {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
-    let finite_point = |point: &cadmpeg_ir::math::Point3| {
-        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-    };
-    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
-    };
     match (carrier_tag, curve) {
-        (Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]), Some(CurveGeometry::Nurbs(curve))) => {
-            curve.knots().iter().all(|knot| knot.is_finite())
-                && knots_nondecreasing(curve.knots())
-                && curve.control_points().iter().all(finite_point)
-                && curve.weights().is_none_or(|weights| {
-                    weights
-                        .iter()
-                        .all(|weight| weight.is_finite() && *weight > 0.0)
-                })
+        (
+            Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))),
+        ) => {
+            curve
+                .weights()
+                .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
                 && !curve.periodic()
         }
-        (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line { origin, direction })) => {
-            finite_point(origin) && finite_vector(direction)
-        }
         (
+            Some([0x28, 0x8a] | [0x29, 0xb8]),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))),
+        )
+        | (
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
-            Some(CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            }),
-        ) => {
-            finite_point(center)
-                && finite_vector(axis)
-                && finite_vector(ref_direction)
-                && radius.is_finite()
-                && *radius > 0.0
-        }
-        (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))),
+        )
+        | (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
         _ => false,
     }
 }
@@ -428,7 +392,10 @@ pub(super) fn validate_zero_entity_endpoint_pair_candidates(
     endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let expected = zero_entity_endpoint_pair_candidates(derived_zero_entity_endpoint_pairs(runs));
+    let expected = crate::test_support::with_service_context(|ctx| {
+        zero_entity_endpoint_pair_candidates(ctx, derived_zero_entity_endpoint_pairs(runs))
+    })
+    .expect("test endpoint pairs fit the service profile");
     if endpoint_pairs != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-pair candidates disagree with their radial support occurrences"
@@ -472,19 +439,24 @@ fn derived_zero_entity_endpoint_pairs(
             }
         }
     }
-    crate::families::zero_entity::topology::endpoint_pair_candidates(&occurrences)
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::zero_entity::topology::endpoint_pair_candidates(ctx, &occurrences)
+    })
+    .expect("test endpoint pairs fit the service profile")
 }
 
 pub(super) fn validate_zero_entity_endpoint_locus_candidates(
     endpoint_loci: &[CatiaZeroEntityEndpointLocusCandidate],
-    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
-    let expected = zero_entity_endpoint_locus_candidates(
-        crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
-        endpoint_pairs,
-    );
+    let expected = crate::test_support::with_service_context(|ctx| {
+        zero_entity_endpoint_locus_candidates(
+            ctx,
+            crate::families::zero_entity::topology::endpoint_locus_candidates(ctx, &derived_pairs)?,
+        )
+    })
+    .expect("test endpoint loci fit the service profile");
     if endpoint_loci != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-locus candidates disagree with their endpoint-pair endpoints"
@@ -602,7 +574,7 @@ pub(super) fn validate_zero_entity_topology_records(
                     && oriented_use_pairs[index - 1].header_record_ordinal
                         < pair.header_record_ordinal)
             && pair.uses.iter().enumerate().all(|(use_index, use_)| {
-                let side = use_index as u32 + 1;
+                let side = u32::try_from(use_index).expect("fixture value fits u32") + 1;
                 use_.side == side
                     && !use_.allocations.contains(&0)
                     && zero_entity_record(records, use_.record_ordinal).is_some_and(|source| {

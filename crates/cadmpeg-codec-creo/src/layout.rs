@@ -4,8 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-#![allow(dead_code)] // Not every generated constant is referenced yet.
-
 /// Byte offsets for the `unix_compress_header` record.
 ///
 /// Spec §1. Record length 3 B.
@@ -34,8 +32,6 @@ pub(crate) mod unix_compress_header {
 pub(crate) mod cmnm_model_name_record {
     /// Record length in bytes. Spec §1.
     pub(crate) const LEN: usize = 11;
-    /// Offset of `prefix` (`bytes[8]`). Spec §1.
-    pub(crate) const PREFIX: usize = 0;
     /// Stated value of `prefix` (`bytes[8]`). Spec §1.
     pub(crate) const PREFIX_VALUE: [u8; 8] = *b"#- CMNM ";
     /// Offset of `name_length_hex` (`bytes[3]`). Spec §1.
@@ -52,8 +48,6 @@ pub(crate) mod cmnm_model_name_record {
 pub(crate) mod type24_first_coordinate_bounded_round {
     /// Record length in bytes. Spec §3.3.
     pub(crate) const LEN: usize = 50;
-    /// Offset of `opener` (`bytes[2]`). Spec §3.3.
-    pub(crate) const OPENER: usize = 0;
     /// Offset of `first_diameter_endpoint` (`bytes[8]`). Spec §3.3.
     pub(crate) const FIRST_DIAMETER_ENDPOINT: usize = 7;
     /// Offset of `separator` (`u8`). Spec §3.3.

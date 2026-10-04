@@ -2,10 +2,11 @@
 //! Framed Parasolid attribute-value records.
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
-use crate::parasolid::counted_values::{CountedLane, CountedValues};
+use crate::parasolid::counted_values::{BorrowedValues, CountedValues};
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 /// A framed record with a checked family-specific value.
@@ -17,8 +18,8 @@ pub(crate) struct ValueRecord<T> {
     pub(crate) value: T,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct EntityValueRecords<'a> {
+pub(crate) struct EntityValueRecords<'a, 'ctx> {
+    slots: ScopedReservation<'ctx>,
     pub(crate) integers: Vec<ValueRecord<CountedValues<u32>>>,
     pub(crate) doubles: Vec<ValueRecord<CountedValues<f64>>>,
     pub(crate) strings: Vec<ValueRecord<PrintableString<&'a str>>>,
@@ -30,87 +31,123 @@ pub(crate) struct EntityValueRecords<'a> {
     pub(crate) unicode: Vec<ValueRecord<UnicodeValue>>,
 }
 
+impl<'ctx> EntityValueRecords<'_, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            slots: ctx.reserve_scoped(0, "NX value record slots")?,
+            integers: Vec::new(),
+            doubles: Vec::new(),
+            strings: Vec::new(),
+            points: Vec::new(),
+            vectors: Vec::new(),
+            axes: Vec::new(),
+            tags: Vec::new(),
+            directions: Vec::new(),
+            unicode: Vec::new(),
+        })
+    }
+}
+
 /// Decode every attribute-value family in one bounded byte pass.
 #[cfg(test)]
-pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
-    let mut records = EntityValueRecords::default();
+pub(crate) fn entity_value_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<EntityValueRecords<'a, 'ctx>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX value records",
+    )?;
+    let mut records = EntityValueRecords::new(ctx)?;
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some(frame) = value_record_frame_at(bytes, offset) else {
+        let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
         };
-        if append_value_record(frame, &mut records).is_some() {
-            offset = frame.next_offset();
-        } else {
-            // The frame has already passed its family-specific validation. If
-            // materialization ever disagrees, preserve the old recovery rule
-            // and keep looking for a later record instead of owning a partial
-            // candidate.
-            offset += 1;
-        }
+        offset = frame.next_offset();
+        append_value_record(ctx, frame, &mut records)?;
     }
-    records
+    Ok(records)
 }
 
-/// Decode value records at offsets owned by an enclosing record ledger.
-pub(crate) fn entity_value_records_at(
-    bytes: &[u8],
+/// Materialize value records at offsets owned by an enclosing ledger.
+pub(crate) fn entity_value_records_at<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'a [u8],
     offsets: impl IntoIterator<Item = usize>,
-) -> EntityValueRecords<'_> {
-    let mut records = EntityValueRecords::default();
+) -> Result<EntityValueRecords<'a, 'ctx>, CodecError> {
+    let mut records = EntityValueRecords::new(ctx)?;
     for offset in offsets {
-        if let Some(frame) = value_record_frame_at(bytes, offset) {
-            let _ = append_value_record(frame, &mut records);
+        ctx.charge_work(1, "read NX owned value record")?;
+        if let Some(frame) = value_record_frame_at(ctx, bytes, offset)? {
+            append_value_record(ctx, frame, &mut records)?;
         }
     }
-    records
+    Ok(records)
 }
 
-pub(super) fn value_record_candidates(bytes: &[u8]) -> BTreeMap<u32, Vec<usize>> {
+pub(super) fn value_record_candidates<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(BTreeMap<u32, Vec<usize>>, ScopedReservation<'ctx>), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX value identities",
+    )?;
     let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX value candidate index")?;
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some(frame) = value_record_frame_at(bytes, offset) else {
+        let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
         };
-        candidates
-            .entry(u32::from(frame.xmt))
-            .or_default()
-            .push(offset);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(candidates.len()),
+            "index NX value identities",
+        )?;
+        ctx.push_scoped_btree_group(
+            &mut reservation,
+            &mut candidates,
+            u32::from(frame.xmt),
+            || offset,
+            0,
+            "NX value candidate index",
+        )?;
         offset = frame.next_offset();
     }
-    candidates
+    Ok((candidates, reservation))
 }
 
-/// Return `(kind, xmt, byte_len)` for one complete value record.
+/// Return kind, identity, and extent without allocating a payload.
 pub(crate) fn entity_value_record_identity_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
-) -> Option<(u16, u32, usize)> {
-    let frame = value_record_frame_at(bytes, offset)?;
-    Some((
-        u16::from(frame.payload.tag()),
-        u32::from(frame.xmt),
-        frame.end - offset,
-    ))
+) -> Result<Option<(u16, u32, usize)>, CodecError> {
+    Ok(value_record_frame_at(ctx, bytes, offset)?.map(|frame| {
+        (
+            u16::from(frame.payload.tag()),
+            u32::from(frame.xmt),
+            frame.end - offset,
+        )
+    }))
 }
 
-#[derive(Clone, Copy)]
 enum ValuePayload<'a> {
-    Integers(CountedLane<'a, u32>),
-    Doubles(CountedLane<'a, f64>),
+    Integers(BorrowedValues<'a, u32>),
+    Doubles(BorrowedValues<'a, f64>),
     String(PrintableString<&'a str>),
-    Points(CountedLane<'a, [f64; 3]>),
-    Vectors(CountedLane<'a, [f64; 3]>),
-    Axes(CountedLane<'a, [[f64; 3]; 2]>),
-    Tags(CountedLane<'a, u32>),
-    Directions(CountedLane<'a, [f64; 3]>),
+    Points(BorrowedValues<'a, [f64; 3]>),
+    Vectors(BorrowedValues<'a, [f64; 3]>),
+    Axes(BorrowedValues<'a, [[f64; 3]; 2]>),
+    Tags(BorrowedValues<'a, u32>),
+    Directions(BorrowedValues<'a, [f64; 3]>),
     Unicode(UnicodeLane<'a>),
 }
 impl ValuePayload<'_> {
-    fn tag(self) -> u8 {
+    fn tag(&self) -> u8 {
         match self {
             Self::Integers(..) => 0x52,
             Self::Doubles(..) => 0x53,
@@ -124,7 +161,6 @@ impl ValuePayload<'_> {
         }
     }
 }
-#[derive(Clone, Copy)]
 struct ValueRecordFrame<'a> {
     offset: usize,
     end: usize,
@@ -132,138 +168,218 @@ struct ValueRecordFrame<'a> {
     payload: ValuePayload<'a>,
 }
 impl ValueRecordFrame<'_> {
-    fn next_offset(self) -> usize {
-        match self.payload {
+    fn next_offset(&self) -> usize {
+        match &self.payload {
             // A string terminator can also start the next two-byte tag.
             ValuePayload::String(_) => self.end - 1,
             _ => self.end,
         }
     }
-    fn retained<T>(self, value: T) -> ValueRecord<T> {
-        ValueRecord {
-            offset: self.offset,
-            byte_len: self.end - self.offset,
-            xmt: self.xmt,
-            value,
-        }
+}
+
+fn retained<T>(offset: usize, end: usize, xmt: NonNullXmt, value: T) -> ValueRecord<T> {
+    ValueRecord {
+        offset,
+        byte_len: end - offset,
+        xmt,
+        value,
     }
 }
-fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
-    let tag = *bytes.get(offset.checked_add(1)?)?;
-    match tag {
-        0x52 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Integers)
-        }),
-        0x53 => frame_at(bytes, offset, tag, 8, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Doubles)
-        }),
-        0x54 => frame_at(bytes, offset, tag, 1, |raw| {
-            PrintableString::new(std::str::from_utf8(raw).ok()?)
-                .ok()
-                .map(ValuePayload::String)
-        }),
-        0x55 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Points)
-        }),
-        0x56 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Vectors)
-        }),
-        0x57 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Axes)
-        }),
-        0x58 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Tags)
-        }),
-        0x59 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Directions)
-        }),
-        0x62 => frame_at(bytes, offset, tag, 2, |raw| {
-            UnicodeLane::new(raw).map(ValuePayload::Unicode)
-        }),
-        _ => None,
-    }
+fn value_record_frame_at<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    offset: usize,
+) -> Result<Option<ValueRecordFrame<'a>>, CodecError> {
+    let value: Option<Result<_, CodecError>> = (|| {
+        let tag = *bytes.get(offset.checked_add(1)?)?;
+        Some(Ok(match tag {
+            0x52 => propagate_resource!(frame_at(bytes, offset, tag, 4, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Integers))
+            }))?,
+            0x53 => propagate_resource!(frame_at(bytes, offset, tag, 8, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Doubles))
+            }))?,
+            0x54 => propagate_resource!(frame_at(bytes, offset, tag, 1, |raw| {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(raw.len()),
+                    "validate NX character value",
+                )?;
+                Ok(std::str::from_utf8(raw)
+                    .ok()
+                    .and_then(|text| PrintableString::new(text).ok())
+                    .map(ValuePayload::String))
+            }))?,
+            0x55 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Points))
+            }))?,
+            0x56 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Vectors))
+            }))?,
+            0x57 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Axes))
+            }))?,
+            0x58 => propagate_resource!(frame_at(bytes, offset, tag, 4, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Tags))
+            }))?,
+            0x59 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
+                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Directions))
+            }))?,
+            0x62 => propagate_resource!(frame_at(bytes, offset, tag, 2, |raw| {
+                Ok(UnicodeLane::new(ctx, raw)?.map(ValuePayload::Unicode))
+            }))?,
+            _ => return None,
+        }))
+    })();
+    value.transpose()
 }
 fn frame_at<'a>(
     bytes: &'a [u8],
     offset: usize,
     tag: u8,
     width: usize,
-    decode: impl FnOnce(&'a [u8]) -> Option<ValuePayload<'a>>,
-) -> Option<ValueRecordFrame<'a>> {
-    let mut at = offset.checked_add(2)?;
-    (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
-    if bytes.get(at) == Some(&0xff) {
-        at += 1;
-    }
-    let count = View::u32_be_at(bytes, at)? as usize;
-    at += 4;
-    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-    let mut end = at.checked_add(count.checked_mul(width)?)?;
-    let payload = decode(bytes.get(at..end)?)?;
-    if matches!(payload, ValuePayload::String(_)) {
-        (bytes.get(end) == Some(&0)).then_some(())?;
-        end = end.checked_add(1)?;
-    }
-    Some(ValueRecordFrame {
-        offset,
-        end,
-        xmt,
-        payload,
-    })
-}
-fn append_value_record<'a>(
-    frame: ValueRecordFrame<'a>,
-    records: &mut EntityValueRecords<'a>,
-) -> Option<()> {
-    match frame.payload {
-        ValuePayload::Integers(value) => {
-            records.integers.push(frame.retained(value.materialize()?));
+    decode: impl FnOnce(&'a [u8]) -> Result<Option<ValuePayload<'a>>, CodecError>,
+) -> Result<Option<ValueRecordFrame<'a>>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        let mut at = offset.checked_add(2)?;
+        (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
+        if bytes.get(at) == Some(&0xff) {
+            at += 1;
         }
-        ValuePayload::Doubles(value) => records.doubles.push(frame.retained(value.materialize()?)),
-        ValuePayload::String(value) => records.strings.push(frame.retained(value)),
-        ValuePayload::Points(value) => records.points.push(frame.retained(value.materialize()?)),
-        ValuePayload::Vectors(value) => records.vectors.push(frame.retained(value.materialize()?)),
-        ValuePayload::Axes(value) => records.axes.push(frame.retained(value.materialize()?)),
-        ValuePayload::Tags(value) => records.tags.push(frame.retained(value.materialize()?)),
-        ValuePayload::Directions(value) => records
-            .directions
-            .push(frame.retained(value.materialize()?)),
-        ValuePayload::Unicode(value) => records.unicode.push(frame.retained(value.materialize()?)),
+        let count = cadmpeg_core::decode::index_from_u32(View::u32_be_at(bytes, at)?);
+        at += 4;
+        let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+        let mut end = at.checked_add(count.checked_mul(width)?)?;
+        let payload = propagate_resource!(decode(bytes.get(at..end)?))?;
+        if matches!(payload, ValuePayload::String(_)) {
+            (bytes.get(end) == Some(&0)).then_some(())?;
+            end = end.checked_add(1)?;
+        }
+        Some(Ok(ValueRecordFrame {
+            offset,
+            end,
+            xmt,
+            payload,
+        }))
+    })();
+    parsed.transpose()
+}
+/// Materialize one value-record frame into its family's list.
+/// Storage and work refusals propagate through the caller context.
+fn append_value_record<'a>(
+    ctx: &DecodeContext<'_>,
+    frame: ValueRecordFrame<'a>,
+    records: &mut EntityValueRecords<'a, '_>,
+) -> Result<(), CodecError> {
+    match frame.payload {
+        ValuePayload::Integers(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.integers,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Doubles(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.doubles,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::String(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.strings,
+            retained(frame.offset, frame.end, frame.xmt, value),
+            "NX value record slots",
+        )?,
+        ValuePayload::Points(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.points,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Vectors(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.vectors,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Axes(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.axes,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Tags(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.tags,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Directions(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.directions,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
+        ValuePayload::Unicode(value) => ctx.push_scoped_vec(
+            &mut records.slots,
+            &mut records.unicode,
+            retained(frame.offset, frame.end, frame.xmt, value.materialize(ctx)?),
+            "NX value record slots",
+        )?,
     }
-    Some(())
+    Ok(())
 }
+
 #[cfg(test)]
-pub(crate) fn entity_52_integer_record_at(
+fn entity_52_integer_record_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
-) -> Option<ValueRecord<CountedValues<u32>>> {
-    let frame = value_record_frame_at(bytes, offset)?;
+) -> Result<Option<ValueRecord<CountedValues<u32>>>, CodecError> {
+    let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
+        return Ok(None);
+    };
     let ValuePayload::Integers(value) = frame.payload else {
-        return None;
+        return Ok(None);
     };
-    Some(frame.retained(value.materialize()?))
+    Ok(Some(retained(
+        frame.offset,
+        frame.end,
+        frame.xmt,
+        value.materialize(ctx)?,
+    )))
 }
 #[cfg(test)]
-pub(crate) fn entity_53_double_record_at(
+fn entity_53_double_record_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
-) -> Option<ValueRecord<CountedValues<f64>>> {
-    let frame = value_record_frame_at(bytes, offset)?;
+) -> Result<Option<ValueRecord<CountedValues<f64>>>, CodecError> {
+    let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
+        return Ok(None);
+    };
     let ValuePayload::Doubles(value) = frame.payload else {
-        return None;
+        return Ok(None);
     };
-    Some(frame.retained(value.materialize()?))
+    Ok(Some(retained(
+        frame.offset,
+        frame.end,
+        frame.xmt,
+        value.materialize(ctx)?,
+    )))
 }
 #[cfg(test)]
-pub(crate) fn entity_54_string_record_at(
-    bytes: &[u8],
+fn entity_54_string_record_at<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     offset: usize,
-) -> Option<ValueRecord<PrintableString<&'_ str>>> {
-    let frame = value_record_frame_at(bytes, offset)?;
-    let ValuePayload::String(value) = frame.payload else {
-        return None;
+) -> Result<Option<ValueRecord<PrintableString<&'a str>>>, CodecError> {
+    let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
+        return Ok(None);
     };
-    Some(frame.retained(value))
+    let ValuePayload::String(value) = frame.payload else {
+        return Ok(None);
+    };
+    Ok(Some(retained(frame.offset, frame.end, frame.xmt, value)))
 }
 
 #[cfg(test)]

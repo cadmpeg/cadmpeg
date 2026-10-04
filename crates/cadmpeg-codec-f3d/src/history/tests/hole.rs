@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::default_trait_access)]
 
-use super::super::*;
+use crate::history::selection::bind_hole_selection_history;
 use crate::history_records::AsmHistoricalPlane;
+use crate::history_records::{
+    AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,
+    AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalTransition, AsmHistory,
+};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn carrier(entity: i64, carrier: i64) -> AsmHistoricalCarrierBinding {
@@ -86,7 +92,6 @@ fn test_history() -> AsmHistory {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![
             state(
                 2,
@@ -102,11 +107,11 @@ fn test_history() -> AsmHistory {
     }
 }
 
-fn hole_scope() -> crate::records::feature::DesignParameterScope {
-    let face_selection = crate::records::feature::DesignHoleFaceSelection {
+fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
+    let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 1,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("375".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
         asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
             .to_owned()
             .try_into()
@@ -126,32 +131,37 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
         next_record_index: 3,
         next_byte_offset: 0,
     };
-    let construction = crate::records::feature::DesignHoleConstruction {
+    let construction = crate::records::feature::hole::DesignHoleConstruction {
         point_record_index: 4,
         point_record_byte_offset: 0,
-        position: [0.0, 0.0, 0.0],
+        position: crate::test_support::reals([0.0, 0.0, 0.0]),
         position_offset: 0,
-        direction: [0.0, 0.0, 1.0],
+        direction: crate::test_support::reals([0.0, 0.0, 1.0]),
         direction_offset: 0,
-        point_parameters: [0.0, 0.0],
+        point_parameters: crate::test_support::reals([0.0, 0.0]),
         point_parameter_offsets: [0, 0],
         reference_type: 13,
         reference_type_offset: 0,
         tangent_point_data: None,
-        input_records: vec![crate::records::Located {
+        input_records: vec![crate::records::identity::Located {
             value: 1,
             offset: 0,
         }],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:scope#5",
-        crate::records::feature::DesignFeatureKind::Hole,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
         5,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
     scope
@@ -162,7 +172,10 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
     let history = test_history();
     let mut scope = hole_scope();
 
-    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])
+    })
+    .unwrap();
 
     assert_eq!(
         scope
@@ -171,9 +184,9 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
             &[
-                crate::records::topology::DesignEntitySelectionFaceCandidate {
+                crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                     history_id: "history".into(),
-                    historical: crate::records::topology::HistoricalBinding {
+                    historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Edge,
                         entity_ref: 7,
                         state_ids: vec![1],
@@ -200,7 +213,10 @@ fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
         .normal = Vector3::new(0.0, 0.0, 1.0);
     let mut scope = hole_scope();
 
-    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])
+    })
+    .unwrap();
 
     assert!(scope
         .hole_construction()

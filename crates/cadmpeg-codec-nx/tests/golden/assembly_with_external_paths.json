@@ -58,8 +58,7 @@
               "source_entry": "/Root/UG_PART/ExternalReferences",
               "source_offset": 117
             }
-          ],
-          "unknowns": []
+          ]
         }
       },
       "source": {
@@ -77,18 +76,19 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
-        "dialects": {
-          "extra": [],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "splmsstr_version": "6"
-            },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -99,26 +99,26 @@
       }
     },
     "report": {
-      "container_only": false,
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
         }
       },
-      "format": "nx",
-      "geometry_transferred": false,
       "losses": [
         {
           "code": {
             "code": "assembly.components-external",
             "kind": "assembly_components_external",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced"
           },
           "message": "No inline Parasolid geometry: this is an assembly .prt. Component geometry lives in external child .prt files named in EXTREFSTREAM, and the assembled solid's inputs (child partitions + constraint solve) are absent from this file. This is an external-dependency boundary, not a decode gap.",
           "severity": "blocking"
@@ -128,55 +128,59 @@
         "SPLMSSTR container: file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
-      ]
+      ],
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {
         "provenance": {
           "nx:external-reference:/Root/UG_PART/ExternalReferences#0": {
             "offset": 106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "EXTREFSTREAM_STRING"
           },
           "nx:external-reference:/Root/UG_PART/ExternalReferences#1": {
             "offset": 117,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "EXTREFSTREAM_STRING"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
           "file_offset": "87",
           "region": "HEADER"
         },
-        "compressed_size": 42,
         "compression": "none",
         "name": "/Root/UG_PART/ExternalReferences",
         "role": "external-references",
-        "uncompressed_size": 42
+        "size": {
+          "form": "exact",
+          "size": 42
+        }
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",

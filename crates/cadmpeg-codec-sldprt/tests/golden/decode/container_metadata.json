@@ -85,25 +85,25 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "dialects": {
-        "extra": [
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@54:Contents/Config-0-Partition+0",
-              "schema": "SCH_SW_33103_11000"
-            },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@54:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
           }
-        ],
-        "primary": {
-          "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
         }
-      },
-      "format": "sldprt"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -114,33 +114,33 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@54:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@54:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
         }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "geometry.parasolid-not-transferred",
           "kind": "geometry_not_transferred",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 2 payload source(s) were enumerated, 1 carrying Parasolid streams.",
         "severity": "blocking"
@@ -149,7 +149,9 @@
         "code": {
           "code": "topology.graph-not-transferred",
           "kind": "topology_not_transferred",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
@@ -158,7 +160,8 @@
         "code": {
           "code": "material.metadata-not-transferred",
           "kind": "material_not_transferred",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
@@ -167,7 +170,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -177,49 +182,50 @@
       "outer version word: 0x00000004; 2 CRC-validated block(s), 1 tail-directory entry/entries, 1 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (49 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "sldprt:file:block#54": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         }
       },
       "provenance": {
         "sldprt:file:block#54": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "source",
           "tag": "source_image"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "source"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 49,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAAAAAAAAAAA==",
-        "id": "sldprt:file:block#54",
+    "retained_records": {
+      "sldprt:file:block#54": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 54,
-        "sha256": "cec7bd4b62b96e490c6ba53b11475dfd3dd4ee3c42eefe748ddf9f734cbdfd27",
         "stream": "Contents/Config-0-Partition"
       },
-      {
-        "byte_len": 264,
-        "data": "AQAAAAAAAAQUAAYACAAQAAAAu2N6QgoAAAAIAAAACgAAAAUnVmeWVncF5HTrDPBzZ2RiZgEAFAAGAAgAIAAAAB8fHYMtAAAAMQAAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGCAAgAUAAYACAAAAAAAtAAAAC0AAABaAAAAFQAAADT25kdW5kc38kSWNwfGFpfEljdHNxQABgAIADAAAAAAAAAAAgAAAAAAAAATAAAAAAAAAAAAAAAAAAAAAAC1NPbmR1bmR/VFlwdWN9Xih9bG5UtXWwAA",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAQAAAAu2N6QgoAAAAIAAAACgAAAAUnVmeWVncF5HTrDPBzZ2RiZgEAFAAGAAgAIAAAAB8fHYMtAAAAMQAAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGCAAgAUAAYACAAAAAAAtAAAAC0AAABaAAAAFQAAADT25kdW5kc38kSWNwfGFpfEljdHNxQABgAIADAAAAAAAAAAAgAAAAAAAAATAAAAAAAAAAAAAAAAAAAAAAC1NPbmR1bmR/VFlwdWN9Xih9bG5UtXWwAA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "eb92821540511ea917dc6bcedab92b1a7b30e0aaa4889b1092882536cde5d5cc",
-        "stream": "sldprt"
+        "stream": "source"
       }
-    ]
+    }
   }
 }

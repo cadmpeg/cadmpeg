@@ -2,7 +2,30 @@
   "ir": {
     "ir_version": "6",
     "source": {
-      "format": "f3d",
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "primary": {
+            "dialect": "f3d:manifest-3-2-0-0",
+            "declared": {
+              "top_level_manifest_version": "3-2-0-0"
+            },
+            "admission": "admitted"
+          },
+          "extra": [
+            {
+              "dialect": "acis:asm-binaryfile-8",
+              "declared": {
+                "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+                "reference_width": "8",
+                "save_format_major": "231",
+                "save_format_minor": "0"
+              },
+              "admission": "admitted"
+            }
+          ]
+        }
+      },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "active_brep_sha256": "18085dcac7abd2fd5ed7b0574696cdf1232942aa7f4db4d9e6e24d58e6aa1f99",
@@ -13,36 +36,13 @@
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "566",
         "zip_entry_count": "3"
-      },
-      "dialects": {
-        "primary": {
-          "format": "f3d",
-          "dialect": "f3d:manifest-3-2-0-0",
-          "declared": {
-            "top_level_manifest_version": "3-2-0-0"
-          },
-          "admission": "admitted"
-        },
-        "extra": [
-          {
-            "format": "acis",
-            "dialect": "acis:asm-binaryfile-8",
-            "declared": {
-              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-              "reference_width": "8",
-              "save_format_major": "231",
-              "save_format_minor": "0"
-            },
-            "admission": "admitted"
-          }
-        ]
       }
     },
     "units": {
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 1e-6,
+      "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
     "model": {
@@ -68,9 +68,11 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "faces": [],
-          "free_vertices": [
-            "f3d:brep:entity#5"
+          "members": [
+            {
+              "kind": "free_vertex",
+              "id": "f3d:brep:entity#5"
+            }
           ]
         }
       ],
@@ -206,7 +208,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [],
         "wire_topologies": [
           {
@@ -223,12 +224,38 @@
     }
   },
   "report": {
-    "format": "f3d",
-    "container_only": false,
-    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "primary": {
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
+      }
+    },
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "material.not-transferred",
           "kind": "material_not_transferred"
@@ -241,74 +268,47 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (579 bytes uncompressed)"
-    ],
-    "dialects": {
-      "primary": {
-        "format": "f3d",
-        "dialect": "f3d:manifest-3-2-0-0",
-        "declared": {
-          "top_level_manifest_version": "3-2-0-0"
-        },
-        "admission": "admitted"
-      },
-      "extra": [
-        {
-          "format": "acis",
-          "dialect": "acis:asm-binaryfile-8",
-          "declared": {
-            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-            "reference_width": "8",
-            "save_format_major": "231",
-            "save_format_minor": "0"
-          },
-          "admission": "admitted"
-        }
-      ]
-    }
+    ]
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 168,
           "tag": "body"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 229,
           "tag": "region"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 292,
           "tag": "shell"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 443,
           "tag": "vertex"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
           "offset": 506,
           "tag": "point"
         }
       }
     },
-    "retained_records": [
-      {
-        "id": "f3d:file:source-image#0",
+    "retained_records": {
+      "f3d:file:source-image#0": {
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 2185,
-        "sha256": "961fc6575cac026e6a50f8543bc649f21a40c8a221112979a7176044fc269f8a",
-        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAAheMBNDAgAAQwIAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQBAAAAAAAAAAz//////////wwCAAAAAAAAAAwEAAAAAAAAAAz//////////xENBnJlZ2lvbgz//////////wz//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADAIAAAAAAAAAEQ0Ed2lyZQz//////////wT//////////wz//////////wz//////////wz//////////wwDAAAAAAAAAAwFAAAAAAAAAAsRDQZ2ZXJ0ZXgM//////////8E//////////8M//////////8MBAAAAAAAAAAE//////////8MBgAAAAAAAAARDQVwb2ludAz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAABAAAAAAAAACEARDQtkZWx0YV9zdGF0ZVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIFlAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAAheMBNDAgAAQwIAADIAAAAAAAAAAAAAAKSB9AQAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9Cb2R5MS5zbWJoUEsFBgAAAAADAAMA7AAAAIcHAAAAAA=="
+        "bytes": {
+          "retention": "inline",
+          "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAAheMBNDAgAAQwIAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQBAAAAAAAAAAz//////////wwCAAAAAAAAAAwEAAAAAAAAAAz//////////xENBnJlZ2lvbgz//////////wz//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADAIAAAAAAAAAEQ0Ed2lyZQz//////////wT//////////wz//////////wz//////////wz//////////wwDAAAAAAAAAAwFAAAAAAAAAAsRDQZ2ZXJ0ZXgM//////////8E//////////8M//////////8MBAAAAAAAAAAE//////////8MBgAAAAAAAAARDQVwb2ludAz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAABAAAAAAAAACEARDQtkZWx0YV9zdGF0ZVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIFlAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAAheMBNDAgAAQwIAADIAAAAAAAAAAAAAAKSB9AQAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9Cb2R5MS5zbWJoUEsFBgAAAAADAAMA7AAAAIcHAAAAAA=="
+        }
       }
-    ]
+    }
   }
 }

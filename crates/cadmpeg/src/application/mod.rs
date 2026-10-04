@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed application workflows for the `cadmpeg` CLI.
 
-pub mod artifact_store;
-pub mod document;
-pub mod refusal;
-pub mod transcoder;
-pub mod validators;
+pub(crate) mod artifact_store;
+pub(crate) mod document;
+pub(crate) mod refusal;
+pub(crate) mod transcoder;
+pub(crate) mod validators;

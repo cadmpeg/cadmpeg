@@ -11,23 +11,84 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
-use crate::container::scan_bytes;
-use crate::test_support::{
-    make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
-};
+use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
+use crate::loss::SldprtLossCode;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::scan;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::container::synthetic_sldprt;
 use crate::SldprtCodec;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::dialect::{Admission, DialectLayers};
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
+fn classify_layers(scan: &crate::container::ContainerScan<'_>) -> super::LayerClassification {
+    super::classify_layers(&cadmpeg_test_support::service_decode_context(), scan)
+        .expect("test dialect classification fits service policy")
+}
+
+fn dialect_loss(
+    matched: &cadmpeg_core::dialect::DialectMatch,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    super::dialect_loss(&cadmpeg_test_support::service_decode_context(), matched)
+        .expect("test dialect loss fits service policy")
+}
+
+fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    super::dialect_losses(&cadmpeg_test_support::service_decode_context(), layers)
+        .expect("test dialect losses fit service policy")
+}
+
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn dialect_classification_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = synthetic_sldprt();
+    let scan = scan(&source);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = super::classify_layers(&ctx, &scan) else {
+        panic!("classification must refuse the collection limit");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT Parasolid layers")
+    );
+}
+
+#[test]
+fn dialect_classification_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = synthetic_sldprt();
+    let scan = scan(&source);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = super::classify_layers(&ctx, &scan) else {
+        panic!("classification must refuse the retained limit");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT Parasolid carrier")
+    );
+}
+
+#[test]
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &SldprtDialect::ALL.map(SldprtDialect::id),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 #[test]
@@ -69,7 +130,7 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 #[test]
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let classification = classify_layers(&scan);
     let layers = classification.layers();
     let kernel = layers
@@ -87,12 +148,17 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        "SCH_TEST_1_9999",
-        "block@7:body+3",
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+            .expect("the fixture text is a schema token"),
+        cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    );
-    let layers = DialectLayers::of(host).with(kernel);
+    )
+    .expect("kernel classification fits policy");
+    let layers = DialectLayers::of(host)
+        .with(kernel.into_matched())
+        .expect("distinct dialect layer keys");
     let losses = dialect_losses(&layers);
 
     assert_eq!(losses.len(), 1);
@@ -102,7 +168,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     );
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Reject
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
     assert!(losses[0].message.contains("block@7:body+3"));
@@ -111,7 +177,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
 #[test]
 fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let kernels = classify_layers(&scan)
         .layers()
         .iter()
@@ -129,7 +195,7 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
 #[test]
 fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
     let bytes = sldprt_with_colliding_sites();
-    let mut scan = scan_bytes(&bytes);
+    let mut scan = scan(&bytes);
     scan.blocks.push(scan.blocks[0].clone());
 
     let classification = classify_layers(&scan);
@@ -141,7 +207,9 @@ fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
 
     assert_eq!(kernel_count, 2);
     let mut losses = Vec::new();
-    classification.append_losses(&mut losses);
+    classification
+        .append_losses(&cadmpeg_test_support::service_decode_context(), &mut losses)
+        .expect("test dialect losses fit service policy");
     assert_eq!(
         losses
             .iter()
@@ -380,7 +448,7 @@ fn the_scan_read_and_the_report_classify_the_same_declaration() {
     // than the identity of two expressions.
     for declaration in ["11999", "12000", "SW2019"] {
         let bytes = container_declaring(declaration);
-        let scan = scan_bytes(&bytes);
+        let scan = scan(&bytes);
 
         assert_eq!(
             crate::container::declared_sw_version(&scan),
@@ -398,7 +466,7 @@ fn the_scan_read_and_the_report_classify_the_same_declaration() {
 #[test]
 fn a_container_declaring_nothing_reaches_the_totality_row() {
     let bytes = outer_header();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let matched = SldprtDialect::classify_scan(&scan);
 
     assert_eq!(crate::container::declared_sw_version(&scan), None);
@@ -411,7 +479,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
 #[test]
 fn exactly_one_entry_names_the_reporting_format() {
     let bytes = container_declaring("13100");
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let dialects = [SldprtDialect::classify_scan(&scan)];
 
     assert_eq!(dialects.len(), 1);
@@ -422,4 +490,57 @@ fn exactly_one_entry_names_the_reporting_format() {
             .map(cadmpeg_core::dialect::DialectMatch::dialect),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
+}
+
+#[test]
+fn dialect_decode_route_refuses_work_at_minimum_admission() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::codec::DecodeOptions;
+    use std::io::Cursor;
+    let source = container_declaring("unverified-declaration");
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let expected = SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap()
+        .ir()
+        .clone();
+    let admitted = |options: &DecodeOptions| match SldprtCodec
+        .decode(&mut Cursor::new(&source), options)
+    {
+        Ok(actual) => {
+            assert_eq!(actual.ir(), &expected);
+            true
+        }
+        Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
+        }
+        Err(error) => panic!("unexpected dialect decode error: {error}"),
+    };
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        options.policy.limits.max_work_units = upper;
+        if admitted(&options) {
+            break;
+        }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        options.policy.limits.max_work_units = middle;
+        if admitted(&options) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    assert!(upper > 0);
+    options.policy.limits.max_work_units = upper;
+    assert!(admitted(&options));
+    options.policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&options));
 }

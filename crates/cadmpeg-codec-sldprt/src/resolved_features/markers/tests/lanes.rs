@@ -2,11 +2,19 @@
 //! Sketch-marker lane decode, write-back, and native-validation tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_features_payload_with_names;
+use crate::test_support::history::sldprt_with_body_and_resolved_features;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -43,7 +51,7 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
     assert_eq!(operand.entity_index, 2);
     assert_eq!(
         operand.entity_ref.as_deref(),
-        Some(lane.sketch_entities[0].id.as_str())
+        Some(lane.sketch_entities[0].id())
     );
 }
 
@@ -72,15 +80,17 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         &payload,
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     assert_eq!(
         lane.sketch_entities
             .iter()
-            .map(|entity| entity.local_id)
+            .map(crate::records::SketchInputEntity::local_id)
             .collect::<Vec<_>>(),
         [Some(1), Some(2), Some(3)]
     );
@@ -88,7 +98,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         lane.sketch_entities[0]
             .links
             .as_ref()
-            .map(|links| links.selector),
+            .map(crate::records::SketchInputLinks::selector),
         Some(1)
     );
     assert_eq!(
@@ -97,7 +107,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
             .iter()
             .map(|link| (link.local_id, link.entity_ref.as_str()))
             .collect::<Vec<_>>(),
-        [(2, lane.sketch_entities[1].id.as_str())]
+        [(2, lane.sketch_entities[1].id())]
     );
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -113,15 +123,21 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
+        native.feature_input_lanes[0].sketch_entities[0] =
+            native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
+                native.feature_input_lanes[0].sketch_entities[0].object_index(),
+                Some(7),
+            );
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
-            .iter()
-            .any(|finding| finding.message.contains("local object id does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("local object id does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -129,7 +145,7 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("inconsistent marker order"));
+    assert!(error.to_string().contains("local object id does not match"));
 }
 
 #[test]
@@ -138,15 +154,21 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
+        native.feature_input_lanes[0].sketch_entities[0] =
+            native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
+                Some(77),
+                native.feature_input_lanes[0].sketch_entities[0].local_id(),
+            );
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
-            .iter()
-            .any(|finding| finding.message.contains("object index does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("object index does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -154,7 +176,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("inconsistent marker order"));
+    assert!(error.to_string().contains("object index does not match"));
 }
 
 #[test]
@@ -168,7 +190,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
@@ -183,58 +205,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     assert!(
         error
             .to_string()
-            .contains("has 3 markers but 2 native records"),
+            .contains("expects entity ordinal 1, found 2"),
         "{error}"
     );
-}
-
-#[test]
-fn native_validation_rejects_duplicate_sketch_marker_offsets() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_resolved_features(
-                &triangle_body(),
-                &[0, 1],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
-        native.feature_input_lanes[0].sketch_entities[1].offset = offset;
-    });
-    assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
-            .iter()
-            .any(|finding| finding.message.contains("repeats entity offset"))
-    );
-}
-
-#[test]
-fn native_validation_requires_complete_ordered_sketch_markers() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_resolved_features(
-                &triangle_body(),
-                &[0, 1, 2],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities.remove(1);
-        native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
-    });
-    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
-        .into_iter()
-        .map(|finding| finding.message)
-        .collect::<Vec<_>>();
-    assert!(messages
-        .iter()
-        .any(|message| message.contains("expects entity ordinal")));
-    assert!(messages
-        .iter()
-        .any(|message| message.contains("omits marker at offset")));
 }

@@ -7,6 +7,8 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -51,12 +53,15 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match CatiaCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
-        Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-            "report": serde_json::to_value(result.report()).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(result.source_fidelity())
-                .expect("serialize source_fidelity"),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)

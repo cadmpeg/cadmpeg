@@ -20,8 +20,9 @@ mod entities;
 mod error;
 mod global;
 mod graph;
+mod ids;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
-pub(crate) mod layout;
+mod layout;
 mod loss;
 mod native;
 mod parameter;
@@ -37,14 +38,17 @@ pub mod fuzz;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Cursor;
 
-pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
+const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
 /// IGES specification version selected for semantic output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,9 +68,9 @@ pub enum IgesVersion {
 macro_rules! writer_vocabulary {
     ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
         $(#[$all_meta])*
-        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        const ALL: [Self; $count] = [$(Self::$variant),+];
         /// The generic encoder view projected from [`Self::ALL`].
-        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        const TARGETS: &'static [TargetDescriptor] = &[
             $(Self::$variant.descriptor()),+
         ];
     };
@@ -104,12 +108,18 @@ impl IgesVersion {
         }
     }
 
-    pub(crate) const fn name(self) -> &'static str {
+    const fn name(self) -> &'static str {
         version::VersionFlag::from_write_version(self).name()
     }
 
-    pub(crate) const fn global_flag(self) -> u8 {
-        version::VersionFlag::from_write_version(self).value() as u8
+    const fn global_flag(self) -> u8 {
+        match self {
+            Self::V4_0 => 6,
+            Self::V5_0 => 8,
+            Self::V5_1 => 9,
+            Self::V5_2 => 10,
+            Self::V5_3 => 11,
+        }
     }
 }
 
@@ -117,15 +127,36 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-pub(crate) fn document_digest(ir: &CadIr) -> String {
-    document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)
+fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = document_local_sha256(
+        &ctx,
+        ir,
+        ir.source.as_ref(),
+        "iges",
+        SOURCE_IMAGE_ID,
+        "iges_document_digest",
+    )?;
+    ctx.finish_session()?;
+    Ok(digest)
 }
 
 impl CodecBackend for IgesCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        representation::confidence(prefix)
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
+        Ok(representation::confidence(prefix))
     }
 
     fn inspect_impl(
@@ -190,4 +221,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

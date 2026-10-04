@@ -9,6 +9,8 @@ use std::ops::Add;
 pub(crate) mod scan;
 
 const COUNTED_PREFIX: u16 = 2;
+const COUNTED_TERMINATOR_LEN: u16 = 2;
+const ABR_TERMINATOR_LEN: u16 = 7;
 const COUNTED_TERMINATOR: [u8; 2] = [0x01, 0x11];
 const ABR_TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
 
@@ -25,14 +27,14 @@ impl<T, O> CountedLane<T, O> {
     }
     fn byte_len(&self) -> u16 {
         COUNTED_PREFIX
-            + self.anchor.atom.raw().len() as u16
+            + u16::from(self.anchor.atom.byte_len())
             + self
                 .members
                 .as_slice()
                 .iter()
-                .map(|index| index.atom.raw().len() as u16)
+                .map(|index| u16::from(index.atom.byte_len()))
                 .sum::<u16>()
-            + COUNTED_TERMINATOR.len() as u16
+            + COUNTED_TERMINATOR_LEN
     }
 }
 
@@ -47,15 +49,15 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> CountedLane<T, O> {
             offset: self.offset + O::from(COUNTED_PREFIX),
         }
     }
-    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> {
-        let mut offset = self.anchor().offset + O::from(self.anchor.atom.raw().len() as u16);
+    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> + Clone {
+        let mut offset = self.anchor().offset + O::from(u16::from(self.anchor.atom.byte_len()));
         self.members.as_slice().iter().map(move |index| {
             let position = PositionedIndex {
                 atom: index.atom,
                 target: &index.target,
                 offset,
             };
-            offset = offset + O::from(index.atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(index.atom.byte_len()));
             position
         })
     }
@@ -66,12 +68,43 @@ impl<T> CountedLane<T, usize> {
         CountedLane::<T, u64>::new(
             self.anchor,
             self.members,
-            base.checked_add(self.offset as u64)?,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
         )
     }
 }
 
 impl<O> CountedLane<(), O> {
+    pub(crate) fn try_resolve_charged<T>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut resolve: impl FnMut(CompactIndexAtom) -> Result<Option<T>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<CountedLane<T, O>>, cadmpeg_core::CodecError> {
+        let Some(target) = resolve(self.anchor.atom)? else {
+            return Ok(None);
+        };
+        let anchor = CompactIndexTarget {
+            atom: self.anchor.atom,
+            target,
+        };
+        let Some(members) = self.members.try_map_charged(ctx, |index| {
+            Ok(Some(CompactIndexTarget {
+                atom: index.atom,
+                target: match resolve(index.atom)? {
+                    Some(target) => target,
+                    None => return Ok(None),
+                },
+            }))
+        })?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(CountedLane {
+            offset: self.offset,
+            anchor,
+            members,
+        }))
+    }
+    #[cfg(test)]
     pub(crate) fn try_resolve<T>(
         self,
         mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,
@@ -107,10 +140,10 @@ impl<T, O> AbrLane<T, O> {
             .iter()
             .map(|slot| {
                 slot.as_ref()
-                    .map_or(1, |index| index.atom.raw().len() as u16)
+                    .map_or(1, |index| u16::from(index.atom.byte_len()))
             })
             .sum::<u16>()
-            + ABR_TERMINATOR.len() as u16
+            + ABR_TERMINATOR_LEN
     }
 }
 
@@ -128,7 +161,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> AbrLane<T, O> {
             offset = offset
                 + O::from(
                     slot.as_ref()
-                        .map_or(1, |index| index.atom.raw().len() as u16),
+                        .map_or(1, |index| u16::from(index.atom.byte_len())),
                 );
             position
         })
@@ -137,29 +170,35 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> AbrLane<T, O> {
 
 impl<T> AbrLane<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<AbrLane<T, u64>> {
-        AbrLane::<T, u64>::new(self.slots, base.checked_add(self.offset as u64)?)
+        AbrLane::<T, u64>::new(
+            self.slots,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
+        )
     }
 }
 
 impl<O> AbrLane<(), O> {
     pub(crate) fn try_resolve<T>(
         self,
-        mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,
-    ) -> Option<AbrLane<T, O>> {
+        mut resolve: impl FnMut(CompactIndexAtom) -> Result<Option<T>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<AbrLane<T, O>>, cadmpeg_core::CodecError> {
         let mut slots = std::array::from_fn(|_| None);
         for (slot, source) in slots.iter_mut().zip(self.slots) {
             *slot = match source {
                 Some(index) => Some(CompactIndexTarget {
                     atom: index.atom,
-                    target: resolve(index.atom)?,
+                    target: match resolve(index.atom)? {
+                        Some(target) => target,
+                        None => return Ok(None),
+                    },
                 }),
                 None => None,
             };
         }
-        Some(AbrLane {
+        Ok(Some(AbrLane {
             offset: self.offset,
             slots,
-        })
+        }))
     }
 }
 

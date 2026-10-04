@@ -4,19 +4,25 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::edit;
+
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 use super::round_trips::cylinder_surface_doc;
 
@@ -30,16 +36,18 @@ fn edgeless_doc() -> CadIr {
         Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
     };
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("test:model:point#p0").expect("identity grammar"),
-        position: Point3::new(0.0, 0.0, 0.0),
-        source_object: None,
-    });
-    ir.model.points.push(Point {
-        id: PointId::mint("test:model:point#p1").expect("identity grammar"),
-        position: Point3::new(1.0, 0.0, 0.0),
-        source_object: None,
-    });
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#p0").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#p1").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     ir.model.vertices.push(Vertex {
         id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         point: PointId::mint("test:model:point#p0").expect("identity grammar"),
@@ -52,19 +60,21 @@ fn edgeless_doc() -> CadIr {
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         source_object: None,
     });
     ir.model.coedges.push(Coedge {
@@ -81,9 +91,11 @@ fn edgeless_doc() -> CadIr {
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
                 Vec::new(),
             )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -92,18 +104,19 @@ fn edgeless_doc() -> CadIr {
         shell: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("test:model:loop#lp0").expect("identity grammar")].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:loop#lp0",
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
     });
-    ir.model.shells.push(Shell {
-        id: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
-        region: RegionId::mint("test:model:region#l0").expect("identity grammar"),
-        faces: vec![FaceId::mint("test:model:face#f0").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
+        RegionId::mint("test:model:region#l0").expect("identity grammar"),
+        FaceId::mint("test:model:face#f0").expect("identity grammar"),
+    ));
     ir.model.regions.push(Region {
         id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
         body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
@@ -123,17 +136,21 @@ fn edgeless_doc() -> CadIr {
 
 #[test]
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
-    let mut ir = unit_cube();
-    ir.model.assets.push(cadmpeg_ir::assets::Asset {
-        id: cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
-            .expect("identity grammar"),
-        name: Some("texture".into()),
-        media_type: Some("image/png".into()),
-        content: cadmpeg_ir::assets::AssetContent::External {
-            uri: "urn:test:texture".into(),
-        },
-        native_ref: None,
-    });
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.assets.push(
+        cadmpeg_ir::assets::Asset::try_new(
+            cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
+                .expect("identity grammar"),
+            Some("texture".into()),
+            Some("image/png".into()),
+            cadmpeg_ir::assets::AssetContent::External {
+                uri: cadmpeg_core::text::NonBlankString::new("urn:test:texture")
+                    .expect("nonempty uri"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
@@ -155,7 +172,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             native_ref: "native-note".into(),
         });
     let mut bom_properties = std::collections::BTreeMap::new();
-    bom_properties.insert("stock_code".into(), "A-1".into());
+    bom_properties.insert(cadmpeg_core::nonblank_literal!("stock_code"), "A-1".into());
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -207,10 +224,13 @@ fn writer_reports_unrepresented_topology_metadata() {
         .expect("decode topology metadata fixture")
         .into_parts()
         .0;
-    ir.model.faces[0].tolerance = Some(0.01);
-    ir.model.edges[0].tolerance = Some(0.02);
-    ir.model.vertices[0].tolerance = Some(0.03);
-    let edge_curve = ir.model.edges[0].curve.clone().expect("edge curve");
+    ir.model.faces[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
+    ir.model.edges[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
+    ir.model.vertices[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"));
+    let edge_curve = ir.model.edges[0].curve().cloned().expect("edge curve");
     let coedge = ir
         .model
         .coedges
@@ -218,10 +238,11 @@ fn writer_reports_unrepresented_topology_metadata() {
         .find(|coedge| !coedge.pcurves.is_empty())
         .expect("pcurve-backed coedge");
     coedge.pcurves[0].isoparametric = Some(true);
-    coedge.pcurves[0].parameter_range = Some([0.0, 1.0]);
+    coedge.pcurves[0].parameter_range =
+        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap());
     coedge.use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: edge_curve,
-        parameter_range: [0.0, 1.0],
+        parameter_range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
 
     let report = write_step(
@@ -250,7 +271,7 @@ fn writer_reports_unrepresented_topology_metadata() {
 
 #[test]
 fn writer_reports_root_occurrence_scale() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product = cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product#scaled")
         .expect("identity grammar");
     ir.model
@@ -273,11 +294,11 @@ fn writer_reports_root_occurrence_scale() {
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
         transform: Transform::identity(),
         linked_prototype: None,
-        scale: [2.0, 1.0, 1.0],
+        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         name: Some("Scaled root".into()),
         visible: None,
         link: None,
@@ -299,7 +320,7 @@ fn writer_reports_root_occurrence_scale() {
 
 #[test]
 fn writer_reports_edge_loop_without_a_continuous_ordering() {
-    let mut source = unit_cube();
+    let mut source = unit_cube().expect("unit cube fixture is admitted");
     let edge_id = source
         .model
         .loops
@@ -333,7 +354,7 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
     .expect("report mode should record the topology loss");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("continuous vertex-to-vertex")
     }));
 }
@@ -343,27 +364,34 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
     use cadmpeg_ir::tessellation::{TessellationTextureAssignment, TessellationTriangleGroup};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
-    ir.model.assets.push(Asset {
-        id: texture.clone(),
-        name: None,
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            texture.clone(),
+            None,
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.push(
-        cadmpeg_ir::tessellation::Tessellation::from_decoded(
-            "synthetic:test:tessellation#triangle-metadata",
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        cadmpeg_ir::tessellation::Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#triangle-metadata",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -394,7 +422,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             .filter(|loss| {
                 (loss.code == StepLossCode::TessellationTriangleGroups.kind()
                     || loss.code == StepLossCode::TessellationTextureAssignments.kind())
-                    && loss.severity == cadmpeg_ir::Severity::Warning
+                    && loss.severity == cadmpeg_ir::report::Severity::Warning
             })
             .count(),
         2
@@ -403,7 +431,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 
 #[test]
 fn writer_reports_occurrence_with_parent_without_local_product() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product =
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-child")
             .expect("identity grammar");
@@ -424,12 +452,12 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         .expect("identity grammar");
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: parent.clone(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved,
-        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
+        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -445,7 +473,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         ordinal: 1,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -470,7 +498,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
 
 #[test]
 fn writer_reports_region_without_shells() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.regions[0].shells.clear();
 
     let report = write_step(
@@ -488,7 +516,7 @@ fn writer_reports_region_without_shells() {
 
 #[test]
 fn writer_reports_topology_without_an_emitted_region() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.regions.clear();
     ir.model.bodies[0].regions.clear();
 
@@ -511,14 +539,17 @@ fn writer_reports_topology_without_an_emitted_region() {
 
 #[test]
 fn writer_reports_wire_region_without_connected_edges() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.model.shells[0].faces.clear();
-    ir.model.shells[0].wire_edges =
-        vec![
-            cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
-                .expect("identity grammar"),
-        ];
+    ir.model.shells[0]
+        .edit_topology(|faces, wire_edges, _| {
+            faces.clear();
+            *wire_edges = vec![
+                cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
+                    .expect("identity grammar"),
+            ];
+        })
+        .unwrap();
 
     let report = write_step(
         &ir,
@@ -537,7 +568,7 @@ fn writer_reports_wire_region_without_connected_edges() {
 
 #[test]
 fn writer_reports_wire_region_with_missing_shell_record() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.regions[0].shells =
         vec![
@@ -561,7 +592,7 @@ fn writer_reports_wire_region_with_missing_shell_record() {
 
 #[test]
 fn writer_reports_hidden_body_without_step_item() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.bodies[0].visible = Some(false);
     ir.model.regions.clear();
@@ -583,7 +614,7 @@ fn writer_reports_dangling_appearance_binding() {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let binding = "test:model:appearance-binding#dangling";
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -615,7 +646,7 @@ fn writer_reports_appearance_without_base_color() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance =
         AppearanceId::mint("test:model:appearance#colorless").expect("identity grammar");
     let binding = "test:model:appearance-binding#colorless";
@@ -660,7 +691,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let target = if body_target {
         AppearanceTarget::Body(ir.model.bodies[0].id.clone())
     } else {
@@ -671,21 +702,17 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     for (id, color) in [
         (
             red.clone(),
-            cadmpeg_ir::topology::Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"),
         ),
         (
             blue.clone(),
-            cadmpeg_ir::topology::Color {
-                r: if same_color { 1.0 } else { 0.0 },
-                g: 0.0,
-                b: if same_color { 0.0 } else { 1.0 },
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(
+                if same_color { 1.0 } else { 0.0 },
+                0.0,
+                if same_color { 0.0 } else { 1.0 },
+                1.0,
+            )
+            .expect("valid color"),
         ),
     ] {
         ir.model.appearances.push(Appearance {
@@ -784,21 +811,21 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
 
 #[test]
 fn writer_reports_reduced_tessellation_metadata_and_body_links() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.tessellations.push(
-        Tessellation::from_decoded(
-            "test:step:tessellation#metadata",
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#metadata")
+                .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 2,
                 1,
                 0,
@@ -812,7 +839,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
                 .expect("identity grammar"),
         ))
         .with_faces(vec![ir.model.faces[0].id.clone()])
-        .with_chordal_deflection(Some(0.01)),
+        .with_chordal_deflection(Some(0.01))
+        .unwrap(),
     );
 
     let report = write_step(
@@ -838,8 +866,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 
 #[test]
 fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
-    let mut outer_face = unit_cube();
-    outer_face.model.faces[0].loops.clear();
+    let mut outer_face = unit_cube().expect("unit cube fixture is admitted");
+    outer_face.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let report = write_step(
         &outer_face,
         &mut Vec::new(),
@@ -849,14 +877,21 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the surviving faces");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceNoWritableBounds.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("has no writable bounds")
     }));
 
-    let mut inner_loop = unit_cube();
-    inner_loop.model.faces[0].loops.push(
-        cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner").expect("identity grammar"),
-    );
+    let mut inner_loop = unit_cube().expect("unit cube fixture is admitted");
+    let face_loops = inner_loop.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(
+            cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner")
+                .expect("identity grammar"),
+        ))
+        .collect();
+    inner_loop.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     let report = write_step(
         &inner_loop,
         &mut Vec::new(),
@@ -866,11 +901,11 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the surviving outer loop");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceOmittedInnerLoop.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("has no writable topology")
     }));
 
-    let mut missing_edge = unit_cube();
+    let mut missing_edge = unit_cube().expect("unit cube fixture is admitted");
     missing_edge.model.coedges[0].edge =
         cadmpeg_ir::ids::EdgeId::mint("step:data:edge#missing").expect("identity grammar");
     let report = write_step(
@@ -886,7 +921,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
             && loss.message.contains("edge")
     }));
 
-    let mut missing_void = unit_cube();
+    let mut missing_void = unit_cube().expect("unit cube fixture is admitted");
     missing_void.model.regions[0].shells.push(
         cadmpeg_ir::ids::ShellId::mint("step:data:shell#missing-void").expect("identity grammar"),
     );
@@ -899,7 +934,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the outer shell");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::RegionOmittedVoidShell.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("omitted void shell")
     }));
 }
@@ -914,11 +949,14 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Harmonic {
-        center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-        cosine: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        sine: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-    };
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Harmonic(
+        cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
+            cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        )
+        .unwrap(),
+    );
 
     let mut output = Vec::new();
     let report = write_step(
@@ -931,7 +969,7 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
 }
@@ -946,18 +984,20 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Transformed {
-        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        }),
-        transform: cadmpeg_ir::transform::Transform2::from_rows([
-            [2.0, 0.0, 0.0],
-            [0.0, 3.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-    };
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed(
+        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            cadmpeg_ir::transform::Transform2::affine([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+                .expect("affine transform"),
+        )
+        .expect("placed pcurve"),
+    );
 
     let mut output = Vec::new();
     let report = write_step(
@@ -970,7 +1010,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
 }
@@ -999,7 +1039,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     .expect("report mode writes the representable subset");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
 }
@@ -1039,7 +1079,7 @@ fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
 
 #[test]
 fn ap203e1_does_not_emit_invisibility_entities() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(false);
     let mut output = Vec::new();
     let report = write_step(
@@ -1061,7 +1101,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
@@ -1072,12 +1112,9 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.4,
-            g: 0.5,
-            b: 0.6,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.4, 0.5, 0.6, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });
@@ -1113,7 +1150,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
@@ -1159,7 +1196,15 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     let PmiDefinition::DatumSystem { references } = &mut system.definition else {
         unreachable!()
     };
-    references[0].modifiers.push("unknown_modifier".into());
+    let mut edited = references.as_slice().to_vec();
+    edited[0].modifiers.push("unknown_modifier".into());
+    {
+        let replacement = edited;
+        edit::replace(references, |_| {
+            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+        })
+    }
+    .expect("unchanged datum compartments");
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1236,10 +1281,13 @@ fn edge_without_curve_is_reported_and_omitted() {
     .unwrap();
     let curve = Curve {
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         source_object: None,
     };
     let _ = curve; // silence unused import path
@@ -1259,31 +1307,29 @@ fn edge_without_curve_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "object-0".into(),
+        object_id: cadmpeg_core::text::NonBlankString::new("object-0")
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
     };
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: Some(source_object.clone()),
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
     ir.model.tessellations.push(
-        Tessellation::from_decoded(
-            "test:step:tessellation#0",
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#0")
+                .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -1298,21 +1344,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Metadata
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -1321,11 +1367,11 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let target = ir.model.faces[0].surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == target {
-            s.geometry = SurfaceGeometry::Unknown { record: None };
+            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         }
     }
     let mut buf = Vec::new();
@@ -1363,7 +1409,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
 
 #[test]
 fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
-    let mut polygonal = unit_cube();
+    let mut polygonal = unit_cube().expect("unit cube fixture is admitted");
     let surface_id = polygonal.model.faces[0].surface.clone();
     polygonal
         .model
@@ -1371,8 +1417,8 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .iter_mut()
         .find(|surface| surface.id == surface_id)
         .unwrap()
-        .geometry = SurfaceGeometry::Polygonal(
-        cadmpeg_ir::geometry::PolygonalSurface::new(
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
+        cadmpeg_ir::geometry::sampled::PolygonalSurface::new(
             vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
@@ -1380,9 +1426,11 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             ],
             vec![[0, 1, 2]],
             0.1,
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("polygonal construction admission")
         .expect("valid polygonal surface"),
-    );
+    ));
     let report = write_step(
         &polygonal,
         &mut Vec::new(),
@@ -1391,22 +1439,25 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
-    let mut nested_unknown = unit_cube();
-    let curve_id = nested_unknown.model.edges[0].curve.clone().unwrap();
+    let mut nested_unknown = unit_cube().expect("unit cube fixture is admitted");
+    let curve_id = nested_unknown.model.edges[0].curve().cloned().unwrap();
     nested_unknown
         .model
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Unknown { record: None }),
-        transform: cadmpeg_ir::transform::Transform::identity(),
-    };
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Unknown { record: None }),
+            cadmpeg_ir::transform::Transform::identity(),
+        )
+        .expect("placed curve"),
+    ));
     let report = write_step(
         &nested_unknown,
         &mut Vec::new(),
@@ -1415,7 +1466,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -1439,9 +1490,13 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_surfaces
         .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
-                components: Vec::new(),
-            },
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
+                cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
+                    Vec::new(),
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         ));
 
@@ -1454,7 +1509,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural surface");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(surface_id.as_str())
     }));
 }
@@ -1477,7 +1532,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None },
         ));
 
     let report = write_step(
@@ -1489,20 +1544,23 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural curve");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
 }
 
 #[test]
 fn signed_analytic_radius_normalization_is_reported() {
-    let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: -2.0,
-    };
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -2.0,
+        )
+        .unwrap(),
+    ));
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1514,22 +1572,25 @@ fn signed_analytic_radius_normalization_is_reported() {
     .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
 
 #[test]
 fn elliptical_cone_reduction_is_reported() {
-    let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.4,
-        half_angle: 0.5,
-    };
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.4,
+            0.5,
+        )
+        .unwrap(),
+    ));
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1541,33 +1602,313 @@ fn elliptical_cone_reduction_is_reported() {
     .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }
 
+/// Plans a document whose single surface is a circular cone of `half_angle`.
+fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            half_angle,
+        )
+        .unwrap(),
+    ));
+
+    StepCodec::default().plan(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+    )
+}
+
+#[test]
+fn cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(0.5).is_ok());
+}
+
+#[test]
+fn zero_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(0.0).expect_err("zero cone angle is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
+}
+
+#[test]
+fn negative_cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
+}
+
+#[test]
+fn right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
+        .expect_err("right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
+}
+
+#[test]
+fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
+        .expect_err("negative right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
+}
+
+/// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
+fn replica_transform() -> Transform {
+    Transform::affine([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ])
+    .expect("a scaled rotation is a similarity transform")
+}
+
+/// A document whose single surface places `basis` through a similarity transform.
+fn transformed_surface_ir(basis: SolvedSurfaceGeometry) -> CadIr {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), replica_transform())
+            .expect("placed surface"),
+    ));
+    ir
+}
+
+/// Writes a transformed surface and returns the report with STEP text.
+fn transformed_surface_report(
+    basis: SolvedSurfaceGeometry,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    let ir = transformed_surface_ir(basis);
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+    (report, text)
+}
+
+fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry {
+    SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            ratio,
+            half_angle,
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
+    let ir = transformed_surface_ir(transformed_cone_basis(1.0, 0.0));
+    let error = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .expect_err("transformed cone basis remains outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
+}
+
+#[test]
+fn transformed_elliptical_cone_basis_is_reported() {
+    let (report, text) = transformed_surface_report(transformed_cone_basis(0.4, 0.5));
+
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CONICAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::EllipticalConeReduced.kind()));
+}
+
+#[test]
+fn transformed_signed_sphere_basis_is_reported() {
+    let (report, text) = transformed_surface_report(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -2.0,
+        )
+        .unwrap(),
+    ));
+
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("SPHERICAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+/// Writes a document whose single surface is a torus of `minor_radius` attached
+/// to a degenerate torus construction, and returns the report with the text.
+fn degenerate_torus_report(
+    minor_radius: f64,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            minor_radius,
+        )
+        .unwrap(),
+    ));
+    let owner = ir.model.surfaces[0].id.clone();
+    ir.model
+        .add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &owner,
+            cadmpeg_ir::geometry::ProceduralSurface::new(
+                cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                    "test:model:procedural-surface#degenerate_torus",
+                )
+                .expect("identity grammar"),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+                    select_outer: true,
+                },
+                None,
+            ),
+        )
+        .unwrap()
+        .expect("a torus carrier admits a degenerate torus construction");
+
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+    (report, text)
+}
+
+#[test]
+fn degenerate_torus_wider_than_its_major_radius_is_not_reported() {
+    let (report, text) = degenerate_torus_report(2.0);
+
+    assert!(text.contains("DEGENERATE_TOROIDAL_SURFACE"));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+#[test]
+fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
+    let (report, text) = degenerate_torus_report(-2.0);
+
+    assert!(text.contains("DEGENERATE_TOROIDAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+#[test]
+fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            0.0,
+        )
+        .unwrap(),
+    ));
+    let owner = ir.model.surfaces[0].id.clone();
+    // A compound construction has no STEP record, so its solved cache is the
+    // candidate STEP carrier.
+    ir.model
+        .add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &owner,
+            cadmpeg_ir::geometry::ProceduralSurface::new(
+                cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                    "test:model:procedural-surface#compound",
+                )
+                .expect("identity grammar"),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
+                    cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
+                        Vec::new(),
+                        None,
+                    )
+                    .unwrap(),
+                ),
+                None,
+            ),
+        )
+        .unwrap()
+        .expect("a cone carrier admits a compound construction");
+
+    let error = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .expect_err("a cached cone outside WR2 cannot be written");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
+}
+
 #[test]
 fn procedural_construction_reduction_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let owner = ir.model.curves[0].id.clone();
-    let procedural = cadmpeg_ir::geometry::ProceduralCurve::try_new(
+    let procedural = cadmpeg_ir::geometry::ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
             .expect("identity grammar"),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-            context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
                 }),
-                parameter_range: [0.0, 1.0],
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
+                [0.0, 1.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap(),
             discontinuity_flag: false,
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
-        Some(0.01),
-    )
-    .unwrap();
-    ir.model.add_procedural_curve(owner, procedural).unwrap();
+    );
+    ir.model
+        .add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &owner,
+            procedural,
+        )
+        .unwrap()
+        .unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1585,15 +1926,17 @@ fn procedural_construction_reduction_is_reported() {
 
 #[test]
 fn source_native_record_reduction_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![
-            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", Default::default())
-                .expect("valid native identity"),
-        ],
+        vec![cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+            Default::default(),
+        )
+        .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let mut buf = Vec::new();
     let report = write_step(

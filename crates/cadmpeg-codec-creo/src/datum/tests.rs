@@ -1,22 +1,170 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use crate::axis::Axis;
 
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_test_support::wire;
+
+use crate::test_support::build_prt;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    cylinders, named_plane, planes, DatumPlane, DatumPlaneRecord, EPS_DATUM_COORDINATE_AGREEMENT,
+};
+
+fn planes_ok(data: &[u8]) -> Vec<DatumPlaneRecord> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("datum fixture fits root limit");
+    planes(&ctx, data).expect("datum fixture fits service limits")
+}
+
+fn named_plane_ok(data: &[u8]) -> Option<DatumPlaneRecord> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("datum fixture fits root limit");
+    named_plane(&ctx, data).expect("datum fixture fits service limits")
+}
+
+fn with_collection_limit<T>(
+    data: &[u8],
+    items: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("datum fixture fits root limit");
+    f(&ctx)
+}
+
+#[test]
+fn named_datum_outline_slots_refuse_before_exact_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let data = [0x0f; 6];
+    let cache = crate::scalar::ScalarCache::default();
+    assert_eq!(
+        with_collection_limit(&data, 6, |ctx| {
+            super::named_outline_slots(ctx, &data, 0, &cache)
+        })
+        .expect("six slots admitted")
+        .expect("complete slots")
+        .len(),
+        6
+    );
+    let error = with_collection_limit(&data, 5, |ctx| {
+        super::named_outline_slots(ctx, &data, 0, &cache)
+    })
+    .expect_err("six slots need admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo named datum outline slots")
+    );
+}
+
+#[test]
+fn positional_datum_slots_refuse_before_exact_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let data = [0x0f; 10];
+    let cache = crate::scalar::ScalarCache::default();
+    assert_eq!(
+        with_collection_limit(&data, 10, |ctx| {
+            super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
+        })
+        .expect("ten slots admitted")
+        .expect("complete slots")
+        .len(),
+        10
+    );
+    let error = with_collection_limit(&data, 9, |ctx| {
+        super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
+    })
+    .expect_err("ten slots need admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo positional datum slots")
+    );
+}
+
+#[test]
+fn datum_plane_records_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut data = b"srf_array\0\xf8\x01".to_vec();
+    data.extend([4, 0x22, 1, 1, 1, 0]);
+    data.extend([0x0f; 4]);
+    data.extend(ieee8(2.0));
+    data.push(0x0f);
+    data.extend(ieee8(3.0));
+    data.extend(ieee8(-2.0));
+    data.push(0x0f);
+    data.extend(ieee8(-3.0));
+    assert_eq!(
+        with_collection_limit(&data, 25, |ctx| planes(ctx, &data))
+            .expect("datum plane admitted")
+            .len(),
+        1
+    );
+    let error = with_collection_limit(&data, 24, |ctx| planes(ctx, &data))
+        .expect_err("datum result needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo datum plane records")
+    );
+}
+
+#[test]
+fn datum_cylinders_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut data = b"srf_array\0\xf8\x01".to_vec();
+    data.extend([8, 0x24, 3, 1, 1, 0]);
+    data.extend([
+        0x14, 0x2f, 0x10, 0x00, 0x2d, 0x1f, 0x6a, 0x7a, 0x29, 0x55, 0x38, 0x5e, 0x2f, 0x43, 0x00,
+        0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
+        0x2a, 0xe8, 0x00,
+    ]);
+    let run = |items| {
+        with_collection_limit(&data, items, |ctx| {
+            cylinders(ctx, &data).map(|records| records.len())
+        })
+    };
+    assert_eq!(run(512).expect("one active cylinder admitted"), 1);
+    let mut refused = 0;
+    let mut admitted = 512;
+    while refused + 1 < admitted {
+        let middle = refused + (admitted - refused) / 2;
+        if run(middle).is_ok() {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+    let error = run(admitted - 1).expect_err("the result slot needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo datum cylinders")
+    );
+}
 
 fn ieee8(value: f64) -> Vec<u8> {
     let mut raw = value.to_be_bytes();
     raw[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
     raw.to_vec()
 }
+const EPS_DATUM_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn decodes_constant_outline_coordinate_as_a_model_plane() {
     let mut data = b"srf_array\0\xf8\x01".to_vec();
@@ -29,18 +177,16 @@ fn decodes_constant_outline_coordinate_as_a_model_plane() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
     assert_eq!(
-        planes(&data),
-        vec![DatumPlaneRecord {
-            id: 4,
-            feature_id: 1,
-            plane: DatumPlane {
-                axis: Axis::Y,
-                offset: 0.0
-            },
-            opposite_offset: 0.0,
-            in_plane_corners: [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]],
-            offset_in_payload: 12
-        }]
+        planes_ok(&data),
+        vec![DatumPlaneRecord::new(
+            4,
+            1,
+            DatumPlane::new(Axis::Y, 0.0).expect("valid datum fixture"),
+            0.0,
+            [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]],
+            12
+        )
+        .expect("valid datum fixture")]
     );
 }
 
@@ -56,17 +202,17 @@ fn withholds_positional_outline_with_multiple_held_coordinates() {
     data.extend(ieee8(3.0));
     data.extend(ieee8(4.0));
 
-    assert!(planes(&data).is_empty());
+    assert!(planes_ok(&data).is_empty());
 }
 
 #[test]
 fn decodes_named_standard_plane_from_zero_slots() {
     let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
-    let plane = named_plane(data).expect("required invariant");
+    let plane = named_plane_ok(data).expect("required invariant");
     assert_eq!(plane.id, 2);
     assert_eq!(plane.feature_id, 1);
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
-    assert_eq!(plane.plane.offset, 0.0);
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane().offset(), 0.0);
     assert_eq!(
         plane.corners(),
         [
@@ -80,14 +226,14 @@ fn decodes_named_standard_plane_from_zero_slots() {
 fn withholds_named_plane_with_competing_standalone_zero_axes() {
     let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
 
-    assert!(named_plane(data).is_none());
+    assert!(named_plane_ok(data).is_none());
 }
 
 #[test]
 fn named_outline_41_form_occupies_eight_bytes() {
     let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
-    let plane = named_plane(data).expect("named plane");
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    let plane = named_plane_ok(data).expect("named plane");
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
     assert_eq!(plane.corners()[0][0], Some(0.0));
     assert_eq!(plane.corners()[1][0], Some(0.0));
 }
@@ -109,9 +255,9 @@ fn positional_outline_decodes_shared_named_coordinate_tokens() {
     data.push(0x18);
     data.extend(nine_f);
 
-    let positional = &planes(&data)[0];
-    assert_eq!(positional.plane.normal(), [0.0, 1.0, 0.0]);
-    assert_eq!(positional.plane.offset, 0.0);
+    let positional = &planes_ok(&data)[0];
+    assert_eq!(positional.plane().normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(positional.plane().offset(), 0.0);
 
     let mut named = b"\xe0\x01geom_id\0\x04\xe0\x01feat_id\0\x03outline\0\xf9\x02\x03".to_vec();
     named.extend(ieee8(3.0));
@@ -120,7 +266,10 @@ fn positional_outline_decodes_shared_named_coordinate_tokens() {
     named.extend(ieee8(-3.0));
     named.push(0x18);
     named.extend(nine_f);
-    assert_eq!(positional.corners(), named_plane(&named).unwrap().corners());
+    assert_eq!(
+        positional.corners(),
+        named_plane_ok(&named).unwrap().corners()
+    );
 }
 
 #[test]
@@ -139,9 +288,9 @@ fn positional_outline_uses_the_bounded_model_coordinate_lane() {
     data.push(0x18);
     data.extend(upper_z);
 
-    let positional = &planes(&data)[0];
-    assert_eq!(positional.plane.normal(), [0.0, 1.0, 0.0]);
-    assert_eq!(positional.plane.offset, 0.0);
+    let positional = &planes_ok(&data)[0];
+    assert_eq!(positional.plane().normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(positional.plane().offset(), 0.0);
     assert_eq!(
         positional.corners(),
         [
@@ -171,9 +320,9 @@ fn positional_outline_retains_unbacked_coordinate_tokens_without_values() {
     data.push(0x18);
     data.extend([0x45, 0, 0, 0, 0, 0, 0]);
 
-    let plane = &planes(&data)[0];
-    assert_eq!(plane.plane.normal(), [0.0, 1.0, 0.0]);
-    assert_eq!(plane.plane.offset, 0.0);
+    let plane = &planes_ok(&data)[0];
+    assert_eq!(plane.plane().normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(plane.plane().offset(), 0.0);
     assert_eq!(
         plane.corners(),
         [[None, Some(0.0), None], [None, Some(0.0), None]]
@@ -191,7 +340,7 @@ fn ignores_plane_shaped_bytes_outside_a_counted_surface_array() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
 
-    assert!(planes(&data).is_empty());
+    assert!(planes_ok(&data).is_empty());
 }
 
 #[test]
@@ -206,7 +355,7 @@ fn decodes_compact_width_datum_row_identifiers() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
 
-    let decoded = planes(&data);
+    let decoded = planes_ok(&data);
     assert_eq!(decoded.len(), 1);
     let plane = &decoded[0];
     assert_eq!(plane.id, 128);
@@ -216,11 +365,11 @@ fn decodes_compact_width_datum_row_identifiers() {
 #[test]
 fn decodes_compact_width_named_datum_identifiers() {
     let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
-    let plane = named_plane(data).expect("compact-width named plane");
+    let plane = named_plane_ok(data).expect("compact-width named plane");
 
     assert_eq!(plane.id, 128);
     assert_eq!(plane.feature_id, 257);
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -237,7 +386,7 @@ fn bounds_a_datum_outline_at_the_next_validated_row() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
 
-    let decoded = planes(&data);
+    let decoded = planes_ok(&data);
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].id, 8);
     assert_eq!(decoded[0].feature_id, 2);
@@ -258,7 +407,7 @@ fn bounds_a_datum_outline_at_the_end_of_its_surface_array_frame() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
 
-    let decoded = planes(&data);
+    let decoded = planes_ok(&data);
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].id, 8);
     assert_eq!(decoded[0].feature_id, 2);
@@ -276,7 +425,7 @@ fn rejects_linked_plane_row_as_a_datum() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
 
-    assert!(planes(&data).is_empty());
+    assert!(planes_ok(&data).is_empty());
 }
 
 #[test]
@@ -292,9 +441,9 @@ fn named_outline_resolves_a_cache_indexed_nonzero_offset() {
     data.extend(ieee8(3.0));
     data.extend(ieee8(4.0));
 
-    let plane = named_plane(&data).expect("cache-indexed named plane");
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
-    assert_eq!(plane.plane.offset, 2.5);
+    let plane = named_plane_ok(&data).expect("cache-indexed named plane");
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane().offset(), 2.5);
     assert_eq!(plane.corners()[0], [Some(2.5), Some(-3.0), Some(-4.0)]);
     assert_eq!(plane.corners()[1], [Some(2.5), Some(3.0), Some(4.0)]);
 }
@@ -309,9 +458,9 @@ fn named_outline_decodes_backed_dictionary_coordinate_forms() {
     data.extend([0xa5, 0, 0, 0, 0, 0, 0]);
     data.extend([0x9f, 0, 0, 0, 0, 0, 0]);
 
-    let plane = named_plane(&data).expect("named plane");
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
-    assert_eq!(plane.plane.offset, 0.0);
+    let plane = named_plane_ok(&data).expect("named plane");
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane().offset(), 0.0);
     assert_eq!(
         plane.corners(),
         [
@@ -339,9 +488,9 @@ fn named_outline_retains_unbacked_coordinate_tokens_without_values() {
     data.extend([0x45, 0, 0, 0, 0, 0, 0]);
     data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
 
-    let plane = named_plane(&data).expect("zero-axis named plane");
-    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
-    assert_eq!(plane.plane.offset, 0.0);
+    let plane = named_plane_ok(&data).expect("zero-axis named plane");
+    assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane().offset(), 0.0);
     assert_eq!(
         plane.corners(),
         [[Some(0.0), None, None], [Some(0.0), None, None],]
@@ -362,9 +511,9 @@ fn scan_discovers_model_space_datum_planes() {
             datum.extend(bytes);
         }
     }
-    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datums.len(), 1);
-    assert_eq!(scan.planes.datums[0].plane.normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.datums[0].plane().normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -376,17 +525,17 @@ fn scan_discovers_complete_active_datum_cylinder_carrier() {
         0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
         0x2a, 0xe8, 0x00,
     ]);
-    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datum_cylinders.len(), 1);
     let cylinder = scan.planes.datum_cylinders[0];
     assert_eq!(cylinder.id, 8);
     assert_eq!(cylinder.feature_id, 3);
     assert!(!cylinder.reversed);
-    assert_eq!(cylinder.frame.origin, [-12.5, 4.0, 0.0]);
-    assert_eq!(cylinder.frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(cylinder.frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(cylinder.frame.radius, 0.75);
-    assert_eq!(cylinder.frame.length, Some(34.0));
+    assert_eq!(cylinder.frame.frame().origin(), [-12.5, 4.0, 0.0]);
+    assert_eq!(cylinder.frame.frame().axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(cylinder.frame.radius().get(), 0.75);
+    assert_eq!(cylinder.frame.length().map(PositiveLength::get), Some(34.0));
 }
 
 #[test]
@@ -454,7 +603,7 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
     {
         let mut data = b"srf_array\0\xf8\x01".to_vec();
         data.extend([
-            id as u8,
+            u8::try_from(id).expect("fixture value fits u8"),
             0x24,
             3,
             if reversed { 0xf6 } else { 1 },
@@ -471,17 +620,24 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
             }
         }
         data.extend(prefix);
-        let decoded = cylinders(&data);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("datum fixture is admitted");
+        let decoded = cylinders(&ctx, &data).expect("datum fixture stays within resource limits");
         let [cylinder] = decoded.as_slice() else {
             panic!("one complete active-datum cylinder expected");
         };
         assert_eq!(cylinder.id, id);
         assert_eq!(cylinder.reversed, reversed);
-        assert_eq!(cylinder.frame.origin, origin);
-        assert_eq!(cylinder.frame.axis, axis);
-        assert_eq!(cylinder.frame.ref_direction, ref_direction);
-        assert_eq!(cylinder.frame.radius, radius);
-        assert_eq!(cylinder.frame.length, Some(length));
+        assert_eq!(cylinder.frame.frame().origin(), origin);
+        assert_eq!(cylinder.frame.frame().axis(), axis);
+        assert_eq!(cylinder.frame.frame().ref_direction(), ref_direction);
+        assert_eq!(cylinder.frame.radius().get(), radius);
+        assert_eq!(
+            cylinder.frame.length().map(PositiveLength::get),
+            Some(length)
+        );
     }
 }
 
@@ -507,10 +663,13 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
-    assert!(matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        if {
+            let radius = cylinder_surface.radius().get();
+            (radius - 0.75).abs() < EPS_DATUM_RADIUS
+        })
+    );
     assert_eq!(
         surface
             .source_object
@@ -524,7 +683,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     assert_eq!(cylinders[0].fields()["datum_id"], 8);
     assert_eq!(cylinders[0].fields()["radius"], 0.75);
     assert_eq!(
-        result.report().coverage()["transferred_active_datum_cylinder_count"],
+        wire::coverage(result.report())["transferred_active_datum_cylinder_count"],
         1
     );
 }
@@ -558,8 +717,10 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let feature = &result.ir().model.features[0];
     assert_eq!(feature.id.as_str(), "creo:model:feature#1");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+        )
     ));
 }
 
@@ -600,8 +761,10 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
     assert_eq!(feature.ordinal, 1);
     assert_eq!(feature.name.as_deref(), Some("Datum Plane id 4"));
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+        )
     ));
     assert_eq!(
         result
@@ -614,7 +777,8 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
             .ordinal,
         0
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -668,10 +832,12 @@ fn decode_retains_named_datum_plane_with_unresolved_placement() {
         .expect("named datum feature");
 
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Unresolved {
-            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+            }
+        )
     ));
 }
 
@@ -692,11 +858,50 @@ fn preserves_distinct_held_coordinates_within_plane_tolerance() {
             named.extend(ieee8(coordinate));
         }
         let expected = corners.map(|corner| corner.map(Some));
-        let positional = planes(&positional).pop().expect("positional datum plane");
-        let named = named_plane(&named).expect("named datum plane");
+        let positional = planes_ok(&positional)
+            .pop()
+            .expect("positional datum plane");
+        let named = named_plane_ok(&named).expect("named datum plane");
         for plane in [positional, named] {
-            assert_eq!(plane.plane, DatumPlane { axis, offset: 2.0 });
+            assert_eq!(
+                plane.plane(),
+                DatumPlane::new(axis, 2.0).expect("valid datum fixture")
+            );
             assert_eq!(plane.corners(), expected);
         }
     }
+}
+
+#[test]
+fn datum_plane_constructor_rejects_nonfinite_coordinates() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(DatumPlane::new(Axis::X, value).is_none());
+        let plane = DatumPlane::new(Axis::X, 0.0).expect("finite plane");
+        assert!(DatumPlaneRecord::new(1, 1, plane, value, [[None; 2]; 2], 0).is_none());
+        assert!(
+            DatumPlaneRecord::new(1, 1, plane, 0.0, [[Some(value), None], [None; 2]], 0).is_none()
+        );
+    }
+}
+
+#[test]
+fn datum_outline_constructor_requires_one_plane() {
+    let plane = DatumPlane::new(Axis::X, 0.0).expect("finite plane");
+    assert!(DatumPlaneRecord::new(1, 1, plane, 1.0, [[None; 2]; 2], 0).is_none());
+    let outline = DatumPlaneRecord::new(
+        1,
+        1,
+        plane,
+        0.0,
+        [[Some(1.0), Some(2.0)], [Some(3.0), None]],
+        0,
+    )
+    .expect("same plane");
+    assert_eq!(
+        outline.corners(),
+        [
+            [Some(0.0), Some(1.0), Some(2.0)],
+            [Some(0.0), Some(3.0), None]
+        ]
+    );
 }

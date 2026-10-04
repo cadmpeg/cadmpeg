@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP codec backend and encoder.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
+use std::fmt;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;
@@ -44,20 +49,48 @@ impl EncoderBackend for StepCodec {
 impl CodecBackend for StepCodec {
     const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let view = prefix;
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect STEP trivia",
+        )?;
         if starts_with_step_magic(prefix) {
-            Confidence::High
-        } else if archive::has_root_marker(prefix)
-            || is_part26_hdf5(prefix)
-            || is_part28_xml(prefix)
-            || is_ap242_bo_model_xml(prefix)
-        {
-            Confidence::Medium
-        } else if archive::has_zip_magic(prefix) {
+            return Ok(Confidence::High);
+        }
+        if archive::has_root_marker(ctx, view)? {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect STEP HDF5",
+        )?;
+        if is_part26_hdf5(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        let xml_bytes = cadmpeg_core::decode::u64_from_index(prefix.len().min(4096));
+        ctx.charge_work(xml_bytes * 6, "detect STEP Part 28 XML")?;
+        if is_part28_xml(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(xml_bytes * 5, "detect STEP business-object XML")?;
+        if is_ap242_bo_model_xml(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len().min(4)),
+            "detect STEP ZIP",
+        )?;
+        Ok(if archive::has_zip_magic(prefix) {
             Confidence::Low
         } else {
             Confidence::No
-        }
+        })
     }
 
     fn inspect_impl(
@@ -89,7 +122,7 @@ impl CodecBackend for StepCodec {
             return decode_zip(ctx, root);
         }
         refuse_alternate_encoding(bytes)?;
-        if self.detect_impl(bytes) == Confidence::No {
+        if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         reader::decode(bytes, ctx, reader::Packaging::Bare)
@@ -105,6 +138,32 @@ struct InspectedExchange {
     notes: Vec<String>,
 }
 
+fn insert_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(key.len()),
+        "step_inspect_attribute_key",
+    )?;
+    let key = ctx.copy_retained_text(key, "step_inspect_attribute_key")?;
+    ctx.insert_btree_map(attributes, key, value, "step_inspect_attributes")?;
+    Ok(())
+}
+
+struct CountItem<'a> {
+    name: &'a str,
+    count: usize,
+}
+
+impl fmt::Display for CountItem<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(output, "{}:{}", self.name, self.count)
+    }
+}
+
 /// Deep semantic analysis of a STEP exchange, exposed as container inspect.
 ///
 /// Runs the semantic decode path to populate `unknown_entities` and related
@@ -116,134 +175,218 @@ fn inspect_exchange(
 ) -> Result<InspectedExchange, CodecError> {
     let bytes = root.window();
     refuse_alternate_encoding(bytes)?;
-    if codec.detect_impl(bytes) == Confidence::No {
+    if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
+    inspect_parsed_exchange(bytes, ctx, &mut exchange, &diagnostics)
+}
+
+fn inspect_parsed_exchange(
+    bytes: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    exchange: &mut parse::Exchange,
+    diagnostics: &[parse::ParseDiagnostic],
+) -> Result<InspectedExchange, CodecError> {
     let reader::AnalyzedExchange {
         decoded,
         matched,
         opaque_offsets,
-    } = reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
-    let mut entries = vec![ContainerEntry {
-        name: "HEADER".into(),
-        role: ContainerRole::Metadata,
-        compression: EntryCompression::None,
-        compressed_size: 0,
-        uncompressed_size: 0,
-        attributes: BTreeMap::default(),
-    }];
-    if !exchange.anchors.is_empty() {
+    } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
+    let mut entries = Vec::new();
+    ctx.push_vec(
+        &mut entries,
+        ContainerEntry {
+            name: ctx.copy_retained_text("HEADER", "step_inspect_section_label")?,
+            role: ContainerRole::Metadata,
+            storage: EntryStorage::unreported(VerbatimLabel::None),
+            attributes: BTreeMap::default(),
+        },
+        "step_inspect_entries",
+    )?;
+    if !exchange.anchors().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert("anchor_count".into(), exchange.anchors.len().to_string());
-        entries.push(ContainerEntry {
-            name: "ANCHOR".into(),
-            role: ContainerRole::InFileAnchors,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes,
-        });
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "anchor_count",
+            ctx.format_retained(
+                format_args!("{}", exchange.anchors().len()),
+                "step_inspect_attribute_count",
+            )?,
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.copy_retained_text("ANCHOR", "step_inspect_section_label")?,
+                role: ContainerRole::InFileAnchors,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+            "step_inspect_entries",
+        )?;
     }
-    if !exchange.references.is_empty() {
+    if !exchange.references().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert(
-            "external_count".into(),
-            exchange.references.len().to_string(),
-        );
-        attributes.insert(
-            "external_uris".into(),
-            exchange
-                .references
-                .iter()
-                .map(|entry| entry.uri.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        );
-        entries.push(ContainerEntry {
-            name: "REFERENCE".into(),
-            role: ContainerRole::StepExternalReferences,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes,
-        });
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "external_count",
+            ctx.format_retained(
+                format_args!("{}", exchange.references().len()),
+                "step_inspect_attribute_count",
+            )?,
+        )?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "external_uris",
+            ctx.join_display_retained(
+                exchange.references().iter().map(|entry| entry.uri.as_str()),
+                ",",
+                "step_inspect_external_uris",
+            )?,
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.copy_retained_text("REFERENCE", "step_inspect_section_label")?,
+                role: ContainerRole::ExternalReferences,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+            "step_inspect_entries",
+        )?;
     }
-    for (index, section) in exchange.data.iter().enumerate() {
-        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for (index, section) in exchange.data().iter().enumerate() {
+        let mut counts = BTreeMap::<&str, usize>::new();
         for id in &section.records {
-            if !opaque_offsets.contains(&exchange.records[id].span.start) {
+            if !opaque_offsets.contains(&exchange.records()[id].span.start) {
                 continue;
             }
-            for partial in &exchange.records[id].partials {
-                *counts.entry(partial.name.clone()).or_default() += 1;
+            for partial in &exchange.records()[id].partials {
+                let name = partial.name.as_str();
+                ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
+                match counts.entry(name) {
+                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                    Entry::Vacant(entry) => {
+                        entry.insert(1);
+                    }
+                }
             }
         }
-        let unknown = counts
-            .iter()
-            .map(|(name, count)| format!("{name}:{count}"))
-            .collect::<Vec<_>>()
-            .join(",");
+        let unknown = ctx.join_display_retained(
+            counts
+                .iter()
+                .map(|(&name, &count)| CountItem { name, count }),
+            ",",
+            "step_inspect_unknown_entities",
+        )?;
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert("entity_count".into(), section.records.len().to_string());
-        attributes.insert("unknown_entities".into(), unknown);
-        entries.push(ContainerEntry {
-            name: format!("DATA[{index}]"),
-            role: ContainerRole::EntityRecords,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes,
-        });
-    }
-    let external_dependencies = decoded
-        .body
-        .notes
-        .iter()
-        .filter(|note| {
-            note.starts_with("external document ") || note.starts_with("external source ")
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if !external_dependencies.is_empty() {
-        let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert(
-            "dependency_count".into(),
-            external_dependencies.len().to_string(),
-        );
-        attributes.insert("dependencies".into(), external_dependencies.join(","));
-        entries.push(ContainerEntry {
-            name: "EXTERNAL_DEPENDENCIES".into(),
-            role: ContainerRole::StepExternalReferences,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes,
-        });
-    }
-    for (index, _) in exchange.signatures.iter().enumerate() {
-        entries.push(ContainerEntry {
-            name: if index == 0 {
-                "SIGNATURE".into()
-            } else {
-                format!("SIGNATURE[{index}]")
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "entity_count",
+            ctx.format_retained(
+                format_args!("{}", section.records.len()),
+                "step_inspect_attribute_count",
+            )?,
+        )?;
+        insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx
+                    .format_retained(format_args!("DATA[{index}]"), "step_inspect_section_name")?,
+                role: ContainerRole::EntityRecords,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
             },
-            role: ContainerRole::Signature,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes: BTreeMap::default(),
-        });
+            "step_inspect_entries",
+        )?;
     }
-    let identifiers = exchange.schema_identifiers();
+    let external_dependencies = decoded.body.notes.iter().filter(|note| {
+        note.starts_with("external document ") || note.starts_with("external source ")
+    });
+    let dependency_count = external_dependencies.clone().count();
+    if dependency_count > 0 {
+        let mut attributes = std::collections::BTreeMap::new();
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "dependency_count",
+            ctx.format_retained(
+                format_args!("{dependency_count}"),
+                "step_inspect_attribute_count",
+            )?,
+        )?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "dependencies",
+            ctx.join_display_retained(
+                external_dependencies.map(String::as_str),
+                ",",
+                "step_inspect_dependency_text",
+            )?,
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx
+                    .copy_retained_text("EXTERNAL_DEPENDENCIES", "step_inspect_section_label")?,
+                role: ContainerRole::ExternalReferences,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+            "step_inspect_entries",
+        )?;
+    }
+    for (index, signature) in exchange.signatures().iter().enumerate() {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: if index == 0 {
+                    ctx.copy_retained_text("SIGNATURE", "step_inspect_signature_name")?
+                } else {
+                    ctx.format_retained(
+                        format_args!("SIGNATURE[{index}]"),
+                        "step_inspect_signature_indexed_name",
+                    )?
+                },
+                role: ContainerRole::Signature,
+                storage: EntryStorage::verbatim(
+                    VerbatimLabel::None,
+                    cadmpeg_core::decode::u64_from_index(signature.len()),
+                ),
+                attributes: BTreeMap::default(),
+            },
+            "step_inspect_entries",
+        )?;
+    }
+    let identifiers = exchange.joined_schema_identifiers(ctx)?;
     let schema = if identifiers.is_empty() {
         "unspecified".into()
     } else {
-        identifiers.join(",")
+        identifiers
     };
     let dialect = matched.dialect();
-    let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
-    notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
+    let mut notes = Vec::new();
+    ctx.push_vec(
+        &mut notes,
+        ctx.format_retained(
+            format_args!("schema {schema}; dialect {dialect}"),
+            "step_inspect_schema_note",
+        )?,
+        "step_codec_notes",
+    )?;
+    for diagnostic in diagnostics {
+        let note = ctx.format_retained(
+            format_args!("{}", diagnostic.message),
+            "step_inspect_diagnostic_copy",
+        )?;
+        ctx.push_vec(&mut notes, note, "step_codec_notes")?;
+    }
     Ok(InspectedExchange {
         matched,
         entries,
@@ -298,36 +441,60 @@ fn inspect_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
-    let (archive, root_view) = archive::open_root(ctx, root)?;
-    let mut inspected = inspect_exchange(&StepCodec::default(), ctx, root_view)?;
-    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let archive::OpenedRoot {
+        archive,
+        view: root_view,
+        data_start: root_data_offset,
+    } = archive::open_root(ctx, root)?;
+    let root_bytes = root_view.window();
+    refuse_alternate_encoding(root_bytes)?;
+    if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
+        return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+    }
+    let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
+    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange);
+    let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
+    let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
-    let root_entry = archive
-        .entry(archive::ROOT_NAME)
-        .expect("validated STEP ZIP root");
-    let root_data_offset = root_entry.data_start;
-    let logical_entries = inspected
-        .entries
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    let mut entries = archive.container_entries(archive::classify_entry);
+    let logical_entries = ctx.join_display_retained(
+        inspected.entries.iter().map(|entry| entry.name.as_str()),
+        ",",
+        "step_inspect_logical_sections",
+    )?;
+    let mut entries = archive.container_entries(ctx, archive::classify_entry)?;
     if let Some(root_entry) = entries
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
     {
-        root_entry
-            .attributes
-            .insert("logical_sections".into(), logical_entries);
+        insert_attribute(
+            ctx,
+            &mut root_entry.attributes,
+            "logical_sections",
+            logical_entries,
+        )?;
     }
-    let mut notes = vec![
-        format!("root {}", archive::ROOT_NAME),
-        format!("archive entries={entry_count}; root data offset={root_data_offset}"),
-    ];
-    notes.extend(std::mem::take(&mut inspected.notes));
+    let mut notes = Vec::new();
+    {
+        ctx.push_formatted_retained(
+            &mut notes,
+            format_args!("root {}", archive::ROOT_NAME),
+            "step_codec_notes",
+            "step_codec_root_note",
+        )?;
+        ctx.push_formatted_retained(
+            &mut notes,
+            format_args!("archive entries={entry_count}; root data offset={root_data_offset}"),
+            "step_codec_notes",
+            "step_codec_archive_note",
+        )
+    }?;
+    ctx.extend_vec(
+        &mut notes,
+        std::mem::take(&mut inspected.notes),
+        "step_codec_notes",
+    )?;
     let losses = std::mem::take(&mut inspected.losses);
-    notes.extend(resource_notes);
+    ctx.extend_vec(&mut notes, resource_notes, "step_codec_notes")?;
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
     // document, so the root's own match is this summary's match.
@@ -344,26 +511,34 @@ fn decode_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<Decoded, CodecError> {
-    let (archive, root_view) = archive::open_root(ctx, root)?;
-    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let archive::OpenedRoot {
+        archive,
+        view: root_view,
+        data_start: root_data_offset,
+    } = archive::open_root(ctx, root)?;
+    let (exchange, diagnostics) = parse::parse_with_context(root_view.window(), ctx)?;
+    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange)?;
     let entry_count = archive.entries().len();
-    let root_entry = archive
-        .entry(archive::ROOT_NAME)
-        .expect("validated STEP ZIP root");
-    let root_data_offset = root_entry.data_start;
-    let mut decoded = reader::decode(
+    let mut decoded = reader::decode_exchange(
         root_view.window(),
+        exchange,
+        &diagnostics,
         ctx,
         reader::Packaging::Zip {
             entry_count,
             root_data_offset,
         },
     )?;
-    decoded.body.notes.push(format!(
-        "container root {}; archive entries={entry_count}",
-        archive::ROOT_NAME
-    ));
-    decoded.body.notes.extend(resource_notes);
+    ctx.push_formatted_retained(
+        &mut decoded.body.notes,
+        format_args!(
+            "container root {}; archive entries={entry_count}",
+            archive::ROOT_NAME
+        ),
+        "step_codec_notes",
+        "step_codec_container_note",
+    )?;
+    ctx.extend_vec(&mut decoded.body.notes, resource_notes, "step_codec_notes")?;
     Ok(decoded)
 }
 
@@ -584,10 +759,240 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+    };
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-    use super::{starts_with_step_magic, StepCodec};
+    use super::{insert_attribute, starts_with_step_magic, StepCodec};
+
+    const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+    #[test]
+    fn inspection_count_text_refuses_retained_limit() {
+        inspect_text_refuses(INSPECTION_TEXT_SOURCE, "step_inspect_attribute_count");
+    }
+
+    #[test]
+    fn inspection_attribute_key_refuses_retained_limit() {
+        inspect_text_refuses(INSPECTION_TEXT_SOURCE, "step_inspect_attribute_key");
+    }
+
+    #[test]
+    fn inspection_owned_attribute_value_is_not_charged_twice() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(
+            13 + 11 * std::mem::size_of::<(String, String)>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<String>(),
+        )
+        .expect("attribute node layout");
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut attributes = std::collections::BTreeMap::new();
+            let value = ctx
+                .copy_retained_text("1", "step_test_attribute_value")
+                .expect("one-byte value");
+            insert_attribute(ctx, &mut attributes, "entity_count", value)
+                .expect("twelve-byte key fits once");
+            assert_eq!(attributes["entity_count"], "1");
+        });
+    }
+
+    #[test]
+    fn inspect_attribute_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits selected policy");
+        let mut attributes = std::collections::BTreeMap::new();
+        assert!(matches!(
+            insert_attribute(&ctx, &mut attributes, "unknown_entities", "ITEM:1".into()),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_inspect_attributes"
+        ));
+    }
+
+    fn inspect_text_refuses(source: &[u8], operation: &str) {
+        let mut limit = 0u64;
+        for _ in 0..512 {
+            let (mut exchange, diagnostics) =
+                crate::test_support::with_service_context(source, crate::parse::parse_inner)
+                    .expect("valid inspect source");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits retained policy");
+            match super::inspect_parsed_exchange(source, &ctx, &mut exchange, &diagnostics) {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("retained requirement fits u64");
+                    assert!(next > limit, "retained limit must advance");
+                    limit = next;
+                }
+                Ok(_) => panic!("inspect completed before {operation}"),
+                Err(error) => panic!("inspect did not reach {operation}: {error}"),
+            }
+        }
+        panic!("inspect never reached {operation}");
+    }
+
+    #[test]
+    fn inspect_external_uris_refuse_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_external_uris");
+    }
+
+    #[test]
+    fn inspect_unknown_entities_refuse_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_unknown_entities");
+    }
+
+    #[test]
+    fn inspect_schema_note_refuses_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_schema_note");
+    }
+
+    #[test]
+    fn inspect_diagnostic_copy_refuses_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_diagnostic_copy");
+    }
+
+    #[test]
+    fn inspect_dependency_text_refuses_retained_limit() {
+        let source = include_bytes!("../tests/fixtures/ap242_external_documents.p21");
+        inspect_text_refuses(source, "step_inspect_dependency_text");
+    }
+
+    #[test]
+    fn inspect_unknown_count_entries_refuse_collection_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let mut limit = 0u64;
+        for _ in 0..512 {
+            let (mut exchange, diagnostics) =
+                crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+                    .expect("valid inspect source");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                .expect("root fits collection policy");
+            match super::inspect_parsed_exchange(SOURCE, &ctx, &mut exchange, &diagnostics) {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == "step_inspect_unknown_counts" =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("collection requirement fits u64");
+                    assert!(next > limit, "collection limit must advance");
+                    limit = next;
+                }
+                Ok(_) => panic!("inspect completed before count admission"),
+                Err(error) => panic!("inspect did not reach count admission: {error}"),
+            }
+        }
+        panic!("inspect never reached count admission");
+    }
+
+    fn zip_text_refuses(operation: &str, inspect: bool) {
+        use std::io::Write;
+
+        const ROOT: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "ISO-10303.p21",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .expect("start ZIP root");
+        writer.write_all(ROOT).expect("write ZIP root");
+        let bytes = writer.finish().expect("finish STEP ZIP").into_inner();
+
+        let mut limit = 0u64;
+        for _ in 0..1024 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let result = crate::test_support::with_policy_context(&bytes, &policy, |bytes, ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(bytes);
+                if inspect {
+                    super::inspect_zip(ctx, root).map(|_| ())
+                } else {
+                    super::decode_zip(ctx, root).map(|_| ())
+                }
+            });
+            match result {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("retained requirement fits u64");
+                    assert!(next > limit, "retained limit must advance");
+                    limit = next;
+                }
+                Ok(()) => panic!("ZIP operation completed before {operation}"),
+                Err(error) => panic!("ZIP operation did not reach {operation}: {error}"),
+            }
+        }
+        panic!("ZIP operation never reached {operation}");
+    }
+
+    #[test]
+    fn inspect_zip_logical_sections_refuse_retained_limit() {
+        zip_text_refuses("step_inspect_logical_sections", true);
+    }
+
+    #[test]
+    fn inspection_section_name_refuses_retained_limit() {
+        inspect_text_refuses(INSPECTION_TEXT_SOURCE, "step_inspect_section_name");
+    }
+
+    #[test]
+    fn inspection_signature_name_refuses_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA= ENDSEC;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA= ENDSEC;";
+        inspect_text_refuses(SOURCE, "step_inspect_signature_indexed_name");
+    }
+
+    #[test]
+    fn zip_inspection_archive_note_refuses_retained_limit() {
+        zip_text_refuses("step_codec_archive_note", true);
+    }
+
+    #[test]
+    fn zip_decode_container_note_refuses_retained_limit() {
+        zip_text_refuses("step_codec_container_note", false);
+    }
 
     #[test]
     fn detects_magic_after_ignored_controls_and_inside_token() {
@@ -595,13 +1000,19 @@ mod tests {
         let codec = StepCodec::default();
 
         assert!(starts_with_step_magic(source));
-        assert_eq!(codec.detect(source), Confidence::High);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, source),
+            Confidence::High
+        );
         codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode Part 21 with ignored framing octets");
 
         let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
-        assert_eq!(codec.detect(&with_bom), Confidence::No);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, &with_bom),
+            Confidence::No
+        );
         assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
     }
 

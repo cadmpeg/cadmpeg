@@ -1,34 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse solid primitive construction frames and their parameter owners.
 
-use super::{exact_fixed_scalar, marked_record_reference};
+use cadmpeg_core::decode::u64_from_index;
+
+use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::extrude_operation_at;
+use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_guid_end;
 use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
 use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
-use crate::records::feature::DesignExtrudeOperation;
-use crate::records::feature::DesignParameterScope;
-use crate::records::feature::DesignSolidPrimitive;
-use crate::records::valid_sketch_transform;
-use crate::records::DesignParameterOwner;
+use crate::records::{
+    feature::{
+        extrude::DesignExtrudeOperation, primitives::DesignSolidPrimitive,
+        scope::DesignParameterScope,
+    },
+    parameters::DesignParameterOwner,
+    sketch_placement::valid_sketch_transform,
+};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::PositiveReal;
 
-pub(crate) fn exact_solid_primitive(
+pub(super) fn exact_solid_primitive(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
             (
-                primitive_operation(bytes, operation_offset)?,
+                extrude_operation_at(bytes, operation_offset)?,
                 operation_offset,
                 None,
             )
@@ -36,7 +43,7 @@ pub(crate) fn exact_solid_primitive(
         "BoxPrimitive" => {
             let operation_offset = exact_named_solid_primitive_operation(bytes, start)?;
             (
-                primitive_operation(bytes, operation_offset)?,
+                extrude_operation_at(bytes, operation_offset)?,
                 operation_offset,
                 None,
             )
@@ -44,7 +51,7 @@ pub(crate) fn exact_solid_primitive(
         "CylinderPrimitive" => {
             if let Some(operation_offset) = exact_named_solid_primitive_operation(bytes, start) {
                 (
-                    primitive_operation(bytes, operation_offset)?,
+                    extrude_operation_at(bytes, operation_offset)?,
                     operation_offset,
                     None,
                 )
@@ -61,16 +68,19 @@ pub(crate) fn exact_solid_primitive(
     };
     let matrix = |relative_offset: usize| {
         let matrix_at = start.checked_add(relative_offset)?;
-        let values = f64s_at(bytes, matrix_at, 16)?;
+        let values = f64s_at::<16>(bytes, matrix_at)?;
         let mut transform = [[0.0; 4]; 4];
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        valid_sketch_transform(&transform).then_some((transform, matrix_at as u64))
+        Some((
+            crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?,
+            u64_from_index(matrix_at),
+        ))
     };
     match scope.kind_name() {
         "SpherePrimitive"
-            if scope.frame_length == 462
+            if scope.frame_length() == 462
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -81,19 +91,19 @@ pub(crate) fn exact_solid_primitive(
                 exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere(
-                crate::records::feature::DesignSpherePrimitive {
+                crate::records::feature::primitives::DesignSpherePrimitive {
                     transform,
                     transform_offset,
                     diameter,
                     diameter_record_index,
                     diameter_offset,
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }
         "TorusPrimitive"
-            if scope.frame_length == 486
+            if scope.frame_length() == 486
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -111,7 +121,7 @@ pub(crate) fn exact_solid_primitive(
                 exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
             let (transform, transform_offset) = matrix(75)?;
             Some(DesignSolidPrimitive::Torus(
-                crate::records::feature::DesignTorusPrimitive {
+                crate::records::feature::primitives::DesignTorusPrimitive {
                     transform,
                     transform_offset,
                     major_diameter,
@@ -121,64 +131,68 @@ pub(crate) fn exact_solid_primitive(
                     minor_diameter_record_index,
                     minor_diameter_offset,
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }
         "BoxPrimitive" => {
-            if scope.frame_length < 78 || scope.reference_members.len() < 5 {
+            if scope.frame_length() < 78 || scope.reference_members().len() < 5 {
                 return None;
             }
-            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 5)?;
-            let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
+            let [Some(length), Some(width), Some(height), Some(offset_x), Some(offset_y)] =
+                exact_owned_primitive_parameters::<5>(scope, parameter_owners)?
+            else {
                 return None;
             };
-            (length.evaluated_value > 0.0
-                && width.evaluated_value > 0.0
-                && height.evaluated_value > 0.0)
-                .then_some(DesignSolidPrimitive::Box(
-                    crate::records::feature::DesignBoxPrimitive {
-                        length: length.evaluated_value,
-                        length_record_index: length.record_index,
-                        length_offset: length.evaluated_value_offset,
-                        width: width.evaluated_value,
-                        width_record_index: width.record_index,
-                        width_offset: width.evaluated_value_offset,
-                        height: height.evaluated_value,
-                        height_record_index: height.record_index,
-                        height_offset: height.evaluated_value_offset,
-                        offset_x: offset_x.evaluated_value,
-                        offset_x_record_index: offset_x.record_index,
-                        offset_x_offset: offset_x.evaluated_value_offset,
-                        offset_y: offset_y.evaluated_value,
-                        offset_y_record_index: offset_y.record_index,
-                        offset_y_offset: offset_y.evaluated_value_offset,
-                        operation,
-                        operation_offset: operation_offset as u64,
-                    },
-                ))
+            let length_value = PositiveReal::new(length.evaluated_value().get())?;
+            let width_value = PositiveReal::new(width.evaluated_value().get())?;
+            let height_value = PositiveReal::new(height.evaluated_value().get())?;
+            Some(DesignSolidPrimitive::Box(
+                crate::records::feature::primitives::DesignBoxPrimitive {
+                    length: length_value,
+                    length_record_index: length.record_index(),
+                    length_offset: length.evaluated_value_offset(),
+                    width: width_value,
+                    width_record_index: width.record_index(),
+                    width_offset: width.evaluated_value_offset(),
+                    height: height_value,
+                    height_record_index: height.record_index(),
+                    height_offset: height.evaluated_value_offset(),
+                    offset_x: offset_x.evaluated_value(),
+                    offset_x_record_index: offset_x.record_index(),
+                    offset_x_offset: offset_x.evaluated_value_offset(),
+                    offset_y: offset_y.evaluated_value(),
+                    offset_y_record_index: offset_y.record_index(),
+                    offset_y_offset: offset_y.evaluated_value_offset(),
+                    operation,
+                    operation_offset: u64_from_index(operation_offset),
+                },
+            ))
         }
         "CylinderPrimitive" => {
-            if scope.frame_length < 78 || scope.reference_members.len() < 2 {
+            if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
                 return None;
             }
-            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 2)?;
-            let [height, diameter] = owners.as_slice() else {
+            let [Some(height), Some(diameter)] =
+                exact_owned_primitive_parameters::<2>(scope, parameter_owners)?
+            else {
                 return None;
             };
-            (height.evaluated_value > 0.0 && diameter.evaluated_value > 0.0).then_some(
-                DesignSolidPrimitive::Cylinder(crate::records::feature::DesignCylinderPrimitive {
-                    height: height.evaluated_value,
-                    height_record_index: height.record_index,
-                    height_offset: height.evaluated_value_offset,
-                    diameter: diameter.evaluated_value,
-                    diameter_record_index: diameter.record_index,
-                    diameter_offset: diameter.evaluated_value_offset,
+            let height_value = PositiveReal::new(height.evaluated_value().get())?;
+            let diameter_value = PositiveReal::new(diameter.evaluated_value().get())?;
+            Some(DesignSolidPrimitive::Cylinder(
+                crate::records::feature::primitives::DesignCylinderPrimitive {
+                    height: height_value,
+                    height_record_index: height.record_index(),
+                    height_offset: height.evaluated_value_offset(),
+                    diameter: diameter_value,
+                    diameter_record_index: diameter.record_index(),
+                    diameter_offset: diameter.evaluated_value_offset(),
                     transform: cylinder_transform,
                     operation,
-                    operation_offset: operation_offset as u64,
-                }),
-            )
+                    operation_offset: u64_from_index(operation_offset),
+                },
+            ))
         }
         _ => None,
     }
@@ -188,7 +202,9 @@ pub(crate) fn exact_solid_primitive(
 struct ExactShiftedCylinderPrimitivePrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
-    transform: Option<crate::records::Located<[[f64; 4]; 4]>>,
+    transform: Option<
+        crate::records::identity::Located<crate::records::sketch_placement::SketchPlacementMatrix>,
+    >,
 }
 
 fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<usize> {
@@ -209,7 +225,7 @@ fn exact_shifted_cylinder_primitive_prologue(
     let compact = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-        scope.frame_length,
+        scope.frame_length(),
     ) {
         ("297" | "375", "258", 352) => true,
         ("297" | "375", "258", 502) | ("414", "272", 502) => false,
@@ -251,8 +267,8 @@ fn exact_shifted_cylinder_primitive_prologue(
         )
     };
     let reference_count = if compact { 5 } else { 7 };
-    if scope.reference_members.len() != reference_count
-        || scope.paired_byte_offset != u64::try_from(start.checked_add(frame_length)?).ok()?
+    if scope.reference_members().len() != reference_count
+        || scope.paired_byte_offset() != u64::try_from(start.checked_add(frame_length)?).ok()?
         || bytes.get(start + zero_run_10..start + form_marker)? != [0; 10]
         || bytes.get(start + form_marker) != Some(&1)
         || bytes.get(start + reference_gap) != Some(&0)
@@ -261,11 +277,14 @@ fn exact_shifted_cylinder_primitive_prologue(
         return None;
     }
     let operation_offset = start.checked_add(operation)?;
-    let operation = primitive_operation(bytes, operation_offset)?;
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     if bytes.get(start + first_reference) != Some(&1)
         || bytes.get(start + first_reference + 1) != Some(&1)
         || View::u32_le_at(bytes, start + first_reference + 2)?
-            != *scope.reference_members.values().nth(reference_count - 1)?
+            != *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 1)?
         || bytes.get(start + first_reference + 6..start + first_reference + 11)? != [0; 5]
     {
         return None;
@@ -273,15 +292,24 @@ fn exact_shifted_cylinder_primitive_prologue(
     for (relative_offset, expected_record_index) in [
         (
             second_reference,
-            *scope.reference_members.values().nth(reference_count - 2)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 2)?,
         ),
         (
             third_reference,
-            *scope.reference_members.values().nth(reference_count - 3)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 3)?,
         ),
         (
             fourth_reference,
-            *scope.reference_members.values().nth(reference_count - 4)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 4)?,
         ),
     ] {
         if marked_record_reference(bytes, start.checked_add(relative_offset)?)
@@ -296,7 +324,7 @@ fn exact_shifted_cylinder_primitive_prologue(
         kind_offset,
         feature_ordinal_offset,
         previous_history_state_id_offset,
-    ) = match scope.frame_length {
+    ) = match scope.frame_length() {
         352 => (
             shifted_cylinder_352::REFERENCE_COUNT,
             shifted_cylinder_352::KIND,
@@ -311,15 +339,15 @@ fn exact_shifted_cylinder_primitive_prologue(
         ),
         _ => return None,
     };
-    if scope.reference_count_offset != absolute(reference_count_offset)?
-        || scope.kind_offset != absolute(kind_offset)?
-        || scope.feature_ordinal_offset != absolute(feature_ordinal_offset)?
-        || scope.previous_history_state_id_offset
+    if scope.reference_count_offset() != absolute(reference_count_offset)?
+        || scope.kind_offset() != absolute(kind_offset)?
+        || scope.feature_ordinal_offset() != absolute(feature_ordinal_offset)?
+        || scope.previous_history_state_id_offset()
             != Some(absolute(previous_history_state_id_offset)?)
     {
         return None;
     }
-    let transform = match scope.frame_length {
+    let transform = match scope.frame_length() {
         352 => {
             if bytes.get(start + shifted_cylinder_352::COMPACT_TAIL_MARKER) != Some(&1)
                 || View::u32_le_at(bytes, start + shifted_cylinder_352::COMPACT_TAIL_COUNT)? != 1
@@ -336,13 +364,9 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || bytes.get(
                     start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
                         ..start + shifted_cylinder_352::REFERENCE_COUNT,
@@ -366,7 +390,7 @@ fn exact_shifted_cylinder_primitive_prologue(
                 || View::u32_le_at(
                     bytes,
                     start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 5,
-                )? != *scope.reference_members.values().next()?
+                )? != *scope.reference_members().values().next()?
                 || bytes.get(
                     start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 9
                         ..start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
@@ -379,25 +403,22 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let values = f64s_at(bytes, start + shifted_cylinder_502::MATRIX, 16)?;
+            let values = f64s_at::<16>(bytes, start + shifted_cylinder_502::MATRIX)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || !valid_sketch_transform(&transform)
                 || !cylinder_transform_preserves_projected_geometry(&transform)
             {
                 return None;
             }
-            Some(crate::records::Located {
-                value: transform,
+            Some(crate::records::identity::Located {
+                value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
+                    .ok()?,
                 offset: u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?,
             })
         }
@@ -420,44 +441,27 @@ fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) ->
         && (transform[2][2] - 1.0).abs() <= EPS_CYLINDER_FRAME
 }
 
-fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
-    match View::u32_le_at(bytes, offset)? {
-        1 => Some(DesignExtrudeOperation::Join),
-        2 => Some(DesignExtrudeOperation::Cut),
-        3 => Some(DesignExtrudeOperation::Intersect),
-        4 => Some(DesignExtrudeOperation::NewBody),
-        _ => None,
-    }
-}
-
-fn exact_owned_primitive_parameters<'a>(
+fn exact_owned_primitive_parameters<'a, const N: usize>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
-    count: usize,
-) -> Option<Vec<&'a DesignParameterOwner>> {
+) -> Option<[Option<&'a DesignParameterOwner>; N]> {
     let stream = native_stream(&scope.id)?;
-    let mut owners = parameter_owners
-        .iter()
-        .filter(|owner| {
-            owner.scope_record_index == scope.record_index
-                && native_stream(&owner.id) == Some(stream)
-                && scope
-                    .reference_members
-                    .values()
-                    .any(|value| value == &owner.record_index)
-                && owner.evaluated_value.is_finite()
-        })
-        .collect::<Vec<_>>();
-    owners.sort_by_key(|owner| owner.local_ordinal);
-    if owners.len() != count
-        || owners
-            .windows(2)
-            .any(|pair| pair[0].local_ordinal == pair[1].local_ordinal)
-        || owners
-            .iter()
-            .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
-    {
+    let mut owners = [None; N];
+    for owner in parameter_owners.iter().filter(|owner| {
+        owner.scope_record_index() == scope.record_index
+            && native_stream(owner.id()) == Some(stream)
+            && scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner.record_index())
+    }) {
+        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
+        let slot = owners.get_mut(ordinal)?;
+        if slot.replace(owner).is_some() {
+            return None;
+        }
+    }
+    if owners.iter().any(Option::is_none) {
         return None;
     }
     Some(owners)
@@ -467,9 +471,9 @@ fn exact_primitive_diameter(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(f64, u64)> {
+) -> Option<(PositiveReal, u64)> {
     let scalar = exact_fixed_scalar(bytes, records, record_index)?;
-    (scalar.value > 0.0).then_some((scalar.value, scalar.value_offset))
+    Some((PositiveReal::new(scalar.value.get())?, scalar.value_offset))
 }
 
 #[cfg(test)]

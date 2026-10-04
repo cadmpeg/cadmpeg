@@ -6,12 +6,23 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::coedge;
+use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::line_carrier;
+use crate::test_support::parasolid::loop_head;
+use crate::test_support::parasolid::nurbs_curve_carrier;
+use crate::test_support::parasolid::plane_carrier;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::typed_nurbs_curve_carrier;
+use crate::test_support::parasolid::vertex_use;
+use crate::test_support::parasolid::world_point;
 use crate::SldprtCodec;
 
 #[test]
 fn edge_uses_decoded_line_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = Vec::new();
     body.extend(plane_carrier(
@@ -44,7 +55,10 @@ fn edge_uses_decoded_line_curve() {
 
     assert_eq!(result.ir().model.curves.len(), 1);
     match &result.ir().model.curves[0].geometry {
-        CurveGeometry::Line { direction, .. } => assert_eq!(direction.x, 1.0),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let direction = *line_curve.direction().as_raw();
+            assert_eq!(direction.x, 1.0);
+        }
         other => panic!("expected line, got {other:?}"),
     }
     assert_eq!(
@@ -53,7 +67,7 @@ fn edge_uses_decoded_line_curve() {
             .model
             .edges
             .iter()
-            .filter(|e| e.curve.is_some())
+            .filter(|e| e.curve().is_some())
             .count(),
         1
     );
@@ -64,13 +78,14 @@ fn edge_uses_decoded_line_curve() {
         .coedges
         .iter()
         .any(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn edge_uses_decode_nurbs_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(nurbs_curve_carrier(170, 171));
@@ -92,18 +107,18 @@ fn edge_uses_decode_nurbs_curve() {
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS curve");
     assert_eq!(nurbs.degree(), 2);
     assert_eq!(nurbs.control_points().len(), 3);
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 }
 
 #[test]
 fn edge_uses_decode_typed_reference_nurbs_curve() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(typed_nurbs_curve_carrier(170, 171));
@@ -126,7 +141,7 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS curve");
@@ -136,7 +151,9 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
 
 #[test]
 fn reused_carrier_attribute_resolves_by_geometry_kind() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge = body
@@ -166,11 +183,11 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
 
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
 }
 
@@ -230,5 +247,9 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     assert_eq!(result.ir().model.edges.len(), 3);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }

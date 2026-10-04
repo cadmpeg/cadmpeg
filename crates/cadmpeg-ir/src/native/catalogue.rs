@@ -2,6 +2,7 @@
 //! Declarative native-family catalogues.
 
 use super::NativeConvertError;
+use cadmpeg_core::decode::DecodeContext;
 
 /// Ordered processing phase and annotation function for a native record family.
 pub enum Phase<M, A, N, E> {
@@ -33,11 +34,17 @@ pub enum NotePhase {
 }
 
 /// Annotation function carried by a family row.
-pub type NoteFn<M, A, N, E> = fn(&M, &FamilyRow<M, A, N, E>, Option<&'static str>, &mut A);
+pub type NoteFn<M, A, N, E> = fn(
+    &DecodeContext<'_>,
+    &M,
+    &FamilyRow<M, A, N, E>,
+    Option<&'static str>,
+    &mut A,
+) -> Result<(), cadmpeg_core::CodecError>;
 
 /// Namespace-emission function carried by a family row.
 pub type EmitFn<M, A, N, E> =
-    fn(&M, &FamilyRow<M, A, N, E>, &mut N) -> Result<(), NativeConvertError>;
+    fn(&DecodeContext<'_>, &M, &FamilyRow<M, A, N, E>, &mut N) -> Result<(), NativeConvertError>;
 
 /// One codec-owned native record family.
 pub struct FamilyRow<M, A, N, E> {
@@ -66,30 +73,37 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
         Self { rows }
     }
 
-    /// Returns the declared rows in stable order.
-    pub const fn rows(&self) -> &'a [FamilyRow<M, A, N, E>] {
-        self.rows
-    }
-
     /// Emits every family through its row function, empty families included.
-    pub fn emit_all(&self, model: &M, namespace: &mut N) -> Result<(), NativeConvertError> {
+    pub fn emit_all(
+        &self,
+        ctx: &DecodeContext<'_>,
+        model: &M,
+        namespace: &mut N,
+    ) -> Result<(), NativeConvertError> {
         for row in self.rows {
-            (row.emit)(model, row, namespace)?;
+            (row.emit)(ctx, model, row, namespace)?;
         }
         Ok(())
     }
 
     /// Emits annotations for every family in one phase.
-    pub fn note_phase(&self, phase: NotePhase, model: &M, annotations: &mut A) {
+    pub fn note_phase(
+        &self,
+        ctx: &DecodeContext<'_>,
+        phase: NotePhase,
+        model: &M,
+        annotations: &mut A,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         for row in self.rows {
             match (&row.phase, phase) {
                 (Phase::GroupA { tag, note }, NotePhase::GroupA)
                 | (Phase::GroupB { tag, note }, NotePhase::GroupB) => {
-                    note(model, row, *tag, annotations);
+                    note(ctx, model, row, *tag, annotations)?;
                 }
                 (Phase::GroupA { .. } | Phase::GroupB { .. } | Phase::ArenaOnly, _) => {}
             }
         }
+        Ok(())
     }
 
     /// Returns whether every family participating in emptiness is empty.

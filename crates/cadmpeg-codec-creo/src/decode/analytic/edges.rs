@@ -1,52 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge parameter ranges for lines, NURBS, and conics.
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
-use super::super::sketch::normalized;
-use super::super::surfaces::curve_contains_points;
+use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
+use super::vertices::finite_model_point;
 use crate::vecmath::{cross, dot};
+
+macro_rules! require_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
 
 const EPS_ON_CONIC: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
-pub fn orient_line_edge_carrier(
+pub(in crate::decode) fn orient_line_edge_carrier(
     geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
     let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
     let length = dot(delta, delta).sqrt();
-    let oriented = normalized(delta)?;
-    *origin = Point3::new(points[0][0], points[0][1], points[0][2]);
-    *direction = Vector3::new(oriented[0], oriented[1], oriented[2]);
+    let oriented = normalize(delta)?;
+    *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+        Point3::from(points[0]),
+        Vector3::from(oriented),
+    )
+    .ok()?;
     Some([0.0, length])
 }
 
-pub fn exact_line_edge_parameter_range(
+pub(in crate::decode) fn exact_line_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     let direction = [direction.x, direction.y, direction.z];
     let denominator = dot(direction, direction);
-    if !denominator.is_finite() || denominator <= 0.0 {
-        return None;
-    }
     let origin = [origin.x, origin.y, origin.z];
     let parameters = points.map(|point| {
         dot(
@@ -64,7 +79,15 @@ pub fn exact_line_edge_parameter_range(
         })
 }
 
-pub fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool; 2] {
+/// Whether the mapped pair aligns with the target pair in the same order and
+/// in reverse order, within a tolerance relative to the largest coordinate.
+/// Every point is finite, so the tolerance is finite.
+pub(super) fn point_pair_alignments(
+    mapped: [FinitePoint3; 2],
+    target: [FinitePoint3; 2],
+) -> [bool; 2] {
+    let coordinates = |point: FinitePoint3| <[f64; 3]>::from(point.get());
+    let (mapped, target) = (mapped.map(coordinates), target.map(coordinates));
     let mismatch = |left: [f64; 3], right: [f64; 3]| {
         dot(
             std::array::from_fn(|index| left[index] - right[index]),
@@ -85,104 +108,137 @@ pub fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [b
     ]
 }
 
-pub fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
-    let bounds = nurbs.control_points().iter().try_fold(
+pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
+    let bounds = nurbs_points(nurbs).fold(
         [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
         |mut bounds, point| {
             for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                coordinate.is_finite().then_some(())?;
                 bounds[0][index] = bounds[0][index].min(coordinate);
                 bounds[1][index] = bounds[1][index].max(coordinate);
             }
-            Some(bounds)
+            bounds
         },
-    )?;
-    Some(
-        (0..3)
-            .map(|index| bounds[1][index] - bounds[0][index])
-            .fold(1.0, f64::max),
-    )
+    );
+    (0..3)
+        .map(|index| bounds[1][index] - bounds[0][index])
+        .fold(1.0, f64::max)
 }
 
-pub fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
+pub(super) fn nurbs_points(
+    nurbs: &NurbsCurve,
+) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
+    (0..nurbs.pole_count()).filter_map(|index| nurbs.pole_rows().point_at(index))
+}
+
+pub(super) fn nurbs_weights_positive(nurbs: &NurbsCurve) -> bool {
+    (0..nurbs.pole_count()).all(|index| {
+        nurbs
+            .pole_rows()
+            .weight_at(index)
+            .is_none_or(|weight| weight > 0.0)
+    })
+}
+
+pub(in crate::decode) fn nurbs_intrinsic_parameter_range(
+    nurbs: &NurbsCurve,
+) -> Option<[FiniteReal; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
-    (nurbs_control_extent(nurbs).is_some()
-        && nurbs.knots().iter().all(|knot| knot.is_finite())
-        && nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]))
-    .then_some(())?;
     let range = [
-        *nurbs.knots().get(degree)?,
-        *nurbs.knots().get(nurbs.control_points().len())?,
+        nurbs.knots().finite_knot(degree)?,
+        nurbs.knots().finite_knot(nurbs.pole_count())?,
     ];
     (range[0] < range[1]).then_some(range)
 }
 
-pub fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f64; 3]; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
-        return None;
+pub(super) fn nonperiodic_nurbs_endpoint_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
+) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+        return Ok(None);
     };
-    (!nurbs.periodic()).then_some(())?;
-    valid_positive_nurbs_curve(nurbs)?;
-    let range = nurbs_intrinsic_parameter_range(nurbs)?;
-    let points = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
-    });
+    require_some!((!nurbs.periodic()).then_some(()));
+    require_some!(valid_positive_nurbs_curve(nurbs));
+    let range = require_some!(nurbs_intrinsic_parameter_range(nurbs));
+    let [first, second] =
+        range.map(|parameter| {
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx,
+                geometry,
+                parameter.get(),
+            ))
+            .and_then(|value| {
+                Ok(cadmpeg_ir::eval::finite_or_refusal(value)?
+                    .map(|point| [point.x, point.y, point.z]))
+            })
+        });
+    let points = [first?, second?];
     let [Some(first), Some(second)] = points else {
-        return None;
+        return Ok(None);
     };
-    first
-        .into_iter()
-        .chain(second)
-        .all(f64::is_finite)
-        .then_some([first, second])
+    Ok(Some([first, second]))
 }
 
-pub fn nonperiodic_nurbs_edge_parameter_range(
+fn nonperiodic_nurbs_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
-) -> Option<[f64; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
-        return None;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+        return Ok(None);
     };
     if nurbs.periodic() {
-        return None;
+        return Ok(None);
     }
-    let degree = usize::try_from(nurbs.degree()).ok()?;
-    let range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let degree = require_some!(usize::try_from(nurbs.degree()).ok());
+    let range = FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(nurbs)));
 
     if degree == 1 {
-        nurbs
-            .weights()
-            .is_none_or(|weights| {
-                weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-            })
-            .then_some(())?;
-        let scale = nurbs_control_extent(nurbs)?;
+        require_some!(nurbs_weights_positive(nurbs).then_some(()));
+        let scale = nurbs_control_extent(nurbs);
         let tolerance = EPS_AGREE * scale;
-        let first = degree_one_nurbs_point_parameter(geometry, nurbs, points[0], range, tolerance)?;
-        let second =
-            degree_one_nurbs_point_parameter(geometry, nurbs, points[1], range, tolerance)?;
+        let first = require_some!(degree_one_nurbs_point_parameter(
+            ctx, geometry, nurbs, points[0], range, tolerance
+        )?);
+        let second = require_some!(degree_one_nurbs_point_parameter(
+            ctx, geometry, nurbs, points[1], range, tolerance
+        )?);
         let parameters = if first <= second {
             [first, second]
         } else {
             [second, first]
         };
-        return (parameters[1] - parameters[0] > EPS_NEAR_ZERO * (range[1] - range[0]).max(1.0))
-            .then_some(parameters);
+        return Ok(
+            (cadmpeg_ir::math::parameter_fraction(parameters[0], range[0], range[1])
+                .zip(cadmpeg_ir::math::parameter_fraction(
+                    parameters[1],
+                    range[0],
+                    range[1],
+                ))
+                .is_some_and(|(first, second)| second.get() - first.get() > EPS_NEAR_ZERO))
+            .then_some(parameters),
+        );
     }
 
-    let mapped = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+    let [first, second] = range.map(|parameter| {
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx, geometry, parameter,
+        ))
     });
-    let [Some(first), Some(second)] = mapped else {
-        return None;
+    let mapped = [
+        cadmpeg_ir::eval::finite_or_refusal(first?)?,
+        cadmpeg_ir::eval::finite_or_refusal(second?)?,
+    ];
+    // An edge endpoint outside the finite range aligns with no carrier end.
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) =
+        (mapped, points.map(finite_model_point))
+    else {
+        return Ok(None);
     };
-    match point_pair_alignments([first, second], points) {
+    Ok(match point_pair_alignments([first, second], [start, end]) {
         [true, false] | [false, true] => Some(range),
         _ => None,
-    }
+    })
 }
 
 /// Orient a non-periodic NURBS carrier to the topological edge direction.
@@ -190,134 +246,151 @@ pub fn nonperiodic_nurbs_edge_parameter_range(
 /// Edge parameter ranges are canonical and therefore increasing. When the
 /// native edge reverses the carrier direction, reverse the NURBS definition
 /// and keep the same geometric parameter domain.
-pub fn orient_nonperiodic_nurbs_edge_carrier(
+pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
-) -> Option<[f64; 2]> {
-    let range = nonperiodic_nurbs_edge_parameter_range(geometry, points)?;
-    let CurveGeometry::Nurbs(nurbs) = &*geometry else {
-        return None;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let range = require_some!(nonperiodic_nurbs_edge_parameter_range(
+        ctx, geometry, points
+    )?);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
+        return Ok(None);
     };
-    let degree = usize::try_from(nurbs.degree()).ok()?;
-    let intrinsic_range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let degree = require_some!(usize::try_from(nurbs.degree()).ok());
+    let intrinsic_range = require_some!(nurbs_intrinsic_parameter_range(nurbs));
     if degree == 1 {
         let (first, second) = {
-            let CurveGeometry::Nurbs(nurbs) = &*geometry else {
-                return None;
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
+                return Ok(None);
             };
-            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
-            let first = degree_one_nurbs_point_parameter(
+            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
+            let first = require_some!(degree_one_nurbs_point_parameter(
+                ctx,
                 &*geometry,
                 nurbs,
                 points[0],
-                intrinsic_range,
+                FiniteReal::raw_array(intrinsic_range),
                 tolerance,
-            )?;
-            let second = degree_one_nurbs_point_parameter(
+            )?);
+            let second = require_some!(degree_one_nurbs_point_parameter(
+                ctx,
                 &*geometry,
                 nurbs,
                 points[1],
-                intrinsic_range,
+                FiniteReal::raw_array(intrinsic_range),
                 tolerance,
-            )?;
+            )?);
             (first, second)
         };
         if first <= second {
-            return Some([first, second]);
+            return Ok(Some([first, second]));
         }
-        let CurveGeometry::Nurbs(nurbs) = geometry else {
-            return None;
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+            return Ok(None);
         };
-        reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
-        let sum = intrinsic_range[0] + intrinsic_range[1];
-        return Some([sum - first, sum - second]);
+        require_some!(nurbs.reverse_parameterization_in_range(
+            ctx,
+            intrinsic_range[0],
+            intrinsic_range[1]
+        )?);
+        let [Some(first), Some(second)] = [first, second].map(FiniteReal::new) else {
+            return Ok(None);
+        };
+        let [start, end] = intrinsic_range;
+        return Ok(Some([
+            require_some!(cadmpeg_ir::math::reflect_parameter(first, start, end)).get(),
+            require_some!(cadmpeg_ir::math::reflect_parameter(second, start, end)).get(),
+        ]));
     }
 
-    let mapped = intrinsic_range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(&*geometry, parameter)
-            .map(|point| [point.x, point.y, point.z])
+    let [first, second] = intrinsic_range.map(|parameter| {
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx,
+            &*geometry,
+            parameter.get(),
+        ))
     });
-    let [Some(first), Some(second)] = mapped else {
-        return None;
+    let mapped = [
+        cadmpeg_ir::eval::finite_or_refusal(first?)?,
+        cadmpeg_ir::eval::finite_or_refusal(second?)?,
+    ];
+    // An edge endpoint outside the finite range aligns with no carrier end.
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) =
+        (mapped, points.map(finite_model_point))
+    else {
+        return Ok(None);
     };
-    match point_pair_alignments([first, second], points) {
+    Ok(match point_pair_alignments([first, second], [start, end]) {
         [true, false] => Some(range),
         [false, true] => {
-            let CurveGeometry::Nurbs(nurbs) = geometry else {
-                return None;
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+                return Ok(None);
             };
-            reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
+            require_some!(nurbs.reverse_parameterization_in_range(
+                ctx,
+                intrinsic_range[0],
+                intrinsic_range[1]
+            )?);
             Some(range)
         }
         _ => None,
-    }
+    })
 }
 
-fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<()> {
-    let sum = range[0] + range[1];
-    let mut reversed = nurbs.clone();
-    reversed.reverse_parameterization();
-    reversed
-        .edit_knots(|knots| {
-            for knot in knots {
-                *knot += sum;
-            }
-        })
-        .ok()?;
-    *nurbs = reversed;
-    Some(())
-}
-
-pub fn full_periodic_nurbs_edge_parameter_range(
+pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     point: [f64; 3],
-) -> Option<[f64; 2]> {
-    let CurveGeometry::Nurbs(nurbs) = geometry else {
-        return None;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+        return Ok(None);
     };
-    nurbs.periodic().then_some(())?;
-    nurbs
-        .weights()
-        .is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
-        .then_some(())?;
-    let range = nurbs_intrinsic_parameter_range(nurbs)?;
-    let mapped = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
-    });
+    require_some!(nurbs.periodic().then_some(()));
+    require_some!(nurbs_weights_positive(nurbs).then_some(()));
+    let range = FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(nurbs)));
+    let [first, second] =
+        range.map(|parameter| {
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx, geometry, parameter,
+            ))
+            .and_then(|value| {
+                Ok(cadmpeg_ir::eval::finite_or_refusal(value)?
+                    .map(|point| [point.x, point.y, point.z]))
+            })
+        });
+    let mapped = [first?, second?];
     let [Some(first), Some(second)] = mapped else {
-        return None;
+        return Ok(None);
     };
-    let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
-    [first, second]
+    let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
+    Ok([first, second]
         .into_iter()
         .all(|mapped| {
             let delta: [f64; 3] = std::array::from_fn(|index| mapped[index] - point[index]);
             dot(delta, delta).sqrt() <= tolerance
         })
-        .then_some(range)
+        .then_some(range))
 }
 
-pub fn degree_one_nurbs_point_parameter(
+fn degree_one_nurbs_point_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     nurbs: &NurbsCurve,
     point: [f64; 3],
     range: [f64; 2],
     tolerance: f64,
-) -> Option<f64> {
-    let parameter_tolerance = EPS_AGREE * (range[1] - range[0]).max(1.0);
-    let mut candidates = Vec::<f64>::new();
-    for span in 1..nurbs.control_points().len() {
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    let parameter_tolerance = (EPS_AGREE * range[1] - EPS_AGREE * range[0]).abs();
+    let mut candidate: Option<f64> = None;
+    for span in 1..nurbs.pole_count() {
         let lower = nurbs.knots()[span];
         let upper = nurbs.knots()[span + 1];
-        if !lower.is_finite() || !upper.is_finite() || upper <= lower {
+        if upper <= lower {
             continue;
         }
-        let first = nurbs.control_points()[span - 1];
-        let second = nurbs.control_points()[span];
+        let first = require_some!(nurbs.pole_rows().point_at(span - 1));
+        let second = require_some!(nurbs.pole_rows().point_at(span));
         let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
         let denominator = dot(delta, delta);
         if !denominator.is_finite() {
@@ -326,7 +399,7 @@ pub fn degree_one_nurbs_point_parameter(
         let relative = [point[0] - first.x, point[1] - first.y, point[2] - first.z];
         if denominator <= tolerance * tolerance {
             if dot(relative, relative).sqrt() <= tolerance {
-                return None;
+                return Ok(None);
             }
             continue;
         }
@@ -334,7 +407,13 @@ pub fn degree_one_nurbs_point_parameter(
         if !(-EPS_AGREE..=1.0 + EPS_AGREE).contains(&fraction) {
             continue;
         }
-        let fraction = fraction.clamp(0.0, 1.0);
+        let fraction = match fraction.partial_cmp(&0.0) {
+            Some(std::cmp::Ordering::Less) => 0.0,
+            _ => match fraction.partial_cmp(&1.0) {
+                Some(std::cmp::Ordering::Greater) => 1.0,
+                _ => fraction,
+            },
+        };
         let projected = [
             first.x + fraction * delta[0],
             first.y + fraction * delta[1],
@@ -344,15 +423,30 @@ pub fn degree_one_nurbs_point_parameter(
         if dot(mismatch, mismatch).sqrt() > tolerance {
             continue;
         }
-        let first_weight = nurbs.weights().map_or(1.0, |weights| weights[span - 1]);
-        let second_weight = nurbs.weights().map_or(1.0, |weights| weights[span]);
+        let first_weight = nurbs
+            .pole_rows()
+            .weight_at(span - 1)
+            .map_or(1.0, |weight| weight);
+        let second_weight = nurbs
+            .pole_rows()
+            .weight_at(span)
+            .map_or(1.0, |weight| weight);
         let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
         if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
             continue;
         }
         let local = fraction * first_weight / rational_denominator;
-        let parameter = lower + local * (upper - lower);
-        let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
+        let span = upper - lower;
+        let parameter = if span.is_finite() {
+            lower + local * span
+        } else {
+            require_some!(cadmpeg_ir::math::interpolate(lower, upper, local)).get()
+        };
+        let Some(mapped) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter),
+            )?)?
+        else {
             continue;
         };
         let mismatch = [
@@ -360,59 +454,61 @@ pub fn degree_one_nurbs_point_parameter(
             mapped.y - point[1],
             mapped.z - point[2],
         ];
-        if dot(mismatch, mismatch).sqrt() <= tolerance
-            && !candidates
-                .iter()
-                .any(|known| (parameter - known).abs() <= parameter_tolerance)
-        {
-            candidates.push(parameter);
+        if dot(mismatch, mismatch).sqrt() <= tolerance {
+            if let Some(first) = candidate {
+                if !matches!(
+                    ((parameter - first).abs()).partial_cmp(&(parameter_tolerance)),
+                    Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                ) {
+                    return Ok(None);
+                }
+            } else {
+                candidate = Some(parameter);
+            }
         }
     }
-    let [parameter] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*parameter)
+    Ok(candidate)
 }
 
 #[derive(Clone, Copy)]
-pub struct PeriodicConicFrame {
-    pub center: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub radii: [f64; 2],
+pub(in crate::decode) struct PeriodicConicFrame {
+    pub(in crate::decode) center: [f64; 3],
+    pub(in crate::decode) normal: [f64; 3],
+    pub(in crate::decode) x_axis: [f64; 3],
+    pub(in crate::decode) y_axis: [f64; 3],
+    pub(in crate::decode) radii: [f64; 2],
 }
 
 #[derive(Clone, Copy)]
-pub struct PlanarConicEquation {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub quadratic: [f64; 2],
-    pub linear: [f64; 2],
-    pub constant: f64,
-    pub scale: f64,
+pub(super) struct PlanarConicEquation {
+    pub(super) origin: [f64; 3],
+    pub(super) normal: [f64; 3],
+    pub(super) x_axis: [f64; 3],
+    pub(super) y_axis: [f64; 3],
+    pub(super) quadratic: [f64; 2],
+    pub(super) linear: [f64; 2],
+    pub(super) constant: f64,
+    pub(super) scale: f64,
 }
 
 #[derive(Clone, Copy)]
-pub enum NonperiodicConicFamily {
+enum NonperiodicConicFamily {
     Parabola,
     Hyperbola,
 }
 
 #[derive(Clone, Copy)]
-pub struct NonperiodicConicFrame {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub x_scale: f64,
-    pub y_scale: f64,
-    pub family: NonperiodicConicFamily,
+struct NonperiodicConicFrame {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+    x_scale: f64,
+    y_scale: f64,
+    family: NonperiodicConicFamily,
 }
 
-pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEquation> {
+pub(super) fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEquation> {
     if let Some(frame) = periodic_conic_frame(geometry) {
         return Some(PlanarConicEquation {
             origin: frame.center,
@@ -454,47 +550,38 @@ pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEqua
     })
 }
 
-pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
+fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => (
-            [vertex.x, vertex.y, vertex.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *focal_distance,
-            2.0 * *focal_distance,
-            NonperiodicConicFamily::Parabola,
-        ),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *major_radius,
-            *minor_radius,
-            NonperiodicConicFamily::Hyperbola,
-        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
+            let vertex = parabola_curve.vertex().get();
+            let focal_distance = parabola_curve.focal_distance().get();
+            (
+                [vertex.x, vertex.y, vertex.z],
+                unit_length(*parabola_curve.frame().axis()),
+                unit_length(*parabola_curve.frame().reference()),
+                focal_distance,
+                2.0 * focal_distance,
+                NonperiodicConicFamily::Parabola,
+            )
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
+            let center = hyperbola_curve.center().get();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
+            (
+                [center.x, center.y, center.z],
+                unit_length(*hyperbola_curve.frame().axis()),
+                unit_length(*hyperbola_curve.frame().reference()),
+                major_radius,
+                minor_radius,
+                NonperiodicConicFamily::Hyperbola,
+            )
+        }
         _ => return None,
     };
-    let normal = normalized(normal)?;
-    let x_axis = normalized(x_axis)?;
     (dot(normal, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalized(cross(normal, x_axis))?;
-    (origin.into_iter().all(f64::is_finite)
-        && x_scale > 0.0
-        && x_scale.is_finite()
-        && y_scale > 0.0
-        && y_scale.is_finite())
-    .then_some(())?;
+    let y_axis = normalize(cross(normal, x_axis))?;
+    (y_scale > 0.0 && y_scale.is_finite()).then_some(())?;
     Some(NonperiodicConicFrame {
         origin,
         normal,
@@ -506,42 +593,36 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
     })
 }
 
-pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
+pub(in crate::decode) fn periodic_conic_frame(
+    geometry: &CurveGeometry,
+) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [ref_direction.x, ref_direction.y, ref_direction.z],
-            [*radius, *radius],
-        ),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            [*major_radius, *minor_radius],
-        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let radius = circle_curve.radius().get();
+            (
+                [center.x, center.y, center.z],
+                unit_length(*circle_curve.frame().axis()),
+                unit_length(*circle_curve.frame().reference()),
+                [radius, radius],
+            )
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let center = ellipse_curve.center().get();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            (
+                [center.x, center.y, center.z],
+                unit_length(*ellipse_curve.frame().axis()),
+                unit_length(*ellipse_curve.frame().reference()),
+                [major_radius, minor_radius],
+            )
+        }
         _ => return None,
     };
-    let axis = normalized(axis)?;
-    let x_axis = normalized(x_axis)?;
     (dot(axis, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalized(cross(axis, x_axis))?;
-    (center.into_iter().all(f64::is_finite)
-        && radii
-            .into_iter()
-            .all(|radius| radius > 0.0 && radius.is_finite()))
-    .then_some(PeriodicConicFrame {
+    let y_axis = normalize(cross(axis, x_axis))?;
+    Some(PeriodicConicFrame {
         center,
         normal: axis,
         x_axis,
@@ -550,7 +631,10 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
     })
 }
 
-pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) -> Option<f64> {
+pub(in crate::decode) fn nonperiodic_conic_parameter(
+    geometry: &CurveGeometry,
+    point: [f64; 3],
+) -> Option<f64> {
     let NonperiodicConicFrame {
         origin,
         normal,
@@ -580,7 +664,7 @@ pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) ->
     (parameter.is_finite() && (x - expected_x).abs() <= EPS_ON_CONIC * scale).then_some(parameter)
 }
 
-pub fn nonperiodic_conic_edge_parameter_range(
+pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -597,15 +681,16 @@ pub fn nonperiodic_conic_edge_parameter_range(
     (parameters[1] - parameters[0] > EPS_NEAR_ZERO).then_some(parameters)
 }
 
-pub fn periodic_conic_edge_parameter_range(
+pub(super) fn periodic_conic_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
     interior: [f64; 3],
-) -> Option<[f64; 2]> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     if !curve_contains_points(geometry, points)
         || !curve_contains_points(geometry, [interior, interior])
     {
-        return None;
+        return Ok(None);
     }
     let PeriodicConicFrame {
         center,
@@ -613,7 +698,7 @@ pub fn periodic_conic_edge_parameter_range(
         y_axis,
         radii,
         ..
-    } = periodic_conic_frame(geometry)?;
+    } = require_some!(periodic_conic_frame(geometry));
     let parameter = |point: [f64; 3]| {
         let relative = std::array::from_fn(|index| point[index] - center[index]);
         (dot(relative, y_axis) / radii[1])
@@ -638,9 +723,16 @@ pub fn periodic_conic_edge_parameter_range(
         increasing(second, first)
     };
     let scale = radii.into_iter().fold(1.0, f64::max);
-    let matches_interior = |range: [f64; 2]| {
-        cadmpeg_ir::eval::curve_point(geometry, f64::midpoint(range[0], range[1])).is_some_and(
-            |point| {
+    let matches_interior = |range: [f64; 2]| -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(
+                    ctx,
+                    geometry,
+                    f64::midpoint(range[0], range[1]),
+                ),
+            )?)?
+            .is_some_and(|point| {
                 let point = [point.x, point.y, point.z];
                 dot(
                     std::array::from_fn(|index| point[index] - interior[index]),
@@ -648,18 +740,18 @@ pub fn periodic_conic_edge_parameter_range(
                 )
                 .sqrt()
                     <= EPS_AGREE * scale
-            },
+            }),
         )
     };
-    let selected = match (matches_interior(first_arc), matches_interior(second_arc)) {
+    let selected = match (matches_interior(first_arc)?, matches_interior(second_arc)?) {
         (true, false) => first_arc,
         (false, true) => second_arc,
-        _ => return None,
+        _ => return Ok(None),
     };
-    (selected[1] - selected[0] > EPS_NEAR_ZERO).then_some(selected)
+    Ok((selected[1] - selected[0] > EPS_NEAR_ZERO).then_some(selected))
 }
 
-pub fn full_periodic_conic_edge_parameter_range(
+pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],
 ) -> Option<[f64; 2]> {
@@ -679,24 +771,42 @@ pub fn full_periodic_conic_edge_parameter_range(
 }
 
 #[cfg(test)]
+mod native_parameter_tests;
+
+#[cfg(test)]
 mod tests {
-    use super::reverse_nonperiodic_nurbs;
-    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
     #[test]
     fn reversing_nurbs_rejects_overflow_without_mutating_the_carrier() {
-        let original = NurbsCurve::new(
+        let original = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("finite NURBS fixture");
         let mut reversed = original.clone();
 
-        assert!(reverse_nonperiodic_nurbs(&mut reversed, [f64::MAX, f64::MAX]).is_none());
+        let range = [cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite range"); 2];
+        assert!(reversed
+            .reverse_parameterization_in_range(
+                &cadmpeg_test_support::service_decode_context(),
+                range[0],
+                range[1]
+            )
+            .expect("range reversal admission")
+            .is_none());
         assert_eq!(reversed, original);
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;
+
+#[cfg(test)]
+mod evaluation_tests;

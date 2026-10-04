@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
 };
+use super::{mirror_flag_valid, vertical_text_flag_valid};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::ids::CurveId;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -41,19 +42,6 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
-fn finite_point(point: Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-}
-
-fn finite_vector(vector: Vector3) -> bool {
-    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (finite_vector(vector) && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}
-
 fn sectioned_area_pattern_plane(
     record: &ParameterRecord,
     transform: Transform,
@@ -63,45 +51,54 @@ fn sectioned_area_pattern_plane(
     if !z.is_finite() || !length_factor.is_finite() {
         return None;
     }
-    let point = transform.apply_point(Point3::new(0.0, 0.0, z));
+    let point = transform.apply_point(Point3::new(0.0, 0.0, z))?.get();
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
-        .and_then(normalized)?;
-    finite_point(point).then_some((point, normal))
+        .and_then(|normal| cadmpeg_ir::features::FiniteVector3::from(normal).unit_nonzero())?;
+    Some((point, normal))
 }
 
 fn sectioned_area_curves_coplanar(
     ir: &CadIr,
-    sequences: &[u32],
+    sequences: impl Iterator<Item = u32>,
     pattern_plane: (Point3, Vector3),
     resolution: f64,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if !resolution.is_finite() || resolution < 0.0 {
-        return false;
+        return Ok(false);
     }
-    let index = ModelIndex::new(ir);
+    let index = ModelIndex::new_model_only(ir, ctx)?;
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
-    sequences.iter().all(|sequence| {
-        let curve_id =
-            CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
-        let Some(curve) = index.curves(curve_id.as_str()) else {
-            return false;
+    for sequence in sequences {
+        let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
+        let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
+            return Ok(false);
         };
-        if !active.insert(curve_id.clone()) {
-            return false;
+        if active.contains(&curve_id) {
+            return Ok(false);
         }
+        let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
+        ctx.insert_btree_set(&mut active, active_id, "iges section active curves")?;
+        let Some(geometry) = curve.geometry.solved() else {
+            return Ok(false);
+        };
         let valid = curve_geometry_coplanar(
-            &curve.geometry,
+            geometry,
             &index,
             identity,
             pattern_plane,
             resolution,
             &mut active,
-        );
+            ctx,
+        )?;
         active.remove(&curve_id);
-        valid
-    })
+        if !valid {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Maps a directory entry's type and form to its annotation kind, or `None`
@@ -129,7 +126,7 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
 }
 
 fn finite(record: &ParameterRecord, index: usize) -> bool {
-    record.number(index).is_some_and(f64::is_finite)
+    record.number(index).is_some()
 }
 
 fn exact_parameter_count(record: &ParameterRecord, expected: usize) -> bool {
@@ -141,14 +138,6 @@ fn justification_valid(value: i64) -> bool {
 }
 
 fn fixed_or_variable_valid(value: i64) -> bool {
-    matches!(value, 0..=1)
-}
-
-fn mirror_flag_valid(value: i64) -> bool {
-    matches!(value, 0..=2)
-}
-
-fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
@@ -245,16 +234,15 @@ fn general_note_valid_for_global_table(
                     })
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
-                    .is_some_and(f64::is_finite)
-                && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
+                    .is_some()
+                && record.number_or(start + 5, 0.0).is_some()
                 && record
                     .integer_or(start + 6, 0)
                     .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 7, 0)
                     .is_some_and(vertical_text_flag_valid)
-                && (start + 8..=start + 10)
-                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
+                && (start + 8..=start + 10).all(|field| record.number_or(field, 0.0).is_some())
         })
 }
 
@@ -338,7 +326,7 @@ fn new_general_note_valid(
                 .is_some_and(|value| value.is_finite() && value >= 0.0)
         })
         && record.integer_or(3, 0).is_some_and(justification_valid)
-        && (4..=11).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+        && (4..=11).all(|index| record.number_or(index, 0.0).is_some())
         && (0..count).all(|index| {
             let start = 13 + index * 20;
             let fixed = record.integer_or(start, 0);
@@ -371,7 +359,7 @@ fn new_general_note_valid(
                 })
                 && fixed.is_some_and(fixed_or_variable_valid);
             metrics_valid
-                && record.number_or(start + 4, 0.0).is_some_and(f64::is_finite)
+                && record.number_or(start + 4, 0.0).is_some()
                 && record.number_or(start + 6, 0.0).is_some_and(|value| {
                     value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
                 })
@@ -390,18 +378,15 @@ fn new_general_note_valid(
                 && character_set.is_some_and(|value| new_general_note_charset_valid(value, entries))
                 && record
                     .number_or(start + 12, std::f64::consts::FRAC_PI_2)
-                    .is_some_and(f64::is_finite)
-                && record
-                    .number_or(start + 13, 0.0)
-                    .is_some_and(f64::is_finite)
+                    .is_some()
+                && record.number_or(start + 13, 0.0).is_some()
                 && record
                     .integer_or(start + 14, 0)
                     .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 15, 0)
                     .is_some_and(vertical_text_flag_valid)
-                && (start + 16..=start + 18)
-                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
+                && (start + 16..=start + 18).all(|field| record.number_or(field, 0.0).is_some())
         })
 }
 
@@ -461,7 +446,7 @@ fn child_valid(
         entry.entity_type == entity_type
             && forms(entry.form)
             && entry.status.is_physically_dependent()
-            && entry.status.use_flag() == Some(UseFlag::Annotation)
+            && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
             && records
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
@@ -488,7 +473,7 @@ fn general_note_child_valid(
         entry.entity_type == 212
             && crate::profile::general_note_form_admitted(entry.form)
             && entry.status.is_physically_dependent()
-            && entry.status.use_flag() == Some(UseFlag::Annotation)
+            && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
             && records.get(&sequence).is_some_and(|record| {
                 general_note_valid_for_global_table(record, entries, global_table, entry.form)
             })
@@ -522,20 +507,21 @@ fn dimension_enclosure_type_allowed(
 
 fn dimension_children_valid(
     parent: &DirectoryEntry,
-    children: &[u32],
+    mut children: impl Iterator<Item = u32> + Clone,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     let Some(first_transform) = children
-        .first()
-        .and_then(|sequence| entries.get(sequence))
+        .clone()
+        .next()
+        .and_then(|sequence| entries.get(&sequence))
         .map(|entry| entry.transform)
     else {
         return false;
     };
     (parent.transform == 0 || first_transform == 0)
-        && children.iter().all(|sequence| {
+        && children.all(|sequence| {
             entries
-                .get(sequence)
+                .get(&sequence)
                 .is_some_and(|entry| entry.transform == first_transform)
         })
 }
@@ -569,7 +555,6 @@ fn dimension_valid(
     let note = pointer(record, 1, entries);
     let note_valid = note
         .is_some_and(|sequence| general_note_child_valid(sequence, entries, records, global_table));
-    let mut children = note.into_iter().collect::<Vec<_>>();
     let fields_valid = match (entry.entity_type, entry.form) {
         (202, 0) => {
             let witnesses = [record.integer(2), record.integer(3)];
@@ -600,8 +585,6 @@ fn dimension_valid(
                     )
                 })
             });
-            children.extend((2..=3).filter_map(|index| pointer(record, index, entries)));
-            children.extend(leaders.into_iter().flatten());
             exact_parameter_count(record, 9)
                 && witnesses_valid
                 && (4..=5).all(|index| finite(record, index))
@@ -617,13 +600,13 @@ fn dimension_valid(
             let curves_valid = curve_entries[0].is_some_and(|curve| {
                 parameterized_curve_type(curve)
                     && curve.status.is_physically_dependent()
-                    && curve.status.use_flag() == Some(UseFlag::Annotation)
+                    && curve.status.use_flag(global_table) == Some(UseFlag::Annotation)
             }) && match record.integer(3) {
                 Some(0) => true,
                 Some(_) => curve_entries[1].is_some_and(|curve| {
                     parameterized_curve_type(curve)
                         && curve.status.is_physically_dependent()
-                        && curve.status.use_flag() == Some(UseFlag::Annotation)
+                        && curve.status.use_flag(global_table) == Some(UseFlag::Annotation)
                         && !(curve.entity_type == 110
                             && curve_entries[0].is_some_and(|first| first.entity_type == 110))
                 }),
@@ -656,7 +639,6 @@ fn dimension_valid(
                 }),
                 None => false,
             });
-            children.extend((2..=7).filter_map(|index| pointer(record, index, entries)));
             exact_parameter_count(record, 8) && curves_valid && leaders_valid && witnesses_valid
         }
         (206, 0) => {
@@ -685,8 +667,6 @@ fn dimension_valid(
                 }),
                 None => false,
             };
-            children.extend(first);
-            children.extend(second);
             exact_parameter_count(record, 6)
                 && leaders_valid
                 && (4..=5).all(|index| finite(record, index))
@@ -720,8 +700,6 @@ fn dimension_valid(
                 }),
                 None => false,
             });
-            children.extend(leaders.into_iter().flatten());
-            children.extend((4..=5).filter_map(|index| pointer(record, index, entries)));
             exact_parameter_count(record, 6) && leaders_valid && witnesses_valid
         }
         (218, 0) => {
@@ -743,7 +721,6 @@ fn dimension_valid(
                     global_table,
                 )
             });
-            children.extend(ordinate);
             exact_parameter_count(record, 3) && valid
         }
         (218, 1) => {
@@ -768,8 +745,6 @@ fn dimension_valid(
                     global_table,
                 )
             });
-            children.extend(witness);
-            children.extend(leader);
             exact_parameter_count(record, 4) && valid
         }
         (220, 0) => {
@@ -795,13 +770,11 @@ fn dimension_valid(
                             entry.form,
                             global_table,
                         ) && entry.status.is_physically_dependent()
-                            && entry.status.use_flag() == Some(UseFlag::Annotation)
+                            && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     })
                 }),
                 None => false,
             };
-            children.extend(leader);
-            children.extend(enclosure);
             exact_parameter_count(record, 4) && leader_valid && enclosure_valid
         }
         (222, 0..=1) => {
@@ -836,8 +809,6 @@ fn dimension_valid(
                     }),
                     None => false,
                 };
-            children.extend(first);
-            children.extend(second);
             exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 })
                 && first_valid
                 && center_valid
@@ -845,7 +816,21 @@ fn dimension_valid(
         }
         _ => false,
     };
-    note_valid && fields_valid && dimension_children_valid(entry, &children, entries)
+    let child_indexes: &[usize] = match (entry.entity_type, entry.form) {
+        (202, 0) => &[2, 3, 7, 8],
+        (204, 0) => &[2, 3, 4, 5, 6, 7],
+        (206 | 220, 0) | (218, 1) => &[2, 3],
+        (216, 0..=2) => &[2, 3, 4, 5],
+        (218 | 222, 0) => &[2],
+        (222, 1) => &[2, 5],
+        _ => &[],
+    };
+    let children = note.into_iter().chain(
+        child_indexes
+            .iter()
+            .filter_map(|index| pointer(record, *index, entries)),
+    );
+    note_valid && fields_valid && dimension_children_valid(entry, children, entries)
 }
 
 fn flag_or_label_valid(
@@ -883,16 +868,14 @@ fn flag_or_label_valid(
             && (1..=4).all(|index| finite(record, index))
             && note
                 .and_then(|sequence| records.get(&sequence))
-                .and_then(|note| note.count(1))
-                .is_some_and(|strings| {
-                    (0..strings)
-                        .map(|offset| {
-                            note.and_then(|sequence| records.get(&sequence))
-                                .and_then(|note| note.integer(2 + offset * 12))
-                                .unwrap_or_default()
-                        })
-                        .sum::<i64>()
-                        <= 10
+                .is_some_and(|note| {
+                    note.count(1).is_some_and(|strings| {
+                        (0..strings)
+                            .try_fold(0_i64, |total, offset| {
+                                total.checked_add(note.integer(2 + offset * 12).unwrap_or_default())
+                            })
+                            .is_some_and(|total| total <= 10)
+                    })
                 })
     } else {
         count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count))
@@ -915,7 +898,7 @@ fn general_symbol_valid(
         pointer(record, 3 + offset, entries).is_some_and(|sequence| {
             entries.get(&sequence).is_some_and(|target| {
                 target.status.is_physically_dependent()
-                    && target.status.use_flag() == Some(UseFlag::Annotation)
+                    && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
             })
         })
     });
@@ -976,19 +959,30 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // the table fields, global_table, placement, and Global tolerances are distinct validation inputs
+#[derive(Clone, Copy)]
+struct SectionedAreaContext {
+    global_table: GlobalTable,
+    transform: Transform,
+    length_factor: f64,
+    resolution: f64,
+}
+
 fn sectioned_area_valid(
     ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     form: i64,
-    global_table: GlobalTable,
-    transform: Transform,
-    length_factor: f64,
-    resolution: f64,
-) -> bool {
+    context: SectionedAreaContext,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let SectionedAreaContext {
+        global_table,
+        transform,
+        length_factor,
+        resolution,
+    } = context;
     if !matches!(form, 0 | 1) {
-        return false;
+        return Ok(false);
     }
     let boundary_sequence = match record.integer(1) {
         Some(0) if form == 1 => Some(None),
@@ -1004,32 +998,31 @@ fn sectioned_area_valid(
         })
     });
     let Some(island_count) = record.count(8) else {
-        return false;
+        return Ok(false);
     };
     if form == 1 && island_count == 0 {
-        return false;
+        return Ok(false);
     }
-    let island_sequences = (0..island_count)
-        .map(|offset| pointer(record, 9 + offset, entries))
-        .collect::<Option<Vec<_>>>();
-    let islands_valid = island_sequences.as_ref().is_some_and(|islands| {
-        islands.iter().all(|sequence| {
+    let islands_valid = (0..island_count).all(|offset| {
+        pointer(record, 9 + offset, entries).is_some_and(|sequence| {
             entries
-                .get(sequence)
+                .get(&sequence)
                 .is_some_and(|entry| section_boundary_type(entry))
         })
     });
     let definition_sequences = boundary_sequence
         .into_iter()
         .flatten()
-        .chain(island_sequences.iter().flatten().copied())
-        .collect::<Vec<_>>();
-    let coplanarity_valid = matches!(global_table, GlobalTable::V4_0)
-        || sectioned_area_pattern_plane(record, transform, length_factor).is_some_and(
-            |pattern_plane| {
-                sectioned_area_curves_coplanar(ir, &definition_sequences, pattern_plane, resolution)
-            },
-        );
+        .chain((0..island_count).filter_map(|offset| pointer(record, 9 + offset, entries)));
+    let coplanarity_valid = if matches!(global_table, GlobalTable::V4_0) {
+        true
+    } else if let Some(pattern_plane) =
+        sectioned_area_pattern_plane(record, transform, length_factor)
+    {
+        sectioned_area_curves_coplanar(ir, definition_sequences, pattern_plane, resolution, ctx)?
+    } else {
+        false
+    };
     let pattern = record
         .integer(2)
         .filter(|value| fill_pattern_valid_for_global_table(*value, global_table));
@@ -1046,11 +1039,11 @@ fn sectioned_area_valid(
                 && finite_or_omitted(record, 7)
         }
     });
-    boundary_valid
+    Ok(boundary_valid
         && pattern_parameters_valid
         && islands_valid
         && coplanarity_valid
-        && exact_parameter_count(record, 9 + island_count)
+        && exact_parameter_count(record, 9 + island_count))
 }
 
 pub(super) fn project(
@@ -1058,16 +1051,26 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    ctx: &DecodeContext<'_>,
+) -> Result<ProjectionOutcome, CodecError> {
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        ctx.insert_btree_map(
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges annotation parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        ctx.insert_btree_map(
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges annotation directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -1075,70 +1078,100 @@ pub(super) fn project(
         .iter()
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
-        let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let resolved_transform = resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                global.length_factor_mm(),
-                global.real_precision(),
-                &mut BTreeSet::new(),
-                ctx,
-            )
-            .ok();
-            let transform_valid = resolved_transform.is_some();
-            entry.status.use_flag() == Some(UseFlag::Annotation)
-                && transform_valid
-                && match kind {
-                    AnnotationKind::AngularDimension
-                    | AnnotationKind::CurveDimension
-                    | AnnotationKind::DiameterDimension
-                    | AnnotationKind::LinearDimension
-                    | AnnotationKind::OrdinateDimension
-                    | AnnotationKind::PointDimension
-                    | AnnotationKind::RadiusDimension => {
-                        dimension_valid(entry, record, &entries, &records, global.global_table())
+        let valid = records
+            .get(&entry.sequence)
+            .map(|record| -> Result<bool, CodecError> {
+                let resolved_transform = match resolve_transform(
+                    entry.transform,
+                    &entries,
+                    &records,
+                    global.length_factor_mm(),
+                    global.real_precision(),
+                    &mut BTreeSet::new(),
+                    ctx,
+                ) {
+                    Ok(transform) => Some(transform),
+                    Err(error) => {
+                        error.non_resource()?;
+                        None
                     }
-                    AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => flag_or_label_valid(
-                        entry,
-                        record,
-                        &entries,
-                        &records,
-                        global.global_table(),
-                    ),
-                    AnnotationKind::GeneralNote => general_note_valid_for_global_table(
-                        record,
-                        &entries,
-                        global.global_table(),
-                        entry.form,
-                    ),
-                    AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
-                    AnnotationKind::Leader => {
-                        leader_valid_for_global_table(entry, record, global.global_table())
-                    }
-                    AnnotationKind::GeneralSymbol => general_symbol_valid(
-                        record,
-                        &entries,
-                        &records,
-                        entry.form,
-                        global.global_table(),
-                    ),
-                    AnnotationKind::SectionedArea => resolved_transform.is_some_and(|transform| {
-                        sectioned_area_valid(
-                            ir,
-                            record,
-                            &entries,
-                            entry.form,
-                            global.global_table(),
-                            transform.body_transform(),
-                            global.length_factor_mm(),
-                            global.minimum_resolution_mm(),
-                        )
-                    }),
-                }
-        });
+                };
+                let transform_valid = resolved_transform.is_some();
+                Ok(
+                    entry.status.use_flag(global.global_table()) == Some(UseFlag::Annotation)
+                        && transform_valid
+                        && match kind {
+                            AnnotationKind::AngularDimension
+                            | AnnotationKind::CurveDimension
+                            | AnnotationKind::DiameterDimension
+                            | AnnotationKind::LinearDimension
+                            | AnnotationKind::OrdinateDimension
+                            | AnnotationKind::PointDimension
+                            | AnnotationKind::RadiusDimension => dimension_valid(
+                                entry,
+                                record,
+                                &entries,
+                                &records,
+                                global.global_table(),
+                            ),
+                            AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
+                                flag_or_label_valid(
+                                    entry,
+                                    record,
+                                    &entries,
+                                    &records,
+                                    global.global_table(),
+                                )
+                            }
+                            AnnotationKind::GeneralNote => general_note_valid_for_global_table(
+                                record,
+                                &entries,
+                                global.global_table(),
+                                entry.form,
+                            ),
+                            AnnotationKind::NewGeneralNote => {
+                                new_general_note_valid(record, &entries)
+                            }
+                            AnnotationKind::Leader => {
+                                leader_valid_for_global_table(entry, record, global.global_table())
+                            }
+                            AnnotationKind::GeneralSymbol => general_symbol_valid(
+                                record,
+                                &entries,
+                                &records,
+                                entry.form,
+                                global.global_table(),
+                            ),
+                            AnnotationKind::SectionedArea => {
+                                if let Some(transform) = resolved_transform {
+                                    sectioned_area_valid(
+                                        ir,
+                                        record,
+                                        &entries,
+                                        entry.form,
+                                        SectionedAreaContext {
+                                            global_table: global.global_table(),
+                                            transform,
+                                            length_factor: global.length_factor_mm(),
+                                            resolution: global.minimum_resolution_mm(),
+                                        },
+                                        ctx,
+                                    )?
+                                } else {
+                                    false
+                                }
+                            }
+                        },
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
         if valid {
-            decoded.insert(entry.sequence);
+            ctx.insert_btree_set(
+                &mut decoded,
+                entry.sequence,
+                "iges annotation decoded sequences",
+            )?;
         } else {
             let message = match kind {
                 AnnotationKind::AngularDimension
@@ -1162,11 +1195,11 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            losses.push(entity_loss(entry, message));
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
         }
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

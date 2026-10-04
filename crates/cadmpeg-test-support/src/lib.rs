@@ -8,10 +8,35 @@ use std::ops::{Deref, DerefMut};
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
 
+pub mod admissibility;
+pub mod assembly;
+pub mod bytes;
+pub mod compound;
+pub mod decode;
+pub mod detection;
+pub mod edit;
 pub mod golden;
+pub mod native_serialization;
+pub mod refusal;
 pub mod roundtrip;
+pub mod unknown_keys;
+pub mod wire;
+
+/// A service-policy decode context for a test that creates native records
+/// without reading a source file.
+#[must_use]
+pub fn service_decode_context() -> cadmpeg_core::decode::DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty test input fits the service policy")
+    .0
+}
 
 /// Editable parts of a consumed decode result for writer tests.
 ///
@@ -44,7 +69,10 @@ impl EditableDecodeResult {
 
     /// Edit the IR and restore canonical order when the guard is dropped.
     pub fn ir_mut(&mut self) -> impl DerefMut<Target = CadIr> + '_ {
-        FinalizingEdit::new(&mut self.ir, CadIr::finalize)
+        FinalizingEdit::new(&mut self.ir, |ir| {
+            ir.finalize(&service_decode_context())
+                .expect("fixture ordering is admitted");
+        })
     }
 
     /// Borrow the decode report.
@@ -59,9 +87,10 @@ impl EditableDecodeResult {
         &self.source_fidelity
     }
 
-    /// Edit source fidelity and restore canonical order when the guard drops.
-    pub fn source_fidelity_mut(&mut self) -> impl DerefMut<Target = SourceFidelity> + '_ {
-        FinalizingEdit::new(&mut self.source_fidelity, SourceFidelity::finalize)
+    /// Edit source fidelity. Its retained records are keyed by id, so the
+    /// canonical order holds by construction.
+    pub const fn source_fidelity_mut(&mut self) -> &mut SourceFidelity {
+        &mut self.source_fidelity
     }
 
     /// Consume the editable value into IR, report, and source fidelity.
@@ -104,12 +133,12 @@ impl<T> Drop for FinalizingEdit<'_, T> {
 }
 
 /// Assert that a codec enum and its reportable identity-registry rows are equal.
-pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
+pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) -> Result<(), toml::de::Error> {
     let enum_ids = ids
         .iter()
         .map(|id| id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
-    let registry_ids = registry_ids(format);
+    let registry_ids = registry_ids(format)?;
 
     assert_eq!(
         enum_ids.len(),
@@ -120,6 +149,7 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
         enum_ids, registry_ids,
         "the codec enum and identity registry disagree"
     );
+    Ok(())
 }
 
 /// Reportable dialect ids under one format prefix in the identity registry.
@@ -129,25 +159,28 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
 /// Rows marked `detect-unreachable` describe identification failures that
 /// cannot produce a [`cadmpeg_core::dialect::DialectMatch`], so codec enums do
 /// not own variants for them.
-#[must_use]
-pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
-    // This crate is `publish = false`, so reading the sibling crate's file is safe.
-    let registry: toml::Value =
-        toml::from_str(include_str!("../../cadmpeg-registry/docs/dialects.toml"))
-            .expect("crates/cadmpeg-registry/docs/dialects.toml parses as TOML");
+pub fn registry_ids(prefix: &str) -> Result<BTreeSet<String>, toml::de::Error> {
+    #[derive(serde::Deserialize)]
+    struct Registry {
+        dialect: Vec<Row>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Row {
+        id: String,
+        unknown_kind: Option<String>,
+    }
+
+    let registry: Registry =
+        toml::from_str(include_str!("../../cadmpeg-registry/docs/dialects.toml"))?;
     let prefix = format!("{prefix}:");
     let ids = registry
-        .get("dialect")
-        .and_then(toml::Value::as_array)
-        .expect("crates/cadmpeg-registry/docs/dialects.toml declares dialect rows")
-        .iter()
-        .filter(|row| {
-            row.get("unknown_kind").and_then(toml::Value::as_str) != Some("detect-unreachable")
-        })
-        .filter_map(|row| row.get("id").and_then(toml::Value::as_str))
+        .dialect
+        .into_iter()
+        .filter(|row| row.unknown_kind.as_deref() != Some("detect-unreachable"))
+        .map(|row| row.id)
         .filter(|id| id.starts_with(&prefix))
-        .map(str::to_owned)
         .collect::<BTreeSet<_>>();
     assert!(!ids.is_empty(), "the registry declares no {prefix} rows");
-    ids
+    Ok(ids)
 }

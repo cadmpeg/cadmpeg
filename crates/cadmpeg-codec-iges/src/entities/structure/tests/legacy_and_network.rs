@@ -1,4 +1,29 @@
-use super::*;
+use crate::directory::DirectoryEntry;
+use crate::directory::SourceStatus;
+use crate::entities::structure::network_connectivity_valid;
+use crate::entities::structure::subfigure_definition_directory_fields_valid;
+use crate::global::GlobalTable;
+use crate::loss::IgesLossCode;
+use crate::test_support::test_drawing_and_trimming::{
+    admitted_containing_network_file, admitted_containing_subfigure_file,
+    connected_network_subfigure_file, invalid_subfigure_depth_file,
+    invalid_top_level_occurrence_structure_file, legacy_text_node_font_pointer_file,
+    malformed_network_occurrence_definition_file, malformed_occurrence_definition_file,
+    malformed_occurrence_placement_file, nested_subfigure_file, network_subfigure_file,
+    occurrence_depth_limit_file, occurrence_limit_file, recalculable_dimension_associativity_file,
+    recalculable_dimension_associativity_file_with_orientation, rejected_containing_network_file,
+    rejected_containing_subfigure_file, transformed_subfigure_definition_file, units_data_file,
+    units_data_scope_file, wrong_typed_network_definition_file, wrong_typed_network_instance_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::solid_assembly_file;
+use crate::IgesCodec;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn decode_resolves_legacy_text_node_font_pointer() {
@@ -562,76 +587,66 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 }
 
 #[test]
-fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
-    let result = crate::reader::decode_with_test_occurrence_limits(
-        &occurrence_limit_file(),
-        DecodeOptions::default(),
-        100,
-        crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
-    )
-    .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
-
-    assert_eq!(native.arenas()["product_occurrences"].len(), 100);
-    let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["output_limit"], 100);
-    assert_eq!(expansion.fields()["depth_limit"], 64);
-    assert_eq!(expansion.fields()["emitted"], 100);
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "output_limit");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message == "IGES product occurrence expansion reached its configured output limit"
-    }));
-    let loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind())
-        .unwrap();
-    assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D203")
-    );
+fn decode_refuses_product_occurrence_output_exhaustion() {
+    for mode in [
+        cadmpeg_core::decode::DecodeMode::Strict,
+        cadmpeg_core::decode::DecodeMode::Salvage,
+    ] {
+        let mut options = DecodeOptions::default();
+        options.policy.mode = mode;
+        let error = crate::reader::decode_with_test_occurrence_limits(
+            &occurrence_limit_file(),
+            options,
+            100,
+            crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
+                    && limit.limit == 100
+                    && limit.used == 100
+                    && limit.additional == 1
+        ));
+    }
 }
 
 #[test]
-fn decode_reports_product_occurrence_depth_truncation() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(occurrence_depth_limit_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
+fn decode_refuses_product_occurrence_member_output_exhaustion() {
+    let error = crate::reader::decode_with_test_occurrence_limits(
+        &nested_subfigure_file(),
+        DecodeOptions::default(),
+        1,
+        crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+    )
+    .unwrap_err();
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
+                && limit.limit == 1 && limit.additional == 1));
+}
 
-    assert_eq!(native.arenas()["product_occurrences"].len(), 64);
-    let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(
-        expansion.fields()["output_limit"],
-        crate::native::MAX_PRODUCT_OCCURRENCES
-    );
-    assert_eq!(expansion.fields()["depth_limit"], 64);
-    assert_eq!(expansion.fields()["emitted"], 64);
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "depth_limit");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES product occurrence expansion reached its configured nesting-depth limit"
-    }));
-    let loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionDepthTruncated.kind())
-        .unwrap();
-    assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D259")
-    );
+#[test]
+fn decode_refuses_product_occurrence_depth_exhaustion() {
+    for mode in [
+        cadmpeg_core::decode::DecodeMode::Strict,
+        cadmpeg_core::decode::DecodeMode::Salvage,
+    ] {
+        let mut options = DecodeOptions::default();
+        options.policy.mode = mode;
+        let error = IgesCodec
+            .decode(&mut Cursor::new(occurrence_depth_limit_file()), &options)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_depth")
+                    && limit.limit == 64
+                    && limit.used == 64
+                    && limit.additional == 1
+        ));
+    }
 }
 
 #[test]
@@ -646,7 +661,7 @@ fn decode_applies_the_session_recursion_limit_to_product_occurrences() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.context.operation == "iges_product_occurrence"
+                && limit.operation == "iges_product_occurrence"
     ));
 }
 
@@ -761,8 +776,11 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], false);
-    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(
+        expansion.fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
     assert_eq!(
         result
             .report()
@@ -786,8 +804,11 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], false);
-    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(
+        expansion.fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
 
     let admitted = IgesCodec
         .decode(
@@ -833,8 +854,11 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], false);
-    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(
+        expansion.fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
 
     let admitted = IgesCodec
         .decode(
@@ -985,10 +1009,7 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes(
-            [0, subordinate, use_flag, hierarchy],
-            crate::global::GlobalTable::V5Later,
-        ),
+        status: SourceStatus::from_codes([0, subordinate, use_flag, hierarchy]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -1227,4 +1248,49 @@ fn connect_point_function_code_extension_is_v5_only() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["product_occurrences"].is_empty());
+    assert_eq!(
+        native.arenas()["product_occurrence_expansion"][0].fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
+}
+
+#[test]
+fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
+    let source = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETDEF".into(),
+            status: "00000100",
+            parameters: "320,0,6HNETDEF,0,0,3HREF,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,0,0,0,1,,,,2HNI,0,-1;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["product_occurrences"].is_empty());
+    assert_eq!(
+        native.arenas()["product_occurrence_expansion"][0].fields()["issues"],
+        serde_json::json!(["malformed_placement"])
+    );
 }

@@ -1,0 +1,1439 @@
+use cadmpeg_test_support::edit;
+
+use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
+use crate::decode::analytic::pcurve_geometry::{
+    meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
+};
+use crate::decode::analytic::pcurves::{
+    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
+    oriented_native_pcurve_endpoints, planar_curve_pcurve, unique_oriented_native_pcurve,
+    OrientedNativePcurve,
+};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use std::collections::BTreeMap;
+
+const EPS_LATITUDE_RADIUS: f64 = 1.0e-12;
+
+fn solve_pcurve_vertex_domains(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+) -> BTreeMap<u32, [f64; 3]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::solve_pcurve_vertex_domains(
+            ctx,
+            constraints,
+            fixed_points,
+            analytic_domains,
+            incident_curves,
+        )
+    })
+    .expect("service pcurve vertex domains")
+}
+
+fn solve_pcurve_vertex_domains_with_authoritative_points(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+    authoritative_points: &BTreeMap<u32, [f64; 3]>,
+) -> BTreeMap<u32, [f64; 3]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::solve_pcurve_vertex_domains_with_authoritative_points(
+            ctx,
+            constraints,
+            fixed_points,
+            analytic_domains,
+            incident_curves,
+            authoritative_points,
+        )
+    })
+    .expect("service authoritative pcurve domains")
+}
+
+fn pcurve_domain_limit_error(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    limit: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::solve_pcurve_vertex_domains_with_authoritative_points(
+        &ctx,
+        constraints,
+        fixed_points,
+        analytic_domains,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect_err("pcurve domain collection exceeds limit")
+}
+
+fn assert_pcurve_domain_refusal(error: &CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn path_activity_result(limit: u64) -> Result<super::PcurvePathActivity, CodecError> {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
+            curve_id: 7,
+            side: crate::topology::Side::Zero,
+        }],
+    ));
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 7,
+            type_byte: 0,
+            feature_id: 0,
+            directions: [0x01, 0xf6],
+            faces: [std::num::NonZeroU32::new(5), None],
+            next_edges: [7, 0],
+            offset: 0,
+        });
+    scan.curves
+        .prototype_topology
+        .push(crate::curve::CurvePrototypeTopology {
+            curve_id: 8,
+            faces: [std::num::NonZeroU32::new(6), None],
+            next_edges: [8, 0],
+            offset: 0,
+        });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::PcurvePathActivity::from_scan(&ctx, &scan)
+}
+
+#[test]
+fn pcurve_path_activity_refuses_active_path_node() {
+    assert_pcurve_domain_refusal(
+        &path_activity_result(0).expect_err("active path exceeds limit"),
+        "creo active pcurve path nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_topology_face_node() {
+    assert_pcurve_domain_refusal(
+        &path_activity_result(3).expect_err("topology face exceeds limit"),
+        "creo pcurve topology face nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_prototype_count_node() {
+    assert_pcurve_domain_refusal(
+        &path_activity_result(4).expect_err("prototype count exceeds limit"),
+        "creo pcurve prototype count nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_prototype_face_node() {
+    assert_pcurve_domain_refusal(
+        &path_activity_result(5).expect_err("prototype face exceeds limit"),
+        "creo pcurve prototype face nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_keeps_service_paths() {
+    let activity = path_activity_result(1_000_000).expect("service path activity");
+    assert_eq!(
+        activity.selected_paths(7, [std::num::NonZeroU32::new(5), None], false),
+        Some([true, false]),
+    );
+    assert_eq!(
+        activity.selected_paths(8, [std::num::NonZeroU32::new(6), None], true),
+        Some([false, false]),
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_self_loop_node() {
+    let point = [1.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(
+            &[([1, 1], [point, point])],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            0,
+        ),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_self_loop_point() {
+    let point = [1.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(
+            &[([1, 1], [point, point])],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            1,
+        ),
+        "creo pcurve domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_two_vertex_node() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_two_vertex_points() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 1),
+        "creo pcurve domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_analytic_domain_node() {
+    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_analytic_domain_points() {
+    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 1),
+        "creo analytic domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_fixed_domain_node() {
+    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_fixed_domain_point() {
+    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 1),
+        "creo fixed domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_retained_first_domain() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 6),
+        "creo retained first pcurve domain",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_retained_second_domain() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 8),
+        "creo retained second pcurve domain",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_solved_vertex_node() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    let fixed = BTreeMap::from([(1, a), (2, b)]);
+    assert_pcurve_domain_refusal(
+        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &fixed, &BTreeMap::new(), 8),
+        "creo solved pcurve vertex nodes",
+    );
+}
+
+#[test]
+fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
+    let mut ir = CadIr::empty();
+    for (id, normal, u_axis) in [
+        (1, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
+    ] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::from(normal),
+                    Vector3::from(u_axis),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        });
+    }
+    assert_eq!(
+        mapped_pcurve_endpoints(
+            &ir,
+            [1, 2],
+            [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [4.0, 3.0]]],
+        )
+        .expect("evaluator allocation succeeds"),
+        Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
+    );
+    assert!(mapped_pcurve_endpoints(
+        &ir,
+        [1, 2],
+        [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [5.0, 3.0]]],
+    )
+    .expect("evaluator allocation succeeds")
+    .is_none());
+}
+
+#[test]
+fn maps_linear_pcurves_to_exact_analytic_carriers() {
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            0.25,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    ));
+
+    assert!(matches!(
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &plane, [[1.0, 2.0], [3.0, 4.0]])
+        })
+        .expect("evaluation resources"),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
+    ));
+    assert!(matches!(
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [1.0, 4.0]])
+        })
+        .expect("evaluation resources"),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
+    ));
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 2.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        if {
+            let radius = circle_curve.radius().get();
+            radius == 2.0
+        })
+    );
+    assert!(matches!(
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [1.0, 4.0]])
+        })
+        .expect("evaluation resources"),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
+    ));
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [2.0, 2.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
+                if {
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    major_radius > minor_radius
+                })
+    );
+    assert!(({
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("root");
+        linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 4.0]])
+    })
+    .expect("evaluation resources")
+    .is_none());
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &sphere, [[1.0, 2.0], [1.0, 4.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        if {
+            let radius = circle_curve.radius().get();
+            radius == 2.0
+        })
+    );
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &sphere, [[1.0, 0.25], [2.0, 0.25]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        if {
+            let radius = circle_curve.radius().get();
+            (radius - 2.0 * 0.25_f64.cos()).abs() <= EPS_LATITUDE_RADIUS
+        })
+    );
+
+    let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            1.0,
+        )
+        .expect("valid TorusSurface fixture"),
+    ));
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &torus, [[0.5, 0.0], [0.5, 1.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        if {
+            let radius = circle_curve.radius().get();
+            radius == 1.0
+        })
+    );
+    assert!(
+        matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &torus, [[0.5, 0.0], [1.0, 0.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        if {
+            let radius = circle_curve.radius().get();
+            radius == 4.0
+        })
+    );
+}
+
+#[test]
+fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    let c = [3.0, 0.0, 0.0];
+    let constraints = [([1, 2], [a, b]), ([2, 3], [c, b])];
+    assert_eq!(
+        solve_pcurve_vertex_domains(
+            &constraints,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        ),
+        BTreeMap::from([(1, a), (2, b), (3, c)])
+    );
+    assert!(solve_pcurve_vertex_domains(
+        &constraints[..1],
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .is_empty());
+    assert!(solve_pcurve_vertex_domains(
+        &constraints,
+        &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .is_empty());
+
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::from(a),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    assert_eq!(
+        solve_pcurve_vertex_domains(
+            &constraints[..1],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::from([(1, vec![&line])]),
+        ),
+        BTreeMap::from([(1, a), (2, b)])
+    );
+
+    let analytic_domains = BTreeMap::from([(1, vec![a, c])]);
+    assert!(solve_pcurve_vertex_domains(
+        &[],
+        &BTreeMap::new(),
+        &analytic_domains,
+        &BTreeMap::new(),
+    )
+    .is_empty());
+    assert_eq!(
+        solve_pcurve_vertex_domains(
+            &constraints[..1],
+            &BTreeMap::new(),
+            &analytic_domains,
+            &BTreeMap::new(),
+        ),
+        BTreeMap::from([(1, a), (2, b)])
+    );
+}
+
+#[test]
+fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
+    let witness = [1.0, 0.0, 0.0];
+    let adjacent = [2.0, 0.0, 0.0];
+    let inferred = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(9.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    let constraints = [([1, 2], [witness, adjacent])];
+    let analytic_domains = BTreeMap::from([(1, vec![[9.0, 0.0, 0.0]])]);
+    let incident_curves = BTreeMap::from([(1, vec![&inferred])]);
+
+    assert!(solve_pcurve_vertex_domains(
+        &constraints,
+        &BTreeMap::new(),
+        &analytic_domains,
+        &incident_curves,
+    )
+    .is_empty());
+    assert_eq!(
+        solve_pcurve_vertex_domains_with_authoritative_points(
+            &constraints,
+            &BTreeMap::from([(1, witness), (2, adjacent)]),
+            &analytic_domains,
+            &incident_curves,
+            &BTreeMap::from([(1, witness)]),
+        ),
+        BTreeMap::from([(1, witness), (2, adjacent)])
+    );
+}
+
+#[test]
+fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
+
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid boundary NURBS"),
+    ));
+    assert_eq!(
+        nonperiodic_nurbs_endpoint_points(&evaluation_ctx, &geometry)
+            .expect("evaluation resources"),
+        Some([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    );
+
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut periodic)) = geometry else {
+        unreachable!("test geometry is NURBS");
+    };
+    {
+        let replacement = true;
+        edit::replace(&mut periodic, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &evaluation_ctx,
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+            .expect("fixture final NURBS admission")
+        })
+        .expect("admitted periodic fixture");
+    };
+    assert!(nonperiodic_nurbs_endpoint_points(
+        &evaluation_ctx,
+        &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(periodic))
+    )
+    .expect("evaluation resources")
+    .is_none());
+}
+
+#[test]
+fn boundary_nurbs_endpoints_propagate_as_unordered_edge_constraints() {
+    let first = [0.0, 0.0, 0.0];
+    let middle = [1.0, 0.0, 0.0];
+    let last = [2.0, 0.0, 0.0];
+    let constraints = [([1, 2], [first, middle]), ([2, 3], [last, middle])];
+    assert_eq!(
+        solve_pcurve_vertex_domains(
+            &constraints,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        ),
+        BTreeMap::from([(1, first), (2, middle), (3, last)])
+    );
+}
+
+#[test]
+fn pcurve_direction_flags_assign_endpoint_order() {
+    let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    assert_eq!(directed_pcurve_points([0x01, 0xf6], points), Some(points));
+    assert_eq!(
+        directed_pcurve_points([0xf6, 0x01], points),
+        Some([points[1], points[0]])
+    );
+    assert_eq!(directed_pcurve_points([0x01, 0x01], points), None);
+}
+
+fn plane() -> SurfaceGeometry {
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ))
+}
+
+fn assert_pcurve_matches_curve(
+    surface: &SurfaceGeometry,
+    curve: &CurveGeometry,
+    pcurve: &PcurveGeometry,
+    parameters: &[f64],
+) {
+    for parameter in parameters {
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            pcurve,
+            *parameter,
+        )
+        .expect("pcurve point");
+        let mapped = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("surface point");
+        let expected = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            curve,
+            *parameter,
+        )
+        .expect("curve point");
+        assert!((mapped.x - expected.x).abs() <= 1.0e-10);
+        assert!((mapped.y - expected.y).abs() <= 1.0e-10);
+        assert!((mapped.z - expected.z).abs() <= 1.0e-10);
+    }
+}
+
+#[test]
+fn orients_uv_endpoints_by_the_coedge_traversal() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
+
+    let endpoints = [[2.0, 4.0], [5.0, 7.0]];
+    assert_eq!(
+        oriented_native_pcurve_endpoints(
+            &evaluation_ctx,
+            &plane(),
+            endpoints,
+            [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],
+        )
+        .expect("evaluation resources"),
+        Some([endpoints[1], endpoints[0]])
+    );
+}
+
+#[test]
+fn withholds_uv_endpoints_that_do_not_map_to_the_edge() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
+
+    assert_eq!(
+        oriented_native_pcurve_endpoints(
+            &evaluation_ctx,
+            &plane(),
+            [[2.0, 4.0], [5.0, 7.0]],
+            [[2.0, 4.0, 3.0], [9.0, 7.0, 3.0]],
+        )
+        .expect("evaluation resources"),
+        None
+    );
+}
+
+#[test]
+fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
+
+    let traversal = [[2.0, 4.0, 3.0], [5.0, 7.0, 3.0]];
+    let endpoints = [[2.0, 4.0], [5.0, 7.0]];
+    assert_eq!(
+        unique_oriented_native_pcurve(
+            &evaluation_ctx,
+            &plane(),
+            &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
+            traversal,
+        )
+        .expect("evaluation resources"),
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 10,
+        })
+    );
+    assert_eq!(
+        unique_oriented_native_pcurve(
+            &evaluation_ctx,
+            &plane(),
+            &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
+            traversal,
+        )
+        .expect("evaluation resources"),
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 20,
+        })
+    );
+
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    assert_eq!(
+        unique_oriented_native_pcurve(
+            &evaluation_ctx,
+            &cylinder,
+            &[
+                ([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 10),
+                (
+                    [
+                        [std::f64::consts::TAU, 0.0],
+                        [std::f64::consts::TAU + std::f64::consts::FRAC_PI_2, 0.0],
+                    ],
+                    20,
+                ),
+            ],
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        )
+        .expect("evaluation resources"),
+        None
+    );
+}
+
+#[test]
+fn projects_exact_planar_carriers_without_changing_parameters() {
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(2.0, 4.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(
+        matches!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar circle"), Some(PcurveGeometry::Circle(circle_pcurve))
+                if {
+                    let center = circle_pcurve.center();
+        let x_axis = circle_pcurve.x_axis();
+        let y_axis = circle_pcurve.y_axis();
+        let radius = circle_pcurve.radius();
+                    *center == Point2::new(2.0, 4.0)
+                        && *x_axis == Point2::new(0.0, 1.0)
+                        && *y_axis == Point2::new(-1.0, 0.0)
+                        && radius.get() == 2.0
+                })
+    );
+
+    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid planar NURBS"),
+    ));
+    assert!(matches!(
+        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar NURBS"),
+        Some(PcurveGeometry::Nurbs { nurbs })
+            if nurbs.degree() == 1
+                && nurbs.knots().as_slice() == [2.0, 2.0, 5.0, 5.0]
+                && nurbs.control_points()
+                    == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
+                && nurbs.pole_rows().weights() == Some(vec![2.0, 1.0])
+                && !nurbs.periodic()
+    ));
+
+    let off_plane = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 3.1),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(
+            ctx,
+            &plane(),
+            &off_plane,
+            &"off-plane fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("service profile admits off-plane candidate")
+        .is_none()
+    );
+}
+
+fn planar_nurbs_limit_error(max_collection_items: u64) -> cadmpeg_core::CodecError {
+    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid planar NURBS"),
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    planar_curve_pcurve(
+        &ctx,
+        &plane(),
+        &nurbs,
+        &"nurbs fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("planar NURBS copy exceeds limit")
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_knot_copy() {
+    let error = planar_nurbs_limit_error(2);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo planar projected NURBS knots")
+    );
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_pole_copy() {
+    let error = planar_nurbs_limit_error(0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo planar projected NURBS poles")
+    );
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
+    let diagonal_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(
+                std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+            ),
+        )
+        .expect("valid diagonal plane"),
+    ));
+    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(f64::MAX, f64::MAX, 3.0); 2],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("finite source poles"),
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo planar projected NURBS refusal text"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            planar_curve_pcurve(
+                &trial_ctx,
+                &diagonal_plane,
+                &nurbs,
+                &"nonfinite projection",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        },
+    );
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = planar_curve_pcurve(
+        &ctx,
+        &diagonal_plane,
+        &nurbs,
+        &"nonfinite projection",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("nonfinite projection reason exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo planar projected NURBS refusal text")
+    );
+}
+
+#[test]
+fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 8.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cylinder pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("cylinder-circle pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 5.0).abs() <= 1.0e-12);
+    assert_eq!(*direction, Point2::new(-1.0, 0.0));
+    assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-2.0, 0.0, 1.25, 4.0]);
+
+    let off_axis = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.1, 2.0, 8.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(surface_of_revolution_parallel_pcurve(&surface, &off_axis).is_none());
+}
+
+#[test]
+fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
+    for (height, radius, expected_phase) in [(3.0, 5.0, 0.0), (-3.0, 1.0, std::f64::consts::PI)] {
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, height),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        ));
+        let pcurve =
+            surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cone section pcurve");
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+            panic!("cone-circle pcurve: {pcurve:#?}");
+        };
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - height).abs() <= 1.0e-12);
+        assert_eq!(*direction, Point2::new(1.0, 0.0));
+        assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+    }
+
+    let elliptical = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(surface_of_revolution_parallel_pcurve(&elliptical, &circle).is_none());
+    for (height, major_radius, minor_radius, expected_phase) in
+        [(3.0, 5.0, 2.5, 0.0), (-3.0, 1.0, 0.5, std::f64::consts::PI)]
+    {
+        let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                Point3::new(0.0, 0.0, height),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                major_radius,
+                minor_radius,
+            )
+            .expect("valid EllipseCurve fixture"),
+        ));
+        let pcurve = surface_of_revolution_parallel_pcurve(&elliptical, &ellipse)
+            .expect("elliptical cone parallel pcurve");
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+            panic!("cone-ellipse pcurve: {pcurve:#?}");
+        };
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - height).abs() <= 1.0e-12);
+        assert_eq!(*direction, Point2::new(1.0, 0.0));
+        assert_pcurve_matches_curve(&elliptical, &ellipse, &pcurve, &[-1.0, 0.0, 2.0]);
+    }
+}
+
+#[test]
+fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    ));
+    for axial in [-3.0, 3.0] {
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0 + axial),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        ));
+        let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
+            .expect("sphere latitude pcurve");
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+            panic!("sphere-circle pcurve: {pcurve:#?}");
+        };
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+        assert!((origin.v - axial.atan2(4.0)).abs() <= 1.0e-12);
+        assert_eq!(*direction, Point2::new(1.0, 0.0));
+        assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+    }
+
+    let invalid_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 6.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.1,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(surface_of_revolution_parallel_pcurve(&surface, &invalid_circle).is_none());
+}
+
+#[test]
+fn projects_torus_parallel_circles_with_signed_ring_branches() {
+    for (major_radius, minor_radius, polar, circle_radius, expected_phase) in [
+        (4.0, 1.0, std::f64::consts::FRAC_PI_2, 4.0, 0.0),
+        (1.0, 2.0, std::f64::consts::PI, 1.0, std::f64::consts::PI),
+    ] {
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                major_radius,
+                minor_radius,
+            )
+            .expect("valid TorusSurface fixture"),
+        ));
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, minor_radius * polar.sin()),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                circle_radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        ));
+        let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
+            .expect("torus parallel pcurve");
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+            panic!("torus-circle pcurve: {pcurve:#?}");
+        };
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - polar).sin().abs() <= 1.0e-12);
+        assert!(((origin.v - polar).cos() - 1.0).abs() <= 1.0e-12);
+        assert_eq!(*direction, Point2::new(1.0, 0.0));
+        assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+    }
+}
+
+#[test]
+fn projects_torus_meridian_circles_with_native_angle_phase() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            1.5,
+        )
+        .expect("valid TorusSurface fixture"),
+    ));
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.0, 6.0, 3.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.5,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    let pcurve = meridian_circle_pcurve(&surface, &circle).expect("meridian pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("torus-meridian pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert_eq!(*direction, Point2::new(0.0, 1.0));
+    assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+
+    let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.1, 6.0, 3.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.5,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(meridian_circle_pcurve(&surface, &displaced).is_none());
+}
+
+#[test]
+fn projects_sphere_meridians_through_both_poles() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    ));
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            5.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    let pcurve = meridian_circle_pcurve(&surface, &circle).expect("sphere meridian pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("sphere-meridian pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!(origin.u.abs() <= 1.0e-12);
+    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert_eq!(*direction, Point2::new(0.0, -1.0));
+    assert_pcurve_matches_curve(
+        &surface,
+        &circle,
+        &pcurve,
+        &[
+            -std::f64::consts::PI,
+            -std::f64::consts::FRAC_PI_2,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+        ],
+    );
+
+    let small_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            4.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    ));
+    assert!(meridian_circle_pcurve(&surface, &small_circle).is_none());
+}
+
+#[test]
+fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    ));
+    let cylinder_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(1.0, 4.0, 8.0),
+            Vector3::new(0.0, 0.0, -2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    let pcurve =
+        ruled_generator_line_pcurve(&cylinder, &cylinder_line).expect("cylinder generator pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("cylinder-generator pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 5.0).abs() <= 1.0e-12);
+    assert_eq!(*direction, Point2::new(0.0, -1.0));
+    assert_pcurve_matches_curve(&cylinder, &cylinder_line, &pcurve, &[-1.0, 0.0, 2.0]);
+    let tiny_skew = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(1.0, 4.0, 8.0),
+            Vector3::new(1e-13, 0.0, 1e-13)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    assert!(ruled_generator_line_pcurve(&cylinder, &tiny_skew).is_none());
+
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
+    let cone_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 5.0, 3.0),
+            Vector3::new(0.0, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    let pcurve = ruled_generator_line_pcurve(&cone, &cone_line).expect("cone generator pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("cone-generator pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 3.0).abs() <= 1.0e-12);
+    assert!(direction.u.abs() <= 1.0e-12);
+    assert!((direction.v - std::f64::consts::FRAC_1_SQRT_2).abs() <= 1.0e-12);
+    assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
+
+    let elliptical_cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    ));
+    let root_half = std::f64::consts::FRAC_1_SQRT_2;
+    let elliptical_generator = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
+            Vector3::new(2.0 * root_half, root_half, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    let pcurve = ruled_generator_line_pcurve(&elliptical_cone, &elliptical_generator)
+        .expect("elliptical cone generator pcurve");
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
+        panic!("elliptical-cone generator pcurve: {pcurve:#?}");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::FRAC_PI_4).abs() <= 1.0e-12);
+    assert!((origin.v - 3.0).abs() <= 1.0e-12);
+    assert!(direction.u.abs() <= 1.0e-12);
+    assert!((direction.v - 2.0 / 6.5_f64.sqrt()).abs() <= 1.0e-12);
+    assert_pcurve_matches_curve(
+        &elliptical_cone,
+        &elliptical_generator,
+        &pcurve,
+        &[-3.0, 0.0, 2.0],
+    );
+
+    let skew = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 5.0, 3.0),
+            Vector3::new(0.1, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    ));
+    assert!(ruled_generator_line_pcurve(&cone, &skew).is_none());
+}

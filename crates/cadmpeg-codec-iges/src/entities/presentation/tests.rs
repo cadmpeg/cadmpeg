@@ -1,20 +1,177 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    out_of_table_text_template_font_file, text_display_template_forms_file,
+    text_font_definition_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_colors, owned_test_file_with_directory_fields,
+    owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
+    owned_test_file_with_global_and_line_weights, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::{
+    colored_explicit_vertex_loop_file, definition_levels_file, line_font_definitions_file,
+    weighted_line_file,
+};
 use crate::IgesCodec;
 
 use super::{
-    general_note_font_valid_for_global_table, mirror_flag_valid, standard_color,
+    general_note_font_valid_for_global_table, mirror_flag_valid, retained_utf8, standard_color,
     vertical_text_flag_valid,
 };
+
+#[test]
+fn presentation_names_refuse_retained_limit_before_copy() {
+    for operation in ["iges color definition name", "iges body property name"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        );
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(),
+        Some("COLOR".into())
+    );
+    assert_eq!(
+        retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(),
+        None
+    );
+}
+
+fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn presentation_appearance_slots_and_copies_refuse_limits() {
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges neutral appearance slots");
+    assert_presentation_retained_refusal(&color, "iges appearance schema");
+
+    let bound = colored_explicit_vertex_loop_file();
+    assert_presentation_collection_refusal(&bound, "iges appearance binding slots");
+    for operation in [
+        "iges appearance body ID copy",
+        "iges appearance face ID copy",
+        "iges appearance ID copy",
+        "iges appearance object type",
+    ] {
+        assert_presentation_retained_refusal(&bound, operation);
+    }
+}
+
+#[test]
+fn presentation_loss_records_refuse_slot_and_message_limits() {
+    let invalid_color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00010200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&invalid_color, "iges entity loss slots");
+    assert_presentation_retained_refusal(&invalid_color, "iges entity loss message");
+}
+
+#[test]
+fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
+    let fonts = text_font_definition_file();
+    for operation in [
+        "iges presentation parameter index",
+        "iges presentation directory index",
+        "iges presentation font index",
+        "iges presentation decoded sequences",
+    ] {
+        assert_presentation_collection_refusal(&fonts, operation);
+    }
+    assert_presentation_collection_refusal(
+        &definition_levels_file(),
+        "iges presentation definition levels",
+    );
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges presentation defined colors");
+}
 
 const GLOBAL_V4: &[u8] =
     b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -478,12 +635,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(
         body.color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(body.visible, Some(true));
     let face = result
@@ -495,12 +647,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .unwrap();
     assert_eq!(
         face.color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.2,
-            g: 0.4,
-            b: 0.6,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"))
     );
     assert!(result
         .ir()
@@ -525,7 +672,8 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -889,5 +1037,166 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
+    );
+}
+
+#[test]
+fn decode_binds_the_directory_color_to_a_curve_source_object() {
+    // The source association names its Directory entry as `D{sequence}`; the
+    // colour bound to that entry must reach the curve's source object.
+    let file = owned_test_file_with_colors(
+        &[OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00010000",
+            parameters: "110,0.,0.,0.,1.,0.,0.;".into(),
+        }],
+        &[(1, 2)],
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D1")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let source = curve
+        .source_object
+        .as_ref()
+        .expect("a projected line names its source entity");
+    assert_eq!(source.object_id.as_str(), "D1");
+    assert_eq!(
+        source.color,
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
+    );
+}
+
+#[test]
+fn decode_reports_conflicting_body_name_properties() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "141,1,3,1,1,3,1,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 143,
+            form: 0,
+            label: "BOUNDED".into(),
+            status: "00000000",
+            parameters: "143,1,1,1,7,0,2,11,13;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_A".into(),
+            status: "00010000",
+            parameters: "406,1,5HFIRST;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_B".into(),
+            status: "00010000",
+            parameters: "406,1,6HSECOND;".into(),
+        },
+    ];
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("conflicting property file decodes");
+    let body = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
+        .expect("sheet body");
+    assert_eq!(body.name, None);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BodyNameAmbiguous.kind() }));
+    assert_eq!(
+        decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("native IGES")
+            .arenas()["properties"]
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn decode_keeps_unattached_name_property_in_native_records() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME".into(),
+            status: "00010000",
+            parameters: "406,1,5HPOINT;".into(),
+        },
+    ];
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("point property file decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.name.as_deref() != Some("POINT")));
+    assert_eq!(
+        decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("native IGES")
+            .arenas()["properties"]
+            .len(),
+        1
     );
 }

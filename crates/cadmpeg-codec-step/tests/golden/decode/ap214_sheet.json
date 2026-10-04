@@ -61,32 +61,26 @@
         {
           "edge": "step:data:edge#19",
           "id": "step:data:coedge#22-face-29",
-          "next": "step:data:coedge#23-face-29",
           "owner_loop": "step:data:loop#25-face-29",
           "pcurves": [
             {
               "pcurve": "step:data:pcurve#56"
             }
           ],
-          "previous": "step:data:coedge#24-face-29",
           "radial_next": "step:data:coedge#22-face-29",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#20",
           "id": "step:data:coedge#23-face-29",
-          "next": "step:data:coedge#24-face-29",
           "owner_loop": "step:data:loop#25-face-29",
-          "previous": "step:data:coedge#22-face-29",
           "radial_next": "step:data:coedge#23-face-29",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#21",
           "id": "step:data:coedge#24-face-29",
-          "next": "step:data:coedge#22-face-29",
           "owner_loop": "step:data:loop#25-face-29",
-          "previous": "step:data:coedge#23-face-29",
           "radial_next": "step:data:coedge#24-face-29",
           "sense": "forward"
         }
@@ -149,33 +143,39 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "step:data:curve#16",
+          "carrier": {
+            "curve": "step:data:curve#16",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#7",
           "id": "step:data:edge#19",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#6"
         },
         {
-          "curve": "step:data:curve#17",
+          "carrier": {
+            "curve": "step:data:curve#17",
+            "param_range": [
+              0.0,
+              14.142135623730953
+            ]
+          },
           "end": "step:data:vertex#8",
           "id": "step:data:edge#20",
-          "param_range": [
-            0.0,
-            14.142135623730953
-          ],
           "start": "step:data:vertex#7"
         },
         {
-          "curve": "step:data:curve#18",
+          "carrier": {
+            "curve": "step:data:curve#18",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#6",
           "id": "step:data:edge#21",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#8"
         }
       ],
@@ -188,9 +188,11 @@
             "r": 0.8999999761581421
           },
           "id": "step:data:face#29",
-          "loops": [
-            "step:data:loop#25-face-29"
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "step:data:loop#25-face-29"
+          },
           "sense": "reversed",
           "shell": "step:data:shell#30",
           "surface": "step:data:surface#28"
@@ -199,12 +201,14 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "outer",
-          "coedges": [
-            "step:data:coedge#22-face-29",
-            "step:data:coedge#23-face-29",
-            "step:data:coedge#24-face-29"
-          ],
+          "boundary": {
+            "coedges": [
+              "step:data:coedge#22-face-29",
+              "step:data:coedge#23-face-29",
+              "step:data:coedge#24-face-29"
+            ],
+            "kind": "ring"
+          },
           "face": "step:data:face#29",
           "id": "step:data:loop#25-face-29"
         }
@@ -224,7 +228,11 @@
               "v": 0.0
             }
           },
-          "id": "step:data:pcurve#56"
+          "id": "step:data:pcurve#56",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
         }
       ],
       "pmi": [],
@@ -283,10 +291,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#29"
-          ],
           "id": "step:data:shell#30",
+          "members": [
+            {
+              "id": "step:data:face#29",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#31"
         }
       ],
@@ -341,11 +352,7 @@
       ],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -356,19 +363,20 @@
         "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AUTOMOTIVE_DESIGN",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap214",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap214"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -379,27 +387,27 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AUTOMOTIVE_DESIGN",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap214",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap214"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.pcurve-global-fidelity-unproved",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "a finite endpoint and locus witness admits 1 pcurve relation(s); global model-space point-set equality and direction are unproved: curve #57 on surface #28 at coedge use #22",
         "severity": "warning"
@@ -408,7 +416,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -416,7 +426,11 @@
     ],
     "notes": [
       "byte accounting: 290 structural, 2125 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

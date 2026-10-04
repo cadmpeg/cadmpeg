@@ -2,6 +2,8 @@
 //! Member-count-dependent `THRU_CURVE` branch states.
 
 use super::branch_items::BranchItems;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ThruCurveBranchItems<T> {
@@ -36,6 +38,7 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.as_slice().len()
     }
@@ -47,7 +50,7 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
-    pub(crate) fn state_lane_len(&self) -> usize {
+    pub(super) fn state_lane_len(&self) -> usize {
         match self {
             Self::Standard(members) => members.len() + 4,
             Self::Extended { .. } => 18,
@@ -56,6 +59,7 @@ impl<T> ThruCurveBranchItems<T> {
 
     // Names follow the ordered source slots in this fixed-width lane.
     #[allow(clippy::many_single_char_names)]
+    #[cfg(test)]
     pub(crate) fn state_lane(&self) -> Vec<u8> {
         match self {
             Self::Standard(members) => [0; 258][..members.len() + 4].to_vec(),
@@ -66,7 +70,8 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
-    pub(crate) fn map_indexed<U>(
+    #[cfg(test)]
+    pub(super) fn map_indexed<U>(
         self,
         mut f: impl FnMut(usize, T) -> U,
     ) -> ThruCurveBranchItems<U> {
@@ -83,11 +88,35 @@ impl<T> ThruCurveBranchItems<T> {
             }
         }
     }
+
+    pub(super) fn try_map_indexed_charged<U>(
+        self,
+        ctx: &DecodeContext<'_>,
+        mut project: impl FnMut(usize, T) -> Result<U, CodecError>,
+    ) -> Result<ThruCurveBranchItems<U>, CodecError> {
+        match self {
+            Self::Standard(members) => Ok(ThruCurveBranchItems::Standard(
+                members.try_map_indexed_charged(ctx, project)?,
+            )),
+            Self::Extended {
+                members: [first, second, third, fourth],
+                values,
+            } => Ok(ThruCurveBranchItems::Extended {
+                members: [
+                    project(0, first)?,
+                    project(1, second)?,
+                    project(2, third)?,
+                    project(3, fourth)?,
+                ],
+                values,
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ThruCurveBranchItems;
 
     #[test]
     fn state_layout_and_member_count_cannot_disagree() {

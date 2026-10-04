@@ -9,69 +9,42 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::document::reject_non_cadir;
+use super::document::{reject_non_cadir, resolve_one, RecordSelection, ResolveError};
+use super::output::{Output, OutputArgs};
 use super::{print_json, read_input};
 
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
-pub struct ItemArgs {
+pub(crate) struct ItemArgs {
     /// JSON file, or `-` for standard input.
-    pub file: std::path::PathBuf,
+    file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
-    pub arena: String,
-    /// Record IDs (exact or unique suffix). Omit for the first record;
-    /// conflicts with `--head`.
-    pub ids: Vec<String>,
-    /// Print the first N records in arena order. Conflicts with explicit IDs.
-    #[arg(long, value_name = "N", conflicts_with = "ids")]
-    pub head: Option<usize>,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap matched records in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl ItemArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
-}
-
-/// Record-oriented query output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Output<'a> {
-    Pretty,
-    Tsv(&'a [String]),
-    Json,
+    arena: String,
+    /// Which records of the arena to print.
+    #[command(flatten)]
+    records: RecordSelection,
+    /// Record output selection.
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 /// Where the requested arena lives in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ArenaTarget {
+pub(super) enum ArenaTarget {
     Model { arena: String },
     Native { codec: String, arena: String },
 }
 
 impl ArenaTarget {
-    pub(crate) fn parse(spec: &str) -> Result<Self> {
+    pub(super) fn parse(spec: &str) -> Result<Self> {
         if !spec.contains('.') {
             return Ok(Self::Model {
                 arena: spec.to_owned(),
@@ -96,21 +69,12 @@ impl ArenaTarget {
         }
     }
 
-    pub(crate) fn dotted(&self) -> String {
+    pub(super) fn dotted(&self) -> String {
         match self {
             Self::Model { arena } => format!("model.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
         }
     }
-}
-
-/// How many / which records to retain while streaming the arena.
-#[derive(Debug)]
-enum KeepMode<'a> {
-    /// Keep records that exact- or suffix-match any requested ID.
-    Ids(&'a [String]),
-    /// Keep the first N records in arena order.
-    Head(usize),
 }
 
 /// Result of one targeted deserialize of a CADIR document.
@@ -121,33 +85,42 @@ struct Capture {
     addressable: Vec<(String, u64)>,
 }
 
-#[derive(Default)]
 struct TargetCapture {
     entry_count: u64,
-    /// Kept raw records (ID hits or first-N).
-    kept: Vec<Box<RawValue>>,
-    /// Every JSON-string `id` observed in the target arena (ID mode).
-    all_ids: Vec<String>,
+    kept: Kept,
 }
 
-/// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
-/// element.
+enum Kept {
+    Head(Vec<Box<RawValue>>),
+    Ids {
+        /// Each matched record beside the id the capture read out of it, so
+        /// no record's id is parsed twice.
+        matched: Vec<(String, Box<RawValue>)>,
+        /// Every string id in the arena, for the miss message.
+        all_ids: Vec<String>,
+    },
+}
+
+/// Tolerant id probe: an absent or non-string `id` becomes `None` instead of
+/// failing the element. `Value` spells an absent key and a stated `null` the
+/// same way, so the probe carries one datum.
 #[derive(Deserialize)]
 struct IdProbe {
     #[serde(default)]
-    id: Option<serde_json::Value>,
+    id: serde_json::Value,
 }
 
 fn string_id(raw: &RawValue) -> Option<String> {
     let probe: IdProbe = serde_json::from_str(raw.get()).ok()?;
     match probe.id {
-        Some(serde_json::Value::String(s)) => Some(s),
+        serde_json::Value::String(s) => Some(s),
         _ => None,
     }
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
+pub(super) fn run(args: &ItemArgs) -> Result<()> {
+    let output = args.output.mode();
     let bytes = read_input(&args.file)?;
     reject_non_cadir(&bytes, &args.file, "item")?;
 
@@ -155,15 +128,9 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
     let text = std::str::from_utf8(&bytes)
         .with_context(|| format!("{} is not valid UTF-8", args.file.display()))?;
 
-    let mode = if args.ids.is_empty() {
-        KeepMode::Head(args.head.unwrap_or(1))
-    } else {
-        KeepMode::Ids(&args.ids)
-    };
-
     let capture = CaptureSeed {
         target: &target,
-        mode: &mode,
+        mode: &args.records,
     }
     .deserialize(&mut serde_json::Deserializer::from_str(text))
     .with_context(|| format!("parsing the CADIR document {}", args.file.display()))?;
@@ -172,14 +139,20 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
         bail!("{}", unknown_arena_message(&target, &capture.addressable));
     };
 
-    match mode {
-        KeepMode::Head(_) => {
-            let values = parse_kept(&target_capture.kept)?;
+    match target_capture.kept {
+        Kept::Head(records) => {
+            let values = parse_kept(&records)?;
             emit_values("item", output, &values)
         }
-        KeepMode::Ids(ids) => {
+        Kept::Ids { matched, all_ids } => {
             let dotted = target.dotted();
-            let (values, errors) = resolve_ids(ids, &target_capture, &dotted)?;
+            let (values, errors) = resolve_ids(
+                requested_ids(&args.records),
+                &matched,
+                &all_ids,
+                target_capture.entry_count,
+                &dotted,
+            )?;
             match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
@@ -187,6 +160,14 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
                 (Err(err), false) => bail!("{err}\n{}", errors.join("\n")),
             }
         }
+    }
+}
+
+/// Returns the requested IDs, empty when the selection is a head count.
+fn requested_ids(selection: &RecordSelection) -> &[String] {
+    match selection {
+        RecordSelection::Ids(ids) => ids.as_slice(),
+        RecordSelection::Head(_) => &[],
     }
 }
 
@@ -199,21 +180,25 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
         .collect()
 }
 
+/// Selects the requested records out of the capture's matched records, each
+/// of which already carries the id the capture parsed out of it.
 fn resolve_ids(
     ids: &[String],
-    capture: &TargetCapture,
+    matched: &[(String, Box<RawValue>)],
+    all_ids: &[String],
+    entry_count: u64,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
-    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(capture.kept.len());
-    for raw in &capture.kept {
-        indexed.push((string_id(raw), raw.as_ref()));
-    }
-
     let mut values = Vec::new();
     let mut errors = Vec::new();
 
     for request in ids {
-        match resolve_one(request, &indexed) {
+        match resolve_one(
+            request,
+            matched
+                .iter()
+                .map(|(id, raw)| (Some(id.as_str()), raw.as_ref())),
+        ) {
             Ok(raw) => {
                 let value: serde_json::Value = serde_json::from_str(raw.get())
                     .with_context(|| format!("parsing record for id {request:?}"))?;
@@ -223,63 +208,21 @@ fn resolve_ids(
                 errors.push(ambiguous_message(request, dotted, &matches));
             }
             Err(ResolveError::Missing) => {
-                errors.push(miss_id_message(
-                    dotted,
-                    request,
-                    capture.entry_count,
-                    &capture.all_ids,
-                ));
+                errors.push(miss_id_message(dotted, request, entry_count, all_ids));
             }
         }
     }
     Ok((values, errors))
 }
 
-enum ResolveError {
-    Missing,
-    Ambiguous(Vec<String>),
-}
-
-fn resolve_one<'a>(
-    request: &str,
-    indexed: &[(Option<String>, &'a RawValue)],
-) -> Result<&'a RawValue, ResolveError> {
-    let mut exact: Option<&RawValue> = None;
-    for (id, raw) in indexed {
-        if id.as_deref() == Some(request) {
-            exact = Some(*raw);
-            break;
-        }
-    }
-    if let Some(raw) = exact {
-        return Ok(raw);
-    }
-
-    let mut suffix: Vec<(String, &RawValue)> = Vec::new();
-    for (id, raw) in indexed {
-        if let Some(id) = id {
-            if id.ends_with(request) {
-                suffix.push((id.clone(), *raw));
-            }
-        }
-    }
-    match suffix.len() {
-        0 => Err(ResolveError::Missing),
-        1 => Ok(suffix[0].1),
-        _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id).collect(),
-        )),
-    }
-}
-
 /// Pretty-print records, TSV `--fields`, or the `--json` envelope.
-pub(crate) fn emit_values(
+pub(super) fn emit_values(
     view: &str,
     output: Output<'_>,
     values: &[serde_json::Value],
 ) -> Result<()> {
     if output == Output::Json {
-        print_json(view, serde_json::Value::Array(values.to_vec()));
+        print_json(view, serde_json::Value::Array(values.to_vec()))?;
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a
@@ -307,7 +250,7 @@ pub(crate) fn emit_values(
     Ok(())
 }
 
-pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
+pub(super) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     let list = if addressable.is_empty() {
         "(none — this document has no array arenas)".to_owned()
     } else {
@@ -325,7 +268,7 @@ pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String
     )
 }
 
-pub(crate) fn miss_id_message(
+pub(super) fn miss_id_message(
     arena: &str,
     request: &str,
     entry_count: u64,
@@ -358,7 +301,7 @@ pub(crate) fn miss_id_message(
     }
 }
 
-pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
+pub(super) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown: Vec<&str> = matches.iter().take(SHOWN).map(String::as_str).collect();
     format!(
@@ -368,7 +311,7 @@ pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) 
     )
 }
 
-pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
+fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
     let mut parts = Vec::new();
     for path in empty_paths {
         let keys = first_parent_keys(values, path);
@@ -413,10 +356,9 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// Cell rules (projection-specific; not the other views' [`super::cell`]):
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
-pub(crate) fn project_fields(
-    values: &[serde_json::Value],
-    paths: &[String],
-) -> Result<(String, Vec<String>)> {
+fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -424,7 +366,7 @@ pub(crate) fn project_fields(
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = alloc_filled(paths.len(), 0usize, "cli query field counts")?;
+    let mut empty_counts = ctx.alloc_filled(paths.len(), 0usize, "cli query field counts")?;
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {
@@ -456,10 +398,7 @@ pub(crate) fn project_fields(
     Ok((out, empty_paths))
 }
 
-pub(crate) fn navigate<'a>(
-    value: &'a serde_json::Value,
-    path: &str,
-) -> Option<&'a serde_json::Value> {
+fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
     let mut cur = value;
     for part in path.split('.') {
         cur = cur.as_object()?.get(part)?;
@@ -467,7 +406,7 @@ pub(crate) fn navigate<'a>(
     Some(cur)
 }
 
-pub(crate) fn field_cell(value: &serde_json::Value) -> String {
+pub(super) fn field_cell(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => String::new(),
         serde_json::Value::Bool(b) => b.to_string(),
@@ -483,7 +422,7 @@ pub(crate) fn field_cell(value: &serde_json::Value) -> String {
 
 struct CaptureSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
 }
 
 impl<'de> DeserializeSeed<'de> for CaptureSeed<'_> {
@@ -499,7 +438,7 @@ impl<'de> DeserializeSeed<'de> for CaptureSeed<'_> {
 
 struct DocumentVisitor<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
 }
 
 impl<'de> Visitor<'de> for DocumentVisitor<'_> {
@@ -531,6 +470,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
                     })?;
                 }
                 _ => {
+                    // discarded-value: IgnoredAny states nothing; consuming the map value is the whole effect
                     let _ = map.next_value::<IgnoredAny>()?;
                 }
             }
@@ -541,7 +481,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
 
 struct ModelSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -559,7 +499,7 @@ impl<'de> DeserializeSeed<'de> for ModelSeed<'_> {
 
 struct NativeRootSeed<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -577,7 +517,7 @@ impl<'de> DeserializeSeed<'de> for NativeRootSeed<'_> {
 
 struct NativeRootVisitor<'a> {
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -604,7 +544,7 @@ impl<'de> Visitor<'de> for NativeRootVisitor<'_> {
 struct NativeCodecSeed<'a> {
     codec: &'a str,
     target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -624,13 +564,13 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
 enum ArenasVisitor<'a> {
     Model {
         target: &'a ArenaTarget,
-        mode: &'a KeepMode<'a>,
+        mode: &'a RecordSelection,
         capture: &'a mut Capture,
     },
     Native {
         codec: &'a str,
         target: &'a ArenaTarget,
-        mode: &'a KeepMode<'a>,
+        mode: &'a RecordSelection,
         capture: &'a mut Capture,
     },
 }
@@ -667,7 +607,7 @@ impl<'de> Visitor<'de> for ArenasVisitor<'_> {
 fn visit_arenas<'de, A, F>(
     mut map: A,
     target: &ArenaTarget,
-    mode: &KeepMode<'_>,
+    mode: &RecordSelection,
     capture: &mut Capture,
     make_target: F,
 ) -> Result<(), A::Error>
@@ -691,7 +631,7 @@ where
 struct ArenaValueSeed<'a> {
     dotted: String,
     is_target: bool,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -711,7 +651,7 @@ impl<'de> DeserializeSeed<'de> for ArenaValueSeed<'_> {
 struct ArenaValueVisitor<'a> {
     dotted: String,
     is_target: bool,
-    mode: &'a KeepMode<'a>,
+    mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
@@ -731,28 +671,31 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
-        let target = self
-            .capture
-            .target
-            .get_or_insert_with(TargetCapture::default);
-        match self.mode {
-            KeepMode::Head(n) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    if target.kept.len() < *n {
-                        target.kept.push(raw);
+        let target = self.capture.target.get_or_insert_with(|| TargetCapture {
+            entry_count: 0,
+            kept: match self.mode {
+                RecordSelection::Head(_) => Kept::Head(Vec::new()),
+                RecordSelection::Ids(_) => Kept::Ids {
+                    matched: Vec::new(),
+                    all_ids: Vec::new(),
+                },
+            },
+        });
+        while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
+            target.entry_count += 1;
+            match &mut target.kept {
+                Kept::Head(records) => {
+                    if matches!(self.mode, RecordSelection::Head(limit) if records.len() < *limit) {
+                        records.push(raw);
                     }
                 }
-            }
-            KeepMode::Ids(ids) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    let id = string_id(&raw);
-                    if let Some(ref id) = id {
-                        target.all_ids.push(id.clone());
-                        if ids.iter().any(|req| id == req || id.ends_with(req)) {
-                            target.kept.push(raw);
+                Kept::Ids { matched, all_ids } => {
+                    if let Some(id) = string_id(&raw) {
+                        if matches!(self.mode, RecordSelection::Ids(ids) if ids.as_slice().iter().any(|req| id == *req || id.ends_with(req)))
+                        {
+                            matched.push((id.clone(), raw));
                         }
+                        all_ids.push(id);
                     }
                 }
             }
@@ -799,7 +742,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{field_cell, ArenaTarget};
 
     #[test]
     fn arena_target_parses_shorthand_and_dotted() {

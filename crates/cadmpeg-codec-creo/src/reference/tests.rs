@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
@@ -7,10 +12,56 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    arc_z_coordinate, conic_local_system, conic_parameter, line3d_fields,
+    positional_conic_local_system, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
+    ReferenceLineKind,
+};
+use crate::scalar::ScalarCache;
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+
+mod resource_limits;
+
+fn with_reference_ctx<T>(
+    bytes: &[u8],
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("reference input is admitted");
+    run(&ctx).expect("reference collection is admitted")
+}
+
+fn lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
+    with_reference_ctx(payload, |ctx| super::lines(ctx, payload))
+}
+
+fn line3d_lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
+    with_reference_ctx(payload, |ctx| super::line3d_lines(ctx, payload))
+}
+
+fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    with_reference_ctx(payload, |ctx| super::named_conics(ctx, payload))
+}
+
+fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    with_reference_ctx(payload, |ctx| super::positional_conics(ctx, payload))
+}
+
+fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+    with_reference_ctx(&[], |ctx| super::ellipse_carriers(ctx, conics))
+}
+
+fn arc_z_fields(
+    body: &[u8],
+    cache: &ScalarCache,
+    entity_id: u32,
+) -> Option<super::ReferenceCircle> {
+    with_reference_ctx(body, |ctx| super::arc_z_fields(ctx, body, cache, entity_id))
+}
 
 #[test]
 fn decodes_complete_positional_line_rows() {
@@ -23,9 +74,29 @@ fn decodes_complete_positional_line_rows() {
     let [line] = decoded.as_slice() else {
         panic!("one line");
     };
-    assert_eq!(line.start[0], 0.0);
-    assert_eq!(line.end[0], 0.0);
+    assert_eq!(line.start.get().x, 0.0);
+    assert_eq!(line.end.get().x, 0.0);
     assert_ne!(line.start, line.end);
+}
+
+#[test]
+fn diameter_arc_center_uses_finite_midpoint_for_large_endpoints() {
+    let first = f64::MAX * 0.75;
+    let second = f64::from_bits(first.to_bits() + 2);
+    let radius = (second - first) * 0.5;
+    let mut body = Vec::new();
+    for value in [radius, first, 0.0, 0.0, second, 0.0, 0.0] {
+        body.push(0xed);
+        body.extend_from_slice(&value.to_be_bytes());
+    }
+
+    let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 7)
+        .expect("diameter-compressed circle");
+    assert_eq!(
+        <[f64; 3]>::from(circle.center().get()),
+        [f64::midpoint(first, second), 0.0, 0.0]
+    );
+    assert!(!circle.center_stored());
 }
 
 #[test]
@@ -50,13 +121,24 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
     assert_eq!(conic.entity_id, 42);
     assert_eq!(conic.type_id, ConicType::Ellipse);
     assert_eq!(conic.flip, 1);
-    assert_eq!(conic.start, [1.0, 0.0, 0.0]);
-    assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
-    assert_eq!(conic.parameter_start, Some(0.0));
-    assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
-    assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+    assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
     assert_eq!(
-        conic.local_system,
+        conic
+            .parameter_start
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(std::f64::consts::PI)
+    );
+    assert_eq!(
+        [conic.coefficient_1.get(), conic.coefficient_2.get()],
+        [-1.0, 1.0]
+    );
+    assert_eq!(
+        conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     );
 }
@@ -139,7 +221,8 @@ fn conic_frame_accepts_positive_seven_byte_origin_and_terminal_zero() {
     ];
 
     assert_eq!(
-        conic_local_system(&body, &ScalarCache::from_section(&body)),
+        conic_local_system(&body, &ScalarCache::from_section(&body))
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0])
     );
 }
@@ -158,11 +241,22 @@ fn decodes_positional_conic_with_an_opposite_endpoint_parameter() {
     };
     assert_eq!(conic.entity_id, 43);
     assert_eq!(conic.type_id, ConicType::Ellipse);
-    assert_eq!(conic.start, [1.0, 0.0, 0.0]);
-    assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
-    assert_eq!(conic.parameter_start, Some(0.0));
-    assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
-    assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+    assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
+    assert_eq!(
+        conic
+            .parameter_start
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(std::f64::consts::PI)
+    );
+    assert_eq!(
+        [conic.coefficient_1.get(), conic.coefficient_2.get()],
+        [-1.0, 1.0]
+    );
     assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
 }
 
@@ -174,7 +268,8 @@ fn positional_conic_local_system_requires_its_compound_boundary() {
     body.extend([0x2c, 0xf7, 0x10, 0xe3]);
 
     assert_eq!(
-        positional_conic_local_system(&body, 0, &ScalarCache::default()),
+        positional_conic_local_system(&body, 0, &ScalarCache::default())
+            .map(|(end, slots)| (end, slots.get())),
         Some((12, [0.0; 12]))
     );
 
@@ -209,42 +304,52 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         entity_id: 7,
         type_id: ConicType::Ellipse,
         flip: 1,
-        start: [-3.0, 2.0, 4.0],
-        end: [2.0, 4.0, 4.0],
+        start: cadmpeg_ir::features::FinitePoint3::new([-3.0, 2.0, 4.0].into())
+            .expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::new([2.0, 4.0, 4.0].into()).expect("finite end"),
         parameter_start: None,
         parameter_end: None,
-        coefficient_1: -5.0,
-        coefficient_2: 2.0,
-        local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0]),
+        coefficient_1: cadmpeg_ir::scalar::FiniteReal::new(-5.0).expect("finite coefficient"),
+        coefficient_2: cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite coefficient"),
+        local_system: cadmpeg_ir::units::FiniteVector::new([
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0,
+        ]),
         body: Vec::new(),
         offset: 10,
     };
 
     assert_eq!(
         ellipse_carriers(std::slice::from_ref(&conic)),
-        [ReferenceEllipse {
-            source_entity_id: 7,
-            center: [2.0, 2.0, 4.0],
-            axis: [0.0, 0.0, 1.0],
-            major_direction: [-1.0, 0.0, 0.0],
-            major_radius: 5.0,
-            minor_radius: 2.0,
-            offset: 10,
-        }]
+        [ReferenceEllipse::try_new(
+            7,
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 2.0, 4.0,))
+                .expect("finite center"),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(),
+            [
+                PositiveLength::new(5.0).expect("positive radius"),
+                PositiveLength::new(2.0).expect("positive radius")
+            ],
+            10
+        )
+        .expect("checked reference geometry")]
     );
 
     let mut invalid = conic.clone();
-    invalid
-        .local_system
-        .as_mut()
-        .expect("complete local system")[3] = 1.0;
+    let mut invalid_frame = invalid.local_system.expect("complete local system").get();
+    invalid_frame[3] = 1.0;
+    invalid.local_system = cadmpeg_ir::units::FiniteVector::new(invalid_frame);
     assert!(ellipse_carriers(&[invalid]).is_empty());
 
     let diagonal = (100.0_f64 / 29.0).sqrt();
     let ambiguous = ReferenceConic {
-        local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
-        start: [diagonal, diagonal, 0.0],
-        end: [-diagonal, -diagonal, 0.0],
+        local_system: cadmpeg_ir::units::FiniteVector::new([
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+        ]),
+        start: cadmpeg_ir::features::FinitePoint3::new([diagonal, diagonal, 0.0].into())
+            .expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::new([-diagonal, -diagonal, 0.0].into())
+            .expect("finite end"),
         ..conic
     };
     assert!(ellipse_carriers(&[ambiguous]).is_empty());
@@ -261,7 +366,7 @@ fn withholds_incomplete_coordinate_suffix() {
 fn decodes_signed_coordinate_dictionary_line_rows() {
     let coordinates = b"\x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b";
-    assert!(scalar_suffix(coordinates, 6, &ScalarCache::from_section(coordinates)).is_some());
+    assert!(scalar_suffix::<6>(coordinates, &ScalarCache::from_section(coordinates)).is_some());
     let payload = b"ent_list(line)\0\xe0\x00entity(line)\0\xf1\xe3\xf7\x11\
             \xf6\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x02\
             \x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
@@ -273,11 +378,11 @@ fn decodes_signed_coordinate_dictionary_line_rows() {
 #[test]
 fn scalar_suffix_withholds_competing_start_offsets() {
     let first_only = [0x46, 0, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&first_only, 6, &ScalarCache::from_section(&first_only)).is_some());
+    assert!(scalar_suffix::<6>(&first_only, &ScalarCache::from_section(&first_only)).is_some());
     let second_only = [0, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&second_only, 6, &ScalarCache::from_section(&second_only)).is_some());
+    assert!(scalar_suffix::<6>(&second_only, &ScalarCache::from_section(&second_only)).is_some());
     let body = [0x46, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&body, 6, &ScalarCache::from_section(&body)).is_none());
+    assert!(scalar_suffix::<6>(&body, &ScalarCache::from_section(&body)).is_none());
 }
 
 #[test]
@@ -292,11 +397,11 @@ fn decodes_line3d_with_matching_original_length() {
         line.kind,
         ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: 1.0
+            original_length: PositiveReal::new(1.0).expect("positive source length")
         }
     );
-    assert_eq!(line.start, [0.0; 3]);
-    assert_eq!(line.end, [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(line.start.get()), [0.0; 3]);
+    assert_eq!(<[f64; 3]>::from(line.end.get()), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -317,8 +422,8 @@ fn decodes_line3d_with_positive_full_width_coordinates() {
     let [line] = decoded.as_slice() else {
         panic!("one line3d");
     };
-    assert_eq!(line.start[2], line.end[2]);
-    assert_eq!(line.end[0] - line.start[0], 1.0);
+    assert_eq!(line.start.get().z, line.end.get().z);
+    assert_eq!(line.end.get().x - line.start.get().x, 1.0);
 }
 
 #[test]
@@ -326,6 +431,17 @@ fn withholds_line3d_with_inconsistent_original_length() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\
             \x0f\x0f\x0f\xe4\x0f\x0f\x0e";
     assert!(line3d_lines(payload).is_empty());
+}
+
+#[test]
+fn withholds_line3d_with_unbounded_original_length() {
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+            \x0f\x0f\x0f\xe4\x0f\x0f\xed\x7f\xf0\x00\x00\x00\x00\x00\x00";
+    assert!(line3d_lines(payload).is_empty());
+    let mut bounded = payload.to_vec();
+    let length = bounded.len() - 8;
+    bounded[length..].copy_from_slice(&1.0_f64.to_be_bytes());
+    assert_eq!(line3d_lines(&bounded).len(), 1);
 }
 
 #[test]
@@ -350,10 +466,10 @@ fn decodes_arc_z_diameter_rows() {
     let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
     assert_eq!(circle.entity_id, 7);
-    assert_eq!(circle.center, [0.0; 3]);
-    assert_eq!(circle.radius, 1.0);
-    assert_eq!(circle.start, [1.0, 0.0, 0.0]);
-    assert_eq!(circle.end, [-1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.center().get()), [0.0; 3]);
+    assert_eq!(circle.radius().get(), 1.0);
+    assert_eq!(<[f64; 3]>::from(circle.start().get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end().get()), [-1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -362,10 +478,10 @@ fn decodes_arc_z_explicit_center_rows() {
             \x2f\x00\x00\x2f\x16\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
-    assert_eq!(circle.center, [3.5, 10.0, -4.0]);
-    assert_eq!(circle.radius, 2.0);
-    assert_eq!(circle.start, [5.5, 10.0, -4.0]);
-    assert_eq!(circle.end, [3.5, 8.0, -4.0]);
+    assert_eq!(<[f64; 3]>::from(circle.center().get()), [3.5, 10.0, -4.0]);
+    assert_eq!(circle.radius().get(), 2.0);
+    assert_eq!(<[f64; 3]>::from(circle.start().get()), [5.5, 10.0, -4.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end().get()), [3.5, 8.0, -4.0]);
 }
 
 #[test]
@@ -377,10 +493,10 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
             \x9f\x6b\xf0\x6f\x95\x50\xb9\xa0\xff\x43\xd5\xa5\xa5\x6c";
     let cache = ScalarCache::from_section(body);
     let circle = arc_z_fields(body, &cache, 9).expect("general arc");
-    assert_eq!(circle.center[0], -30.0);
-    assert_eq!(circle.start[0], -30.0);
-    assert_eq!(circle.end[0], -30.0);
-    assert!((circle.axis[0].abs() - 1.0).abs() < 1.0e-12);
+    assert_eq!(circle.center().get().x, -30.0);
+    assert_eq!(circle.start().get().x, -30.0);
+    assert_eq!(circle.end().get().x, -30.0);
+    assert!((circle.axis().as_raw().x.abs() - 1.0).abs() < 1.0e-12);
 }
 
 #[test]
@@ -403,10 +519,13 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
 
     let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
         .expect("tabulated-cylinder first-coordinate lane circle");
-    assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
-    assert_eq!(circle.start, [-3.0, 0.0, 0.0]);
-    assert_eq!(circle.end, [-2.0, 1.0, 0.0]);
-    assert_eq!(circle.axis, [0.0, 0.0, -1.0]);
+    assert_eq!(<[f64; 3]>::from(circle.center().get()), [-2.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.start().get()), [-3.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end().get()), [-2.0, 1.0, 0.0]);
+    assert_eq!(
+        *circle.axis().as_raw(),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+    );
 
     let negative_collision = [0x2d, 0, 0, 0, 0, 0, 0, 0];
     assert_eq!(
@@ -428,18 +547,23 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         \xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe0\x00ent_list(line3d)\0"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.circles.len(), 1);
-    assert_eq!(scan.references.circles[0].center, [0.0; 3]);
-    assert_eq!(scan.references.circles[0].radius, 1.0);
+    assert_eq!(
+        <[f64; 3]>::from(scan.references.circles[0].center().get()),
+        [0.0; 3]
+    );
+    assert_eq!(scan.references.circles[0].radius.get(), 1.0);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle { radius: 1.0, .. }
-    )));
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
+                if { circle_curve.radius().get() == 1.0 })
+    ));
     let circle = result
         .ir()
         .model
@@ -458,7 +582,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         &result.source_fidelity().annotations,
         record.id(),
         "creo:MdlRefInfo",
-        scan.references.circles[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.references.circles[0].offset),
         "reference_circle_record",
         Exactness::Derived,
     );
@@ -470,7 +594,7 @@ fn decode_retains_line3d_original_length() {
         \x0f\x0f\x0f\xe4\x0f\x0f\xe4"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let [line] = scan.references.lines.as_slice() else {
         panic!("one line3d");
     };
@@ -478,7 +602,7 @@ fn decode_retains_line3d_original_length() {
         line.kind,
         crate::reference::ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: 1.0
+            original_length: PositiveReal::new(1.0).expect("positive source length")
         }
     );
 
@@ -539,29 +663,28 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.conics.len(), 1);
     assert_eq!(scan.references.ellipses.len(), 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Ellipse {
-            major_radius: 1.0,
-            minor_radius: 1.0,
-            ..
-        }
-    )));
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
+                if { (ellipse_curve.major_radius().get() == 1.0) && (ellipse_curve.minor_radius().get() == 1.0) })
+    ));
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_ellipses"][0];
     assert_eq!(record.fields()["source_entity_id"], 43);
     assert_eq!(record.fields()["major_radius"], 1.0);
     assert_eq!(record.fields()["minor_radius"], 1.0);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT.as_str()
+        ),
         1
     );
     let ellipse = result
@@ -583,8 +706,10 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         &result.source_fidelity().annotations,
         record.id(),
         "creo:MdlRefInfo",
-        scan.references.ellipses[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.references.ellipses[0].offset),
         "reference_ellipse_carrier",
         Exactness::Derived,
     );
 }
+
+mod carrier_admission;

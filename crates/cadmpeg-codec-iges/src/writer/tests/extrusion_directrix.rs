@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Type 122 directrix ends evaluated on the extrusion's directrix carrier.
+
+use super::super::extrusion_surface_entities;
+use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
+use cadmpeg_ir::geometry::{
+    CacheContract, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::CadIr;
+
+#[test]
+fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
+    // The circle of radius 1e308 about (MAX, 0, 0) reaches x = MAX + 1e308
+    // at angle 0, which has no finite value; at a quarter turn it is finite.
+    let directrix = CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: directrix.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0e308,
+            )
+            .expect("valid CircleCurve fixture"),
+        )),
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(
+                directrix,
+                Some([0.0, std::f64::consts::FRAC_PI_2]),
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                CacheContract::from_form(None),
+            )
+            .expect("valid extrusion fixture"),
+        ),
+        None,
+    ));
+    assert_eq!(
+        extrusion_surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &construction,
+            0,
+            crate::IgesVersion::V5_3
+        )
+        .err()
+        .map(|error| error.to_string()),
+        Some(
+            cadmpeg_core::CodecError::malformed(
+                "IGES point Type 122 directrix start has non-finite coordinates"
+            )
+            .to_string()
+        )
+    );
+}
+
+#[test]
+fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_ends() {
+    // With major radius 1 and minor radius MAX, the directrix point at
+    // t = 1e-7 is (cosh t, MAX sinh t, 0), which is finite; only MAX cosh t,
+    // which the point does not read, overflows. The Type 122 and Type 104
+    // ends both use the finite sinh lane.
+    let directrix = CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: directrix.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                f64::MAX,
+            )
+            .expect("valid HyperbolaCurve fixture"),
+        )),
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(
+                directrix,
+                Some([0.0, 1.0e-7]),
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                CacheContract::from_form(None),
+            )
+            .expect("valid extrusion fixture"),
+        ),
+        None,
+    ));
+    let entities = extrusion_surface_entities(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction,
+        0,
+        crate::IgesVersion::V5_3,
+    )
+    .expect("the finite hyperbola end is written");
+    assert_eq!(entities[0].type_code, 104);
+    assert_eq!(entities[1].type_code, 122);
+    let written_end = format!(
+        ",{},{};",
+        super::super::number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0e-7_f64.cosh()).expect("finite major endpoint"),
+        ),
+        super::super::number(
+            cadmpeg_ir::scalar::FiniteReal::new(f64::MAX * 1.0e-7_f64.sinh())
+                .expect("finite minor endpoint"),
+        ),
+    );
+    assert!(entities[0]
+        .parameter_text()
+        .ends_with(written_end.as_bytes()));
+}

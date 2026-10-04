@@ -309,7 +309,6 @@ pub enum TargetRefusalKind {
 /// The refusal carries the encoder catalog once, beside the request-state
 /// reason, so every reason is rendered and reported against the same catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct TargetRefusal {
     kind: TargetRefusalKind,
     available: TargetCatalog,
@@ -320,13 +319,12 @@ impl Serialize for TargetRefusal {
         #[derive(Serialize)]
         struct Wire<'a> {
             format: &'a str,
-            #[serde(flatten)]
-            kind: &'a TargetRefusalKind,
+            refusal: &'a TargetRefusalKind,
             available: TargetCatalog,
         }
         Wire {
             format: self.format(),
-            kind: &self.kind,
+            refusal: &self.kind,
             available: self.available,
         }
         .serialize(serializer)
@@ -361,12 +359,6 @@ impl TargetRefusal {
         )
     }
 
-    /// Returns the request-state reason.
-    #[must_use]
-    pub const fn kind(&self) -> &TargetRefusalKind {
-        &self.kind
-    }
-
     /// Returns the refusing encoder format.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -377,37 +369,6 @@ impl TargetRefusal {
     #[must_use]
     pub const fn available(&self) -> &'static [TargetDescriptor] {
         self.available.targets()
-    }
-
-    /// Returns the dialect spelling the refusal is about, when one exists.
-    ///
-    /// Explicit requests retain the caller's spelling. Inherited refusals
-    /// return the recorded source dialect. Missing-source and missing-default
-    /// states have no requested dialect.
-    #[must_use]
-    pub fn requested(&self) -> Option<&str> {
-        match &self.kind {
-            TargetRefusalKind::UnknownExplicit { requested, .. }
-            | TargetRefusalKind::ExplicitUnavailable { requested, .. } => Some(requested.as_str()),
-            TargetRefusalKind::InheritedUnavailable { source, .. } => Some(source.as_str()),
-            TargetRefusalKind::UnrecordedSource
-            | TargetRefusalKind::NoDefault { .. }
-            | TargetRefusalKind::DefaultUnavailable { .. } => None,
-        }
-    }
-
-    /// Returns the input-conditioned delivery reason, when this is a resolved
-    /// target rather than a target-selection failure.
-    #[must_use]
-    pub fn reason(&self) -> Option<&str> {
-        match &self.kind {
-            TargetRefusalKind::ExplicitUnavailable { reason, .. }
-            | TargetRefusalKind::InheritedUnavailable { reason, .. }
-            | TargetRefusalKind::DefaultUnavailable { reason, .. } => Some(reason),
-            TargetRefusalKind::UnknownExplicit { .. }
-            | TargetRefusalKind::UnrecordedSource
-            | TargetRefusalKind::NoDefault { .. } => None,
-        }
     }
 
     fn write_available(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -481,18 +442,24 @@ impl std::error::Error for TargetRefusal {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind,
+        TargetToken,
+    };
+    use crate::dialect::DialectId;
 
     const NO_ALIASES: &[&str] = &[];
 
     const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-        id: DialectId::pinned("fcstd:schema-4"),
+        id: crate::dialect_id!("fcstd:schema-4"),
         aliases: &["4"],
     }];
 
     const fn target(id: &'static str, aliases: &'static [&'static str]) -> TargetDescriptor {
         TargetDescriptor {
-            id: DialectId::pinned(id),
+            id: DialectId::from_static(
+                crate::dialect::StaticDialectId::new(id).expect("test id has dialect grammar"),
+            ),
             aliases,
         }
     }
@@ -501,7 +468,7 @@ mod tests {
     fn target_refusal_serializes_request_state_and_the_complete_catalog() {
         let refusal = TargetRefusal::new(
             TargetRefusalKind::ExplicitUnavailable {
-                target: DialectId::pinned("fcstd:schema-4"),
+                target: crate::dialect_id!("fcstd:schema-4"),
                 requested: TargetToken::new("4"),
                 reason: "the source image cannot be patched".into(),
             },
@@ -512,10 +479,12 @@ mod tests {
             serde_json::to_value(refusal).expect("target refusal serializes"),
             serde_json::json!({
                 "format": "fcstd",
-                "kind": "explicit_unavailable",
-                "target": "fcstd:schema-4",
-                "requested": "4",
-                "reason": "the source image cannot be patched",
+                "refusal": {
+                    "kind": "explicit_unavailable",
+                    "target": "fcstd:schema-4",
+                    "requested": "4",
+                    "reason": "the source image cannot be patched",
+                },
                 "available": [{
                     "id": "fcstd:schema-4",
                     "aliases": ["4"],
@@ -530,7 +499,7 @@ mod tests {
     fn target_catalog_rejects_mixed_namespaces() {
         static MIXED: &[TargetDescriptor] =
             &[target("fcstd:schema-4", &[]), target("step:ap242-e3", &[])];
-        let _ = TargetCatalog::new(MIXED, None);
+        let _catalog = TargetCatalog::new(MIXED, None);
     }
 
     #[test]
@@ -539,7 +508,9 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&refusal).expect("serialize target refusal"),
             serde_json::json!({
-                "format": "cadir", "kind": "unknown_explicit", "requested": "future", "available": []
+                "format": "cadir",
+                "refusal": {"kind": "unknown_explicit", "requested": "future"},
+                "available": []
             })
         );
         assert_eq!(refusal.to_string(), "cadir cannot write future: not a target this encoder can synthesize; available targets: none");
@@ -567,7 +538,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "target catalog default is out of bounds")]
     fn a_target_catalog_rejects_an_invalid_default_index() {
-        let _ = TargetCatalog::new(TARGETS, Some(TARGETS.len()));
+        let _catalog = TargetCatalog::new(TARGETS, Some(TARGETS.len()));
     }
 
     #[test]
@@ -592,7 +563,7 @@ mod tests {
             target("test:same", NO_ALIASES),
             target("test:same", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -602,7 +573,7 @@ mod tests {
             target("test:first", &["same"]),
             target("test:second", &["same"]),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -612,7 +583,7 @@ mod tests {
             target("test:first", &["test:second"]),
             target("test:second", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -622,7 +593,7 @@ mod tests {
             target("test:first", &["second"]),
             target("test:second", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -634,7 +605,18 @@ mod tests {
             TargetCatalog::new(TARGETS, None),
         );
 
-        assert_eq!(refusal.requested(), None);
+        assert_eq!(
+            ({
+                let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+                wire["refusal"]
+                    .get("requested")
+                    .or_else(|| wire["refusal"].get("source"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .as_deref(),
+            None
+        );
         assert_eq!(refusal.available(), TARGETS);
         assert_eq!(
             refusal.to_string(),

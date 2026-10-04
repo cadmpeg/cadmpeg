@@ -37,10 +37,10 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
-use cadmpeg_asm::kernel_header::KernelHeader;
-use cadmpeg_asm::sat;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
+use cadmpeg_asm::{acis_header, asm_header, sat};
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 use crate::loss::SatLossCode;
@@ -89,12 +89,39 @@ impl From<sat::Terminator> for Family {
     }
 }
 
+/// Where a binary stream's record stream begins.
+///
+/// Minted only by [`record_stream_start`], so a value of this type is the
+/// witness that the bytes frame; the offset it carries is the one decode reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RecordStreamStart(usize);
+
+impl RecordStreamStart {
+    /// The byte offset the record stream begins at.
+    pub(crate) const fn offset(self) -> usize {
+        self.0
+    }
+}
+
+/// The record-stream boundary the family's header grammar finds, if any.
+pub(crate) fn record_stream_start(
+    bytes: &[u8],
+    family: Family,
+    header: &BinaryHeader,
+) -> Option<RecordStreamStart> {
+    let start = match family {
+        Family::Asm => asm_header::record_stream_start_with_header(bytes, header),
+        Family::Acis => acis_header::record_stream_start_with_header(bytes, header),
+    }?;
+    Some(RecordStreamStart(start))
+}
+
 /// Stream family, parsed header, and framing admission from the source bytes.
 pub(crate) enum StreamEvidence<'a> {
     Binary {
         family: Family,
-        header: &'a KernelHeader,
-        framed: bool,
+        header: &'a BinaryHeader,
+        stream: Option<RecordStreamStart>,
     },
     Text(Option<TextEvidence<'a>>),
 }
@@ -125,10 +152,11 @@ impl StreamEvidence<'_> {
 fn host(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let dialect = evidence.dialect();
     match evidence {
-        StreamEvidence::Binary { framed: true, .. } | StreamEvidence::Text(Some(_)) => {
-            DialectMatch::admitted(dialect)
+        StreamEvidence::Binary {
+            stream: Some(_), ..
         }
-        StreamEvidence::Binary { framed: false, .. } | StreamEvidence::Text(None) => {
+        | StreamEvidence::Text(Some(_)) => DialectMatch::admitted(dialect),
+        StreamEvidence::Binary { stream: None, .. } | StreamEvidence::Text(None) => {
             DialectMatch::refused(dialect)
         }
     }
@@ -148,17 +176,23 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// Host-framing declarations, verbatim, under keys pinned above.
 ///
 /// Kernel save format belongs only to the separate `acis:` match.
-fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
+fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     let mut declared = BTreeMap::new();
     match evidence {
         StreamEvidence::Binary { .. } => {
-            declared.insert(DECLARED_ENCODING.into(), "binary".into());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
+                "binary".into(),
+            );
         }
         StreamEvidence::Text(text) => {
-            declared.insert(DECLARED_ENCODING.into(), "text".into());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
+                "text".into(),
+            );
             let Some(text) = text else { return declared };
             declared.insert(
-                DECLARED_TERMINATOR.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_TERMINATOR),
                 terminator_line(text.branch).into(),
             );
         }

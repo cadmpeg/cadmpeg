@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
+use cadmpeg_ir::math::planar::{point_segment_distance, segments_intersect};
+use cadmpeg_ir::units::FinitePoint2;
+
+use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::tessellation::TessellationChannel;
+use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
@@ -23,27 +33,182 @@ const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
+
+#[cfg(test)]
+thread_local! {
+    static DISPLAY_PARSE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_display_parse_calls() {
+    DISPLAY_PARSE_CALLS.with(|calls| calls.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn display_parse_calls() -> usize {
+    DISPLAY_PARSE_CALLS.with(std::cell::Cell::get)
+}
+
+/// The evaluation tolerance of one face in the display lane.
+///
+/// The display lane quantizes coordinates to `f32`, so a tolerance below
+/// [`EPS_DISPLAY_QUANTIZATION`] states a resolution the lane does not carry.
+/// [`FaceEvaluationTolerance::of`] is the only constructor: a stated tolerance
+/// under that bound is refused, so no stated value is floored, and a face that
+/// states no tolerance evaluates at the bound.
+#[derive(Debug, Clone, Copy)]
+struct FaceEvaluationTolerance(f64);
+
+impl FaceEvaluationTolerance {
+    /// The evaluation tolerance of `face`, or `None` when its stated
+    /// tolerance is finer than the display lane resolves. Callers validate
+    /// every face before evaluating any trim, so this `None` cannot silently
+    /// discard a source face during assignment.
+    fn of(face: &cadmpeg_ir::topology::Face) -> Option<Self> {
+        let Some(stated) = face.tolerance else {
+            return Some(Self(EPS_DISPLAY_QUANTIZATION));
+        };
+        (stated.get() >= EPS_DISPLAY_QUANTIZATION).then_some(Self(stated.get()))
+    }
+
+    /// The tolerance value.
+    fn get(self) -> f64 {
+        self.0
+    }
+}
+
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
+fn collect_index<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+    let mut index = HashMap::new();
+    for (key, value) in items {
+        ctx.charge_work(1, operation)?;
+        ctx.insert_hash_map(&mut index, key, value, operation)?;
+    }
+    Ok(index)
+}
+
+fn charge_fit_work(
+    ctx: &DecodeContext<'_>,
+    candidates: usize,
+    vertices: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let units = vertices
+        .checked_add(1)
+        .and_then(|per_candidate| candidates.checked_mul(per_candidate))
+        .and_then(|total| u64::try_from(total).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(units, operation)
+}
+
+macro_rules! require_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
+fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, operation)?;
+    let mut copy = String::new();
+    ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Summary {
-    pub vertices: usize,
-    pub triangles: usize,
+pub(crate) struct Summary {
+    pub(crate) vertices: usize,
+    pub(crate) triangles: usize,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Mesh {
-    pub vertices: Vec<Point3>,
-    pub triangles: Vec<[u32; 3]>,
-    pub strip_lengths: Vec<u32>,
-    pub normals: Vec<Vector3>,
-    pub channels: Vec<TessellationChannel>,
+#[derive(Debug, Clone)]
+pub(crate) struct Mesh {
+    mesh: TessellationMesh,
+    channels: Vec<TessellationChannel>,
 }
 
+impl Default for Mesh {
+    fn default() -> Self {
+        Self {
+            mesh: TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            channels: Vec::new(),
+        }
+    }
+}
+
+impl Mesh {
+    /// Number of vertices the strips span.
+    fn vertex_count(&self) -> usize {
+        self.mesh.vertex_count()
+    }
+
+    /// Number of triangles the strips expand to.
+    fn triangle_count(&self) -> usize {
+        self.mesh.triangle_count()
+    }
+
+    /// Number of strips in the mesh.
+    fn strip_count(&self) -> usize {
+        self.mesh.strip_lengths().len()
+    }
+
+    pub(crate) fn into_tessellation(
+        self,
+        id: cadmpeg_ir::tessellation::TessellationId,
+    ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
+    {
+        cadmpeg_ir::tessellation::Tessellation::new(id, self.mesh, self.channels)
+    }
+}
+
+/// A nonempty-or-empty byte interval whose end never precedes its start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ByteRange {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
+    start: usize,
+    end: usize,
+}
+
+impl ByteRange {
+    /// The interval `start..end`, when it is ordered.
+    fn new(start: usize, end: usize) -> Option<Self> {
+        (start <= end).then_some(Self { start, end })
+    }
+
+    /// First byte offset of the interval.
+    pub(crate) fn start(self) -> usize {
+        self.start
+    }
+
+    /// One past the last byte offset of the interval.
+    pub(crate) fn end(self) -> usize {
+        self.end
+    }
+
+    /// This interval truncated at `end`, empty when `end` precedes its start.
+    fn truncated(self, end: usize) -> Self {
+        Self {
+            start: self.start,
+            end: end.min(self.end).max(self.start),
+        }
+    }
 }
 
 /// One decoded `uoTempFaceTessData_c` descriptor table.
@@ -62,13 +227,13 @@ pub(crate) enum PersistentSurfaceReference {
     Complete(PersistentFaceIdentity),
     /// A source-level reference whose trailing fields are opaque.
     SourceOnly {
-        feature_source_id: u32,
+        feature_source_id: FeatureSourceId,
         local_surface_id: u32,
     },
 }
 
 impl PersistentSurfaceReference {
-    pub(crate) fn feature_source_id(&self) -> u32 {
+    pub(crate) fn feature_source_id(&self) -> FeatureSourceId {
         match self {
             Self::Complete(identity) => identity.feature_source_id,
             Self::SourceOnly {
@@ -94,7 +259,7 @@ pub(crate) struct PersistentFaceBinding {
 
 impl DisplayFace {
     /// Return the source ID only when all duplicated references agree.
-    pub(crate) fn feature_source_id(&self) -> Option<u32> {
+    pub(crate) fn feature_source_id(&self) -> Option<FeatureSourceId> {
         let mut sources = self
             .surface_references
             .iter()
@@ -106,11 +271,11 @@ impl DisplayFace {
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
-    pub(crate) fn persistent_surface_identity(&self) -> Option<PersistentFaceIdentity> {
+    pub(crate) fn persistent_surface_identity(&self) -> Option<&PersistentFaceIdentity> {
         let mut references = self.surface_references.iter();
-        let first = references.next()?.complete_identity()?.clone();
+        let first = references.next()?.complete_identity()?;
         references
-            .all(|reference| reference.complete_identity() == Some(&first))
+            .all(|reference| reference.complete_identity() == Some(first))
             .then_some(first)
     }
 }
@@ -123,82 +288,122 @@ pub(crate) struct ClassInterval {
     source_ids: Vec<u32>,
 }
 
-pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
-    let declarations = payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let name = payload.get(offset + 6..offset + 6 + length)?;
-            if !name
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
-                return None;
-            }
-            let name = std::str::from_utf8(name).ok()?;
-            Some((offset, name.to_string()))
-        })
-        .collect::<Vec<_>>();
-    declarations
-        .iter()
-        .enumerate()
-        .map(|(index, (offset, class))| {
-            let start = offset + 6 + class.len();
-            let end = declarations
-                .get(index + 1)
-                .map_or(payload.len(), |(offset, _)| *offset);
-            let records = &payload[start..end];
-            let source_ids = records
-                .windows(scene_src::LEN)
-                .filter_map(|window| {
-                    (window.starts_with(SCENE_SOURCE_MARKER))
-                        .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                        .flatten()
-                        .filter(|source| *source != 0)
-                })
-                .collect();
+pub(crate) fn class_intervals(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ClassInterval>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "scan SLDPRT display class declarations",
+    )?;
+    let mut declarations = Vec::new();
+    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
+        if marker != CLASS_MARKER {
+            continue;
+        }
+        let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
+            continue;
+        };
+        if !(1..=128).contains(&length) {
+            continue;
+        }
+        let Some(name_bytes) = payload.get(offset + 6..offset + 6 + length) else {
+            continue;
+        };
+        if !name_bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            continue;
+        }
+        let Ok(name_text) = std::str::from_utf8(name_bytes) else {
+            continue;
+        };
+        let name = ctx.copy_retained_text(name_text, "retain SLDPRT display class name")?;
+        ctx.push_vec(
+            &mut declarations,
+            (offset, name),
+            "collect SLDPRT display class declarations",
+        )?;
+    }
+    let mut declarations = declarations.into_iter().peekable();
+    let mut intervals = Vec::new();
+    while let Some((offset, name)) = declarations.next() {
+        let start = offset + 6 + name.len();
+        let end = declarations.peek().map_or(payload.len(), |(next, _)| *next);
+        let Some(content) = ByteRange::new(start, end) else {
+            continue;
+        };
+        let Some(records) = payload.get(start..end) else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.len()),
+            "scan SLDPRT display class sources",
+        )?;
+        let mut source_ids = Vec::new();
+        for window in records.windows(scene_src::LEN) {
+            let Some(source) = window
+                .starts_with(SCENE_SOURCE_MARKER)
+                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
+                .flatten()
+                .filter(|source| *source != 0)
+            else {
+                continue;
+            };
+            ctx.push_vec(
+                &mut source_ids,
+                source,
+                "collect SLDPRT display class sources",
+            )?;
+        }
+        ctx.push_vec(
+            &mut intervals,
             ClassInterval {
-                name: class.clone(),
-                class_offset: *offset,
-                content: ByteRange { start, end },
+                name,
+                class_offset: offset,
+                content,
                 source_ids,
-            }
-        })
-        .collect()
+            },
+            "collect SLDPRT display class intervals",
+        )?;
+    }
+    Ok(intervals)
 }
 
-fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
-    class_intervals(payload)
-        .into_iter()
-        .filter(|class| {
-            matches!(
-                crate::classification::native_object_class(&class.name).tree_node(),
-                Some(
-                    cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
-                )
+fn scene_classes(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(u32, String)>, cadmpeg_core::CodecError> {
+    let mut classes = Vec::new();
+    for class in class_intervals(ctx, payload)? {
+        if !matches!(
+            crate::classification::native_object_class(&class.name).tree_node(),
+            Some(
+                cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
             )
-        })
-        .flat_map(|class| {
-            class
-                .source_ids
-                .into_iter()
-                .map(move |source| (source, class.name.clone()))
-        })
-        .collect()
+        ) {
+            continue;
+        }
+        for source in class.source_ids {
+            let name = ctx.copy_retained_text(&class.name, "retain SLDPRT scene class name")?;
+            ctx.push_vec(&mut classes, (source, name), "collect SLDPRT scene classes")?;
+        }
+    }
+    Ok(classes)
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
+pub(crate) fn scene_feature_classes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<HashMap<u32, String>, cadmpeg_core::CodecError> {
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
-        for (source, class) in scene_classes(section.payload()) {
+        for (source, class) in scene_classes(ctx, section.payload())? {
+            ctx.admit_hash_map_entry(&mut candidates, &source, "index SLDPRT scene class sources")?;
             candidates
                 .entry(source)
                 .and_modify(|existing| {
@@ -209,10 +414,18 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, Str
                 .or_insert_with(|| Some(class));
         }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
-        .collect()
+    let mut resolved = HashMap::new();
+    for (source, class) in candidates {
+        if let Some(class) = class {
+            ctx.insert_hash_map(
+                &mut resolved,
+                source,
+                class,
+                "collect SLDPRT scene feature classes",
+            )?;
+        }
+    }
+    Ok(resolved)
 }
 
 pub(crate) fn auxiliary_channels_are_consistent(
@@ -226,73 +439,95 @@ pub(crate) fn auxiliary_channels_are_consistent(
     {
         return false;
     }
-    let Some(list_c) = strips
-        .iter()
-        .map(|length| length.checked_mul(2)?.checked_sub(2))
-        .collect::<Option<Vec<_>>>()
-    else {
+    let Some(endpoint_count) = strips.iter().try_fold(0usize, |total, length| {
+        total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
+    }) else {
         return false;
     };
-    let Some(endpoint_count) = list_c
-        .iter()
-        .try_fold(0usize, |total, count| total.checked_add(*count))
-    else {
-        return false;
-    };
-    let stored_list_c = c
-        .data()
-        .chunks_exact(4)
-        .map(|bytes| usize::try_from(View::u32_le_at(bytes, 0)?).ok())
-        .collect::<Option<Vec<_>>>();
+    let stored_list_c_matches = c.data().chunks_exact(4).len() == strips.len()
+        && c.data().chunks_exact(4).zip(strips).all(|(bytes, length)| {
+            length.checked_mul(2).and_then(|count| count.checked_sub(2))
+                == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
+        });
     let counts = (
         usize::try_from(b.count()).ok(),
         usize::try_from(d.count()).ok(),
     );
-    let payload_lengths = channels.iter().all(|channel| {
-        usize::try_from(channel.item_size())
-            .ok()
-            .and_then(|size| usize::try_from(channel.count()).ok()?.checked_mul(size))
-            == Some(channel.data().len())
-    });
-    payload_lengths
-        && (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
+    (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
         && usize::try_from(c.count()).ok() == Some(strips.len())
-        && stored_list_c.as_deref() == Some(list_c.as_slice())
+        && stored_list_c_matches
         && b.data()
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
 
-fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
+/// The six descriptor channels of one display-list table, read as lanes.
+struct ProbedTable {
+    strips: Vec<usize>,
+    vertices: Vec<Point3>,
+    normals: Vec<Vector3>,
+    channels: Vec<TessellationChannel>,
+}
+
+/// Read the six descriptors at `at` as display-list lanes.
+///
+/// `None` is a probe miss: the descriptors at this byte position do not state
+/// the display-list grammar.
+fn probe_table(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    mut at: usize,
+) -> Result<Option<(ProbedTable, usize)>, cadmpeg_core::CodecError> {
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
     let mut channels = Vec::new();
     for index in 0..6 {
-        let item_size = View::u32_le_at(bytes, at)? as usize;
-        let kind = View::u32_le_at(bytes, at + 4)?;
-        let flags = View::u32_le_at(bytes, at + 8)?;
-        let count = View::u32_le_at(bytes, at + 12)? as usize;
+        let Some(item_size_field) = View::u32_le_at(bytes, at) else {
+            return Ok(None);
+        };
+        let item_size = cadmpeg_core::decode::index_from_u32(item_size_field);
+        let Some(kind) = View::u32_le_at(bytes, at + 4) else {
+            return Ok(None);
+        };
+        let Some(flags) = View::u32_le_at(bytes, at + 8) else {
+            return Ok(None);
+        };
+        let Some(count) = View::u32_le_at(bytes, at + 12).map(cadmpeg_core::decode::index_from_u32)
+        else {
+            return Ok(None);
+        };
         let data = at + 16;
-        let end = data.checked_add(item_size.checked_mul(count)?)?;
+        let Some(end) = item_size
+            .checked_mul(count)
+            .and_then(|size| data.checked_add(size))
+        else {
+            return Ok(None);
+        };
         if end > bytes.len() {
-            return None;
+            return Ok(None);
         }
-        channels.push(
-            TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
-                item_size as u32,
-                kind,
-                flags,
-                bytes[data..end].to_vec(),
-            )
-            .ok()?,
-        );
+        ctx.reserve_vec(&mut channels, 1, "decode display-list channels")?;
+        let Ok(channel) = TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+            item_size_field,
+            kind,
+            flags,
+            ctx.copy_retained(&bytes[data..end], "copy display-list channel bytes")?,
+        ) else {
+            return Ok(None);
+        };
+        channels.push(channel);
         if index == 0 && item_size == 4 && kind == 8 {
-            strips = (0..count)
-                .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
-                .collect::<Option<Vec<_>>>()?;
+            ctx.reserve_vec(&mut strips, count, "decode display-list strips")?;
+            for i in 0..count {
+                let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
+                    return Ok(None);
+                };
+                strips.push(cadmpeg_core::decode::index_from_u32(length));
+            }
         } else if index == 1 && item_size == 12 && kind == 100 {
+            ctx.reserve_vec(&mut vertices, count, "decode display-list vertices")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -300,13 +535,13 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
                         .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
-                vertices.push(Point3::new(
-                    read(p)? * 1000.0,
-                    read(p + 4)? * 1000.0,
-                    read(p + 8)? * 1000.0,
-                ));
+                let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
+                    return Ok(None);
+                };
+                vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
         } else if index == 2 && item_size == 12 && kind == 100 {
+            ctx.reserve_vec(&mut normals, count, "decode display-list normals")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -314,67 +549,108 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
                         .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
-                normals.push(Vector3::new(read(p)?, read(p + 4)?, read(p + 8)?));
+                let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
+                    return Ok(None);
+                };
+                normals.push(Vector3::new(x, y, z));
             }
         }
         at = end;
     }
-    let vertex_count = strips
-        .iter()
-        .try_fold(0usize, |total, length| total.checked_add(*length))?;
     if !matches!(channels.as_slice(), [a, positions, normals, ..]
         if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
             && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
             && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
     {
-        return None;
+        return Ok(None);
     }
     if strips.is_empty()
         || vertices.is_empty()
-        || vertex_count != vertices.len()
-        || !normals.is_empty() && normals.len() != vertices.len()
         || !auxiliary_channels_are_consistent(&strips, &channels[3..])
     {
-        return None;
+        return Ok(None);
     }
-    let mut triangles = Vec::new();
-    let mut base = 0usize;
-    for length in &strips {
-        for i in 0..length.saturating_sub(2) {
-            let [a, b, c] = if i % 2 == 0 {
-                [base + i, base + i + 1, base + i + 2]
-            } else {
-                [base + i, base + i + 2, base + i + 1]
-            };
-            triangles.push([
-                u32::try_from(a).ok()?,
-                u32::try_from(b).ok()?,
-                u32::try_from(c).ok()?,
-            ]);
-        }
-        base = base.checked_add(*length)?;
-    }
-    Some((
-        Mesh {
+    Ok(Some((
+        ProbedTable {
+            strips,
             vertices,
-            triangles,
-            strip_lengths: strips.into_iter().map(|length| length as u32).collect(),
             normals,
             channels,
         },
         at,
-    ))
+    )))
 }
 
-pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
+/// Pair one display-list table's lanes into mesh rows.
+///
+/// `Ok(None)` is a probe miss and nothing else: the descriptors at this byte
+/// position do not state the display-list grammar. The descriptor is the record
+/// boundary, so once `probe_table` answers, the region is a table and every
+/// lane disagreement inside it is a `CodecError` naming the table's byte
+/// offset — a normal lane that does not cover the vertices, and strip spans
+/// that do not cut the vertex lane, alike. The display-list grammar states a
+/// normal descriptor for every table, so the lane is always present and `None`
+/// is never the reading of an empty one.
+fn parse_table(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
+    let Some((
+        ProbedTable {
+            strips,
+            vertices,
+            normals,
+            channels,
+        },
+        end,
+    )) = probe_table(ctx, bytes, at)?
+    else {
+        return Ok(None);
+    };
+    let mut spans = Vec::new();
+    ctx.reserve_vec(&mut spans, strips.len(), "pair display-list strip spans")?;
+    for length in strips {
+        spans.push(u32::try_from(length).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("display-list strip length exceeds 32 bits")
+        })?);
+    }
+    if normals.len() == vertices.len() {
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(vertices.len()),
+            "pair display-list shaded vertices",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(vertices.len()),
+            "partition display-list strip vertices",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(spans.len()),
+            "partition display-list strips",
+        )?;
+    }
+    match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
+        Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
+        Err(error) => Err(cadmpeg_core::CodecError::malformed(format_args!(
+            "sldprt display-list table at byte {at}: {error}"
+        ))),
+    }
+}
+
+pub(crate) fn section_display_faces(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+) -> Result<Vec<DisplayFace>, cadmpeg_core::CodecError> {
+    #[cfg(test)]
+    DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let markers = payload
+    let mut markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
         .enumerate()
         .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .collect::<Vec<_>>();
+        .peekable();
     let mut faces = Vec::new();
-    for (marker_index, marker) in markers.iter().copied().enumerate() {
+    while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
         let (Some(triangle_count), Some(strip_count)) = (
             View::u32_le_at(payload, header + compact_face::TRIANGLE_COUNT),
@@ -386,50 +662,72 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
         // face descriptor tables continue after them without repeating the
         // `uoTempFaceTessData_c` declaration. Only another face declaration
         // starts a new sequence.
-        let limit = markers
-            .get(marker_index + 1)
-            .copied()
-            .unwrap_or(payload.len());
+        let limit = markers.peek().copied().unwrap_or(payload.len());
         let start = header + descriptor_table_offset(payload, header);
-        let Some(tables) = parse_table_sequence(payload, start, limit) else {
+        let Some(tables) = parse_table_sequence(ctx, payload, start, limit)? else {
             continue;
         };
-        if !tables.first().is_some_and(|(_, _, mesh)| {
-            usize::try_from(triangle_count).ok() == Some(mesh.triangles.len())
-                && usize::try_from(strip_count).ok() == Some(mesh.strip_lengths.len())
-        }) {
+        // The face header states the mesh of its first table when it states a
+        // mesh at all. Two zero counts state none: the primary writes that
+        // header over a face whose descriptor table still holds a mesh, and
+        // the marker then states no display face -- the disposition this
+        // decoder has always given it. A stated, positive count that disagrees
+        // with the table below it is a different thing: a contradiction inside
+        // bytes that are present, which takes the same disposition as a lane
+        // disagreement inside the same table.
+        let [(table_start, _, first_mesh), ..] = tables.as_slice() else {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "sldprt display-face header at byte {header} states no table"
+            )));
+        };
+        let Some((triangle_count, strip_count)) =
+            (triangle_count != 0 || strip_count != 0).then_some((triangle_count, strip_count))
+        else {
+            // The header states no mesh, so the tables below it are not the
+            // ones it describes and this marker states no display face.
             continue;
+        };
+        let parsed_triangles = first_mesh.triangle_count();
+        let parsed_strips = first_mesh.strip_count();
+        if usize::try_from(triangle_count).ok() != Some(parsed_triangles)
+            || usize::try_from(strip_count).ok() != Some(parsed_strips)
+        {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "sldprt display-face table at byte {table_start}: header states \
+                 {triangle_count} triangle(s) and {strip_count} strip(s); the parsed mesh has \
+                 {parsed_triangles} triangle(s) and {parsed_strips} strip(s)"
+            )));
         }
         for (start, end, mesh) in tables {
+            let (Some(table), Some(metadata)) =
+                (ByteRange::new(start, end), ByteRange::new(end, limit))
+            else {
+                continue;
+            };
+            ctx.reserve_vec(&mut faces, 1, "collect display-list faces")?;
             faces.push(DisplayFace {
                 mesh,
-                table: ByteRange { start, end },
-                metadata: ByteRange {
-                    start: end,
-                    end: limit,
-                },
+                table,
+                metadata,
                 surface_references: Vec::new(),
             });
         }
     }
-    faces.sort_by_key(|face| face.table.start);
+    ctx.stable_sort_by(
+        &mut faces,
+        |left, right| left.table.start().cmp(&right.table.start()),
+        |_| 0,
+        "sort SLDPRT display faces",
+    )?;
     for index in 0..faces.len() {
         let metadata_end = faces
             .get(index + 1)
-            .map_or(faces[index].metadata.end, |next| next.table.start)
-            .min(faces[index].metadata.end);
-        faces[index].metadata.end = metadata_end;
+            .map_or(faces[index].metadata.end(), |next| next.table.start());
+        faces[index].metadata = faces[index].metadata.truncated(metadata_end);
         faces[index].surface_references =
-            persistent_surface_references(payload, faces[index].metadata);
+            persistent_surface_references(ctx, payload, faces[index].metadata)?;
     }
-    faces
-}
-
-pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
-    section_display_faces(section)
-        .into_iter()
-        .map(|face| face.mesh)
-        .collect()
+    Ok(faces)
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -452,20 +750,28 @@ fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
     }
 }
 
+/// One display-list table: the byte range it spans and the mesh it states.
+type TableSpan = (usize, usize, Mesh);
+
 fn parse_table_sequence(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     at: usize,
     limit: usize,
-) -> Option<Vec<(usize, usize, Mesh)>> {
+) -> Result<Option<Vec<TableSpan>>, cadmpeg_core::CodecError> {
     let first_start = at;
-    let (mesh, mut at) = parse_table(payload, at)?;
+    let Some((mesh, mut at)) = parse_table(ctx, payload, at)? else {
+        return Ok(None);
+    };
     if at > limit {
-        return None;
+        return Ok(None);
     }
-    if mesh.vertices.is_empty() {
-        return None;
+    if mesh.vertex_count() == 0 {
+        return Ok(None);
     }
-    let mut meshes = vec![(first_start, at, mesh)];
+    let mut meshes = Vec::new();
+    ctx.reserve_vec(&mut meshes, 1, "collect display-list tables")?;
+    meshes.push((first_start, at, mesh));
     while at + 16 <= limit {
         let Some(relative) = payload[at..limit]
             .windows(4)
@@ -475,8 +781,9 @@ fn parse_table_sequence(
         };
         at += relative;
         let start = at;
-        if let Some((next, end)) = parse_table(payload, at) {
-            if end <= limit && !next.vertices.is_empty() {
+        if let Some((next, end)) = parse_table(ctx, payload, at)? {
+            if end <= limit && next.vertex_count() > 0 {
+                ctx.reserve_vec(&mut meshes, 1, "collect display-list tables")?;
                 meshes.push((start, end, next));
                 at = end;
             } else {
@@ -486,17 +793,19 @@ fn parse_table_sequence(
             at += 4;
         }
     }
-    Some(meshes)
+    Ok(Some(meshes))
 }
 
 fn persistent_surface_references(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     range: ByteRange,
-) -> Vec<PersistentSurfaceReference> {
+) -> Result<Vec<PersistentSurfaceReference>, cadmpeg_core::CodecError> {
     const MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let mut references = Vec::new();
-    let mut at = range.start;
-    while at + 4 <= range.end && at + 4 <= payload.len() {
+    let mut at = range.start();
+    while at + 4 <= range.end() && at + 4 <= payload.len() {
+        ctx.charge_work(1, "scan display-list reference names")?;
         if payload.get(at..at + MARKER.len()) != Some(MARKER) {
             at += 1;
             continue;
@@ -506,7 +815,7 @@ fn persistent_surface_references(
         let Some(end) = count
             .checked_mul(2)
             .and_then(|length| start.checked_add(length))
-            .filter(|end| *end <= range.end)
+            .filter(|end| *end <= range.end())
         else {
             at += 1;
             continue;
@@ -515,19 +824,26 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let Some(units) = raw
-            .chunks_exact(2)
-            .enumerate()
-            .map(|(index, _)| View::u16_le_at(raw, index * 2))
-            .collect::<Option<Vec<_>>>()
-        else {
-            at = end;
-            continue;
+        let (text, _text_reservation) = match ctx.utf16le_scoped_text(
+            raw,
+            count,
+            false,
+            "decode display-list reference text",
+        ) {
+            Ok(text) => text,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => {
+                at = end;
+                continue;
+            }
+            Err(error) => return Err(error),
         };
-        let Ok(text) = String::from_utf16(&units) else {
-            at = end;
-            continue;
-        };
+        let parse_work = text.len().checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("parse display-list reference text", 0, u64::MAX)
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(parse_work),
+            "parse display-list reference text",
+        )?;
         let mut fields = text.trim().split(',');
         let Some(_class_name) = fields
             .next()
@@ -539,7 +855,7 @@ fn persistent_surface_references(
         let Some(feature_source_id) = fields
             .next()
             .and_then(|field| field.parse::<u32>().ok())
-            .filter(|source| *source != 0 && *source != u32::MAX)
+            .and_then(|source| FeatureSourceId::try_from(source).ok())
         else {
             at = end;
             continue;
@@ -549,23 +865,34 @@ fn persistent_surface_references(
             at = end;
             continue;
         };
-        let mut trailing_fields = fields.collect::<Vec<_>>();
+        let mut trailing_fields = Vec::new();
+        for field in fields {
+            ctx.reserve_vec(
+                &mut trailing_fields,
+                1,
+                "scan display-list reference fields",
+            )?;
+            trailing_fields.push(field);
+        }
         if trailing_fields
             .last()
             .is_some_and(|field| field.trim().is_empty())
         {
             trailing_fields.pop();
         }
-        let trailing_fields = trailing_fields
-            .into_iter()
-            .map(|field| {
-                field
-                    .parse::<i32>()
-                    .ok()
-                    .map(|value| u32::from_ne_bytes(value.to_ne_bytes()))
-            })
-            .collect::<Option<Vec<_>>>();
-        references.push(match trailing_fields {
+        let mut numeric_fields = Some(Vec::new());
+        for field in trailing_fields {
+            let Ok(value) = field.parse::<i32>() else {
+                numeric_fields = None;
+                break;
+            };
+            if let Some(values) = &mut numeric_fields {
+                ctx.reserve_vec(values, 1, "decode display-list reference fields")?;
+                values.push(u32::from_ne_bytes(value.to_ne_bytes()));
+            }
+        }
+        ctx.reserve_vec(&mut references, 1, "collect display-list references")?;
+        references.push(match numeric_fields {
             Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
                 feature_source_id,
                 local_id: local_surface_id,
@@ -578,25 +905,14 @@ fn persistent_surface_references(
         });
         at = end;
     }
-    references
+    Ok(references)
 }
 
-pub fn section_summary(section: Section<'_>) -> Option<Summary> {
-    let meshes = section_meshes(section);
-    (!meshes.is_empty()).then(|| Summary {
-        vertices: meshes.iter().map(|mesh| mesh.vertices.len()).sum(),
-        triangles: meshes.iter().map(|mesh| mesh.triangles.len()).sum(),
-    })
-}
-
-pub fn summary(scan: &ContainerScan) -> Summary {
-    scan.sections()
-        .filter_map(section_summary)
-        .fold(Summary::default(), |mut total, next| {
-            total.vertices += next.vertices;
-            total.triangles += next.triangles;
-            total
-        })
+pub(crate) fn summary_for_faces(faces: &[DisplayFace]) -> Summary {
+    Summary {
+        vertices: faces.iter().map(|face| face.mesh.vertex_count()).sum(),
+        triangles: faces.iter().map(|face| face.mesh.triangle_count()).sum(),
+    }
 }
 
 struct SurfaceCandidate<'a> {
@@ -616,64 +932,104 @@ struct SurfaceCandidate<'a> {
 /// must provide a forward-evaluated parameter witness within the face or
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
-pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Model) -> Vec<String> {
-    let surfaces = model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<HashMap<_, _>>();
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let body_transforms = model
-        .bodies
-        .iter()
-        .map(|body| (&body.id, body.transform))
-        .collect::<HashMap<_, _>>();
-    let loops = model
-        .loops
-        .iter()
-        .map(|loop_| (&loop_.id, loop_))
-        .collect::<HashMap<_, _>>();
-    let coedges = model
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge))
-        .collect::<HashMap<_, _>>();
-    let vertices = model
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect::<HashMap<_, _>>();
-    let points = model
-        .points
-        .iter()
-        .map(|point| (&point.id, point.position))
-        .collect::<HashMap<_, _>>();
-    let curves = model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let candidates = model
-        .faces
-        .iter()
-        .filter_map(|face| {
+pub(crate) fn assign_unique_surface_owners(
+    ctx: &DecodeContext<'_>,
+    model: &mut cadmpeg_ir::document::Model,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    for face in &model.faces {
+        if let Some(stated) = face.tolerance {
+            if stated.get() < EPS_DISPLAY_QUANTIZATION {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "sldprt face {} evaluation tolerance {} is below display quantization floor {}",
+                    face.id,
+                    stated.get(),
+                    EPS_DISPLAY_QUANTIZATION
+                )));
+            }
+        }
+    }
+    let surfaces = collect_index(
+        ctx,
+        model
+            .surfaces
+            .iter()
+            .map(|surface| (&surface.id, &surface.geometry)),
+        "index SLDPRT tessellation surfaces",
+    )?;
+    let regions = collect_index(
+        ctx,
+        model
+            .regions
+            .iter()
+            .map(|region| (&region.id, &region.body)),
+        "index SLDPRT tessellation regions",
+    )?;
+    let shell_bodies = collect_index(
+        ctx,
+        model
+            .shells
+            .iter()
+            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
+        "index SLDPRT tessellation shells",
+    )?;
+    let body_transforms = collect_index(
+        ctx,
+        model.bodies.iter().map(|body| (&body.id, body.transform)),
+        "index SLDPRT tessellation body transforms",
+    )?;
+    let loops = collect_index(
+        ctx,
+        model.loops.iter().map(|loop_| (&loop_.id, loop_)),
+        "index SLDPRT tessellation loops",
+    )?;
+    let coedges = collect_index(
+        ctx,
+        model.coedges.iter().map(|coedge| (&coedge.id, coedge)),
+        "index SLDPRT tessellation coedges",
+    )?;
+    let edges = collect_index(
+        ctx,
+        model.edges.iter().map(|edge| (&edge.id, edge)),
+        "index SLDPRT tessellation edges",
+    )?;
+    let vertices = collect_index(
+        ctx,
+        model.vertices.iter().map(|vertex| (&vertex.id, vertex)),
+        "index SLDPRT tessellation vertices",
+    )?;
+    let points = collect_index(
+        ctx,
+        model
+            .points
+            .iter()
+            .map(|point| (&point.id, point.position().get())),
+        "index SLDPRT tessellation points",
+    )?;
+    let curves = collect_index(
+        ctx,
+        model
+            .curves
+            .iter()
+            .map(|curve| (&curve.id, &curve.geometry)),
+        "index SLDPRT tessellation curves",
+    )?;
+    let topology = TrimTopology {
+        loops: &loops,
+        coedges: &coedges,
+        edges: &edges,
+        vertices: &vertices,
+        points: &points,
+        curves: &curves,
+    };
+    let mut candidates = Vec::new();
+    for face in &model.faces {
+        ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
+        let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
-                Some(transform) if transform.is_proper_rigid() => transform.try_inverse_affine()?,
+                Some(transform) if transform.is_proper_rigid() => {
+                    transform.try_inverse_affine().ok()?
+                }
                 Some(_) => return None,
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
@@ -681,25 +1037,27 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
                 face: &face.id,
                 body,
                 surface: *surfaces.get(&face.surface)?,
-                tolerance: face.tolerance.unwrap_or(0.0),
+                tolerance: face
+                    .tolerance
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
                 inverse,
-                trim: analytic_trim(
-                    face,
-                    *surfaces.get(&face.surface)?,
-                    &loops,
-                    &coedges,
-                    &edges,
-                    &vertices,
-                    &points,
-                    &curves,
-                ),
+                trim: None,
             })
-        })
-        .collect::<Vec<_>>();
+        })();
+        if let Some(mut candidate) = candidate {
+            candidate.trim = analytic_trim(ctx, face, candidate.surface, &topology)?;
+            ctx.reserve_vec(
+                &mut candidates,
+                1,
+                "collect SLDPRT tessellation face candidates",
+            )?;
+            candidates.push(candidate);
+        }
+    }
 
     let mut assigned = Vec::new();
     for mesh in &mut model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertices().is_empty() {
+        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertex_count() == 0 {
             continue;
         }
         let coordinate_scale = mesh
@@ -710,42 +1068,54 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
         let quantization_tolerance =
             coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
                 + EPS_DISPLAY_QUANTIZATION;
-        let mut owners = candidates
-            .iter()
-            .filter(|candidate| {
-                let tolerance = candidate.tolerance.max(quantization_tolerance);
-                mesh.vertices().iter().all(|point| {
-                    surface_measure(
-                        candidate.surface,
-                        candidate.inverse.apply_point(*point),
-                        Some(tolerance),
-                    )
-                    .is_some_and(|measure| measure.residual <= tolerance)
-                })
-            })
-            .collect::<Vec<_>>();
-        if owners.len() > 1 {
-            owners.retain(|candidate| {
-                candidate.trim.as_ref().is_none_or(|trim| {
-                    trim.contains_mesh(
-                        mesh,
-                        candidate.inverse,
-                        candidate.tolerance.max(quantization_tolerance),
-                    )
-                })
-            });
+        let mut owners = Vec::new();
+        for candidate in &candidates {
+            ctx.charge_work(1, "test SLDPRT tessellation face candidate")?;
+            let tolerance = candidate.tolerance.max(quantization_tolerance);
+            let Some(surface) = candidate.surface.solved() else {
+                continue;
+            };
+            let mut fits = true;
+            for point in mesh.vertices() {
+                ctx.charge_work(1, "test SLDPRT tessellation vertex")?;
+                let Some(local) = candidate.inverse.apply_point(point.get()) else {
+                    fits = false;
+                    break;
+                };
+                let Some(measure) = surface_measure(ctx, surface, local.get(), Some(tolerance))?
+                else {
+                    fits = false;
+                    break;
+                };
+                if measure.residual > tolerance {
+                    fits = false;
+                    break;
+                }
+            }
+            if fits {
+                let keep = match candidate.trim.as_ref() {
+                    Some(trim) => trim.contains_mesh(ctx, mesh, candidate.inverse, tolerance)?,
+                    None => true,
+                };
+                if keep {
+                    ctx.reserve_vec(&mut owners, 1, "collect SLDPRT tessellation owners")?;
+                    owners.push(candidate);
+                }
+            }
         }
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
             _ => {
-                if owners
-                    .iter()
-                    .any(|candidate| contains_nurbs_surface(candidate.surface))
-                {
+                if owners.iter().any(|candidate| {
+                    candidate
+                        .surface
+                        .solved()
+                        .is_some_and(contains_nurbs_surface)
+                }) {
                     continue;
                 }
                 let Some((index, deflection)) =
-                    approximate_surface_owner(mesh, &candidates, quantization_tolerance)
+                    approximate_surface_owner(ctx, mesh, &candidates, quantization_tolerance)?
                 else {
                     continue;
                 };
@@ -753,67 +1123,121 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        ctx.reserve_vec(
+            &mut mesh.faces,
+            1,
+            "assign SLDPRT geometric tessellation face",
+        )?;
+        let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
+        let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
+        let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
+        let body =
+            cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(
+            ctx,
+            mesh.id.as_str(),
+            "retain SLDPRT assigned tessellation ID",
+        )?;
+        ctx.reserve_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
+        mesh.faces.push(face);
+        mesh.body = Some(body);
         if let Some(deflection) = chordal_deflection {
-            mesh.chordal_deflection = Some(deflection);
+            mesh.set_chordal_deflection(Some(deflection))
+                .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "invalid tessellation deflection: {error}"
+                    ))
+                })?;
         }
-        assigned.push(mesh.id.clone());
+        assigned.push(assigned_id);
     }
-    assigned
+    Ok(assigned)
 }
 
 fn approximate_surface_owner(
+    ctx: &DecodeContext<'_>,
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Option<(usize, f64)> {
-    if mesh.normals().len() != mesh.vertices().len() || mesh.normals().is_empty() {
-        return None;
+) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
+    if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
+        return Ok(None);
     }
-    let mut fits = candidates
+    charge_fit_work(
+        ctx,
+        candidates.len(),
+        mesh.vertex_count(),
+        "test SLDPRT tessellation surface fits",
+    )?;
+    let mut fits = Vec::new();
+    for outcome in candidates
         .iter()
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices().iter().zip(mesh.normals()) {
-                let local_point = candidate.inverse.apply_point(*point);
-                let measure = surface_measure(candidate.surface, local_point, None)?;
+            for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
+                let local_point = candidate.inverse.apply_point(point.get())?.get();
+                let measure =
+                    match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
+                        Ok(Some(measure)) => measure,
+                        Ok(None) => return None,
+                        Err(limit) => return Some(Err(limit)),
+                    };
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
-                let mesh_normal = candidate.inverse.apply_vector(*normal).unit()?;
+                let mesh_normal = candidate.inverse.apply_vector(normal.get())?.unit()?;
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
                 }
                 max_residual = max_residual.max(residual);
             }
-            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+            if is_planar_surface(candidate.surface.solved()?)
+                && max_residual > quantization_tolerance
+            {
                 return None;
             }
-            Some((index, max_residual))
+            Some(Ok((index, max_residual)))
         })
-        .collect::<Vec<_>>();
-    if fits.is_empty() {
-        return approximate_trimmed_surface_owner(mesh, candidates, quantization_tolerance);
+    {
+        let fit = outcome?;
+        ctx.reserve_vec(&mut fits, 1, "collect SLDPRT tessellation surface fits")?;
+        fits.push(fit);
     }
-    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
+    if fits.is_empty() {
+        return approximate_trimmed_surface_owner(ctx, mesh, candidates, quantization_tolerance);
+    }
+    ctx.stable_sort_by(
+        &mut fits,
+        |left, right| left.1.total_cmp(&right.1),
+        |_| 0,
+        "sort SLDPRT tessellation surface fits",
+    )?;
     let best_deflection = fits[0].1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
-    fits.retain(|(index, _)| {
-        candidates[*index].trim.as_ref().is_none_or(|trim| {
-            trim.contains_mesh(mesh, candidates[*index].inverse, quantization_tolerance)
-        })
-    });
+    let mut trimmed = Vec::new();
+    for fit @ (index, _) in fits {
+        let keep = match candidates[index].trim.as_ref() {
+            Some(trim) => {
+                trim.contains_mesh(ctx, mesh, candidates[index].inverse, quantization_tolerance)?
+            }
+            None => true,
+        };
+        if keep {
+            ctx.reserve_vec(&mut trimmed, 1, "collect SLDPRT trimmed surface fits")?;
+            trimmed.push(fit);
+        }
+    }
+    let fits = trimmed;
     let [(index, deflection), rest @ ..] = fits.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if rest
         .first()
         .is_some_and(|(_, next, ..)| *next <= *deflection + quantization_tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    Some((*index, *deflection))
+    Ok(Some((*index, *deflection)))
 }
 
 /// Use a unique analytic trim as an ownership witness when stored display
@@ -821,52 +1245,82 @@ fn approximate_surface_owner(
 /// geometric coincidence on an unbounded analytic carrier cannot fabricate an
 /// owner without the normal agreement required above.
 fn approximate_trimmed_surface_owner(
+    ctx: &DecodeContext<'_>,
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Option<(usize, f64)> {
-    let mut fits = candidates
+) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
+    charge_fit_work(
+        ctx,
+        candidates.len(),
+        mesh.vertex_count(),
+        "test SLDPRT tessellation trimmed fits",
+    )?;
+    let mut fits = Vec::new();
+    for outcome in candidates
         .iter()
         .enumerate()
         .filter_map(|(index, candidate)| {
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
             for point in mesh.vertices() {
-                let measure = surface_measure(
-                    candidate.surface,
-                    candidate.inverse.apply_point(*point),
+                let measure = match surface_measure(
+                    ctx,
+                    candidate.surface.solved()?,
+                    candidate.inverse.apply_point(point.get())?.get(),
                     None,
-                )?;
+                ) {
+                    Ok(Some(measure)) => measure,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
                 max_residual = max_residual.max(measure.residual);
             }
-            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+            if is_planar_surface(candidate.surface.solved()?)
+                && max_residual > quantization_tolerance
+            {
                 return None;
             }
-            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
-                .then_some((index, max_residual))
+            match trim.contains_mesh(ctx, mesh, candidate.inverse, quantization_tolerance) {
+                Ok(true) => Some(Ok((index, max_residual))),
+                Ok(false) => None,
+                Err(limit) => Some(Err(limit)),
+            }
         })
-        .collect::<Vec<_>>();
-    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let best_deflection = fits.first()?.1;
+    {
+        let fit = outcome?;
+        ctx.reserve_vec(&mut fits, 1, "collect SLDPRT tessellation trimmed fits")?;
+        fits.push(fit);
+    }
+    ctx.stable_sort_by(
+        &mut fits,
+        |left, right| left.1.total_cmp(&right.1),
+        |_| 0,
+        "sort SLDPRT tessellation surface fits",
+    )?;
+    let Some(first) = fits.first() else {
+        return Ok(None);
+    };
+    let best_deflection = first.1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     let [(index, deflection)] = fits.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some((*index, *deflection))
+    Ok(Some((*index, *deflection)))
 }
 
-fn is_planar_surface(surface: &SurfaceGeometry) -> bool {
+fn is_planar_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Plane { .. } => true,
-        SurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
+        SolvedSurfaceGeometry::Plane(_) => true,
+        SolvedSurfaceGeometry::Transformed(placed) => is_planar_surface(placed.basis()),
         _ => false,
     }
 }
 
-fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
+fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Nurbs(_) => true,
-        SurfaceGeometry::Transformed { basis, .. } => contains_nurbs_surface(basis),
+        SolvedSurfaceGeometry::Nurbs(_) => true,
+        SolvedSurfaceGeometry::Transformed(placed) => contains_nurbs_surface(placed.basis()),
         _ => false,
     }
 }
@@ -877,45 +1331,67 @@ fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
+    ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
-) -> Vec<String> {
-    let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
     for (target, identity) in face_identities {
-        let candidate = target.clone();
-        match faces_by_identity.entry(identity.clone()) {
+        ctx.charge_work(1, "index SLDPRT persistent face identities")?;
+        ctx.admit_hash_map_entry(
+            &mut faces_by_identity,
+            &identity,
+            "index SLDPRT persistent face identities",
+        )?;
+        match faces_by_identity.entry(identity) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(candidate));
+                entry.insert(Some(target));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get().as_ref().is_some_and(|face| face != &candidate) {
+                if entry.get().as_ref().is_some_and(|face| face != &target) {
                     *entry.get_mut() = None;
                 }
             }
         }
     }
 
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let face_bodies = model
-        .faces
-        .iter()
-        .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
-        .collect::<HashMap<_, _>>();
+    let regions = collect_index(
+        ctx,
+        model
+            .regions
+            .iter()
+            .map(|region| (&region.id, &region.body)),
+        "index SLDPRT tessellation regions",
+    )?;
+    let shell_bodies = collect_index(
+        ctx,
+        model
+            .shells
+            .iter()
+            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
+        "index SLDPRT tessellation shells",
+    )?;
+    let face_bodies = collect_index(
+        ctx,
+        model
+            .faces
+            .iter()
+            .filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?))),
+        "index SLDPRT tessellation faces",
+    )?;
 
-    let mut bindings_by_mesh = HashMap::<String, Option<PersistentFaceIdentity>>::new();
+    let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
-        let identity = binding.identity.clone();
-        match bindings_by_mesh.entry(binding.tessellation.clone()) {
+        ctx.charge_work(1, "index SLDPRT persistent tessellation bindings")?;
+        let key = binding.tessellation.as_str();
+        let identity = &binding.identity;
+        ctx.admit_hash_map_entry(
+            &mut bindings_by_mesh,
+            &key,
+            "index SLDPRT persistent tessellation bindings",
+        )?;
+        match bindings_by_mesh.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(identity));
             }
@@ -932,7 +1408,7 @@ pub(crate) fn assign_persistent_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
-        let Some(Some(identity)) = bindings_by_mesh.get(&mesh.id) else {
+        let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
             continue;
         };
         let Some(Some(face)) = faces_by_identity.get(identity) else {
@@ -941,25 +1417,56 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(face) else {
             continue;
         };
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
-        assigned.push(mesh.id.clone());
+        ctx.reserve_vec(
+            &mut mesh.faces,
+            1,
+            "assign SLDPRT persistent tessellation face",
+        )?;
+        let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
+        let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
+        let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
+        let body =
+            cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(
+            ctx,
+            mesh.id.as_str(),
+            "retain SLDPRT assigned tessellation ID",
+        )?;
+        ctx.reserve_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
+        mesh.faces.push(face);
+        mesh.body = Some(body);
+        assigned.push(assigned_id);
     }
-    assigned
+    Ok(assigned)
 }
 
 #[derive(Debug, Clone, Copy)]
 struct PlaneFrame {
-    origin: Point3,
+    origin: FinitePoint3,
     normal: Vector3,
     u_axis: Vector3,
-    v_axis: Vector3,
 }
 
 impl PlaneFrame {
+    fn new(origin: FinitePoint3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+        let normal = normal.unit()?;
+        let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
+        Some(Self {
+            origin,
+            normal,
+            u_axis,
+        })
+    }
+
+    fn v_axis(self) -> Vector3 {
+        let axis = self.normal.cross(self.u_axis);
+        let length = axis.norm();
+        Vector3::new(axis.x / length, axis.y / length, axis.z / length)
+    }
+
     fn project(self, point: Point3) -> Point2 {
-        let delta = point.vector_from(self.origin);
-        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis))
+        let delta = point.vector_from(self.origin.get());
+        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis()))
     }
 }
 
@@ -979,14 +1486,15 @@ enum AnalyticTrim {
 impl AnalyticTrim {
     fn contains_mesh(
         &self,
+        ctx: &DecodeContext<'_>,
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         match self {
-            Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Cylindrical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Conical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+            Self::Planar(trim) => trim.contains_mesh(ctx, mesh, inverse_body, tolerance),
+            Self::Cylindrical(trim) => Ok(trim.contains_mesh(mesh, inverse_body, tolerance)),
+            Self::Conical(trim) => Ok(trim.contains_mesh(mesh, inverse_body, tolerance)),
         }
     }
 }
@@ -1007,12 +1515,16 @@ enum PlanarHole {
 }
 
 impl PlanarHole {
-    fn polygon(boundary: Vec<Point2>, tolerance: f64) -> Option<Self> {
-        let triangles = triangulate_polygon(&boundary, tolerance)?;
-        Some(Self::Polygon {
+    fn polygon(
+        ctx: &DecodeContext<'_>,
+        boundary: Vec<Point2>,
+        tolerance: f64,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let triangles = require_some!(triangulate_polygon(ctx, &boundary, tolerance)?);
+        Ok(Some(Self::Polygon {
             boundary,
             triangles,
-        })
+        }))
     }
 }
 
@@ -1038,8 +1550,7 @@ enum HoleConstraint<'a> {
 #[derive(Debug, Clone, Copy)]
 struct CylindricalTrim {
     origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
+    frame: OrthonormalFrame3,
     radius: f64,
     min_axial: f64,
     max_axial: f64,
@@ -1050,10 +1561,9 @@ struct CylindricalTrim {
 #[derive(Debug, Clone, Copy)]
 struct ConicalTrim {
     origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
+    frame: OrthonormalFrame3,
     radius: f64,
-    ratio: f64,
+    ratio: PositiveReal,
     slope: f64,
     min_axial: f64,
     max_axial: f64,
@@ -1069,9 +1579,14 @@ impl CylindricalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let point = inverse_body.apply_point(*point);
-            let axial = point.vector_from(self.origin).dot(self.axis);
-            let angular = cylinder_angle(point, self.origin, self.axis, self.ref_direction);
+            let Some(point) = inverse_body.apply_point(point.get()) else {
+                return false;
+            };
+            let point = point.get();
+            let axial = point
+                .vector_from(self.origin)
+                .dot(*self.frame.axis().as_raw());
+            let angular = cylinder_angle(point, self.origin, &self.frame);
             axial.is_finite()
                 && axial >= self.min_axial - tolerance
                 && axial <= self.max_axial + tolerance
@@ -1096,16 +1611,15 @@ impl ConicalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let point = inverse_body.apply_point(*point);
-            let axial = point.vector_from(self.origin).dot(self.axis);
+            let Some(point) = inverse_body.apply_point(point.get()) else {
+                return false;
+            };
+            let point = point.get();
+            let axial = point
+                .vector_from(self.origin)
+                .dot(*self.frame.axis().as_raw());
             let local_radius = self.radius + axial * self.slope;
-            let angular = cone_angle(
-                point,
-                self.origin,
-                self.axis,
-                self.ref_direction,
-                self.ratio,
-            );
+            let angular = cone_angle(point, self.origin, &self.frame, self.ratio);
             axial.is_finite()
                 && local_radius.is_finite()
                 && axial >= self.min_axial - tolerance
@@ -1117,7 +1631,7 @@ impl ConicalTrim {
                             self.angular_span,
                             angular,
                             tolerance
-                                / (local_radius.abs() * self.ratio.min(1.0))
+                                / (local_radius.abs() * self.ratio.get().min(1.0))
                                     .max(EPS_DISPLAY_QUANTIZATION),
                         )
                 })
@@ -1128,37 +1642,87 @@ impl ConicalTrim {
 impl PlanarTrim {
     fn contains_mesh(
         &self,
+        ctx: &DecodeContext<'_>,
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let tolerance = tolerance + self.boundary_tolerance;
-        let projected = mesh
-            .vertices()
-            .iter()
-            .map(|point| self.frame.project(inverse_body.apply_point(*point)))
-            .collect::<Vec<_>>();
-        let holes = self
-            .holes
-            .iter()
-            .map(|hole| match hole {
+        let mut projected = Vec::new();
+        for point in mesh.vertices() {
+            ctx.charge_work(1, "project SLDPRT planar trim mesh vertex")?;
+            let Some(point) = inverse_body.apply_point(point.get()) else {
+                return Ok(false);
+            };
+            ctx.reserve_vec(&mut projected, 1, "collect SLDPRT planar trim projections")?;
+            projected.push(self.frame.project(point.get()));
+        }
+        let mut holes = Vec::new();
+        for hole in &self.holes {
+            ctx.charge_work(1, "test SLDPRT planar trim hole")?;
+            let constraint = match hole {
                 PlanarHole::Polygon {
                     boundary,
                     triangles,
-                } => Some(HoleConstraint::Polygon {
+                } => HoleConstraint::Polygon {
                     boundary,
                     triangles,
-                }),
-                PlanarHole::Circle(hole) => chordal_hole_constraint(*hole, &projected, tolerance)
-                    .map(|(exclusion, boundary)| HoleConstraint::Circle {
+                },
+                PlanarHole::Circle(hole) => {
+                    let Some((exclusion, boundary)) =
+                        chordal_hole_constraint(ctx, *hole, &projected, tolerance)?
+                    else {
+                        return Ok(false);
+                    };
+                    HoleConstraint::Circle {
                         exclusion,
                         boundary,
-                    }),
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(holes) = holes else {
-            return false;
+                    }
+                }
+            };
+            ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar trim constraints")?;
+            holes.push(constraint);
+        }
+        let outer_edges = match &self.outer {
+            Some(PlanarOuter::Polygon(boundary)) => boundary.len(),
+            Some(PlanarOuter::Circle(_)) => 1,
+            None => 0,
         };
+        let point_work = cadmpeg_core::decode::u64_from_index(outer_edges)
+            .checked_mul(2)
+            .and_then(|outer_work| {
+                holes.iter().try_fold(outer_work, |work, hole| {
+                    let edges = match hole {
+                        HoleConstraint::Polygon { boundary, .. } => boundary.len(),
+                        HoleConstraint::Circle { .. } => 1,
+                    };
+                    work.checked_add(cadmpeg_core::decode::u64_from_index(edges).checked_mul(3)?)
+                })
+            })
+            .and_then(|work| {
+                work.checked_mul(cadmpeg_core::decode::u64_from_index(projected.len()))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("test SLDPRT planar trim points", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(point_work, "test SLDPRT planar trim points")?;
+        let triangle_work = holes
+            .iter()
+            .try_fold(0u64, |work, hole| {
+                let triangles = match hole {
+                    HoleConstraint::Polygon { triangles, .. } => triangles.len(),
+                    HoleConstraint::Circle { .. } => 1,
+                };
+                work.checked_add(cadmpeg_core::decode::u64_from_index(triangles).checked_mul(64)?)
+            })
+            .and_then(|work| work.checked_add(1))
+            .and_then(|work| {
+                work.checked_mul(cadmpeg_core::decode::u64_from_index(mesh.triangles().len()))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("test SLDPRT planar trim triangles", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(triangle_work, "test SLDPRT planar trim triangles")?;
         if projected.iter().any(|point| {
             self.outer.as_ref().is_some_and(|outer| !match outer {
                 PlanarOuter::Polygon(outer) => polygon_contains(outer, *point, tolerance),
@@ -1169,18 +1733,29 @@ impl PlanarTrim {
                 .iter()
                 .any(|hole| hole.contains_interior(*point, tolerance))
         }) {
-            return false;
+            return Ok(false);
         }
-        mesh.triangles().iter().all(|triangle| {
-            let [Some(a), Some(b), Some(c)] =
-                triangle.map(|index| projected.get(index as usize).copied())
-            else {
-                return false;
+        for triangle in mesh.triangles() {
+            let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
+                projected
+                    .get(cadmpeg_core::decode::index_from_u32(index))
+                    .copied()
+            }) else {
+                return Ok(false);
             };
-            holes
+            if let Some(PlanarOuter::Polygon(boundary)) = &self.outer {
+                if !polygon_contains_triangle(ctx, boundary, [a, b, c], tolerance)? {
+                    return Ok(false);
+                }
+            }
+            if holes
                 .iter()
-                .all(|hole| !hole.crosses_triangle([a, b, c], tolerance))
-        })
+                .any(|hole| hole.crosses_triangle([a, b, c], tolerance))
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -1207,174 +1782,199 @@ impl HoleConstraint<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The indexed topology and curve maps that every trim grammar reads.
+#[derive(Clone, Copy)]
+struct TrimTopology<'a> {
+    loops: &'a HashMap<&'a cadmpeg_ir::ids::LoopId, &'a cadmpeg_ir::topology::Loop>,
+    coedges: &'a HashMap<&'a cadmpeg_ir::ids::CoedgeId, &'a cadmpeg_ir::topology::Coedge>,
+    edges: &'a HashMap<&'a cadmpeg_ir::ids::EdgeId, &'a cadmpeg_ir::topology::Edge>,
+    vertices: &'a HashMap<&'a cadmpeg_ir::ids::VertexId, &'a cadmpeg_ir::topology::Vertex>,
+    points: &'a HashMap<&'a cadmpeg_ir::ids::PointId, Point3>,
+    curves: &'a HashMap<&'a cadmpeg_ir::ids::CurveId, &'a CurveGeometry>,
+}
+
 fn closed_planar_circle(
     loop_: &cadmpeg_ir::topology::Loop,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     tolerance: f64,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Option<CircularHole> {
+    let TrimTopology {
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+        ..
+    } = *topology;
     let coedge = *coedges.get(&loop_.coedges()[0])?;
     let edge = *edges.get(&coedge.edge)?;
     if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
         return None;
     }
-    let CurveGeometry::Circle {
-        center,
-        axis,
-        radius,
-        ..
-    } = *curves.get(edge.curve.as_ref()?)?
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+        *curves.get(edge.curve()?)?
     else {
         return None;
     };
-    let axis = axis.unit()?;
+    let center = circle_curve.center().get();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let radius = circle_curve.radius().get();
     let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
     let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
-    if !radius.is_finite()
-        || *radius <= tolerance
+    if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-        || analytic_surface_residual(surface, *center)? > tolerance
-        || analytic_surface_residual(surface, boundary_point)? > tolerance
+        || analytic_surface_residual(surface.solved()?, center)? > tolerance
+        || analytic_surface_residual(surface.solved()?, boundary_point)? > tolerance
         || boundary_point.distance(end_point) > tolerance
-        || (boundary_point.distance(*center) - radius).abs() > tolerance
+        || (boundary_point.distance(center) - radius).abs() > tolerance
     {
         return None;
     }
     Some(CircularHole {
-        center: frame.project(*center),
-        radius: *radius,
+        center: frame.project(center),
+        radius,
     })
 }
 
+#[derive(Clone, Copy)]
+struct BoundaryTolerance {
+    tolerance: f64,
+    sampling_tolerance: f64,
+}
+
 fn planar_boundary_samples(
+    ctx: &DecodeContext<'_>,
     curve: &CurveGeometry,
     start: Point3,
     end: Point3,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
-    tolerance: f64,
-    sampling_tolerance: f64,
-) -> Option<(Vec<Point2>, f64)> {
+    limits: BoundaryTolerance,
+) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+    let BoundaryTolerance {
+        tolerance,
+        sampling_tolerance,
+    } = limits;
     match curve {
-        CurveGeometry::Line { .. } => Some((vec![frame.project(start)], 0.0)),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let axis = axis.unit()?;
-            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-            let transverse = axis.cross(reference).unit()?;
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
+            Ok(Some((vec![frame.project(start)], 0.0)))
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let axis = *circle_curve.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(circle_curve.frame());
+            let radius = circle_curve.radius().get();
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                || !radius.is_finite()
-                || *radius <= tolerance
-                || analytic_surface_residual(surface, *center)? > tolerance
+                || radius <= tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    center
+                )) > tolerance
             {
-                return None;
+                return Ok(None);
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
                 start,
-                *center,
+                center,
                 reference,
                 transverse,
-                *radius,
-                *radius,
+                radius,
+                radius,
                 endpoint_tolerance,
-            )?;
+            );
+            let start_parameter = require_some!(start_parameter);
             let end_parameter = ellipse_parameter(
                 end,
-                *center,
+                center,
                 reference,
                 transverse,
-                *radius,
-                *radius,
+                radius,
+                radius,
                 endpoint_tolerance,
-            )?;
-            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            );
+            let end_parameter = require_some!(end_parameter);
+            let span = require_some!(shortest_arc_span(start_parameter, end_parameter));
             PlanarArc {
-                center: *center,
+                center,
                 first_direction: reference,
                 second_direction: transverse,
-                first_radius: *radius,
-                second_radius: *radius,
+                first_radius: radius,
+                second_radius: radius,
             }
             .samples(
+                ctx,
                 start_parameter,
                 span,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance,
+                },
             )
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let axis = axis.unit()?;
-            if major_direction.dot(axis).abs() > EPS_AXIS_ALIGNMENT {
-                return None;
-            }
-            let major_direction = major_direction.unit()?;
-            let minor_direction = axis.cross(major_direction).unit()?;
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let center = ellipse_curve.center().get();
+            let axis = *ellipse_curve.frame().axis().as_raw();
+            let major_direction = *ellipse_curve.frame().reference().as_raw();
+            let minor_direction = *ellipse_curve.frame().binormal().as_raw();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                || !major_radius.is_finite()
-                || !minor_radius.is_finite()
-                || *major_radius <= tolerance
-                || *minor_radius <= tolerance
-                || *major_radius < *minor_radius
-                || analytic_surface_residual(surface, *center)? > tolerance
+                || major_radius <= tolerance
+                || minor_radius <= tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    center
+                )) > tolerance
             {
-                return None;
+                return Ok(None);
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
                 start,
-                *center,
+                center,
                 major_direction,
                 minor_direction,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 endpoint_tolerance,
-            )?;
+            );
+            let start_parameter = require_some!(start_parameter);
             let end_parameter = ellipse_parameter(
                 end,
-                *center,
+                center,
                 major_direction,
                 minor_direction,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 endpoint_tolerance,
-            )?;
-            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            );
+            let end_parameter = require_some!(end_parameter);
+            let span = require_some!(shortest_arc_span(start_parameter, end_parameter));
             PlanarArc {
-                center: *center,
+                center,
                 first_direction: major_direction,
                 second_direction: minor_direction,
-                first_radius: *major_radius,
-                second_radius: *minor_radius,
+                first_radius: major_radius,
+                second_radius: minor_radius,
             }
             .samples(
+                ctx,
                 start_parameter,
                 span,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance,
+                },
             )
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -1390,35 +1990,47 @@ struct PlanarArc {
 impl PlanarArc {
     fn samples(
         self,
+        ctx: &DecodeContext<'_>,
         start_parameter: f64,
         span: f64,
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
-        tolerance: f64,
-        sampling_tolerance: f64,
-    ) -> Option<(Vec<Point2>, f64)> {
+        limits: BoundaryTolerance,
+    ) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+        let BoundaryTolerance {
+            tolerance,
+            sampling_tolerance,
+        } = limits;
         let radius = self.first_radius.max(self.second_radius);
-        let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance);
-        let points = (0..segments)
-            .map(|index| {
-                let parameter =
-                    start_parameter + span * f64::from(index as u32) / f64::from(segments as u32);
-                let point = self
-                    .center
-                    .translated(self.first_direction, self.first_radius * parameter.cos())
-                    .translated(self.second_direction, self.second_radius * parameter.sin());
-                (point, frame.project(point))
-            })
-            .collect::<Vec<_>>();
-        if points.iter().any(|(point, _)| {
-            analytic_surface_residual(surface, *point).is_none_or(|residual| residual > tolerance)
-        }) {
-            return None;
+        let Some((segments, boundary_tolerance)) =
+            planar_arc_segments(span, radius, sampling_tolerance)
+        else {
+            return Ok(None);
+        };
+        let solved_surface = require_some!(surface.solved());
+        let mut points = Vec::new();
+        for index in 0..segments {
+            ctx.charge_work(1, "sample SLDPRT planar trim arc")?;
+            let (Some(index_value), Some(segment_value)) = (
+                cadmpeg_core::convert::f64_from_index(index),
+                cadmpeg_core::convert::f64_from_index(segments),
+            ) else {
+                return Ok(None);
+            };
+            let parameter = start_parameter + span * index_value / segment_value;
+            let point = self
+                .center
+                .translated(self.first_direction, self.first_radius * parameter.cos())
+                .translated(self.second_direction, self.second_radius * parameter.sin());
+            if analytic_surface_residual(solved_surface, point)
+                .is_none_or(|residual| residual > tolerance)
+            {
+                return Ok(None);
+            }
+            ctx.reserve_vec(&mut points, 1, "collect SLDPRT planar trim arc samples")?;
+            points.push(frame.project(point));
         }
-        Some((
-            points.into_iter().map(|(_, projected)| projected).collect(),
-            boundary_tolerance,
-        ))
+        Ok(Some((points, boundary_tolerance)))
     }
 }
 
@@ -1451,32 +2063,54 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
         .then_some(span)
 }
 
-fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
-    let cosine = (1.0 - tolerance / radius).clamp(-1.0, 1.0);
-    let maximum_span = 2.0 * cosine.acos();
+/// Answer the segment count and the sagitta the chords leave.
+///
+/// A chord whose sagitta is `tolerance` subtends `2 * asin(half_chord)` with
+/// `half_chord = sqrt(tolerance / (2 * radius))`, the sine of the quarter
+/// span. `radius` is a positive IR radius and `tolerance` is a positive
+/// sampling tolerance, so the ratio is positive. It reaches one at a tolerance
+/// of twice the radius, which is not an error: the sagitta of the complete
+/// circle is the diameter, so a tolerance at or beyond it admits the whole
+/// circle in one segment, and the sine of the quarter span stays at one.
+///
+/// `None` when the span is not finite or the segment count has no exact
+/// floating-point value.
+fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> Option<(usize, f64)> {
+    if !span.is_finite() {
+        return None;
+    }
+    let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
+    let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
-        (span.abs() / maximum_span).ceil() as usize
+        match cadmpeg_core::convert::truncate_f64_to_usize((span.abs() / maximum_span).ceil()) {
+            Some(count) => count,
+            None => MAX_PLANAR_TRIM_ARC_SEGMENTS,
+        }
     } else {
         MAX_PLANAR_TRIM_ARC_SEGMENTS
     };
     let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
-    let actual_span = span.abs() / f64::from(segments as u32);
-    (segments, radius * (1.0 - (actual_span / 2.0).cos()))
+    let actual_span = span.abs() / cadmpeg_core::convert::f64_from_index(segments)?;
+    let sine = (actual_span / 4.0).sin();
+    Some((segments, (radius * sine) * (2.0 * sine)))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn planar_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface)?;
-    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    topology: &TrimTopology<'_>,
+) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
+    let frame = require_some!(plane_frame(require_some!(surface.solved())));
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let coordinate_scale = points
         .values()
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
@@ -1489,92 +2123,136 @@ fn planar_trim(
     let mut circles = Vec::new();
     let mut boundary_tolerance = 0.0_f64;
     for loop_id in &face.loops {
-        let loop_ = *loops.get(loop_id)?;
+        ctx.charge_work(1, "scan SLDPRT planar trim loop")?;
+        let loop_ = *require_some!(loops.get(loop_id));
         if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
         {
-            return None;
+            return Ok(None);
         }
         if loop_.coedges().len() == 1 {
-            circles.push(closed_planar_circle(
-                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
-            )?);
+            let circle = require_some!(closed_planar_circle(
+                loop_, surface, frame, tolerance, topology,
+            ));
+            ctx.reserve_vec(&mut circles, 1, "collect SLDPRT planar trim circles")?;
+            circles.push(circle);
             continue;
         }
 
-        let mut polygon = Vec::with_capacity(loop_.coedges().len());
+        let mut polygon = Vec::new();
         let mut first_start = None;
         let mut previous_end = None;
         for coedge_id in loop_.coedges() {
-            let coedge = *coedges.get(coedge_id)?;
-            let edge = *edges.get(&coedge.edge)?;
+            ctx.charge_work(1, "scan SLDPRT planar trim coedge")?;
+            let coedge = *require_some!(coedges.get(coedge_id));
+            let edge = *require_some!(edges.get(&coedge.edge));
             if coedge.owner_loop != loop_.id {
-                return None;
+                return Ok(None);
             }
             let (start, end) = match coedge.sense {
                 Sense::Forward => (&edge.start, &edge.end),
                 Sense::Reversed => (&edge.end, &edge.start),
             };
-            let start = *points.get(&vertices.get(start)?.point)?;
-            let end = *points.get(&vertices.get(end)?.point)?;
-            if analytic_surface_residual(surface, start)? > tolerance
-                || analytic_surface_residual(surface, end)? > tolerance
+            let start = *require_some!(points.get(&require_some!(vertices.get(start)).point));
+            let end = *require_some!(points.get(&require_some!(vertices.get(end)).point));
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                start
+            )) > tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    end
+                )) > tolerance
                 || previous_end.is_some_and(|previous: Point3| previous.distance(start) > tolerance)
             {
-                return None;
+                return Ok(None);
             }
-            let (samples, sample_tolerance) = planar_boundary_samples(
-                curves.get(edge.curve.as_ref()?)?,
+            let (samples, sample_tolerance) = require_some!(planar_boundary_samples(
+                ctx,
+                require_some!(curves.get(require_some!(edge.curve()))),
                 start,
                 end,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                crate::tessellation::BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance
+                }
+            )?);
+            ctx.reserve_vec(
+                &mut polygon,
+                samples.len(),
+                "collect SLDPRT planar trim polygon",
             )?;
             polygon.extend(samples);
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
         }
-        if previous_end?.distance(first_start?) > tolerance {
-            return None;
+        if require_some!(previous_end).distance(require_some!(first_start)) > tolerance {
+            return Ok(None);
         }
+        ctx.reserve_vec(&mut polygons, 1, "collect SLDPRT planar trim polygons")?;
         polygons.push(polygon);
     }
     let (outer, holes) = if polygons.is_empty() {
         if circles.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let (outer, holes) = circular_outer_and_holes(&circles, tolerance)?;
-        (
-            PlanarOuter::Circle(outer),
-            holes.into_iter().map(PlanarHole::Circle).collect(),
-        )
+        let (outer, holes) = require_some!(circular_outer_and_holes(ctx, &circles, tolerance)?);
+        let mut planar_holes = Vec::new();
+        for hole in holes {
+            ctx.reserve_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
+            planar_holes.push(PlanarHole::Circle(hole));
+        }
+        (PlanarOuter::Circle(outer), planar_holes)
     } else {
-        let outer_candidates = polygons
+        let boundary_count = polygons
             .iter()
-            .enumerate()
-            .filter(|(index, outer)| {
-                polygons
-                    .iter()
-                    .enumerate()
-                    .filter(|(inner_index, _)| index != inner_index)
-                    .all(|(_, inner)| polygon_inside_polygon(inner, outer, sampling_tolerance))
-                    && circles
-                        .iter()
-                        .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
+            .try_fold(
+                cadmpeg_core::decode::u64_from_index(circles.len()),
+                |count, polygon| {
+                    count.checked_add(cadmpeg_core::decode::u64_from_index(polygon.len()))
+                },
+            )
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX)
+            })?;
+        let work = boundary_count
+            .checked_mul(boundary_count)
+            .and_then(|work| {
+                work.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(polygons.len()).checked_add(1)?,
+                )
             })
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        let [outer_index] = outer_candidates.as_slice() else {
-            return None;
-        };
-        let outer_polygon = &polygons[*outer_index];
-        let polygon_holes = polygons
-            .iter()
-            .enumerate()
-            .filter_map(|(index, polygon)| (index != *outer_index).then_some(polygon))
-            .collect::<Vec<_>>();
+            .and_then(|work| work.checked_mul(16))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(work, "compare SLDPRT planar trim boundaries")?;
+        let mut outer_index = None;
+        for (index, outer) in polygons.iter().enumerate() {
+            if polygons
+                .iter()
+                .enumerate()
+                .filter(|(inner_index, _)| index != *inner_index)
+                .all(|(_, inner)| polygon_inside_polygon(inner, outer, sampling_tolerance))
+                && circles
+                    .iter()
+                    .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
+                && outer_index.replace(index).is_some()
+            {
+                return Ok(None);
+            }
+        }
+        let outer_index = require_some!(outer_index);
+        let outer_polygon = &polygons[outer_index];
+        let mut polygon_holes = Vec::new();
+        for (index, polygon) in polygons.iter().enumerate() {
+            if index != outer_index {
+                ctx.reserve_vec(&mut polygon_holes, 1, "collect SLDPRT planar polygon holes")?;
+                polygon_holes.push(polygon);
+            }
+        }
         if polygon_holes
             .iter()
             .any(|hole| !polygon_inside_polygon(hole, outer_polygon, sampling_tolerance))
@@ -1595,136 +2273,154 @@ fn planar_trim(
                 })
             })
         {
-            return None;
+            return Ok(None);
         }
-        let mut holes = circles
-            .into_iter()
-            .map(PlanarHole::Circle)
-            .collect::<Vec<_>>();
-        holes.extend(
-            polygon_holes
-                .into_iter()
-                .map(|polygon| PlanarHole::polygon(polygon.clone(), sampling_tolerance))
-                .collect::<Option<Vec<_>>>()?,
-        );
-        (PlanarOuter::Polygon(outer_polygon.clone()), holes)
+        let mut holes = Vec::new();
+        for circle in circles {
+            ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
+            holes.push(PlanarHole::Circle(circle));
+        }
+        for polygon in polygon_holes {
+            let mut boundary = Vec::new();
+            ctx.reserve_vec(
+                &mut boundary,
+                polygon.len(),
+                "copy SLDPRT planar hole boundary",
+            )?;
+            boundary.extend_from_slice(polygon);
+            let hole = require_some!(PlanarHole::polygon(ctx, boundary, sampling_tolerance)?);
+            ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
+            holes.push(hole);
+        }
+        let mut outer = Vec::new();
+        ctx.reserve_vec(
+            &mut outer,
+            outer_polygon.len(),
+            "copy SLDPRT planar outer boundary",
+        )?;
+        outer.extend_from_slice(outer_polygon);
+        (PlanarOuter::Polygon(outer), holes)
     };
-    Some(PlanarTrim {
+    Ok(Some(PlanarTrim {
         frame,
         outer: Some(outer),
         holes,
         boundary_tolerance,
-    })
+    }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn planar_hole_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface)?;
-    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
-    let face_loops = face
-        .loops
-        .iter()
-        .map(|loop_id| loops.get(loop_id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    if !face_loops.iter().any(|loop_| loop_.coedges().len() > 1) {
-        return None;
+    topology: &TrimTopology<'_>,
+) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let loops = topology.loops;
+    let frame = require_some!(plane_frame(require_some!(surface.solved())));
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
+    let mut has_polygon_loop = false;
+    for loop_id in &face.loops {
+        ctx.charge_work(1, "scan SLDPRT planar hole loop")?;
+        let loop_ = require_some!(loops.get(loop_id));
+        has_polygon_loop |= loop_.coedges().len() > 1;
     }
-    let holes = face_loops
-        .iter()
-        .filter(|loop_| {
-            loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
-        })
-        .filter_map(|loop_| {
-            closed_planar_circle(
-                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
-            )
-        })
-        .collect::<Vec<_>>();
-    (!holes.is_empty()).then_some(PlanarTrim {
+    if !has_polygon_loop {
+        return Ok(None);
+    }
+    let mut holes = Vec::new();
+    for loop_id in &face.loops {
+        ctx.charge_work(1, "test SLDPRT planar hole loop")?;
+        let loop_ = require_some!(loops.get(loop_id));
+        if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
+        {
+            if let Some(circle) = closed_planar_circle(loop_, surface, frame, tolerance, topology) {
+                ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
+                holes.push(PlanarHole::Circle(circle));
+            }
+        }
+    }
+    Ok((!holes.is_empty()).then_some(PlanarTrim {
         frame,
         outer: None,
-        holes: holes.into_iter().map(PlanarHole::Circle).collect(),
+        holes,
         boundary_tolerance: 0.0,
-    })
+    }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn cylindrical_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<CylindricalTrim> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface
-    else {
-        return None;
+    topology: &TrimTopology<'_>,
+) -> Result<Option<CylindricalTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
+        return Ok(None);
     };
-    let axis = axis.unit()?;
-    if !radius.is_finite() || *radius <= EPS_DISPLAY_QUANTIZATION {
-        return None;
+    let origin = cylinder_surface.origin().get();
+    let frame = *cylinder_surface.frame();
+    let axis = *frame.axis().as_raw();
+    let radius = cylinder_surface.radius().get();
+    if radius <= EPS_DISPLAY_QUANTIZATION {
+        return Ok(None);
     }
-    let [loop_id] = face.loops.as_slice() else {
-        return None;
-    };
-    let loop_ = *loops.get(loop_id)?;
+    if face.loops.len() != 1 {
+        return Ok(None);
+    }
+    let loop_id = require_some!(face.loops.iter().next());
+    let loop_ = *require_some!(loops.get(loop_id));
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
-        let coedge = *coedges.get(coedge_id)?;
+        ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
+        let coedge = *require_some!(coedges.get(coedge_id));
         if coedge.owner_loop != loop_.id {
-            return None;
+            return Ok(None);
         }
-        let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve.as_ref()?)?;
+        let edge = *require_some!(edges.get(&coedge.edge));
+        let curve = require_some!(curves.get(require_some!(edge.curve())));
         match curve {
-            CurveGeometry::Line { direction, .. } => {
-                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
-                    return None;
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+                let direction = *line_curve.direction().as_raw();
+                if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                    return Ok(None);
                 }
             }
-            CurveGeometry::Circle {
-                axis: curve_axis,
-                radius: curve_radius,
-                ..
-            } => {
-                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !curve_radius.is_finite()
-                    || (*curve_radius - *radius).abs() > tolerance
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let curve_axis = circle_curve.frame().axis().as_raw();
+                let curve_radius = circle_curve.radius().get();
+                if curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || (curve_radius - radius).abs() > tolerance
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         }
-        for vertex_id in [edge.start.clone(), edge.end.clone()] {
-            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-            if analytic_surface_residual(surface, point)? > tolerance {
-                return None;
+        for vertex_id in [&edge.start, &edge.end] {
+            ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                point
+            )) > tolerance
+            {
+                return Ok(None);
             }
-            let axial = point.vector_from(*origin).dot(axis);
+            let axial = point.vector_from(origin).dot(axis);
             if !axial.is_finite() {
-                return None;
+                return Ok(None);
             }
             axial_bounds = Some(match axial_bounds {
                 Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
@@ -1732,207 +2428,211 @@ fn cylindrical_trim(
             });
         }
     }
-    let (min_axial, max_axial) = axial_bounds?;
-    let angles = loop_
-        .coedges()
-        .iter()
-        .map(|coedge_id| {
-            let coedge = coedges.get(coedge_id)?;
-            let edge = edges.get(&coedge.edge)?;
-            [edge.start.clone(), edge.end.clone()]
-                .into_iter()
-                .map(|vertex_id| {
-                    let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-                    cylinder_angle(point, *origin, axis, *ref_direction)
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<Vec<_>>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let (angular_start, angular_span) = circular_interval(&angles)?;
-    (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
-        origin: *origin,
-        axis,
-        ref_direction: *ref_direction,
-        radius: *radius,
-        min_axial,
-        max_axial,
-        angular_start,
-        angular_span,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn conical_trim(
-    face: &cadmpeg_ir::topology::Face,
-    surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<ConicalTrim> {
-    let SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-        ratio,
-        half_angle,
-    } = surface
-    else {
-        return None;
-    };
-    let axis = axis.unit()?;
-    let slope = half_angle.tan();
-    if !radius.is_finite()
-        || !ratio.is_finite()
-        || *radius <= EPS_DISPLAY_QUANTIZATION
-        || *ratio <= 0.0
-        || !slope.is_finite()
-    {
-        return None;
-    }
-    let [loop_id] = face.loops.as_slice() else {
-        return None;
-    };
-    let loop_ = *loops.get(loop_id)?;
-    if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
-        return None;
-    }
-    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
-    let mut axial_bounds = None::<(f64, f64)>;
+    let (min_axial, max_axial) = require_some!(axial_bounds);
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
-        let coedge = *coedges.get(coedge_id)?;
-        if coedge.owner_loop != loop_.id {
-            return None;
-        }
-        let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve.as_ref()?)?;
-        match curve {
-            CurveGeometry::Line { direction, .. } => {
-                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
-                    return None;
-                }
-            }
-            CurveGeometry::Nurbs(nurbs) => {
-                if nurbs.degree() != 1
-                    || nurbs.periodic()
-                    || nurbs.control_points().len() != 2
-                    || nurbs.control_points().iter().any(|point| {
-                        analytic_surface_residual(surface, *point)
-                            .is_none_or(|residual| residual > tolerance)
-                    })
-                {
-                    return None;
-                }
-            }
-            CurveGeometry::Ellipse {
-                center,
-                axis: curve_axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => {
-                let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-                let transverse = axis.cross(reference).unit()?;
-                let major_direction = major_direction.unit()?;
-                let center_delta = center.vector_from(*origin);
-                let center_axial = center_delta.dot(axis);
-                let center_radial = center_delta - axis.scale(center_axial);
-                let expected_radius = (*radius + center_axial * slope).abs();
-                let reference_aligned = major_direction.dot(reference).abs();
-                let transverse_aligned = major_direction.dot(transverse).abs();
-                let aligned_radii = if reference_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
-                    (*major_radius - expected_radius).abs() <= tolerance
-                        && (*minor_radius - expected_radius * *ratio).abs() <= tolerance
-                } else if transverse_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
-                    (*major_radius - expected_radius * *ratio).abs() <= tolerance
-                        && (*minor_radius - expected_radius).abs() <= tolerance
-                } else {
-                    false
-                };
-                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !major_radius.is_finite()
-                    || !minor_radius.is_finite()
-                    || *major_radius <= tolerance
-                    || *minor_radius <= tolerance
-                    || center_radial.norm() > tolerance
-                    || !aligned_radii
-                {
-                    return None;
-                }
-            }
-            CurveGeometry::Circle {
-                center,
-                axis: curve_axis,
-                radius: curve_radius,
-                ..
-            } => {
-                if (*ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
-                    || curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !curve_radius.is_finite()
-                {
-                    return None;
-                }
-                let center_delta = center.vector_from(*origin);
-                let center_axial = center_delta.dot(axis);
-                let center_radial = center_delta - axis.scale(center_axial);
-                let expected_radius = (*radius + center_axial * slope).abs();
-                if center_radial.norm() > tolerance
-                    || (*curve_radius - expected_radius).abs() > tolerance
-                {
-                    return None;
-                }
-            }
-            _ => return None,
-        }
-        for vertex_id in [edge.start.clone(), edge.end.clone()] {
-            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-            if analytic_surface_residual(surface, point)? > tolerance {
-                return None;
-            }
-            let axial = point.vector_from(*origin).dot(axis);
-            let angle = cone_angle(point, *origin, axis, *ref_direction, *ratio)?;
-            if !axial.is_finite() || !angle.is_finite() {
-                return None;
-            }
-            axial_bounds = Some(match axial_bounds {
-                Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
-                None => (axial, axial),
-            });
+        ctx.charge_work(1, "scan SLDPRT cylindrical trim angles")?;
+        let coedge = require_some!(coedges.get(coedge_id));
+        let edge = require_some!(edges.get(&coedge.edge));
+        for vertex_id in [&edge.start, &edge.end] {
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            let angle = require_some!(cylinder_angle(point, origin, &frame));
+            ctx.reserve_vec(&mut angles, 1, "collect SLDPRT cylindrical trim angles")?;
             angles.push(angle);
         }
     }
-    let (min_axial, max_axial) = axial_bounds?;
-    let (angular_start, angular_span) = circular_interval(&angles)?;
-    (max_axial - min_axial > tolerance).then_some(ConicalTrim {
-        origin: *origin,
-        axis,
-        ref_direction: *ref_direction,
-        radius: *radius,
-        ratio: *ratio,
+    let (angular_start, angular_span) = require_some!(circular_interval(ctx, &mut angles)?);
+    Ok(
+        (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
+            origin,
+            frame,
+            radius,
+            min_axial,
+            max_axial,
+            angular_start,
+            angular_span,
+        }),
+    )
+}
+
+fn conical_trim(
+    ctx: &DecodeContext<'_>,
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    topology: &TrimTopology<'_>,
+) -> Result<Option<ConicalTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
+        return Ok(None);
+    };
+    let origin = cone_surface.origin().get();
+    let frame = *cone_surface.frame();
+    let axis = *frame.axis().as_raw();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle().get();
+    let slope = half_angle.tan();
+    if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
+        return Ok(None);
+    }
+    if face.loops.len() != 1 {
+        return Ok(None);
+    }
+    let loop_id = require_some!(face.loops.iter().next());
+    let loop_ = *require_some!(loops.get(loop_id));
+    if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
+        return Ok(None);
+    }
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
+    let mut axial_bounds = None::<(f64, f64)>;
+    let mut angles = Vec::new();
+    for coedge_id in loop_.coedges() {
+        ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
+        let coedge = *require_some!(coedges.get(coedge_id));
+        if coedge.owner_loop != loop_.id {
+            return Ok(None);
+        }
+        let edge = *require_some!(edges.get(&coedge.edge));
+        let curve = require_some!(curves.get(require_some!(edge.curve())));
+        match curve {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+                let direction = *line_curve.direction().as_raw();
+                if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                    return Ok(None);
+                }
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                if nurbs.degree() != 1
+                    || nurbs.periodic()
+                    || nurbs.pole_rows().count() != 2
+                    || nurbs.control_points().iter().any(|point| {
+                        surface.solved().is_none_or(|surface| {
+                            analytic_surface_residual(surface, point.get())
+                                .is_none_or(|residual| residual > tolerance)
+                        })
+                    })
+                {
+                    return Ok(None);
+                }
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+                let center = ellipse_curve.center().get();
+                let curve_axis = ellipse_curve.frame().axis().as_raw();
+                let major_direction = *ellipse_curve.frame().reference().as_raw();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
+                let (reference, transverse) = perpendicular_basis(&frame);
+                let center_delta = center.vector_from(origin);
+                let center_axial = center_delta.dot(axis);
+                let center_radial = center_delta - axis.scale(center_axial);
+                let expected_radius = (radius + center_axial * slope).abs();
+                let reference_aligned = major_direction.dot(reference).abs();
+                let transverse_aligned = major_direction.dot(transverse).abs();
+                let aligned_radii = if reference_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
+                    (major_radius - expected_radius).abs() <= tolerance
+                        && (minor_radius - expected_radius * ratio.get()).abs() <= tolerance
+                } else if transverse_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
+                    (major_radius - expected_radius * ratio.get()).abs() <= tolerance
+                        && (minor_radius - expected_radius).abs() <= tolerance
+                } else {
+                    false
+                };
+                if curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || major_radius <= tolerance
+                    || minor_radius <= tolerance
+                    || center_radial.norm() > tolerance
+                    || !aligned_radii
+                {
+                    return Ok(None);
+                }
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let center = circle_curve.center().get();
+                let curve_axis = circle_curve.frame().axis().as_raw();
+                let curve_radius = circle_curve.radius().get();
+                if (ratio.get() - 1.0).abs() > EPS_AXIS_ALIGNMENT
+                    || curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                {
+                    return Ok(None);
+                }
+                let center_delta = center.vector_from(origin);
+                let center_axial = center_delta.dot(axis);
+                let center_radial = center_delta - axis.scale(center_axial);
+                let expected_radius = (radius + center_axial * slope).abs();
+                if center_radial.norm() > tolerance
+                    || (curve_radius - expected_radius).abs() > tolerance
+                {
+                    return Ok(None);
+                }
+            }
+            _ => return Ok(None),
+        }
+        for vertex_id in [&edge.start, &edge.end] {
+            ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                point
+            )) > tolerance
+            {
+                return Ok(None);
+            }
+            let axial = point.vector_from(origin).dot(axis);
+            let angle = require_some!(cone_angle(point, origin, &frame, ratio));
+            if !axial.is_finite() || !angle.is_finite() {
+                return Ok(None);
+            }
+            axial_bounds = Some(match axial_bounds {
+                Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
+                None => (axial, axial),
+            });
+            ctx.reserve_vec(&mut angles, 1, "collect SLDPRT conical trim angles")?;
+            angles.push(angle);
+        }
+    }
+    let (min_axial, max_axial) = require_some!(axial_bounds);
+    let (angular_start, angular_span) = require_some!(circular_interval(ctx, &mut angles)?);
+    Ok((max_axial - min_axial > tolerance).then_some(ConicalTrim {
+        origin,
+        frame,
+        radius,
+        ratio,
         slope,
         min_axial,
         max_axial,
         angular_start,
         angular_span,
-    })
+    }))
 }
 
-fn cylinder_angle(
-    point: Point3,
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-) -> Option<f64> {
-    let axis = axis.unit()?;
-    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-    let transverse = axis.cross(reference).unit()?;
+/// The reference of `frame` minus its component along the axis, and the axis
+/// cross that projection, each divided by its length.
+///
+/// The frame holds unit directions perpendicular within `1e-9`, so each length
+/// is within about `2e-9` of one, and the two results are unit length and
+/// perpendicular to the axis and to each other to rounding.
+fn perpendicular_basis(frame: &OrthonormalFrame3) -> (Vector3, Vector3) {
+    let divided = |vector: Vector3| {
+        let length = vector.norm();
+        Vector3::new(vector.x / length, vector.y / length, vector.z / length)
+    };
+    let axis = *frame.axis().as_raw();
+    let reference = *frame.reference().as_raw();
+    let reference = divided(reference - axis.scale(reference.dot(axis)));
+    (reference, divided(axis.cross(reference)))
+}
+
+fn cylinder_angle(point: Point3, origin: Point3, frame: &OrthonormalFrame3) -> Option<f64> {
+    let (reference, transverse) = perpendicular_basis(frame);
     let delta = point.vector_from(origin);
     let angle = delta.dot(transverse).atan2(delta.dot(reference));
     angle
@@ -1943,40 +2643,42 @@ fn cylinder_angle(
 fn cone_angle(
     point: Point3,
     origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    ratio: f64,
+    frame: &OrthonormalFrame3,
+    ratio: PositiveReal,
 ) -> Option<f64> {
-    if !ratio.is_finite() || ratio <= 0.0 {
-        return None;
-    }
-    let axis = axis.unit()?;
-    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-    let transverse = axis.cross(reference).unit()?;
+    let (reference, transverse) = perpendicular_basis(frame);
     let delta = point.vector_from(origin);
     let major = delta.dot(reference);
     let minor = delta.dot(transverse);
-    let angle = (minor / ratio).atan2(major);
+    let angle = (minor / ratio.get()).atan2(major);
     angle
         .is_finite()
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn circular_interval(angles: &[f64]) -> Option<(f64, f64)> {
-    let mut angles = angles
-        .iter()
-        .copied()
-        .filter(|angle| angle.is_finite())
-        .collect::<Vec<_>>();
+fn circular_interval(
+    ctx: &DecodeContext<'_>,
+    angles: &mut Vec<f64>,
+) -> Result<Option<(f64, f64)>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(angles.len()),
+        "select SLDPRT circular trim angles",
+    )?;
+    angles.retain(|angle| angle.is_finite());
     if angles.is_empty() {
-        return None;
+        return Ok(None);
     }
-    angles.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        angles,
+        f64::total_cmp,
+        |_| 0,
+        "sort SLDPRT circular trim angles",
+    )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
     if angles.len() == 1 {
-        return Some((angles[0], std::f64::consts::TAU));
+        return Ok(Some((angles[0], std::f64::consts::TAU)));
     }
-    let (largest_gap_index, largest_gap) = (0..angles.len())
+    let Some((largest_gap_index, largest_gap)) = (0..angles.len())
         .map(|index| {
             let next = angles[(index + 1) % angles.len()];
             let gap = if index + 1 == angles.len() {
@@ -1986,9 +2688,12 @@ fn circular_interval(angles: &[f64]) -> Option<(f64, f64)> {
             };
             (index, gap)
         })
-        .max_by(|left, right| left.1.total_cmp(&right.1))?;
+        .max_by(|left, right| left.1.total_cmp(&right.1))
+    else {
+        return Ok(None);
+    };
     let start = angles[(largest_gap_index + 1) % angles.len()];
-    Some((start, std::f64::consts::TAU - largest_gap))
+    Ok(Some((start, std::f64::consts::TAU - largest_gap)))
 }
 
 fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64) -> bool {
@@ -1999,107 +2704,79 @@ fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64)
 }
 
 // The trim grammars share the same indexed topology maps.
-#[allow(clippy::too_many_arguments)]
 fn analytic_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<AnalyticTrim> {
+    topology: &TrimTopology<'_>,
+) -> Result<Option<AnalyticTrim>, cadmpeg_core::CodecError> {
     match surface {
-        SurfaceGeometry::Plane { .. } => planar_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .or_else(|| {
-            planar_hole_trim(
-                face, surface, loops, coedges, edges, vertices, points, curves,
-            )
-        })
-        .map(AnalyticTrim::Planar),
-        SurfaceGeometry::Cylinder { .. } => cylindrical_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .map(AnalyticTrim::Cylindrical),
-        SurfaceGeometry::Cone { .. } => conical_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .map(AnalyticTrim::Conical),
-        _ => None,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+            let trim = planar_trim(ctx, face, surface, topology)?;
+            let trim = match trim {
+                Some(trim) => Some(trim),
+                None => planar_hole_trim(ctx, face, surface, topology)?,
+            };
+            Ok(trim.map(AnalyticTrim::Planar))
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+            cylindrical_trim(ctx, face, surface, topology)
+                .map(|trim| trim.map(AnalyticTrim::Cylindrical))
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+            conical_trim(ctx, face, surface, topology).map(|trim| trim.map(AnalyticTrim::Conical))
+        }
+        _ => Ok(None),
     }
 }
 
-fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
+fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
     let (origin, normal, u_axis) = match surface {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => (*origin, *normal, *u_axis),
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            let basis = plane_frame(basis)?;
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            let origin = plane_surface.origin();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
+            (origin, *normal, *u_axis)
+        }
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            let basis = plane_frame(placed.basis())?;
+            let transform = placed.transform();
             (
-                transform.apply_point(basis.origin),
-                transform.apply_vector(basis.normal),
-                transform.apply_vector(basis.u_axis),
+                transform.apply_point(basis.origin.get())?,
+                transform.apply_vector(basis.normal)?.get(),
+                transform.apply_vector(basis.u_axis)?.get(),
             )
         }
         _ => return None,
     };
-    let normal = normal.unit()?;
-    let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(PlaneFrame {
-            origin,
-            normal,
-            u_axis,
-            v_axis,
-        })
+    PlaneFrame::new(origin, normal, u_axis)
 }
 
 fn point_distance(left: Point2, right: Point2) -> f64 {
-    ((left.u - right.u).powi(2) + (left.v - right.v).powi(2)).sqrt()
-}
-
-fn point_segment_distance(point: Point2, start: Point2, end: Point2) -> f64 {
-    let du = end.u - start.u;
-    let dv = end.v - start.v;
-    let length_squared = du * du + dv * dv;
-    if length_squared <= f64::EPSILON {
-        return point_distance(point, start);
-    }
-    let t =
-        (((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared).clamp(0.0, 1.0);
-    point_distance(point, Point2::new(start.u + t * du, start.v + t * dv))
+    (left.u - right.u).hypot(left.v - right.v)
 }
 
 fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
     (middle.u - left.u) * (right.v - middle.v) - (middle.v - left.v) * (right.u - middle.u)
 }
 
-fn polygon_area_twice(polygon: &[Point2]) -> f64 {
-    (0..polygon.len())
-        .map(|index| {
-            let left = polygon[index];
-            let right = polygon[(index + 1) % polygon.len()];
-            left.u * right.v - left.v * right.u
-        })
-        .sum()
+fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+    simple_polygon_area_twice(polygon, tolerance).is_some()
 }
 
-fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+/// Twice the signed area of a simple polygon: at least three vertices, an
+/// area above the squared tolerance, and no two non-adjacent edges that
+/// meet.
+fn simple_polygon_area_twice(
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     if polygon.len() < 3 {
-        return false;
+        return None;
     }
-    let area = polygon_area_twice(polygon);
-    if !area.is_finite() || area.abs() <= tolerance * tolerance {
-        return false;
+    let area = cadmpeg_ir::math::planar::polygon_area_twice(polygon)?;
+    if area.get().abs() <= tolerance * tolerance {
+        return None;
     }
     for left in 0..polygon.len() {
         for right in left + 1..polygon.len() {
@@ -2113,34 +2790,56 @@ fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
                 polygon[(right + 1) % polygon.len()],
                 tolerance,
             ) {
-                return false;
+                return None;
             }
         }
     }
-    true
+    Some(area)
 }
 
-fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
-    if !is_simple_polygon(polygon, tolerance)
-        || !polygon
-            .iter()
-            .all(|point| point.u.is_finite() && point.v.is_finite())
-    {
-        return None;
-    }
-    let orientation = polygon_area_twice(polygon).signum();
-    let mut remaining = (0..polygon.len()).collect::<Vec<_>>();
-    let mut triangles = Vec::with_capacity(polygon.len() - 2);
+fn triangulate_polygon(
+    ctx: &DecodeContext<'_>,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Result<Option<Vec<[Point2; 3]>>, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(polygon.len());
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_add(count))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT polygon simplicity", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "test SLDPRT polygon simplicity")?;
+    // The area admits only a polygon of finite vertices.
+    let orientation = require_some!(simple_polygon_area_twice(polygon, tolerance))
+        .get()
+        .signum();
+    let mut remaining = Vec::new();
+    ctx.reserve_vec(
+        &mut remaining,
+        polygon.len(),
+        "collect SLDPRT planar polygon vertices",
+    )?;
+    ctx.charge_work(count, "copy SLDPRT planar polygon indices")?;
+    remaining.extend(0..polygon.len());
+    let mut triangles = Vec::new();
     while remaining.len() > 3 {
+        let count = cadmpeg_core::decode::u64_from_index(remaining.len());
+        let work = count
+            .checked_mul(5)
+            .and_then(|work| work.checked_add(2))
+            .and_then(|work| work.checked_mul(count))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("triangulate SLDPRT planar polygon", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(work, "triangulate SLDPRT planar polygon")?;
         let ear_position = (0..remaining.len()).find(|position| {
             let previous_position = (position + remaining.len() - 1) % remaining.len();
             let next_position = (position + 1) % remaining.len();
             let previous = polygon[remaining[previous_position]];
             let current = polygon[remaining[*position]];
             let next = polygon[remaining[next_position]];
-            let scale = point_distance(previous, current)
-                .max(point_distance(current, next))
-                .max(1.0);
+            let scale = point_distance(previous, current).max(point_distance(current, next));
             let cross = signed_area_twice(previous, current, next);
             if !cross.is_finite() || orientation * cross <= tolerance * scale {
                 return false;
@@ -2174,9 +2873,10 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
                     && polygon_strictly_contains(&triangle, polygon[*index], tolerance)
             })
         });
-        let position = ear_position?;
+        let position = require_some!(ear_position);
         let previous_position = (position + remaining.len() - 1) % remaining.len();
         let next_position = (position + 1) % remaining.len();
+        ctx.reserve_vec(&mut triangles, 1, "collect SLDPRT planar polygon triangles")?;
         triangles.push([
             polygon[remaining[previous_position]],
             polygon[remaining[position]],
@@ -2184,76 +2884,34 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
         ]);
         remaining.remove(position);
     }
-    let final_triangle = remaining
-        .into_iter()
-        .map(|index| polygon[index])
-        .collect::<Vec<_>>();
-    let [first, second, third] = final_triangle.as_slice() else {
-        return None;
+    let [first, second, third] = remaining.as_slice() else {
+        return Ok(None);
     };
-    let scale = point_distance(*first, *second)
-        .max(point_distance(*second, *third))
-        .max(point_distance(*third, *first))
-        .max(1.0);
-    (signed_area_twice(*first, *second, *third).abs() > tolerance * scale).then(|| {
-        triangles.push([*first, *second, *third]);
-        triangles
-    })
-}
-
-fn segments_intersect(
-    first_start: Point2,
-    first_end: Point2,
-    second_start: Point2,
-    second_end: Point2,
-    tolerance: f64,
-) -> bool {
-    let bounds_overlap = |left: f64, right: f64, other_left: f64, other_right: f64| {
-        left.min(right) <= other_left.max(other_right) + tolerance
-            && other_left.min(other_right) <= left.max(right) + tolerance
-    };
-    if !bounds_overlap(first_start.u, first_end.u, second_start.u, second_end.u)
-        || !bounds_overlap(first_start.v, first_end.v, second_start.v, second_end.v)
+    let [first, second, third] = [polygon[*first], polygon[*second], polygon[*third]];
+    let scale = point_distance(first, second)
+        .max(point_distance(second, third))
+        .max(point_distance(third, first));
+    if signed_area_twice(first, second, third)
+        .abs()
+        .partial_cmp(&(tolerance * scale))
+        != Some(std::cmp::Ordering::Greater)
     {
-        return false;
+        return Ok(None);
     }
-    let scale = point_distance(first_start, first_end)
-        .max(point_distance(second_start, second_end))
-        .max(1.0);
-    let orientation_tolerance = tolerance * scale;
-    let first_left = signed_area_twice(first_start, first_end, second_start);
-    let first_right = signed_area_twice(first_start, first_end, second_end);
-    let second_left = signed_area_twice(second_start, second_end, first_start);
-    let second_right = signed_area_twice(second_start, second_end, first_end);
-    if first_left.abs() <= orientation_tolerance
-        && point_segment_distance(second_start, first_start, first_end) <= tolerance
-    {
-        return true;
-    }
-    if first_right.abs() <= orientation_tolerance
-        && point_segment_distance(second_end, first_start, first_end) <= tolerance
-    {
-        return true;
-    }
-    if second_left.abs() <= orientation_tolerance
-        && point_segment_distance(first_start, second_start, second_end) <= tolerance
-    {
-        return true;
-    }
-    if second_right.abs() <= orientation_tolerance
-        && point_segment_distance(first_end, second_start, second_end) <= tolerance
-    {
-        return true;
-    }
-    (first_left > orientation_tolerance && first_right < -orientation_tolerance
-        || first_left < -orientation_tolerance && first_right > orientation_tolerance)
-        && (second_left > orientation_tolerance && second_right < -orientation_tolerance
-            || second_left < -orientation_tolerance && second_right > orientation_tolerance)
+    ctx.reserve_vec(&mut triangles, 1, "collect SLDPRT planar polygon triangles")?;
+    triangles.push([first, second, third]);
+    Ok(Some(triangles))
 }
 
 fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    // A point or edge end that is not finite has no distance to measure.
     if polygon.iter().enumerate().any(|(index, start)| {
-        point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+        match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) <= tolerance
+            }
+            _ => false,
+        }
     }) {
         return true;
     }
@@ -2271,10 +2929,119 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
     inside
 }
 
+/// Checks each triangle edge interval between polygon boundary intersections.
+/// A simple polygon that contains the complete triangle boundary contains its interior.
+fn polygon_contains_triangle(
+    ctx: &DecodeContext<'_>,
+    boundary: &[Point2],
+    triangle: [Point2; 3],
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(boundary.len());
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_add(count))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT planar outer simplicity", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "test SLDPRT planar outer simplicity")?;
+    if !is_simple_polygon(boundary, tolerance)
+        || triangle
+            .iter()
+            .any(|point| FinitePoint2::new(*point).is_none())
+    {
+        return Ok(false);
+    }
+    let capacity = boundary
+        .len()
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX)
+        })?;
+    for edge in 0..3 {
+        let start = triangle[edge];
+        let end = triangle[(edge + 1) % 3];
+        let du = end.u - start.u;
+        let dv = end.v - start.v;
+        let length_squared = du * du + dv * dv;
+        if !length_squared.is_finite() {
+            return Ok(false);
+        }
+        if length_squared == 0.0 {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(boundary.len()),
+            "intersect SLDPRT planar outer triangle",
+        )?;
+        let (mut cuts, _reservation) =
+            ctx.temporary_vec(capacity, "collect SLDPRT triangle boundary cuts")?;
+        cuts.extend([0.0_f64, 1.0]);
+        for (index, point) in boundary.iter().enumerate() {
+            let next = boundary[(index + 1) % boundary.len()];
+            let pu = point.u - start.u;
+            let pv = point.v - start.v;
+            let projected = (pu * du + pv * dv) / length_squared;
+            if !projected.is_finite() {
+                return Ok(false);
+            }
+            if (0.0..=1.0).contains(&projected) {
+                cuts.push(projected);
+            }
+            let eu = next.u - point.u;
+            let ev = next.v - point.v;
+            let denominator = du * ev - dv * eu;
+            if !denominator.is_finite() {
+                return Ok(false);
+            }
+            if denominator == 0.0 {
+                continue;
+            }
+            let along_triangle = (pu * ev - pv * eu) / denominator;
+            let along_boundary = (pu * dv - pv * du) / denominator;
+            if !along_triangle.is_finite() || !along_boundary.is_finite() {
+                return Ok(false);
+            }
+            if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) {
+                cuts.push(along_triangle);
+            }
+        }
+        ctx.stable_sort_by(
+            &mut cuts,
+            f64::total_cmp,
+            |_| 0,
+            "sort SLDPRT triangle boundary cuts",
+        )?;
+        for interval in cuts.windows(2) {
+            let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
+            let work = cadmpeg_core::decode::u64_from_index(boundary.len())
+                .checked_mul(2)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "test SLDPRT planar outer triangle")?;
+            if !polygon_contains(
+                boundary,
+                Point2::new(start.u + parameter * du, start.v + parameter * dv),
+                tolerance,
+            ) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
     polygon_contains(polygon, point, tolerance)
         && !polygon.iter().enumerate().any(|(index, start)| {
-            point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+            match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) <= tolerance
+                }
+                _ => false,
+            }
         })
 }
 
@@ -2361,7 +3128,12 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];
         let cross = signed_area_twice(start, end, point);
-        if point_segment_distance(point, start, end) <= tolerance {
+        if match [point, start, end].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) <= tolerance
+            }
+            _ => false,
+        } {
             continue;
         }
         if sign == 0.0 {
@@ -2376,11 +3148,18 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
 fn circle_inside_polygon(polygon: &[Point2], hole: CircularHole, tolerance: f64) -> bool {
     polygon_contains(polygon, hole.center, tolerance)
         && (0..polygon.len()).all(|index| {
-            point_segment_distance(
+            match [
                 hole.center,
                 polygon[index],
                 polygon[(index + 1) % polygon.len()],
-            ) >= hole.radius - tolerance
+            ]
+            .map(FinitePoint2::new)
+            {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) >= hole.radius - tolerance
+                }
+                _ => false,
+            }
         })
 }
 
@@ -2389,84 +3168,120 @@ fn circle_inside_circle(outer: CircularHole, inner: CircularHole, tolerance: f64
 }
 
 fn circular_outer_and_holes(
+    ctx: &DecodeContext<'_>,
     circles: &[CircularHole],
     tolerance: f64,
-) -> Option<(CircularHole, Vec<CircularHole>)> {
-    let enclosing = circles
-        .iter()
-        .enumerate()
-        .filter(|(index, outer)| {
-            circles.iter().enumerate().all(|(inner_index, inner)| {
-                index == &inner_index || circle_inside_circle(**outer, *inner, tolerance)
-            })
-        })
-        .collect::<Vec<_>>();
-    let [(outer_index, outer)] = enclosing.as_slice() else {
-        return None;
+) -> Result<Option<(CircularHole, Vec<CircularHole>)>, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(circles.len());
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_mul(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "compare SLDPRT circular trim boundaries",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+    ctx.charge_work(work, "compare SLDPRT circular trim boundaries")?;
+    let mut outer_index = None;
+    for (index, outer) in circles.iter().enumerate() {
+        if circles.iter().enumerate().all(|(inner_index, inner)| {
+            index == inner_index || circle_inside_circle(*outer, *inner, tolerance)
+        }) && outer_index.replace(index).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    let Some(outer_index) = outer_index else {
+        return Ok(None);
     };
-    let holes = circles
-        .iter()
-        .enumerate()
-        .filter_map(|(index, hole)| (index != *outer_index).then_some(*hole))
-        .collect::<Vec<_>>();
+    let mut holes = Vec::new();
+    for (index, hole) in circles.iter().enumerate() {
+        if index != outer_index {
+            ctx.reserve_vec(&mut holes, 1, "collect SLDPRT circular trim holes")?;
+            holes.push(*hole);
+        }
+    }
     if holes.iter().enumerate().any(|(index, left)| {
         holes[index + 1..].iter().any(|right| {
             point_distance(left.center, right.center) < left.radius + right.radius - tolerance
         })
     }) {
-        return None;
+        return Ok(None);
     }
-    Some((**outer, holes))
+    Ok(Some((circles[outer_index], holes)))
 }
 
 fn chordal_hole_constraint(
+    ctx: &DecodeContext<'_>,
     hole: CircularHole,
     points: &[Point2],
     tolerance: f64,
-) -> Option<(CircularHole, CircularHole)> {
-    let distances = points
-        .iter()
-        .map(|point| point_distance(*point, hole.center))
-        .collect::<Vec<_>>();
-    let minimum = distances.iter().copied().reduce(f64::min)?;
+) -> Result<Option<(CircularHole, CircularHole)>, cadmpeg_core::CodecError> {
+    let mut minimum = None::<f64>;
+    for point in points {
+        ctx.charge_work(1, "measure SLDPRT circular trim point")?;
+        let distance = point_distance(*point, hole.center);
+        minimum = Some(minimum.map_or(distance, |current| current.min(distance)));
+    }
+    let Some(minimum) = minimum else {
+        return Ok(None);
+    };
     if minimum >= hole.radius - tolerance {
-        return Some((hole, hole));
+        return Ok(Some((hole, hole)));
     }
 
-    let mut boundary_angles = points
-        .iter()
-        .zip(&distances)
-        .filter_map(|(point, distance)| {
-            ((*distance - hole.radius).abs() <= tolerance)
-                .then_some((point.v - hole.center.v).atan2(point.u - hole.center.u))
-        })
-        .collect::<Vec<_>>();
-    boundary_angles.sort_by(f64::total_cmp);
+    let mut boundary_angles = Vec::new();
+    for point in points {
+        ctx.charge_work(1, "scan SLDPRT circular trim boundary")?;
+        let distance = point_distance(*point, hole.center);
+        if (distance - hole.radius).abs() <= tolerance {
+            ctx.reserve_vec(
+                &mut boundary_angles,
+                1,
+                "collect SLDPRT circular trim angles",
+            )?;
+            boundary_angles.push((point.v - hole.center.v).atan2(point.u - hole.center.u));
+        }
+    }
+    ctx.stable_sort_by(
+        &mut boundary_angles,
+        f64::total_cmp,
+        |_| 0,
+        "sort SLDPRT circular trim angles",
+    )?;
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);
     if boundary_angles.len() < 3 {
-        return None;
+        return Ok(None);
     }
-    let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *boundary_angles.last()?;
+    let Some(last) = boundary_angles.last() else {
+        return Ok(None);
+    };
+    let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *last;
     let maximum_gap = boundary_angles
         .windows(2)
         .map(|pair| pair[1] - pair[0])
         .chain(std::iter::once(wrap_gap))
-        .reduce(f64::max)?;
+        .reduce(f64::max);
+    let Some(maximum_gap) = maximum_gap else {
+        return Ok(None);
+    };
     if maximum_gap > std::f64::consts::PI {
-        return None;
+        return Ok(None);
     }
     let maximum_sagitta = hole.radius * (1.0 - (maximum_gap / 2.0).cos());
     let inward_deflection = hole.radius - minimum;
     if inward_deflection > maximum_sagitta + tolerance {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         CircularHole {
             radius: hole.radius - maximum_sagitta,
             ..hole
         },
         hole,
-    ))
+    )))
 }
 
 fn triangle_crosses_hole(
@@ -2481,10 +3296,15 @@ fn triangle_crosses_hole(
     (0..3).any(|index| {
         let start = triangle[index];
         let end = triangle[(index + 1) % 3];
-        point_segment_distance(exclusion.center, start, end) < exclusion.radius - tolerance
-            && ![start, end].iter().all(|point| {
-                (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
-            })
+        let near = match [exclusion.center, start, end].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) < exclusion.radius - tolerance
+            }
+            _ => false,
+        };
+        near && ![start, end].iter().all(|point| {
+            (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
+        })
     })
 }
 
@@ -2494,152 +3314,141 @@ fn circle_overlaps_polygon(circle: CircularHole, polygon: &[Point2], tolerance: 
             .iter()
             .any(|point| point_distance(*point, circle.center) < circle.radius + tolerance)
         || (0..polygon.len()).any(|index| {
-            point_segment_distance(
+            match [
                 circle.center,
                 polygon[index],
                 polygon[(index + 1) % polygon.len()],
-            ) < circle.radius + tolerance
+            ]
+            .map(FinitePoint2::new)
+            {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) < circle.radius + tolerance
+                }
+                _ => false,
+            }
         })
 }
 
-fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<Vector3> {
+fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Option<Vector3> {
     let subtract = |left: Point3, right: Point3| {
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
     match surface {
-        SurfaceGeometry::Plane { normal, .. } => normal.unit(),
-        SurfaceGeometry::Cylinder { origin, axis, .. } => {
-            let axis = axis.unit()?;
-            let delta = subtract(point, *origin);
+        SolvedSurfaceGeometry::Plane(plane_surface) => Some(*plane_surface.frame().axis().as_raw()),
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let origin = cylinder_surface.origin().get();
+            let axis = *cylinder_surface.frame().axis().as_raw();
+            let delta = subtract(point, origin);
             let radial = delta - axis.scale(delta.dot(axis));
             radial.unit()
         }
-        SurfaceGeometry::Sphere { center, .. } => subtract(point, *center).unit(),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            major_radius,
-            ..
-        } => {
-            let axis = axis.unit()?;
-            let delta = subtract(point, *center);
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let center = sphere_surface.center().get();
+            subtract(point, center).unit()
+        }
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let center = torus_surface.center().get();
+            let axis = *torus_surface.frame().axis().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let delta = subtract(point, center);
             let axial = delta.dot(axis);
             let radial = delta - axis.scale(axial);
             let radial_unit = radial.unit()?;
             (radial_unit.scale(radial.norm() - major_radius) + axis.scale(axial)).unit()
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
-            let axis = axis.unit()?;
-            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-            let transverse = axis.cross(reference).unit()?;
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let origin = cone_surface.origin().get();
+            let axis = *cone_surface.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(cone_surface.frame());
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let slope = half_angle.tan();
-            if !radius.is_finite() || !ratio.is_finite() || *ratio <= 0.0 || !slope.is_finite() {
+            if !slope.is_finite() {
                 return None;
             }
-            let delta = point.vector_from(*origin);
+            let delta = point.vector_from(origin);
             let axial = delta.dot(axis);
             let major = delta.dot(reference);
             let minor = delta.dot(transverse);
-            let elliptical_radius = major.hypot(minor / *ratio);
+            let elliptical_radius = major.hypot(minor / ratio);
             if elliptical_radius <= f64::EPSILON {
                 return None;
             }
-            let local_radius = *radius + axial * slope;
+            let local_radius = radius + axial * slope;
             (reference.scale(major / elliptical_radius)
-                + transverse.scale(minor / (*ratio * *ratio * elliptical_radius))
+                + transverse.scale(minor / (ratio * ratio * elliptical_radius))
                 - axis.scale(slope * local_radius.signum()))
             .unit()
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            let transform = placed.transform();
             transform
                 .apply_vector(analytic_surface_normal(
-                    basis,
-                    transform.try_inverse_affine()?.apply_point(point),
-                )?)
+                    placed.basis(),
+                    transform
+                        .try_inverse_affine()
+                        .ok()?
+                        .apply_point(point)?
+                        .get(),
+                )?)?
                 .unit()
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
 
-fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option<f64> {
+fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> Option<f64> {
     let subtract = |left: Point3, right: Point3| {
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
     match surface {
-        SurfaceGeometry::Plane { origin, normal, .. } => {
-            Some(subtract(point, *origin).dot(*normal).abs() / normal.norm())
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            let origin = plane_surface.origin().get();
+            let normal = plane_surface.frame().axis().as_raw();
+            Some(subtract(point, origin).dot(*normal).abs())
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } => {
-            let delta = subtract(point, *origin);
-            let axis_length = axis.norm();
-            let axial = delta.dot(*axis) / axis_length;
-            let radial = Vector3::new(
-                delta.x - axis.x * axial / axis_length,
-                delta.y - axis.y * axial / axis_length,
-                delta.z - axis.z * axial / axis_length,
-            );
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let origin = cylinder_surface.origin().get();
+            let axis = *cylinder_surface.frame().axis().as_raw();
+            let radius = cylinder_surface.radius().get();
+            let delta = subtract(point, origin);
+            let radial = delta - axis.scale(delta.dot(axis));
             Some((radial.norm() - radius).abs())
         }
-        SurfaceGeometry::Sphere { center, radius, .. } => {
-            Some((subtract(point, *center).norm() - radius).abs())
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let center = sphere_surface.center().get();
+            let radius = sphere_surface.radius().get();
+            Some((subtract(point, center).norm() - radius).abs())
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            let delta = subtract(point, *center);
-            let axis_length = axis.norm();
-            let axial = delta.dot(*axis) / axis_length;
-            let radial = Vector3::new(
-                delta.x - axis.x * axial / axis_length,
-                delta.y - axis.y * axial / axis_length,
-                delta.z - axis.z * axial / axis_length,
-            );
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let center = torus_surface.center().get();
+            let axis = *torus_surface.frame().axis().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            let delta = subtract(point, center);
+            let axial = delta.dot(axis);
+            let radial = delta - axis.scale(axial);
             Some(
                 (((radial.norm() - major_radius).powi(2) + axial.powi(2)).sqrt() - minor_radius)
                     .abs(),
             )
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
-            let unit = |vector: Vector3| {
-                let length = vector.norm();
-                (length.is_finite() && length > f64::EPSILON).then(|| vector.scale(1.0 / length))
-            };
-            let axis = unit(*axis)?;
-            let reference = unit(*ref_direction - axis.scale((*ref_direction).dot(axis)))?;
-            let transverse = unit(axis.cross(reference))?;
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let origin = cone_surface.origin().get();
+            let axis = *cone_surface.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(cone_surface.frame());
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let slope = half_angle.tan();
-            if !radius.is_finite() || !ratio.is_finite() || *ratio <= 0.0 || !slope.is_finite() {
+            if !slope.is_finite() {
                 return None;
             }
-            let delta = subtract(point, *origin);
+            let delta = subtract(point, origin);
             let axial = delta.dot(axis);
             let major = delta.dot(reference);
             let minor = delta.dot(transverse);
@@ -2647,14 +3456,21 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             let elliptical_radius = major.hypot(minor / ratio);
             Some((elliptical_radius - local_radius.abs()).abs())
         }
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            analytic_surface_residual(basis, transform.try_inverse_affine()?.apply_point(point))
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            analytic_surface_residual(
+                placed.basis(),
+                placed
+                    .transform()
+                    .try_inverse_affine()
+                    .ok()?
+                    .apply_point(point)?
+                    .get(),
+            )
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
     .filter(|residual| residual.is_finite())
 }
@@ -2666,41 +3482,67 @@ struct SurfaceMeasure {
 }
 
 fn surface_measure(
-    surface: &SurfaceGeometry,
+    ctx: &DecodeContext<'_>,
+    surface: &SolvedSurfaceGeometry,
     point: Point3,
     fit_tolerance: Option<f64>,
-) -> Option<SurfaceMeasure> {
-    if let SurfaceGeometry::Nurbs(nurbs) = surface {
-        let tolerance = fit_tolerance?;
-        let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
-        let partials = cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v)?;
-        let residual = point.distance(partials.point);
+) -> Result<Option<SurfaceMeasure>, cadmpeg_core::CodecError> {
+    if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
+        let Some(tolerance) = fit_tolerance else {
+            return Ok(None);
+        };
+        let Some(parameters) =
+            crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)?
+        else {
+            return Ok(None);
+        };
+        let Some(partials) = crate::brep::evaluation::nurbs_surface_partials(
+            ctx,
+            nurbs,
+            parameters.u,
+            parameters.v,
+        )?
+        else {
+            return Ok(None);
+        };
+        let residual = point.distance(partials.point.get());
         if residual > tolerance {
-            return None;
+            return Ok(None);
         }
-        return Some(SurfaceMeasure {
+        return Ok(Some(SurfaceMeasure {
             residual,
-            normal: partials.du.cross(partials.dv).unit(),
+            normal: partials.du.cross(partials.dv.get()).unit(),
         })
-        .filter(|measure| measure.residual.is_finite());
+        .filter(|measure| measure.residual.is_finite()));
     }
-    if let SurfaceGeometry::Transformed { basis, transform } = surface {
+    if let SolvedSurfaceGeometry::Transformed(placed) = surface {
+        let _depth = ctx.enter_nested("measure SLDPRT placed surface")?;
+        let transform = placed.transform();
         if transform.is_proper_rigid() {
-            let mut measure = surface_measure(
-                basis,
-                transform.try_inverse_affine()?.apply_point(point),
-                fit_tolerance,
-            )?;
+            let Some(inverse) = transform.try_inverse_affine().ok() else {
+                return Ok(None);
+            };
+            let Some(local_point) = inverse.apply_point(point) else {
+                return Ok(None);
+            };
+            let Some(mut measure) =
+                surface_measure(ctx, placed.basis(), local_point.get(), fit_tolerance)?
+            else {
+                return Ok(None);
+            };
             measure.normal = measure
                 .normal
-                .and_then(|normal| transform.apply_vector(normal).unit());
-            return Some(measure);
+                .and_then(|normal| transform.apply_vector(normal)?.unit());
+            return Ok(Some(measure));
         }
     }
-    Some(SurfaceMeasure {
-        residual: analytic_surface_residual(surface, point)?,
+    let Some(residual) = analytic_surface_residual(surface, point) else {
+        return Ok(None);
+    };
+    Ok(Some(SurfaceMeasure {
+        residual,
         normal: analytic_surface_normal(surface, point),
-    })
+    }))
 }
 
 #[cfg(test)]

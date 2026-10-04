@@ -40,11 +40,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -55,23 +51,24 @@
         "entity_instances": "1",
         "schema": "AUTOMOTIVE_DESIGN_CC2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": {
-            "unverified": {
-              "using": "step:ap242-e3"
-            }
-          },
-          "declared": {
-            "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:unknown",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "unverified": {
+                "using": "ap242-e3"
+              }
+            },
+            "declared": {
+              "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:unknown"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -82,31 +79,32 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": {
-          "unverified": {
-            "using": "step:ap242-e3"
-          }
-        },
-        "declared": {
-          "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:unknown",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "unverified": {
+              "using": "ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:unknown"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
         "severity": "warning"
@@ -115,13 +113,14 @@
         "code": {
           "code": "parse.noncanonical-syntax",
           "kind": "noncanonical_source_syntax",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)",
         "provenance": {
           "format": "step",
           "offset": 190,
-          "stream": "",
           "tag": "complex_entity"
         },
         "severity": "warning"
@@ -130,7 +129,9 @@
         "code": {
           "code": "geometry.document-length-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         "severity": "error"
@@ -139,7 +140,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -147,7 +150,11 @@
     ],
     "notes": [
       "byte accounting: 217 structural, 59 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

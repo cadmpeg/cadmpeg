@@ -3,33 +3,135 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::chunks::{
-    anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
-    parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CRC, TCODE_SHORT,
+    anonymous_version, checked_count_bytes, checksum_children_through_class_end, chunk_at, crc16,
+    packed_version, parse_header, validate_eof, verify_checksum, ArchiveVersion, BoundedReader,
+    ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_CRC, TCODE_SHORT,
 };
 use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
 use crate::layout::long_chunk_header_narrow as long_narrow;
 use crate::layout::long_chunk_header_wide as long_wide;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{eof, header, long_chunk, short_chunk};
 use crate::{RhinoCodec, MAGIC};
 
 #[test]
+fn count_error_reports_unrepresentable_end_as_overflow() {
+    assert!(matches!(
+        checked_count_bytes(2, 1, 0, 2, usize::MAX),
+        Err(FramingError::Overflow { offset: usize::MAX })
+    ));
+}
+
+#[test]
+fn class_end_checksum_children_refuse_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let bytes = short_chunk(archive, TCODE_CLASS_END, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = checksum_children_through_class_end(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        archive,
+        "render-settings userdata",
+    )
+    .expect_err("one child exceeds collection limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino class-end checksum children"
+    ));
+    let service = cadmpeg_test_support::service_decode_context();
+    let ranges = checksum_children_through_class_end(
+        &service,
+        &bytes,
+        0..bytes.len(),
+        archive,
+        "render-settings userdata",
+    )
+    .expect("service profile admits child range");
+    assert_eq!(ranges, vec![0..bytes.len()]);
+}
+
+#[test]
+fn class_end_checksum_children_ceiling_is_a_resource_refusal() {
+    let archive = ArchiveVersion::V8;
+    let cap = super::super::CHECKSUM_CHILD_CAP;
+    let child = short_chunk(archive, TCODE_SHORT | 7, 0);
+    let mut bytes = child.repeat(cap);
+    bytes.extend(short_chunk(archive, TCODE_CLASS_END, 0));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(cap + 1).expect("fixture count fits");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+    let error =
+        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+            .expect_err("child ceiling refuses the class-end slot");
+    assert!(matches!(error, FramingError::Resource(limit)
+        if limit.dimension == ResourceDimension::Codec("Rhino class-end checksum children")
+            && limit.limit == u64::try_from(cap).expect("fixture count fits")
+            && limit.used == limit.limit && limit.additional == 1
+            && Some(limit) == ctx.resource_refusal()));
+}
+
+#[test]
+fn class_end_checksum_children_accept_the_ceiling() {
+    let archive = ArchiveVersion::V8;
+    let cap = super::super::CHECKSUM_CHILD_CAP;
+    let child = short_chunk(archive, TCODE_SHORT | 7, 0);
+    let mut bytes = child.repeat(cap - 1);
+    bytes.extend(short_chunk(archive, TCODE_CLASS_END, 0));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(cap).expect("fixture count fits");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+    let ranges =
+        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+            .expect("class end is within the child ceiling");
+    assert_eq!(ranges.len(), cap);
+    assert_eq!(ranges.first(), Some(&(0..child.len())));
+    assert_eq!(
+        ranges.last(),
+        Some(&(bytes.len() - child.len()..bytes.len()))
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
 fn detects_existing_magic_forms() {
-    assert_eq!(RhinoCodec.detect(MAGIC), Confidence::High);
-    assert_eq!(RhinoCodec.detect(&MAGIC[..MAGIC.len() - 1]), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&RhinoCodec, MAGIC),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&RhinoCodec, &MAGIC[..MAGIC.len() - 1]),
+        Confidence::No
+    );
     let mut incorrect = MAGIC.to_vec();
     incorrect[3] = b'X';
-    assert_eq!(RhinoCodec.detect(&incorrect), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&RhinoCodec, &incorrect),
+        Confidence::No
+    );
     let mut prefix = vec![0x00, 0x01, 0x02, 0x03];
     prefix.extend_from_slice(MAGIC);
     prefix.extend_from_slice(&[0x04, 0x05]);
-    assert_eq!(RhinoCodec.detect(&prefix), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&RhinoCodec, &prefix),
+        Confidence::High
+    );
 }
 
 #[test]
@@ -46,32 +148,119 @@ fn parses_exact_header_and_scope() {
         ("80", ArchiveVersion::V8),
         ("90", ArchiveVersion::V9),
     ] {
-        let parsed = parse_header(&header(text)).expect("valid header");
+        let parsed = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(text),
+        )
+        .expect("valid header");
         assert_eq!(parsed.archive_version, expected);
     }
-    assert!(parse_header(&header("0")).is_err());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("0")
+    )
+    .is_err());
     let mut invalid = header("50");
     invalid[file_header::ARCHIVE_VERSION] = b'0';
     assert!(matches!(
-        parse_header(&invalid),
+        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
         Err(FramingError::InvalidHeader)
     ));
     invalid = header("50");
     invalid[31] = b' ';
     assert!(matches!(
-        parse_header(&invalid),
+        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
         Err(FramingError::InvalidHeader)
     ));
-    assert!(parse_header(&header("1234567")).is_ok());
-    assert!(parse_header(&header("12345678")).is_ok());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("1234567")
+    )
+    .is_ok());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("12345678")
+    )
+    .is_ok());
     let mut embedded = vec![0x5a; 127];
     embedded.extend(header("80"));
     assert_eq!(
-        parse_header(&embedded)
+        parse_header(&cadmpeg_test_support::service_decode_context(), &embedded)
             .expect("embedded archive")
             .start_offset,
         127
     );
+}
+
+#[test]
+fn header_magic_scan_refuses_work_before_search() {
+    for with_magic in [false, true] {
+        let mut bytes = vec![0x5a; 4096];
+        if with_magic {
+            bytes.extend(header("80"));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
+        policy.limits.max_work_units = scan_work - 1;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+        assert!(
+            matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "Rhino header magic scan"
+                && limit.used == 0 && limit.additional == scan_work
+                && Some(limit) == ctx.resource_refusal())
+        );
+    }
+}
+
+#[test]
+fn header_magic_scan_charges_each_call_to_the_same_context() {
+    let mut bytes = vec![0x5a; 4096];
+    bytes.extend(header("80"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
+    policy.limits.max_work_units = scan_work;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+    let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
+    assert_eq!(parsed.start_offset, 4096);
+    assert_eq!(parsed.archive_version, ArchiveVersion::V8);
+    assert!(
+        matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "Rhino header magic scan"
+            && limit.used == scan_work && limit.additional == scan_work
+            && Some(limit) == ctx.resource_refusal())
+    );
+}
+
+#[test]
+fn header_magic_scan_refusal_reaches_container_and_legacy_callers() {
+    let mut bytes = vec![0x5a; 4096];
+    bytes.extend(header("1"));
+    for route in ["scan", "inspect", "decode", "legacy"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+        let result = match route {
+            "scan" => crate::container::scan(&ctx, &bytes).map(|_| ()),
+            "inspect" => crate::container::inspect(&ctx, root).map(|_| ()),
+            "decode" => crate::container::decode(&ctx, root).map(|_| ()),
+            "legacy" => crate::legacy::decode_v1(&ctx, &bytes).map(|_| ()),
+            _ => unreachable!("fixed route list"),
+        };
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino header magic scan"
+                && Some(limit) == ctx.resource_refusal()),
+            "route: {route}"
+        );
+    }
 }
 
 #[test]
@@ -82,7 +271,7 @@ fn parses_widths_short_long_and_bounds() {
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert!(parsed.short());
-    assert_eq!(parsed.value(), 42);
+    assert_eq!(parsed.value().expect("short chunk value"), 42);
     assert_eq!(parsed.next_offset(), long_narrow::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
@@ -126,15 +315,26 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
 
     let body = b"body";
     let mut bytes = (TCODE_CRC | 9).to_le_bytes().to_vec();
-    bytes.extend(((body.len() + 4) as i32).to_le_bytes());
+    bytes.extend((i32::try_from(body.len() + 4).expect("fixture value fits i32")).to_le_bytes());
     bytes.extend(body);
     bytes.extend(crc32fast::hash(body).to_le_bytes());
     let chunk =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).expect("required invariant");
-    assert_eq!(verify_checksum(&bytes, &chunk), Ok(ChecksumStatus::Valid));
+    assert_eq!(
+        verify_checksum(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &chunk
+        ),
+        Ok(ChecksumStatus::Valid)
+    );
     *bytes.last_mut().expect("required invariant") ^= 1;
     assert!(matches!(
-        verify_checksum(&bytes, &chunk),
+        verify_checksum(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &chunk
+        ),
         Ok(ChecksumStatus::Mismatch { .. })
     ));
 
@@ -160,7 +360,7 @@ fn keeps_packed_and_anonymous_versions_distinct() {
 }
 
 #[test]
-fn validates_eof_width_size_and_truncation() {
+fn validates_eof_width_and_truncation() {
     for archive in [ArchiveVersion::V4, ArchiveVersion::V5] {
         let mut bytes = vec![0; file_header::LEN];
         let marker = eof(
@@ -178,13 +378,7 @@ fn validates_eof_width_size_and_truncation() {
         let marker_start = file_header::LEN;
         let replacement = eof(archive, size);
         bytes[marker_start..].copy_from_slice(&replacement);
-        assert_eq!(
-            parse_eof(&bytes, marker_start, archive)
-                .expect("required invariant")
-                .expect("required invariant")
-                .file_size,
-            size as u64
-        );
+        validate_eof(&bytes, marker_start, archive).expect("valid EOF");
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
@@ -193,22 +387,13 @@ fn validates_eof_width_size_and_truncation() {
                 8
             };
         mismatch[size_offset] ^= 1;
-        assert_ne!(
-            parse_eof(&mismatch, marker_start, archive)
-                .expect("size is informational")
-                .expect("EOF marker")
-                .file_size,
-            size as u64
-        );
-        assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
+        validate_eof(&mismatch, marker_start, archive).expect("size is informational");
+        assert!(validate_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
     let bytes = vec![0; file_header::LEN];
-    assert_eq!(
-        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("required invariant"),
-        None
-    );
+    validate_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("optional EOF");
     assert!(matches!(
-        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
+        validate_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
         Err(FramingError::MissingEof)
     ));
 }
@@ -319,4 +504,19 @@ fn top_level_framing_preserves_truncation_classification() {
             operation
         }) if location.offset == 31 && operation == "rhino chunk framing"
     ));
+}
+
+#[test]
+fn checksum_direct_bytes_refuse_before_hashing() {
+    let bytes =
+        crate::test_support::test_dump::crc_chunk(ArchiveVersion::V5, 0x4000_8000, &[1, 2, 3, 4]);
+    let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = verify_checksum(&ctx, &bytes, &chunk);
+    assert!(matches!(result, Err(FramingError::Resource(limit))
+        if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
 }

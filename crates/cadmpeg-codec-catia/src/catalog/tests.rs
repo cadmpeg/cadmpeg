@@ -3,8 +3,56 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::*;
-use crate::test_support::catalog_stream;
+use super::PREFIX;
+use crate::test_support::test_object_graph::catalog_stream;
+
+fn parse(bytes: &[u8]) -> Vec<super::Catalog> {
+    crate::test_support::with_service_context(|ctx| super::parse(ctx, bytes))
+        .expect("catalog fixture fits the service limits")
+}
+
+#[test]
+fn catalog_entries_refuse_count_limit_before_reservation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = catalog_stream(&PREFIX);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("catalog fixture fits the input limit");
+    let error =
+        super::parse(&ctx, &bytes).expect_err("four catalog entries exceed zero collection items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_catalog_entries"));
+    assert_eq!(parse(&bytes).len(), 1);
+}
+
+#[test]
+fn catalog_value_refuses_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = catalog_stream(&PREFIX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "catia_catalog_entry_value",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("catalog input");
+            super::parse(&ctx, &bytes)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "catia_catalog_entry_value"));
+    assert_eq!(parse(&bytes).len(), 1);
+}
 
 #[test]
 fn catalog_accepts_utf8_and_expression_line_feeds() {
@@ -109,7 +157,7 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
         "Sketch",
         "Pad",
     ];
-    let catalogs = crate::catalog::parse(&catalog_stream(&entries));
+    let catalogs = parse(&catalog_stream(&entries));
 
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].entries.len() + 1, 7);
@@ -117,4 +165,18 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     assert_eq!(catalogs[0].entries[4].ordinal, 4);
     assert_eq!(catalogs[0].entries[4].value, "Sketch");
     assert_eq!(catalogs[0].entries[5].value, "Pad");
+}
+
+#[test]
+fn catalog_scan_refuses_marker_free_work() {
+    let bytes = [0_u8; 64];
+    crate::test_support::with_work_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse(ctx, &bytes).expect_err("catalog scan consumes work")
+        else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_catalog_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }

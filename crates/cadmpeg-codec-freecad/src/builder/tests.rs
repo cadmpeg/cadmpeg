@@ -2,9 +2,9 @@
 //! Source-less document builder unit tests.
 
 use crate::FcstdCodec;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -49,22 +49,10 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         )
         .expect("add height")
         .add_object("Part", "App::Part")
-        .expect("add part")
-        .add_dependency("Part", "Box")
-        .expect("add dependency")
-        .add_property(
-            "Part",
-            "Group",
-            "App::PropertyLinkList",
-            vec![crate::FcstdPropertyValue::empty("LinkList")
-                .with_attribute("count", "1")
-                .with_child(crate::FcstdPropertyValue::attribute("Link", "value", "Box"))],
-        )
-        .expect("add group")
-        .add_side_entry("Payload.bin", b"extension payload".to_vec())
-        .expect("add payload");
+        .expect("add part");
+    crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
-    assert!(crate::validate_native(&ir).is_empty());
+    assert!(crate::test_support::validate_native(&ir).is_empty());
     crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
         .expect("replace side entry");
 
@@ -85,17 +73,17 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
     assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].name, "Box");
+    assert_eq!(objects[0].name(), "Box");
     assert_eq!(objects[0].type_name, "Part::Box");
-    assert_eq!(objects[1].dependencies, vec![objects[0].id.clone()]);
+    assert_eq!(objects[1].dependencies, vec![objects[0].id().clone()]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
     assert_eq!(
         entries
             .iter()
-            .find(|entry| entry.name == "Payload.bin")
-            .map(|entry| entry.data.as_slice()),
+            .find(|entry| entry.name() == "Payload.bin")
+            .map(crate::native::EntryRecord::data),
         Some(b"edited payload".as_slice())
     );
 }

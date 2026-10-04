@@ -1,6 +1,6 @@
 use super::{DesignDimensionLocusPairs, DesignDimensionNullLocusPairs};
 use crate::native::F3dNative;
-use crate::records::DesignDimensionLocusPair;
+use crate::records::dimensions::DesignDimensionLocusPair;
 
 fn pair(null_first: bool) -> DesignDimensionLocusPair {
     let shared = r#""id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80"#;
@@ -9,10 +9,31 @@ fn pair(null_first: bool) -> DesignDimensionLocusPair {
     } else {
         (r#","opaque_index":4,"opaque_index_offset":45"#, 40)
     };
+    let first_offset = if null_first { 35 } else { 50 };
+    let first_role_offset = first_offset + 10;
+    let second_offset = first_offset + 15;
+    let second_role_offset = second_offset + 10;
     let wire = format!(
-        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_geometry_reference_offset":50,"first_role":0,"first_role_offset":60,"second_geometry_record_index":41,"second_geometry_reference_offset":65,"second_role":1,"second_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}}"#
+        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_geometry_reference_offset":{first_offset},"first_role":0,"first_role_offset":{first_role_offset},"second_geometry_record_index":41,"second_geometry_reference_offset":{second_offset},"second_role":1,"second_role_offset":{second_role_offset},"paired_class_tag":"273","paired_byte_offset":90}}"#
     );
     serde_json::from_str(&wire).unwrap()
+}
+
+#[test]
+fn null_locus_entry_conversion_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let entry = crate::records::dimension_null_locus_wire::Entry(pair(true));
+    let error = DesignDimensionNullLocusPairs::from_entries_charged(&ctx, vec![entry]).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load F3D null locus pairs"
+    ));
 }
 
 #[test]
@@ -25,16 +46,13 @@ fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
     assert!(error.to_string().contains("design_dimension_locus_pairs"));
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
-        .set_arena("design_dimension_locus_pairs", &[null_pair])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_locus_pairs",
+            &[null_pair],
+        )
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
-
-    let mut missing_opaque = pair(false);
-    missing_opaque.opaque_index = None;
-    assert!(DesignDimensionLocusPairs::try_from(vec![missing_opaque]).is_err());
-    let mut missing_second = pair(false);
-    missing_second.loci[1].geometry_record_index = None;
-    assert!(DesignDimensionLocusPairs::try_from(vec![missing_second]).is_err());
 }
 
 #[test]
@@ -46,16 +64,13 @@ fn null_arena_rejects_nonnull_form_at_construction_and_deserialization() {
     assert!(serde_json::from_str::<F3dNative>(&wire).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
-        .set_arena("design_dimension_null_locus_pairs", &[nonnull_pair])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_null_locus_pairs",
+            &[nonnull_pair],
+        )
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
-
-    let mut stray_opaque = pair(true);
-    stray_opaque.opaque_index = pair(false).opaque_index;
-    assert!(DesignDimensionNullLocusPairs::try_from(vec![stray_opaque]).is_err());
-    let mut missing_second = pair(true);
-    missing_second.loci[1].geometry_record_index = None;
-    assert!(DesignDimensionNullLocusPairs::try_from(vec![missing_second]).is_err());
 }
 
 #[test]
@@ -70,9 +85,25 @@ fn nonnull_arena_preserves_pair_wire() {
     assert!(encoded.contains(&format!(r#""design_dimension_locus_pairs":[{entry}]"#)));
     assert_eq!(serde_json::from_str::<F3dNative>(&encoded).unwrap(), native);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
     let arena: Vec<DesignDimensionLocusPair> =
         namespace.arena_as("design_dimension_locus_pairs").unwrap();
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
     assert_eq!(F3dNative::load(&namespace).unwrap(), native);
+}
+
+#[test]
+fn null_locus_borrowed_wire_matches_owned_wire_bytes() {
+    let pair = pair(true);
+    let owned = crate::records::dimension_null_locus_wire::Wire::from(&pair);
+    let borrowed = crate::records::dimension_null_locus_wire::BorrowedWire::from(&pair);
+    assert_eq!(
+        serde_json::to_vec(&borrowed).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
 }

@@ -1,8 +1,12 @@
 //! Tests for the current four-link profile-point carrier.
 
 use super::super::super::SKETCH_MARKER;
-use super::super::*;
+use super::{raw2, raw_link};
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets;
+use crate::resolved_features::markers::linked_profile_point;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::sketch_input_entities;
 
 #[test]
 fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
@@ -78,60 +82,76 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     payload[long_end..].copy_from_slice(SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&payload, first),
+        raw_link(linked_profile_point(&payload, first)),
         Some(([1.0, 2.0], [(0x815a, 20), (0x815a, 20)]))
     );
-    assert_eq!(marker_coordinates(&payload, first), Some([1.0, 2.0]));
+    assert_eq!(raw2(marker_coordinates(&payload, first)), Some([1.0, 2.0]));
     assert_eq!(
-        linked_profile_point(&payload, long),
+        raw_link(linked_profile_point(&payload, long)),
         Some(([5.0, 6.0], [(0x815a, 20), (0x815a, 20)]))
     );
     let entities = sketch_input_entities(&payload, "lane");
     let first_entity = entities
         .iter()
-        .find(|entity| entity.offset == first as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(first))
         .expect("first linked profile point");
-    assert_eq!(first_entity.kind, SketchInputKind::Point);
-    assert_eq!(first_entity.coordinates_m, Some([1.0, 2.0]));
-    assert_eq!(first_entity.local_id, Some(32));
+    assert_eq!(first_entity.kind(), SketchInputKind::Point);
+    assert_eq!(
+        first_entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 2.0])
+    );
+    assert_eq!(first_entity.local_id(), Some(32));
 
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset: line as u64,
-        object_index: Some(20),
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            cadmpeg_core::decode::u64_from_index(line),
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker = constructed_marker.with_test_identity(Some(20), None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let point = |id: &str, offset| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let point = |id: &str, offset| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         curve.clone(),
-        point("first", first as u64),
-        point("second", second as u64),
+        point("first", cadmpeg_core::decode::u64_from_index(first)),
+        point("second", cadmpeg_core::decode::u64_from_index(second)),
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
     assert_eq!(
-        current_reverse_incidence_endpoint_offsets(&payload, &curve, &marker_refs),
-        Some([first as u64, second as u64])
+        current_reverse_incidence_endpoint_offsets(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &marker_refs
+        )
+        .unwrap(),
+        Some([
+            cadmpeg_core::decode::u64_from_index(first),
+            cadmpeg_core::decode::u64_from_index(second)
+        ])
     );
 
     payload[first + 76..first + 78].copy_from_slice(&5u16.to_le_bytes());
-    assert!(linked_profile_point(&payload, first).is_none());
+    assert!(raw_link(linked_profile_point(&payload, first)).is_none());
 }

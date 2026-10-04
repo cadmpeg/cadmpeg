@@ -10,19 +10,19 @@
 use crate::scalar;
 
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
-pub mod token {
+pub(crate) mod token {
     /// Named-record header: `e0 <type> <name>\0`.
-    pub const NAMED_RECORD: u8 = 0xe0;
+    pub(crate) const NAMED_RECORD: u8 = 0xe0;
     /// Array opener: `f8 <count>`.
-    pub const ARRAY_OPEN: u8 = 0xf8;
+    pub(crate) const ARRAY_OPEN: u8 = 0xf8;
     /// Count-bounded scalar body: `f9 <ndim> <count>`.
-    pub const SCALAR_BODY: u8 = 0xf9;
+    pub(crate) const SCALAR_BODY: u8 = 0xf9;
     /// Entity reference: `f7 <id>`.
-    pub const ENTITY_REF: u8 = 0xf7;
+    pub(crate) const ENTITY_REF: u8 = 0xf7;
     /// Array close.
-    pub const ARRAY_CLOSE: u8 = 0xfb;
+    pub(crate) const ARRAY_CLOSE: u8 = 0xfb;
     /// Compound-record close.
-    pub const COMPOUND_CLOSE: u8 = 0xe3;
+    pub(crate) const COMPOUND_CLOSE: u8 = 0xe3;
 }
 
 /// One structurally framed PSB token.
@@ -30,19 +30,19 @@ pub mod token {
 /// `offset` and `length` refer to the input slice. Unknown bytes remain
 /// explicit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
+pub(crate) struct Token {
     /// Byte offset of the token's first byte in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Total byte length of the token, including its prefix byte(s).
-    pub length: usize,
+    pub(crate) length: usize,
     /// The token's structural classification.
-    pub kind: TokenKind,
+    pub(crate) kind: TokenKind,
 }
 
 /// Structural token kinds whose byte extent is known independent of the
 /// parent record grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     /// A PSB compact integer ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)): `0x00..=0x7f` one byte, or
     /// `0x80..=0xbf XX` two bytes big-endian.
     CompactInt,
@@ -86,18 +86,17 @@ pub enum TokenKind {
 ///
 /// Numeric forms that depend on a parent grammar remain compact or unknown
 /// tokens.
-pub fn tokens(data: &[u8]) -> Vec<Token> {
-    let mut result = Vec::new();
+pub(crate) fn tokens(data: &[u8]) -> impl Iterator<Item = Token> + '_ {
     let mut offset = 0;
-    while let Some(token) = token_at(data, offset) {
+    std::iter::from_fn(move || {
+        let token = token_at(data, offset)?;
         offset += token.length;
-        result.push(token);
-    }
-    result
+        Some(token)
+    })
 }
 
 /// Decode one byte-self-delimiting PSB token at `offset`.
-pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
+pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
     let &head = data.get(offset)?;
     let (length, kind) = match head {
         token::NAMED_RECORD => match data
@@ -111,23 +110,16 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
             Ok((_, end)) => (end - offset, TokenKind::EntityReference),
             Err(_) => (data.len() - offset, TokenKind::Truncated(head)),
         },
-        token::ARRAY_OPEN => {
-            let (_, end) = compact_int(data, offset + 1);
-            if end == offset + 1 {
-                (1, TokenKind::Truncated(head))
-            } else {
-                (end - offset, TokenKind::ArrayOpen)
-            }
-        }
-        token::SCALAR_BODY => {
-            let (_, dimensions_end) = compact_int(data, offset + 1);
-            let (_, count_end) = compact_int(data, dimensions_end);
-            if dimensions_end == offset + 1 || count_end == dimensions_end {
-                (data.len() - offset, TokenKind::Truncated(head))
-            } else {
-                (count_end - offset, TokenKind::ScalarBody)
-            }
-        }
+        token::ARRAY_OPEN => match complete_compact_int(data, offset + 1) {
+            Some((_, end)) => (end - offset, TokenKind::ArrayOpen),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
+        token::SCALAR_BODY => match complete_compact_int(data, offset + 1)
+            .and_then(|(_, end)| complete_compact_int(data, end))
+        {
+            Some((_, end)) => (end - offset, TokenKind::ScalarBody),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
         token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
         0xe2 => (1, TokenKind::CompoundOpen),
         token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
@@ -147,10 +139,10 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
         }
         0x46 | 0x2d if offset + 8 <= data.len() => (8, TokenKind::WorldCoordinate),
         0x46 | 0x2d => (data.len() - offset, TokenKind::Truncated(head)),
-        0..=0xbf => {
-            let (_, end) = compact_int(data, offset);
-            (end - offset, TokenKind::CompactInt)
-        }
+        0..=0xbf => match complete_compact_int(data, offset) {
+            Some((_, end)) => (end - offset, TokenKind::CompactInt),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
         0xe1 | 0xe4 | 0xe5 | 0xe6 | 0xe8 | 0xf1 | 0xf2 | 0xf3 | 0xf5 | 0xf6 => {
             (1, TokenKind::OtherStructural(head))
         }
@@ -163,6 +155,19 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
     })
 }
 
+/// Decode a complete compact integer, excluding control bytes and incomplete heads.
+pub(crate) fn complete_compact_int(data: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let &head = data.get(offset)?;
+    match head {
+        0..=0x7f => Some((u32::from(head), offset + 1)),
+        0x80..=0xbf => {
+            let &tail = data.get(offset + 1)?;
+            Some(((u32::from(head - 0x80) << 8) | u32::from(tail), offset + 2))
+        }
+        _ => None,
+    }
+}
+
 /// Decode a generic PSB compact integer at `offset` ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)).
 ///
 /// - `0x00..=0x7f`: one-byte direct value.
@@ -171,37 +176,40 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
 ///   raw byte as a one-byte value (callers that need the stricter reference-id
 ///   grammar must reject this range themselves).
 ///
-/// Returns `(value, new_offset)`; `new_offset == offset` signals end-of-buffer.
-pub fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
+/// Returns `(value, new_offset)`. `new_offset == offset` signals end-of-buffer
+/// and is the only route that does not advance: every byte at `offset` inside
+/// `data` consumes one or two bytes, so `new_offset > offset` there and a
+/// scanner that follows `new_offset` always makes progress.
+pub(crate) fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
     let Some(&b) = data.get(offset) else {
         return (0, offset);
     };
     if b <= 0x7f {
-        (b as u32, offset + 1)
+        (u32::from(b), offset + 1)
     } else if (0x80..=0xbf).contains(&b) {
         match data.get(offset + 1) {
-            Some(&lo) => ((((b - 0x80) as u32) << 8) | lo as u32, offset + 2),
-            None => (b as u32, offset + 1),
+            Some(&lo) => (((u32::from(b - 0x80)) << 8) | u32::from(lo), offset + 2),
+            None => (u32::from(b), offset + 1),
         }
     } else {
-        (b as u32, offset + 1)
+        (u32::from(b), offset + 1)
     }
 }
 
 /// Decode a canonical PSB entity-reference identifier. Unlike
 /// [`compact_int`], typed reference lanes reject control bytes and reject a
 /// two-byte representation for values that fit in one byte.
-pub fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static str> {
+pub(crate) fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static str> {
     let Some(&head) = data.get(offset) else {
         return Err("reference id is truncated");
     };
     match head {
-        0..=0x7f => Ok((head as u32, offset + 1)),
+        0..=0x7f => Ok((u32::from(head), offset + 1)),
         0x80..=0xbf => {
             let Some(&tail) = data.get(offset + 1) else {
                 return Err("two-byte reference id is truncated");
             };
-            let value = (((head - 0x80) as u32) << 8) | tail as u32;
+            let value = ((u32::from(head - 0x80)) << 8) | u32::from(tail);
             if value < 0x80 {
                 return Err("reference id uses a non-canonical two-byte form");
             }
@@ -232,7 +240,7 @@ const fn short_form_spec(prefix: u8) -> Option<(u8, bool)> {
 }
 
 /// True when `prefix` opens a 3-byte short-form float token.
-pub fn is_short_form_float(prefix: u8) -> bool {
+pub(crate) fn is_short_form_float(prefix: u8) -> bool {
     short_form_spec(prefix).is_some()
 }
 
@@ -244,7 +252,7 @@ pub fn is_short_form_float(prefix: u8) -> bool {
 /// `(byte0, XX, fill…)`, where `byte0` and the fill mode come from the prefix.
 /// Byte-exact against the spec's worked examples (e.g. `2f 43 00 = 38.0`,
 /// `29 eb 33 = 0.85`, `48 22 00 = -9.0`).
-pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+pub(crate) fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     let (byte0, repeat) = short_form_spec(*data.get(offset)?)?;
     let xx = *data.get(offset + 1)?;
     let yy = *data.get(offset + 2)?;
@@ -332,7 +340,10 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        compact_int, complete_compact_int, is_short_form_float, reference_id, short_form_float,
+        token, token_at, tokens, Token, TokenKind,
+    };
 
     #[test]
     fn compact_int_one_byte() {
@@ -384,7 +395,7 @@ mod tests {
             0xe0, 0x22, b'p', 0, 0xf8, 0x81, 0x02, 0x2f, 0x43, 0x00, 0xf7, 0x80, 0x80, 0xcc,
         ];
         assert_eq!(
-            tokens(&payload),
+            tokens(&payload).collect::<Vec<_>>(),
             vec![
                 Token {
                     offset: 0,
@@ -417,7 +428,7 @@ mod tests {
 
     #[test]
     fn token_walker_bounds_compact_scalar_body_extents() {
-        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]);
+        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]).collect::<Vec<_>>();
         assert_eq!(tokens[0].kind, TokenKind::ScalarBody);
         assert_eq!(tokens[0].length, 4);
         assert_eq!(tokens[1].offset, 4);
@@ -426,7 +437,7 @@ mod tests {
     #[test]
     fn token_walker_marks_truncated_structural_tokens() {
         assert_eq!(
-            tokens(&[token::NAMED_RECORD]),
+            tokens(&[token::NAMED_RECORD]).collect::<Vec<_>>(),
             vec![Token {
                 offset: 0,
                 length: 1,
@@ -467,5 +478,27 @@ mod tests {
     #[test]
     fn short_form_float_rejects_truncated() {
         assert!(short_form_float(&[0x2f, 0x43], 0).is_none());
+    }
+    #[test]
+    fn token_walker_exposes_incomplete_compact_heads() {
+        for (bytes, head) in [
+            (&[0xf8, 0x81][..], 0xf8),
+            (&[0xf9, 1, 0x81][..], 0xf9),
+            (&[0x81][..], 0x81),
+        ] {
+            let tokens: Vec<_> = tokens(bytes).collect();
+            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens[0].kind, TokenKind::Truncated(head));
+            assert_eq!(tokens[0].length, bytes.len());
+        }
+    }
+
+    #[test]
+    fn complete_compact_count_rejects_absent_tail_and_control_bytes() {
+        assert_eq!(complete_compact_int(&[], 0), None);
+        assert_eq!(complete_compact_int(&[0x81], 0), None);
+        assert_eq!(complete_compact_int(&[0xf8], 0), None);
+        assert_eq!(complete_compact_int(&[0], 0), Some((0, 1)));
+        assert_eq!(complete_compact_int(&[0x81, 0x23], 0), Some((0x123, 2)));
     }
 }

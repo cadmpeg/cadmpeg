@@ -2,49 +2,248 @@
 //! Tests: numbered intersect.
 
 use crate::decode::sketch::axis::SectionAxis;
+use crate::vecmath::normalize;
 
-use super::parameter_slot;
 use crate::decode::build::report::has_transferred_geometry;
-use crate::decode::feature_history::{
-    add_surface_prototype_feature_dependencies, feature_edge_selection,
-    feature_entity_dependencies, feature_generated_dependencies,
-    feature_output_surface_dependencies, feature_result_edge_ids, feature_result_surface_ids,
-    feature_result_topology, generated_curve_edge_refs, generated_surface_face_refs,
-    geometry_generator_features, knit_class_100_operand_entity_ids, knit_operand_surface_ids,
-    model_feature_ids, native_feature_dependency_ids, profile_segment_ids, reconciled_dependencies,
-    surface_merge_entity_dependencies, surface_merge_quilt_ids, GeometryGeneratorFeature,
+use crate::decode::feature_history::axes::{
+    geometry_generator_features, model_feature_ids, GeometryGeneratorFeature,
 };
-use crate::decode::holes::{
-    cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
+use crate::decode::feature_history::dependencies::{
+    feature_entity_dependencies, feature_output_surface_dependencies,
+    native_feature_dependency_ids, surface_merge_entity_dependencies, surface_merge_quilt_ids,
 };
-use crate::decode::sketch::{
-    normalized, section_linear_distance_coordinate, solve_section_coordinate_equations,
-    solve_unsigned_dimension_coordinates, SectionCoordinateEquation,
+use crate::decode::feature_history::knit::{
+    generated_surface_face_refs, knit_class_100_operand_entity_ids, knit_operand_surface_ids,
+};
+use crate::decode::feature_history::link::profile_segment_ids;
+use crate::decode::feature_history::selections::{
+    feature_edge_selection, generated_curve_edge_refs,
+};
+use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
+use crate::decode::sketch::coordinates::section_linear_distance_coordinate as section_linear_distance_coordinate_admitted;
+
+fn section_linear_distance_coordinate(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segments: &[&crate::feature::definitions::FeatureSegment],
+    first: u32,
+    second: u32,
+    coordinates: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+    saved_segment_points: &[(u32, [f64; 2])],
+    ambiguous_point_ids: &std::collections::BTreeSet<u32>,
+) -> Option<SectionAxis> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_linear_distance_coordinate_admitted(
+            ctx,
+            definition,
+            segments,
+            [first, second],
+            coordinates,
+            saved_segment_points,
+            ambiguous_point_ids,
+        )
+    })
+    .expect("test linear distance coordinate")
+}
+use crate::decode::sketch::equations_coordinate::{
+    solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
+    SectionCoordinateEquation, SectionEquationFixture,
 };
 use crate::decode::surfaces::fc05_model_frame;
-use crate::decode::sweep::{
-    extruded_section_line, feature_outline_planes, feature_plane_equations,
-    placed_tabulated_cylinder_directrix, revolved_section_circle, revolved_section_surface,
-    signed_unit_chart,
+use crate::decode::sweep::nurbs::placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix;
+use crate::decode::sweep::surfaces::{
+    extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use cadmpeg_ir::features::{
-    Angle, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
-    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
-    GeneratedFaceRef, Length, LinearTermination, RadiusSpec, RevolutionAxis,
+    EdgeSelection, ExtrudeExtent, ExtrudeSide, Feature, GeneratedEdgeRef, GeneratedFaceRef,
+    LinearTermination, RevolutionAxis,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::sketches::{
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
 use std::collections::{BTreeMap, BTreeSet};
+
+fn service_feature_plane_equations(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<Vec<([f64; 3], [f64; 3])>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sweep::planes::feature_plane_equations(
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+        )
+        .map(|result| {
+            result.map(|planes| {
+                planes
+                    .into_iter()
+                    .map(|plane| (plane.origin, plane.normal))
+                    .collect::<Vec<_>>()
+            })
+        })
+    })
+    .expect("service resources")
+}
+
+fn service_feature_outline_planes(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
+
+fn feature_edge_selection_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<EdgeSelection> {
+    crate::decode::with_test_decode_ctx(|ctx| feature_edge_selection(ctx, scan, ir, feature_id))
+        .expect("service profile admits feature edge selection")
+}
+
+fn generated_curve_edge_refs_with_service(
+    curve_ids: &[u32],
+    rows: &[crate::curve::CurveTopologyRow],
+    available_features: &BTreeSet<IrFeatureId>,
+    result_edge_ids: &BTreeMap<u32, Vec<u32>>,
+) -> Option<Vec<GeneratedEdgeRef>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_curve_edge_refs(ctx, curve_ids, rows, available_features, result_edge_ids)
+    })
+    .expect("service profile admits generated curve references")
+}
+
+fn generated_surface_face_refs_with_service(
+    source_ids: &[u32],
+    rows: &[crate::surface::SurfaceRow],
+    result_surface_ids: &BTreeMap<u32, Vec<u32>>,
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedFaceRef>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_surface_face_refs(
+            ctx,
+            source_ids,
+            rows,
+            result_surface_ids,
+            available_features,
+        )
+    })
+    .expect("service profile admits generated surface references")
+}
+
+fn knit_class_100_operand_entity_ids_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+) -> Option<Vec<u32>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        knit_class_100_operand_entity_ids(ctx, feature_id, tables)
+    })
+    .expect("service profile admits knit class 100 operands")
+}
+
+fn knit_operand_surface_ids_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+    quilt_ids: &[u32],
+) -> Option<Vec<u32>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        knit_operand_surface_ids(ctx, scan, feature_id, quilt_ids)
+    })
+    .expect("service profile admits knit operand surfaces")
+}
+
+fn native_feature_dependency_ids_with_service(
+    affected_ids: &[crate::feature::rows::FeatureAffectedIds],
+    operations: &[crate::feature::operations::FeatureOperation],
+    entity_tables: &[crate::feature::entity::FeatureEntityTable],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+    prototype_dependencies: &[u32],
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        native_feature_dependency_ids(
+            ctx,
+            affected_ids,
+            operations,
+            entity_tables,
+            replay,
+            surface_rows,
+            (feature_id, prototype_dependencies),
+        )
+    })
+    .expect("service profile admits native feature dependencies")
+}
+
+fn feature_entity_dependencies_with_service(
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| feature_entity_dependencies(ctx, tables, feature_id))
+        .expect("service profile admits entity dependencies")
+}
+
+fn feature_output_surface_dependencies_with_service(
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        feature_output_surface_dependencies(ctx, tables, rows, feature_id)
+    })
+    .expect("service profile admits output surface dependencies")
+}
+
+fn surface_merge_entity_dependencies_with_service(
+    affected: &[crate::feature::rows::FeatureAffectedIds],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        surface_merge_entity_dependencies(ctx, affected, replay, tables, feature_id)
+    })
+    .expect("service profile admits surface merge dependencies")
+}
+
+const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
+
+fn placed_tabulated_cylinder_directrix(
+    replay: &crate::surface::TabulatedCylinderCurveReplay,
+    parameters: &crate::surface::SurfaceParameterRecord,
+    chart_origin: Option<[f64; 3]>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<(cadmpeg_ir::geometry::nurbs::NurbsCurve, [f64; 3])> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    checked_tabulated_cylinder_directrix(&ctx, replay, parameters, chart_origin, refusal)
+        .expect("service profile admits tabulated directrix")
+}
 
 #[test]
 fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -55,7 +254,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         body: Vec::new(),
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -64,7 +263,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -111,7 +310,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     endpoint_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(
-            crate::feature::FeatureReferenceLineSegment {
+            crate::feature::definitions::FeatureReferenceLineSegment {
                 directions: [None; 3],
                 point_ids: [Some(1), Some(3)],
                 vertical_horizontal: None,
@@ -122,7 +321,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     endpoint_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(
-            crate::feature::FeatureBoundedCurveSegment {
+            crate::feature::definitions::FeatureBoundedCurveSegment {
                 directions: [None; 3],
                 point_ids: [2, 4],
                 center_id: None,
@@ -156,7 +355,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     centered_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::CenteredLine(
-            crate::feature::FeatureCenteredLineSegment {
+            crate::feature::definitions::FeatureCenteredLineSegment {
                 center_id: 2,
                 external_id: 22,
                 offset: 0,
@@ -185,31 +384,44 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
-        offset: id as usize,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(31), row(32)]);
     scan.planes.outlines.push(plane(31, 2.0));
 
-    assert!(feature_plane_equations(&scan, &CadIr::empty(), 917).is_none());
+    assert!(service_feature_plane_equations(
+        &scan,
+        &CadIr::empty(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 
     scan.planes.outlines.push(plane(32, 8.0));
     assert_eq!(
-        feature_plane_equations(&scan, &CadIr::empty(), 917).and_then(|planes| {
+        service_feature_plane_equations(
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -228,32 +440,35 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
-        offset: id as usize,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     scan.planes
         .outlines
         .extend([plane(31, 0.0), plane(32, 5.0)]);
 
-    assert!(feature_outline_planes(&scan, 911).is_none());
+    assert!(service_feature_outline_planes(&scan, 911).is_none());
 
     scan.planes.outlines.push(plane(33, 10.0));
     assert_eq!(
-        feature_outline_planes(&scan, 911).map(|planes| planes.len()),
+        service_feature_outline_planes(&scan, 911).map(|planes| planes.len()),
         Some(3)
     );
-    assert!(hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")).is_none());
+    assert!(
+        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes"))
+            .is_none()
+    );
 
     scan.planes.outlines.push(plane(33, 10.0));
-    assert!(feature_outline_planes(&scan, 911).is_none());
+    assert!(service_feature_outline_planes(&scan, 911).is_none());
 }
 
 #[test]
@@ -265,85 +480,78 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
-        offset: id as usize,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(902), row(701)]);
     scan.planes
         .outlines
         .extend([plane(902, 0.0), plane(701, 6.5)]);
 
     assert_eq!(
-        feature_outline_planes(&scan, 911),
+        service_feature_outline_planes(&scan, 911),
         Some(vec![
             (902, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
             (701, [0.0, 0.0, 6.5], [0.0, 0.0, 1.0]),
         ])
     );
     assert_eq!(
-        hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")),
+        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes")),
         Some((
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: Length(6.5),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                    .expect("nonzero length fixture"),
             },
         ))
     );
 }
 
 #[test]
-fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
-    let mut dependencies = BTreeMap::new();
-    add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
-    add_surface_prototype_feature_dependencies(&mut dependencies, 41, &[286]);
-
-    assert_eq!(
-        dependencies,
-        BTreeMap::from([(286, vec![40, 41]), (1111, vec![40])])
-    );
-}
-
-#[test]
 fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_on_conflict() {
     let mut sum = SectionCoordinateEquation::default();
-    sum.add_point(1, SectionAxis::U, 1.0);
-    sum.add_point(2, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut sum, 1, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut sum, 2, SectionAxis::U, 1.0);
     sum.rhs = 10.0;
     let mut difference = SectionCoordinateEquation::default();
-    difference.add_point(1, SectionAxis::U, 1.0);
-    difference.add_point(2, SectionAxis::U, -1.0);
+    SectionEquationFixture::add_point(&mut difference, 1, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut difference, 2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
                 sum,
                 difference,
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(2, SectionAxis::V, 4.0),
             ],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(1, [Some(6.0), Some(3.0)]), (2, [Some(4.0), Some(4.0)]),])
     );
 
     let stored = BTreeMap::from([((1, SectionAxis::U), 1.0), ((1, SectionAxis::V), 3.0)]);
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 2.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 2.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
             ],
             &stored,
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(1, [Some(1.0), Some(3.0)])])
     );
     let stored = BTreeMap::from([
@@ -353,18 +561,20 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ((2, SectionAxis::V), 4.0),
     ]);
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::U, 2.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
-                SectionCoordinateEquation::point_difference(1, 3, SectionAxis::U, 0.0),
-                SectionCoordinateEquation::point_difference(2, 3, SectionAxis::U, 0.0),
-                SectionCoordinateEquation::point_value(3, SectionAxis::V, 5.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(2, SectionAxis::U, 2.0),
+                SectionEquationFixture::point_value(2, SectionAxis::V, 4.0),
+                SectionEquationFixture::point_difference(1, 3, SectionAxis::U, 0.0),
+                SectionEquationFixture::point_difference(2, 3, SectionAxis::U, 0.0),
+                SectionEquationFixture::point_value(3, SectionAxis::V, 5.0),
             ],
             &stored,
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([
             (1, [Some(1.0), Some(3.0)]),
             (2, [Some(2.0), Some(4.0)]),
@@ -372,24 +582,24 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ])
     );
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
-                SectionCoordinateEquation::point_value(3, SectionAxis::U, 1.0e12),
-                SectionCoordinateEquation::point_value(3, SectionAxis::V, -1.0e12),
+                SectionEquationFixture::point_value(3, SectionAxis::U, 1.0e12),
+                SectionEquationFixture::point_value(3, SectionAxis::V, -1.0e12),
             ],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(3, [Some(1.0e12), Some(-1.0e12)])])
     );
     assert_eq!(
-        solve_section_coordinate_equations(
-            &[SectionCoordinateEquation::point_value(
-                4,
-                SectionAxis::U,
-                7.0
-            )],
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
+            &[SectionEquationFixture::point_value(4, SectionAxis::U, 7.0)],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(4, [Some(7.0), None])])
     );
 }
@@ -397,89 +607,66 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 #[test]
 fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     let equations = [
-        SectionCoordinateEquation::point_value(1, SectionAxis::U, 0.0),
-        SectionCoordinateEquation::point_value(2, SectionAxis::U, 10.0),
+        SectionEquationFixture::point_value(1, SectionAxis::U, 0.0),
+        SectionEquationFixture::point_value(2, SectionAxis::U, 10.0),
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
-        solve_unsigned_dimension_coordinates(
+        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+            ctx,
             &equations,
             &stored,
             &[(1, 3, SectionAxis::U, 3.0), (3, 2, SectionAxis::U, 7.0)],
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([((3, SectionAxis::U), 3.0)])
     );
     assert_eq!(
-        solve_unsigned_dimension_coordinates(
-            &[SectionCoordinateEquation::point_value(
-                1,
-                SectionAxis::U,
-                0.0
-            )],
+        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+            ctx,
+            &[SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
             &[(1, 2, SectionAxis::U, 3.0)],
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::new()
     );
 }
 
 #[test]
 fn normalization_rejects_overflowed_finite_vectors() {
-    assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
-    assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
-}
-
-#[test]
-fn dependency_reconciliation_preserves_typed_history_edges() {
-    let owner = IrFeatureId::mint("creo:model:feature#40".to_string()).expect("identity grammar");
-    let sketch =
-        IrFeatureId::mint("creo:model:sketch_feature#917".to_string()).expect("identity grammar");
-    let parent = IrFeatureId::mint("creo:model:feature#3".to_string()).expect("identity grammar");
-    let missing =
-        IrFeatureId::mint("creo:model:feature#999".to_string()).expect("identity grammar");
-    let emitted = [owner.clone(), sketch.clone(), parent.clone()]
-        .into_iter()
-        .collect();
-
-    assert_eq!(
-        reconciled_dependencies(
-            &owner,
-            &[sketch.clone(), missing],
-            [parent.clone(), sketch.clone(), owner.clone()],
-            &emitted,
-        ),
-        vec![sketch, parent]
-    );
+    assert_eq!(normalize([f64::MAX, f64::MAX, 0.0]), None);
+    assert_eq!(normalize([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
 }
 
 #[test]
 fn class_100_entity_reference_depends_on_its_unique_generator() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
     let table = |feature_id: u32,
                  table_class_id: u32,
-                 entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
+                 entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([])
     };
     let producer = table(175, 67, vec![entry(192, 200, Some(175))]);
     let consumer = table(416, 100, vec![entry(192, 98, None)]);
 
     assert_eq!(
-        feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies_with_service(&[producer.clone(), consumer.clone()], 416),
         [175]
     );
     let duplicate_owned_producer = table(
@@ -488,36 +675,45 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         vec![entry(192, 200, Some(175)), entry(192, 200, Some(175))],
     );
     assert_eq!(
-        feature_entity_dependencies(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies_with_service(
+            &[duplicate_owned_producer.clone(), consumer.clone()],
+            416
+        ),
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[duplicate_owned_producer, consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(
+            416,
+            &[duplicate_owned_producer, consumer.clone()]
+        ),
         None
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])
     );
     let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[source_missing_entry.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(
+            416,
+            &[source_missing_entry.clone(), consumer.clone()]
+        ),
         Some(vec![192])
     );
     assert_eq!(
-        feature_entity_dependencies(&[source_missing_entry, consumer.clone()], 416),
+        feature_entity_dependencies_with_service(&[source_missing_entry, consumer.clone()], 416),
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[consumer.clone(), producer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[consumer.clone(), producer.clone()]),
         None
     );
     assert_eq!(
-        feature_entity_dependencies(&[consumer.clone(), producer.clone()], 416),
+        feature_entity_dependencies_with_service(&[consumer.clone(), producer.clone()], 416),
         [175]
     );
     assert_eq!(
-        native_feature_dependency_ids(
+        native_feature_dependency_ids_with_service(
             &[],
             &[],
             &[producer.clone(), consumer.clone()],
@@ -529,19 +725,19 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [40, 175]
     );
     let conflicting = table(312, 67, vec![entry(192, 200, Some(312))]);
-    assert!(feature_entity_dependencies(
+    assert!(feature_entity_dependencies_with_service(
         &[producer.clone(), conflicting.clone(), consumer.clone()],
         416
     )
     .is_empty());
     assert_eq!(
-        knit_class_100_operand_entity_ids(
+        knit_class_100_operand_entity_ids_with_service(
             416,
             &[producer.clone(), conflicting.clone(), consumer.clone()]
         ),
         None
     );
-    assert!(native_feature_dependency_ids(
+    assert!(native_feature_dependency_ids_with_service(
         &[],
         &[],
         &[producer.clone(), conflicting, consumer],
@@ -562,49 +758,52 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         ],
     );
     assert_eq!(
-        feature_entity_dependencies(
+        feature_entity_dependencies_with_service(
             &[producer.clone(), second_producer, mixed_consumer.clone()],
             419,
         ),
         [175, 176]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(419, &[producer.clone(), mixed_consumer]),
+        knit_class_100_operand_entity_ids_with_service(419, &[producer.clone(), mixed_consumer]),
         None
     );
     let missing = table(417, 100, vec![entry(193, 98, None)]);
-    assert_eq!(knit_class_100_operand_entity_ids(417, &[missing]), None);
+    assert_eq!(
+        knit_class_100_operand_entity_ids_with_service(417, &[missing]),
+        None
+    );
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(418, &[producer.clone(), duplicate]),
+        knit_class_100_operand_entity_ids_with_service(418, &[producer.clone(), duplicate]),
         None
     );
     let self_reference = table(175, 100, vec![entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(175, &[producer, self_reference]),
+        knit_class_100_operand_entity_ids_with_service(175, &[producer, self_reference]),
         None
     );
 }
 
 #[test]
 fn owned_output_entity_depends_on_its_prior_surface_target() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 2976,
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
+            2976,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([])
     };
     let tables = vec![
@@ -622,43 +821,49 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
     };
 
     assert_eq!(
-        feature_output_surface_dependencies(&tables, std::slice::from_ref(&surface), 2976),
+        feature_output_surface_dependencies_with_service(
+            &tables,
+            std::slice::from_ref(&surface),
+            2976
+        ),
         [97]
     );
 
     let mut current_surface = surface;
     current_surface.feature_id = 2976;
-    assert!(feature_output_surface_dependencies(&tables, &[current_surface], 2976).is_empty());
+    assert!(
+        feature_output_surface_dependencies_with_service(&tables, &[current_surface], 2976)
+            .is_empty()
+    );
 }
 
 #[test]
 fn surface_merge_quilt_roster_links_every_unique_generator() {
-    let entry = |entity_id, offset| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, offset| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        payload: crate::feature::entry_payload(200, None, None, None),
+        payload: crate::feature::entity::entry_payload(200, None, None, None),
         prefixed: true,
         offset,
         end_offset: offset + 1,
-        is_surface: false,
     };
     let producer = |feature_id, entity_id, offset| {
-        crate::feature::FeatureEntityTable {
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
-            table_class_id: 67,
-            entries: vec![entry(entity_id, offset + 1)],
+            67,
+            vec![entry(entity_id, offset + 1)],
+            &std::collections::BTreeSet::new(),
             offset,
-        }
+        )
         .with_surface_ids([])
     };
-    let replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+    let replay = crate::feature::rows::FeatureSurfaceMergeAffectedIds {
         feature_id: 416,
         geometry_ids: vec![98, 145, 157, 184, 321],
         edge_ids: vec![241],
         quilt_ids: vec![103, 192, 329],
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Inherited,
+        geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::rows::ReplayExtentSource::Inherited,
         offset: 100,
     };
     let tables = [
@@ -668,30 +873,34 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     ];
 
     assert_eq!(
-        surface_merge_entity_dependencies(&[], std::slice::from_ref(&replay), &tables, 416),
+        surface_merge_entity_dependencies_with_service(
+            &[],
+            std::slice::from_ref(&replay),
+            &tables,
+            416
+        ),
         [97, 175, 312]
     );
     assert_eq!(
         surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
         Some([103, 192, 329].as_slice())
     );
-    let wrong_class = crate::feature::FeatureEntityTable {
-        feature_id: 175,
-        table_class_id: 67,
-        entries: vec![crate::feature::FeatureEntityTableEntry {
+    let wrong_class = crate::feature::entity::FeatureEntityTable::new(
+        175,
+        67,
+        vec![crate::feature::entity::FeatureEntityTableEntry {
             entity_id: 192,
-            class_id: 201,
-            payload: crate::feature::entry_payload(201, Some(175), None, None),
+            payload: crate::feature::entity::entry_payload(201, Some(175), None, None),
             prefixed: true,
             offset: 20,
             end_offset: 0,
-            is_surface: false,
         }],
-        offset: 20,
-    }
+        &std::collections::BTreeSet::new(),
+        20,
+    )
     .with_surface_ids([]);
     assert_eq!(
-        surface_merge_entity_dependencies(
+        surface_merge_entity_dependencies_with_service(
             &[],
             std::slice::from_ref(&replay),
             &[producer(97, 103, 10), wrong_class, producer(312, 329, 30)],
@@ -701,17 +910,17 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     );
 
     let future = producer(400, 777, 200);
-    let future_replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+    let future_replay = crate::feature::rows::FeatureSurfaceMergeAffectedIds {
         feature_id: 417,
         geometry_ids: Vec::new(),
         edge_ids: Vec::new(),
         quilt_ids: vec![777],
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
+        geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
         offset: 100,
     };
-    assert!(surface_merge_entity_dependencies(
+    assert!(surface_merge_entity_dependencies_with_service(
         &[],
         std::slice::from_ref(&future_replay),
         std::slice::from_ref(&future),
@@ -739,22 +948,31 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     let result_surface_ids = BTreeMap::from([(97, vec![98]), (144, vec![145])]);
 
     assert_eq!(
-        generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
+        generated_surface_face_refs_with_service(
+            &[98, 145],
+            &rows,
+            &result_surface_ids,
+            &producers
+        ),
         Some(vec![
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#97".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#98".to_string(),
-            },
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#144".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#145".to_string(),
-            },
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
+                "surface#98".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .expect("valid test fixture"),
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
+                "surface#145".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .expect("valid test fixture"),
         ])
     );
     assert_eq!(
-        generated_surface_face_refs(
+        generated_surface_face_refs_with_service(
             &[98],
             &[row(98, 97), row(98, 97)],
             &result_surface_ids,
@@ -763,173 +981,39 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         None
     );
     assert_eq!(
-        generated_surface_face_refs(&[98], &rows, &result_surface_ids, &BTreeSet::new()),
+        generated_surface_face_refs_with_service(
+            &[98],
+            &rows,
+            &result_surface_ids,
+            &BTreeSet::new()
+        ),
         None
     );
 }
 
 #[test]
-fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
-    let row = |id, feature_id| crate::surface::SurfaceRow {
-        id,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 0,
-    };
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
-
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 97,
-        table_class_id: 29,
-        entries: vec![entry(98, 200, Some(1)), entry(145, 203, None)],
-        offset: 0,
-    }
-    .with_surface_ids([98, 145]);
-    let rows = [row(98, 97), row(145, 97)];
-    let curve_rows = [crate::curve::CurveTopologyRow {
-        id: 77,
-        type_byte: 8,
-        feature_id: 97,
-        directions: [1, 0xf6],
-        faces: [
-            std::num::NonZeroU32::new(98),
-            std::num::NonZeroU32::new(145),
-        ],
-        next_edges: [77, 77],
-        offset: 0,
-    }];
-    assert_eq!(feature_result_edge_ids(&curve_rows, 97), Some(vec![77]));
-    let duplicate_curve_rows = [
-        curve_rows[0].clone(),
-        crate::curve::CurveTopologyRow {
-            offset: 1,
-            ..curve_rows[0].clone()
-        },
-    ];
-    assert!(feature_result_edge_ids(&duplicate_curve_rows, 97).is_none());
-    assert_eq!(
-        feature_result_surface_ids(std::slice::from_ref(&table), &rows, 97),
-        Some(vec![98, 145])
-    );
-    assert_eq!(
-        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
-            .expect("complete result topology")
-            .faces,
-        vec!["surface#98", "surface#145"]
-    );
-    assert_eq!(
-        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
-            .expect("complete result topology")
-            .edges,
-        vec!["curve#77"]
-    );
-
-    let mut duplicate = table.clone();
-    let mut extra = entry(98, 204, None);
-    extra.is_surface = true;
-    duplicate.entries.push(extra);
-    assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
-
-    let mut missing = table;
-    missing.entries[1] = entry(146, 203, None);
-    missing.entries[1].is_surface = true;
-    assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
-
-    let foreign = crate::feature::FeatureEntityTable {
-        feature_id: 97,
-        table_class_id: 29,
-        entries: vec![entry(145, 203, None)],
-        offset: 0,
-    }
-    .with_surface_ids([145]);
-    assert!(feature_result_surface_ids(&[foreign], &[row(145, 144)], 97).is_none());
-}
-
-#[test]
-fn generated_face_dependencies_follow_the_producer_feature() {
-    let producer =
-        IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let definition = IrFeatureDefinition::Thicken {
-        faces: FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: producer.clone(),
-                local_id: "surface#98".to_string(),
-            }],
-            native: "creo:allfeatur:thicken#9".to_string(),
-        },
-        thickness: None,
-        side: None,
-    };
-    assert_eq!(feature_generated_dependencies(&definition), vec![producer]);
-}
-
-#[test]
-fn generated_edge_dependencies_follow_the_producer_feature() {
-    let producer =
-        IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let generated_edges = EdgeSelection::Generated {
-        edges: vec![GeneratedEdgeRef {
-            feature: producer.clone(),
-            local_id: "curve#77".to_string(),
-        }],
-        native: "creo:allfeatur:fillet#9".to_string(),
-    };
-    let fillet = IrFeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
-            edges: generated_edges.clone(),
-            radius: RadiusSpec::Unresolved,
-            tangency_weight: None,
-        }],
-    };
-    assert_eq!(
-        feature_generated_dependencies(&fillet),
-        vec![producer.clone()]
-    );
-
-    let chamfer = IrFeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
-            edges: generated_edges,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
-        }],
-        flip_direction: false,
-    };
-    assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
-}
-
-#[test]
 fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
-    let entry =
-        |entity_id, class_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
-            payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry = |entity_id, class_id, source_entity_id, offset| {
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
             entity_id,
-            class_id,
             prefixed: true,
             offset,
             end_offset: offset + 1,
-            is_surface: false,
-        };
+        }
+    };
     let table = |feature_id: u32,
                  table_class_id: u32,
-                 entries: Vec<crate::feature::FeatureEntityTableEntry>,
+                 entries: Vec<crate::feature::entity::FeatureEntityTableEntry>,
                  offset: usize| {
-        crate::feature::FeatureEntityTable {
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
+            &std::collections::BTreeSet::new(),
             offset,
-        }
+        )
         .with_surface_ids([])
     };
     let row = |id, feature_id| crate::surface::SurfaceRow {
@@ -941,17 +1025,18 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         next_surface: 0,
         offset: 0,
     };
-    let replay = |feature_id, quilt_ids, offset| crate::feature::FeatureSurfaceMergeAffectedIds {
-        feature_id,
-        geometry_ids: Vec::new(),
-        edge_ids: Vec::new(),
-        quilt_ids,
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
-        offset,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let replay =
+        |feature_id, quilt_ids, offset| crate::feature::rows::FeatureSurfaceMergeAffectedIds {
+            feature_id,
+            geometry_ids: Vec::new(),
+            edge_ids: Vec::new(),
+            quilt_ids,
+            geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            offset,
+        };
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables = vec![
         table(97, 67, vec![entry(103, 200, Some(97), 11)], 10),
         table(97, 100, vec![entry(103, 98, None, 21)], 20),
@@ -964,14 +1049,17 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         .push(replay(416, vec![103, 150], 100));
 
     assert_eq!(
-        knit_operand_surface_ids(&scan, 416, &[103, 150]),
+        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
         Some(vec![98, 145])
     );
 
     scan.features
         .entity_tables
         .push(table(312, 67, vec![entry(103, 200, Some(312), 51)], 50));
-    assert_eq!(knit_operand_surface_ids(&scan, 416, &[103, 150]), None);
+    assert_eq!(
+        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
+        None
+    );
 
     scan.features
         .entity_tables
@@ -979,7 +1067,10 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(417, vec![777], 100));
-    assert_eq!(knit_operand_surface_ids(&scan, 417, &[777]), None);
+    assert_eq!(
+        knit_operand_surface_ids_with_service(&scan, 417, &[777]),
+        None
+    );
 }
 
 #[test]
@@ -1001,22 +1092,26 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
     let result_edge_ids = BTreeMap::from([(12, vec![45]), (18, vec![46])]);
 
     assert_eq!(
-        generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
+        generated_curve_edge_refs_with_service(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#12".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#45".to_string(),
-            },
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#18".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#46".to_string(),
-            },
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
+                "curve#45".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .expect("valid test fixture"),
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
+                "curve#46".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .expect("valid test fixture"),
         ])
     );
     assert_eq!(
-        generated_curve_edge_refs(
+        generated_curve_edge_refs_with_service(
             &[45],
             &[row(45, 12, 100), row(45, 12, 300)],
             &producers,
@@ -1025,23 +1120,23 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         None
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &rows, &BTreeSet::new(), &result_edge_ids),
+        generated_curve_edge_refs_with_service(&[45], &rows, &BTreeSet::new(), &result_edge_ids),
         None
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &rows, &producers, &BTreeMap::new()),
+        generated_curve_edge_refs_with_service(&[45], &rows, &producers, &BTreeMap::new()),
         None
     );
 }
 
 #[test]
 fn mixed_current_and_generated_edges_remain_native() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![45, 46],
             offset: 0,
         });
@@ -1071,31 +1166,32 @@ fn mixed_current_and_generated_edges_remain_native() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: IrFeatureDefinition::Native {
-            kind: "producer".into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                kind: "producer".into(),
+                parameters: std::collections::BTreeMap::new(),
+            }),
+        ),
         native_ref: None,
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
         id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:start".to_string())
             .expect("identity grammar"),
         end: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:end".to_string())
             .expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     });
 
     assert_eq!(
-        feature_edge_selection(&scan, &ir, 10),
+        feature_edge_selection_with_service(&scan, &ir, 10),
         Some(EdgeSelection::Native(
             "creo:allfeatur:edgs_affected#10:45,46".to_string()
         ))
@@ -1104,44 +1200,44 @@ fn mixed_current_and_generated_edges_remain_native() {
 
 #[test]
 fn agreed_empty_edge_selection_is_resolved() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.affected_ids.extend([
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 0,
         },
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 1,
         },
     ]);
 
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(), 10),
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:edgs_affected#10:".to_string(),
         })
     );
 
-    let mut replay_scan = crate::container::scan_bytes(Vec::new());
+    let mut replay_scan = crate::test_support::empty_container_scan();
     replay_scan
         .features
         .replay_affected_ids
-        .push(crate::feature::FeatureReplayAffectedIds {
+        .push(crate::feature::rows::FeatureReplayAffectedIds {
             feature_id: 10,
             geometry_ids: vec![1, 2, 3],
             edge_ids: Vec::new(),
-            geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-            edge_extent: crate::feature::ReplayExtentSource::Explicit,
+            geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&replay_scan, &CadIr::empty(), 10),
+        feature_edge_selection_with_service(&replay_scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:replay_edgs_affected#10:".to_string(),
@@ -1151,28 +1247,31 @@ fn agreed_empty_edge_selection_is_resolved() {
 
 #[test]
 fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.affected_ids.extend([
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 0,
         },
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![45],
             offset: 1,
         },
     ]);
 
-    assert_eq!(feature_edge_selection(&scan, &CadIr::empty(), 10), None);
+    assert_eq!(
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
+        None
+    );
 }
 
 #[test]
 fn geometry_generator_features_join_surface_and_curve_evidence() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 61,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1195,7 +1294,8 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
         });
 
     assert_eq!(
-        geometry_generator_features(&scan),
+        crate::decode::with_test_decode_ctx(|ctx| geometry_generator_features(ctx, &scan))
+            .expect("service profile admits generator features"),
         [GeometryGeneratorFeature {
             feature_id: 50,
             offset: 100,
@@ -1207,12 +1307,12 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
 
 #[test]
 fn model_feature_ids_include_row_backed_generated_producers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 50,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 1,
         offset: 0,
     });
@@ -1237,7 +1337,9 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 100,
         });
 
-    let available_features = model_feature_ids(&scan);
+    let available_features =
+        crate::decode::with_test_decode_ctx(|ctx| model_feature_ids(ctx, &scan))
+            .expect("service profile admits feature identities");
     assert_eq!(
         available_features,
         BTreeSet::from([
@@ -1245,56 +1347,68 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ])
     );
     assert_eq!(
-        generated_surface_face_refs(
+        generated_surface_face_refs_with_service(
             &[61],
             &scan.surfaces.rows,
             &BTreeMap::from([(50, vec![61])]),
             &available_features,
         ),
-        Some(vec![GeneratedFaceRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "surface#61".to_string(),
-        }])
+        Some(vec![GeneratedFaceRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "surface#61".to_string(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("selection reference admission")
+        .expect("valid test fixture")])
     );
     assert_eq!(
-        generated_curve_edge_refs(
+        generated_curve_edge_refs_with_service(
             &[59],
             &scan.curves.topology_rows,
             &available_features,
             &BTreeMap::from([(50, vec![59])]),
         ),
-        Some(vec![GeneratedEdgeRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "curve#59".to_string(),
-        }])
+        Some(vec![GeneratedEdgeRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "curve#59".to_string(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("selection reference admission")
+        .expect("valid test fixture")])
     );
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![59],
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(), 10),
-        Some(EdgeSelection::Generated {
-            edges: vec![GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#59".to_string(),
-            }],
-            native: "creo:allfeatur:edgs_affected#10:59".to_string(),
-        })
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
+        Some(
+            EdgeSelection::generated(
+                vec![GeneratedEdgeRef::new(
+                    IrFeatureId::mint("creo:model:feature#50".to_string())
+                        .expect("identity grammar"),
+                    "curve#59".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection reference admission")
+                .expect("valid test fixture")],
+                "creo:allfeatur:edgs_affected#10:59".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .expect("valid test fixture")
+        )
     );
 }
 
 #[test]
 fn closed_fallback_profile_selects_revolution_segments() {
-    let segment = |external_id| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+    let segment = |external_id| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -1308,17 +1422,22 @@ fn closed_fallback_profile_selects_revolution_segments() {
     let segments = [segment(9), segment(10), segment(11)];
     let profiles = vec![vec![
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:9".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string())
+                .expect("valid test fixture"),
             reversed: false,
         },
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:11".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string())
+                .expect("valid test fixture"),
             reversed: true,
         },
     ]];
 
     assert_eq!(
-        profile_segment_ids(2, &segments.iter().collect::<Vec<_>>(), &profiles),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            profile_segment_ids(ctx, 2, &segments.iter().collect::<Vec<_>>(), &profiles)
+        })
+        .expect("service profile admits two segment ID nodes"),
         BTreeSet::from([9, 11])
     );
 }
@@ -1329,29 +1448,38 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
         [[-0.3125, 1.3125], [0.3125, 1.625]],
         [[-0.3125, 1.625], [0.3125, 1.9375]],
     ];
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, -1.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     assert_eq!(
         cylinder_from_complementary_outline_bounds(&plane, bounds),
-        Some(SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 1.625, -1.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.3125,
-        })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 1.625, -1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.3125
+            )
+            .expect("valid CylinderSurface fixture")
+        )))
     );
 }
 
 #[test]
 fn split_outline_carrier_requires_complementary_square_bounds() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
     assert!(cylinder_from_complementary_outline_bounds(
         &plane,
         [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.6], [1.0, 1.0]]],
@@ -1365,317 +1493,39 @@ fn split_outline_carrier_requires_complementary_square_bounds() {
 }
 
 #[test]
-fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
-    let mut replay = crate::surface::TabulatedCylinderCurveReplay {
-        body: Vec::new(),
-        surface_id: 7,
-        curve_id: 9,
-        curve_type: 0x13,
-        flip: 1,
-        tangent_condition: 0,
-        degree: 3,
-        parameter_body: vec![],
-        control_point_ids: [1, 2, 3, 4],
-        successor_reference: 5,
-        control_point_bodies: std::array::from_fn(|_| vec![]),
-        control_points: [
-            Some([1.0, 2.0]),
-            Some([2.0, 2.5]),
-            Some([3.0, 3.5]),
-            Some([4.0, 4.0]),
-        ],
-        terminal_reference: 6,
-        offset: 0,
-        surface_row_offset: 0,
-    };
-    let parameters = crate::surface::SurfaceParameterRecord {
-        surface_id: 7,
-        body: vec![],
-        scalar_tokens: vec![],
-        opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
-            raw: vec![0x00, 0x0c, 0x9a],
-            offset: 3,
-        }],
-        scalar_frames: vec![
-            crate::surface::SurfaceParameterScalarFrame {
-                offset: 0,
-                slots: [0.0, 0.0, 1.0].into_iter().map(parameter_slot).collect(),
-            },
-            crate::surface::SurfaceParameterScalarFrame {
-                offset: 6,
-                slots: [13.0, 22.0, 5.0, 10.0, 20.0, 10.0]
-                    .into_iter()
-                    .map(parameter_slot)
-                    .collect(),
-            },
-        ],
-        terminal_scalar_frame: None,
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Extrusion(
-                crate::surface::ExtrusionVariant::TabulatedCylinder,
-            ),
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 0,
-        body_offset: 0,
-    };
-
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &parameters, None).expect("placement");
-    assert_eq!(curve.control_points()[0], Point3::new(-13.0, -20.0, 5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(-10.0, -22.0, 5.0));
-    assert_eq!(sweep, [0.0, 0.0, 5.0]);
-
-    let mut broad_signed_frame = parameters;
-    broad_signed_frame.scalar_frames.truncate(1);
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-            },
-        },
-    );
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
-        .expect("broad signed-DICT placement");
-    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
-    assert_eq!(sweep, [0.0, 0.0, 5.0]);
-
-    broad_signed_frame.scalar_frames.clear();
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
-        .expect("complete frame supplies its signed sweep");
-    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
-    assert_eq!(sweep, [0.0, 0.0, 5.0]);
-
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-            },
-        },
-    );
-    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
-
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
-                prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-            },
-        },
-    );
-    replay.control_points[1] = Some([10.0, -5.0]);
-    assert!(
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none(),
-        "the offset layout requires its prototype chart origin"
-    );
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, Some([-30.0, 0.0, 0.0]))
-            .expect("independently signed offset placement");
-    assert_eq!(curve.control_points()[0], Point3::new(-29.0, 5.0, 2.0));
-    assert_eq!(curve.control_points()[1], Point3::new(-20.0, 5.0, -5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(-26.0, 5.0, 4.0));
-    assert_eq!(sweep, [0.0, 5.0, 0.0]);
-
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-            },
-        },
-    );
-    replay.control_points[1] = Some([2.0, 2.5]);
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
-        .expect("scalar encodings do not change the coordinate chart");
-    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
-    assert_eq!(sweep, [0.0, 0.0, 5.0]);
-
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-            },
-        },
-    );
-    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
-
-    replay.control_points = [
-        Some([1.0, 2.0]),
-        Some([2.0, 2.5]),
-        Some([3.0, 3.5]),
-        Some([4.0, 4.0]),
-    ];
-    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
-                prefixes: [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-            },
-        },
-    );
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, Some([-12.25, 0.0, 0.0]))
-            .expect("prototype chart origin supplies an arbitrary intercept");
-    assert_eq!(curve.control_points()[0], Point3::new(-11.25, 2.0, 5.0));
-    assert_eq!(curve.control_points()[3], Point3::new(-8.25, 4.0, 5.0));
-    assert_eq!(sweep, [0.0, 0.0, 5.0]);
-    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
-}
-
-#[test]
-fn tabulated_cylinder_offset_chart_resolves_signed_unit_axes() {
-    assert_eq!(
-        signed_unit_chart(
-            [33.480_874_469_5, 34.047_445_706_6],
-            [3.480_874_469_5, 4.047_445_706_6],
-            30.0,
-        ),
-        Some((1.0, -30.0))
-    );
-    assert_eq!(
-        signed_unit_chart(
-            [0.576_336_341_1, 0.746_308_064_9],
-            [-0.746_308_064_9, -0.576_336_341_1],
-            0.0,
-        ),
-        Some((-1.0, 0.0))
-    );
-    assert_eq!(
-        signed_unit_chart(
-            [21.592_186_587_7, 21.604_574_667_3],
-            [8.407_813_412_3, -8.395_425_332_7],
-            30.0,
-        ),
-        Some((1.0, -30.0))
-    );
-    assert_eq!(signed_unit_chart([1.0, 2.0], [4.0, 5.0], 30.0), None);
-}
-
-#[test]
-fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
-    let replay = crate::surface::TabulatedCylinderCurveReplay {
-        body: Vec::new(),
-        surface_id: 815,
-        curve_id: 1,
-        curve_type: 0x13,
-        flip: 1,
-        tangent_condition: 0,
-        degree: 3,
-        parameter_body: Vec::new(),
-        control_point_ids: [1, 2, 3, 4],
-        successor_reference: 0,
-        control_point_bodies: std::array::from_fn(|_| Vec::new()),
-        control_points: [
-            Some([2.603_530_729_189_511_6, -6.634_758_301_120_719]),
-            Some([2.486_761_892_214_414, -6.583_162_851_673_087]),
-            Some([2.403_937_662_020_322, -6.519_347_555_976_829]),
-            Some([2.355_057_866_495_792, -6.440_596_814_034_794]),
-        ],
-        terminal_reference: 0,
-        offset: 0,
-        surface_row_offset: 0,
-    };
-    let body = vec![
-        0x18, 0xe4, 0x0f, 0x00, 0x0c, 0x9a, 0x8d, 0xd7, 0x28, 0x94, 0x26, 0x4b, 0xb2, 0x2d, 0x19,
-        0xc3, 0x2b, 0xcf, 0xac, 0x01, 0x44, 0x9e, 0x1e, 0xb8, 0x51, 0xeb, 0x85, 0x1f, 0x8f, 0xd4,
-        0x07, 0xeb, 0x3f, 0xff, 0xf8, 0x2d, 0x1a, 0x89, 0xfe, 0x14, 0x80, 0xb6, 0x48, 0x9e, 0x85,
-        0x1e, 0xb8, 0x51, 0xeb, 0x85,
-    ];
-    let tabulated_cylinder_frame = crate::surface::decode_tabulated_cylinder_frame(
-        &body,
-        &crate::scalar::ScalarCache::default(),
-    )
-    .map(|(frame, _)| frame);
-    let parameters = crate::surface::SurfaceParameterRecord {
-        surface_id: 815,
-        body,
-        scalar_tokens: Vec::new(),
-        opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
-            raw: vec![0, 0x0c, 0x9a],
-            offset: 3,
-        }],
-        scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
-            offset: 0,
-            slots: vec![
-                parameter_slot(0.0),
-                parameter_slot(1.0),
-                parameter_slot(0.0),
-            ],
-        }],
-        terminal_scalar_frame: None,
-        carrier: tabulated_cylinder_frame.map_or(
-            crate::surface::SurfaceParameterCarrier::Unresolved(
-                crate::surface::SurfaceKind::Extrusion(
-                    crate::surface::ExtrusionVariant::TabulatedCylinder,
-                ),
-            ),
-            |frame| {
-                crate::surface::SurfaceParameterCarrier::Resolved(
-                    crate::surface::InlineSurfaceCarrier::Tabulated {
-                        variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-                        frame,
-                    },
-                )
-            },
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 0,
-        body_offset: 0,
-    };
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters, None)
-        .expect("zero-offset directrix placement");
-    assert_eq!(
-        curve.control_points()[0],
-        Point3::new(-2.603_530_729_189_511_6, 6.634_758_301_120_719, 4.78)
-    );
-    assert_eq!(
-        curve.control_points()[3],
-        Point3::new(-2.355_057_866_495_792, 6.440_596_814_034_794, 4.78)
-    );
-    assert_eq!(sweep, [0.0, 0.0, 0.099_999_999_999_999_64]);
-}
-
-#[test]
 fn geometry_signal_excludes_opaque_carriers() {
     let mut ir = CadIr::empty();
     let surface_id =
         SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Unknown { record: None },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
 
     assert!(!has_transferred_geometry(&ir));
 
     let _attached = ir.model.add_procedural_surface(
-        surface_id,
+        &cadmpeg_ir::document::admission::StandardAdmission,
+        &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Exact {
-                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                    ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    extension: 0,
-                },
-            },
+            ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                        cache: None,
+                    },
+                )
+                .expect("finite ordered exact-spline fixture ranges"),
+            ),
             None,
         ),
     );
@@ -1689,31 +1539,31 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
     let reference = [0.6, 0.8];
     assert_eq!(
         fc05_model_frame(
-            crate::decode::axis::Axis::X,
+            crate::axis::Axis::X,
             17.0,
             center,
             reference,
-            crate::decode::axis::Sign::Negative,
+            crate::axis::Sign::Negative,
         ),
         ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
     );
     assert_eq!(
         fc05_model_frame(
-            crate::decode::axis::Axis::Y,
+            crate::axis::Axis::Y,
             17.0,
             center,
             reference,
-            crate::decode::axis::Sign::Negative,
+            crate::axis::Sign::Negative,
         ),
         ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
     );
     assert_eq!(
         fc05_model_frame(
-            crate::decode::axis::Axis::Z,
+            crate::axis::Axis::Z,
             17.0,
             center,
             reference,
-            crate::decode::axis::Sign::Negative,
+            crate::axis::Sign::Negative,
         ),
         ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
     );
@@ -1721,93 +1571,128 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
 
 #[test]
 fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(2),
-        origin: [0.0, 0.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(2),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point fixture"),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("valid direction fixture"),
         reference: None,
     };
-    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
     };
 
-    assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], &axis),
-        Some(CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        }) if center == Point3::new(0.0, 3.0, 0.0)
-            && axis == Vector3::new(0.0, 1.0, 0.0)
-            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && radius == 2.0
-    ));
+    assert!(
+        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+                if {
+                    let center = circle_curve.center().get();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
+        let radius = circle_curve.radius().get();
+                    center == Point3::new(0.0, 3.0, 0.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 2.0
+                })
+    );
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
-    assert!(matches!(
-        extruded_section_line(&transform, [2.0, 3.0]),
-        Some(CurveGeometry::Line { origin, direction })
-            if origin == Point3::new(2.0, 3.0, 0.0)
-                && direction == Vector3::new(0.0, 0.0, 1.0)
-    ));
+    assert!(
+        matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
+                if {
+                    let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
+                    origin == Point3::new(2.0, 3.0, 0.0) && direction == Vector3::new(0.0, 0.0, 1.0)
+                })
+    );
 
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis),
-        Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis),
-        Some(SurfaceGeometry::Plane { origin, .. }) if origin.y == 3.0
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis),
-        Some(SurfaceGeometry::Cone { radius, half_angle, .. })
-            if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis),
-        Some(SurfaceGeometry::Cone { axis, radius, half_angle, .. })
-            if axis.y == -1.0
-                && radius == 4.0
-                && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    ));
-    let centered_arc = SketchGeometry::Arc {
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+        if {
+            let radius = cylinder_surface.radius().get();
+            radius == 2.0
+        })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
+        if {
+            let origin = plane_surface.origin();
+            origin.y == 3.0
+        })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+                if {
+                    let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
+                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+                })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+                if {
+                    let axis = cone_surface.frame().axis().as_raw();
+        let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
+                    axis.y == -1.0
+                        && radius == 4.0
+                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+                })
+    );
+    let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
-    };
-    assert!(matches!(
-        revolved_section_surface(&transform, &centered_arc, &axis),
-        Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
-    ));
-    let offset_arc = SketchGeometry::Arc {
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
+        if {
+            let radius = sphere_surface.radius().get();
+            radius == 2.0
+        })
+    );
+    let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
-    };
-    assert!(matches!(
-        revolved_section_surface(&transform, &offset_arc, &axis),
-        Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
-            if major_radius == 5.0 && minor_radius == 2.0
-    ));
-    let offset_circle = SketchGeometry::Circle {
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    major_radius == 5.0 && minor_radius == 2.0
+                })
+    );
+    let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(5.0, 3.0),
-        radius: Length(2.0),
-    };
-    assert!(matches!(
-        revolved_section_surface(&transform, &offset_circle, &axis),
-        Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
-            if major_radius == 5.0 && minor_radius == 2.0
-    ));
+        radius: Length::new(2.0).expect("finite length fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    major_radius == 5.0 && minor_radius == 2.0
+                })
+    );
 }
+
+mod tabulated_cylinders;

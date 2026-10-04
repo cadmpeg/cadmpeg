@@ -55,11 +55,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1"
-          ],
           "id": "iges:model:shell#free-geometry",
+          "members": [
+            {
+              "id": "iges:model:vertex#D1",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "iges:model:region#free-geometry"
         }
       ],
@@ -1010,24 +1012,25 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": {
-            "unverified": {
-              "using": "iges:5.3-fixed-ascii"
-            }
-          },
-          "declared": {
-            "effective_version": "2.0",
-            "representation": "fixed-ascii",
-            "version_flag": "3"
-          },
-          "dialect": "iges:2.0-fixed-ascii",
-          "format": "iges"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "unverified": {
+                "using": "5.3-fixed-ascii"
+              }
+            },
+            "declared": {
+              "effective_version": "2.0",
+              "representation": "fixed-ascii",
+              "version_flag": "3"
+            },
+            "dialect": "iges:2.0-fixed-ascii"
+          }
         }
-      },
-      "format": "iges"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -1038,32 +1041,33 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": {
-          "unverified": {
-            "using": "iges:5.3-fixed-ascii"
-          }
-        },
-        "declared": {
-          "effective_version": "2.0",
-          "representation": "fixed-ascii",
-          "version_flag": "3"
-        },
-        "dialect": "iges:2.0-fixed-ascii",
-        "format": "iges"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "unverified": {
+              "using": "5.3-fixed-ascii"
+            }
+          },
+          "declared": {
+            "effective_version": "2.0",
+            "representation": "fixed-ascii",
+            "version_flag": "3"
+          },
+          "dialect": "iges:2.0-fixed-ascii"
+        }
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "IGES Global version flag 3 names effective specification version 2.0; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",
         "severity": "warning"
@@ -1076,28 +1080,34 @@
       "parameter_tokens=4",
       "external_references=0"
     ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         }
       ]
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 567,
-        "data": "SUdFUyAyLjAgZml4ZWQgQVNDSUkgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxM0gyNjA3MTQuMDAwMDAwLDAuMDAxLDEwMDAuMCw2SGF1dGhvciwzSG9yZywzOyAgICAgICAgICAgICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQT0lOVCAgICAgICAwRCAgICAgIDIKMTE2LDEuMCwyLjAsMy4wOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-        "id": "iges:file:source-image#0",
+    "retained_records": {
+      "iges:file:source-image#0": {
+        "bytes": {
+          "data": "SUdFUyAyLjAgZml4ZWQgQVNDSUkgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxM0gyNjA3MTQuMDAwMDAwLDAuMDAxLDEwMDAuMCw2SGF1dGhvciwzSG9yZywzOyAgICAgICAgICAgICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQT0lOVCAgICAgICAwRCAgICAgIDIKMTE2LDEuMCwyLjAsMy4wOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "a78f07e79405641180706e98307fcd1db2843d881c666b7fe10208fad826427d",
         "stream": "iges"
       }
-    ]
+    }
   }
 }

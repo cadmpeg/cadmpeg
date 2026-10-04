@@ -106,32 +106,6 @@
                 {
                   "pcurve": {
                     "geometry": {
-                      "control_points": [
-                        {
-                          "u": 0.0,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.1,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.2,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.3,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.4,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.5,
-                          "v": 1.0
-                        }
-                      ],
                       "degree": 5,
                       "kind": "nurbs",
                       "knots": [
@@ -148,7 +122,36 @@
                         1.0,
                         1.0
                       ],
-                      "periodic": false
+                      "periodic": false,
+                      "poles": {
+                        "form": "polynomial",
+                        "points": [
+                          {
+                            "u": 0.0,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.1,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.2,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.3,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.4,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.5,
+                            "v": 1.0
+                          }
+                        ]
+                      }
                     }
                   },
                   "surface": "catia:consolidated:cylinder#2"
@@ -156,32 +159,6 @@
                 {
                   "pcurve": {
                     "geometry": {
-                      "control_points": [
-                        {
-                          "u": 0.0,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.1,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.2,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.3,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.4,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.5,
-                          "v": 1.0
-                        }
-                      ],
                       "degree": 5,
                       "kind": "nurbs",
                       "knots": [
@@ -198,7 +175,36 @@
                         1.0,
                         1.0
                       ],
-                      "periodic": false
+                      "periodic": false,
+                      "poles": {
+                        "form": "polynomial",
+                        "points": [
+                          {
+                            "u": 0.0,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.1,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.2,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.3,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.4,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.5,
+                            "v": 1.0
+                          }
+                        ]
+                      }
                     }
                   },
                   "surface": "catia:consolidated:cylinder#2"
@@ -225,13 +231,21 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "catia:standard:v#0",
-            "catia:standard:v#1",
-            "catia:standard:v#2"
-          ],
           "id": "catia:standard:shell#unbound-points",
+          "members": [
+            {
+              "id": "catia:standard:v#0",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:standard:v#1",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:standard:v#2",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "catia:standard:region#unbound-points"
         }
       ],
@@ -744,15 +758,16 @@
         "stream_count": "2",
         "vertex_records": "3"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:standard-nested",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:standard-nested"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -763,7 +778,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -1151,22 +1165,23 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:standard-nested",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:standard-nested"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.carrier-summary",
           "kind": "carrier_summary",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 2 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
         "severity": "info"
@@ -1175,7 +1190,9 @@
         "code": {
           "code": "topology.boundary-graph-not-emitted",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
         "severity": "blocking"
@@ -1184,7 +1201,9 @@
         "code": {
           "code": "geometry.analytic-payload-invalid",
           "kind": "geometry_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "1 analytic surface record(s) had a non-finite or out-of-range inline payload and were not decoded.",
         "severity": "warning"
@@ -1193,7 +1212,8 @@
         "code": {
           "code": "attributes.materials-metadata-not-transferred",
           "kind": "attributes_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
@@ -1204,7 +1224,11 @@
       "nested V5_CFV2 at file offset 549 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
@@ -1214,148 +1238,149 @@
           "fields": {
             "curve": "derived",
             "definition": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:consolidated:curve#1": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "catia:payload:unknown#brep-stream": {
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:body#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:circle#0": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.axis": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:region#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:shell#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:standard:v#0": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#1": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:standard:v#2": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
         "catia:consolidated:construction#0": {
           "offset": 141,
-          "stream": 2,
+          "stream": "catia:consolidated_edge_run",
           "tag": "resolved_surface_curve"
         },
         "catia:consolidated:curve#1": {
           "offset": 141,
-          "stream": 2,
+          "stream": "catia:consolidated_edge_run",
           "tag": "procedural_curve_cache"
         },
         "catia:consolidated:cylinder#2": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:consolidated_b2_03_28_cylinder",
           "tag": "resolved_pcurve_support"
         },
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:standard-nested"
         },
         "catia:standard:body#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:circle#0": {
           "offset": 297,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60_circle"
         },
         "catia:standard:pt#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:pt#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:region#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:shell#unbound-points": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "unbound_point_owner"
         },
         "catia:standard:surf#0": {
           "offset": 131,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_33"
         },
         "catia:standard:surf#1": {
           "offset": 204,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_32"
         },
         "catia:standard:v#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:standard:v#2": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:consolidated_b2_03_28_cylinder",
-        "catia:consolidated_edge_run"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 324,
-        "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQAQJAT//wAAAAECABAkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB",
-        "id": "catia:payload:unknown#brep-stream",
+    "retained_records": {
+      "catia:payload:unknown#brep-stream": {
+        "bytes": {
+          "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQAQJAT//wAAAAECABAkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "7cc50f0a65a1b74cbab53eea06f88440daacdbf5ed50a4cd98ba1f994dda158e",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    }
   }
 }

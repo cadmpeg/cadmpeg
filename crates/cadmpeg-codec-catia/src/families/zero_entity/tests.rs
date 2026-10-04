@@ -2,20 +2,35 @@
 //! Zero-entity dump tests over synthetic CATPart streams.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_test_support::{edit, wire};
+
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-use crate::test_support::*;
+use crate::container::OUTER_MAGIC;
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{
+    standard_catpart, zero_entity_catpart, zero_entity_cylinder_catpart,
+    zero_entity_cylinder_parametric_support_catpart, zero_entity_nurbs_catpart,
+};
+use crate::test_support::test_zero_entity::{
+    zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
+    zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
 #[test]
 fn decode_zero_entity_falls_back_to_metadata() {
     let f = zero_entity_catpart();
-    let scan = crate::container::scan_bytes(f.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, f.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::ZeroEntity);
     assert!(scan.inner.is_none());
 
@@ -57,10 +72,15 @@ fn zero_entity_directory_markers_stay_outside_the_record_stream() {
     file.extend_from_slice(&body);
     file.extend_from_slice(&directory);
 
-    let scan = crate::container::scan_bytes(file);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 0);
     assert_eq!(scan.variant, Variant::Unknown);
-    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::container::consolidated_record_ranges(ctx, &scan)
+    })
+    .expect("service budget admits record ranges");
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert!(native.zero_entity_records.is_empty());
     assert!(native.zero_entity_support_runs.is_empty());
@@ -85,10 +105,15 @@ fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
     file.extend_from_slice(&body);
     file.extend_from_slice(&directory);
 
-    let scan = crate::container::scan_bytes(file);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::ZeroEntity);
-    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::container::consolidated_record_ranges(ctx, &scan)
+    })
+    .expect("service budget admits record ranges");
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert_eq!(native.zero_entity_records.len(), 1);
 }
@@ -106,24 +131,41 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     assert!(result.ir().model.bodies.is_empty());
     assert!(result.ir().model.shells.is_empty());
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
+            let radius = cylinder_surface.radius().get();
             assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
-            assert_eq!(*radius, 4.0);
+            assert_eq!(radius, 4.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn zero_entity_surface_entity_limit_refuses_before_surface_push() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(zero_entity_cylinder_catpart()), &options)
+        .expect_err("one raw payload and one surface exceed one entity");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"));
 }
 
 #[test]
@@ -136,14 +178,16 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         .expect("decode zero-entity parametric support");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT.as_str()
         ),
         1
     );
@@ -175,16 +219,17 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
     assert_eq!(
-        context.sides[0].surface.as_ref(),
+        context.sides()[0].surface.as_ref(),
         Some(&result.ir().model.surfaces[0].id)
     );
-    assert!(context.sides[0].pcurve.is_some());
-    assert_eq!(context.sides[1].surface, None);
-    assert_eq!(context.sides[1].pcurve, None);
+    assert!(context.sides()[0].pcurve.is_some());
+    assert_eq!(context.sides()[1].surface, None);
+    assert_eq!(context.sides()[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -198,27 +243,30 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
         .expect("decode zero-entity exact support");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT.as_str()
         ),
         0
     );
     assert!(matches!(
         result.ir().model.curves.as_slice(),
         [cadmpeg_ir::geometry::Curve {
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(_),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)),
             ..
         }]
     ));
     assert!(result.ir().model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -230,15 +278,15 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
         .unwrap();
     assert_eq!(result.ir().model.surfaces.len(), 1);
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
             assert_eq!((surface.u_count(), surface.v_count()), (7, 7));
             assert_eq!(
-                surface.u_knots(),
+                surface.u_knots().as_slice(),
                 [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
             );
-            assert_eq!(surface.control_points().len(), 49);
-            assert_eq!(surface.control_points()[48].x, 48.0);
+            assert_eq!(surface.poles().len(), 49);
+            assert_eq!(surface.poles().into_iter().nth(48).unwrap().x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
@@ -280,10 +328,13 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.tag, [0x21, 0x71]);
     assert_eq!(support.record_ordinal, 2);
     assert_eq!(support.face_local_slot, 1);
-    assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+    assert_eq!(
+        support.uv_endpoints,
+        Some([[-2.0, 4.0], [6.0, 8.0]].map(crate::test_support::test_b5::finite_pair))
+    );
     assert!(matches!(
         support.pcurve,
-        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { ref nurbs })
+        Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { ref nurbs })
             if nurbs.degree() == 1
                 && nurbs.control_points().len() == 2
                 && nurbs.weights().is_none()
@@ -291,24 +342,27 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     ));
     assert!(matches!(
         support.model_curve,
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)))
             if nurbs.degree() == 1
                 && nurbs.control_points().len() == 2
                 && nurbs.weights().is_none()
                 && !nurbs.periodic()
     ));
     assert!(support.model_curve_construction.is_none());
-    assert_eq!(support.model_parameters, Some([0.0, 1.0]));
+    assert_eq!(
+        support.model_parameters,
+        Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
+    );
     assert_eq!(
         support.model_midpoint,
-        Some(cadmpeg_ir::math::Point3::new(3.0, 8.0, 3.0))
+        Some(crate::test_support::test_b5::point([3.0, 8.0, 3.0]))
     );
     assert_eq!(
         support.model_endpoints,
-        Some([
-            cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
-            cadmpeg_ir::math::Point3::new(7.0, 10.0, 3.0),
-        ])
+        Some(crate::test_support::test_b5::points([
+            [-1.0, 6.0, 3.0],
+            [7.0, 10.0, 3.0]
+        ]))
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -443,14 +497,27 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
     let mut invalid_model_curve = native.clone();
-    let Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve)) =
+    let Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(model_curve))) =
         invalid_model_curve.zero_entity_support_runs[0].supports[0]
             .model_curve
             .as_mut()
     else {
         panic!("NURBS support model curve")
     };
-    model_curve.set_periodic(true);
+    {
+        let replacement = true;
+        edit::replace(model_curve, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &cadmpeg_test_support::service_decode_context(),
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+            .expect("fixture final NURBS admission")
+        })
+        .unwrap();
+    };
     let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)
@@ -459,7 +526,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_model_parameters = native.clone();
     invalid_model_parameters.zero_entity_support_runs[0].supports[0].model_parameters =
-        Some([1.0, 1.0]);
+        Some(crate::test_support::test_b5::finite_pair([1.0, 1.0]));
     let mut invalid_model_parameters_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_parameters
         .store(&mut invalid_model_parameters_namespace)
@@ -476,15 +543,21 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_model_construction = native.clone();
     invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
-        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 1.0,
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        });
+        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                },
+                1.0,
+                None,
+            )
+            .unwrap(),
+        ));
     let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_construction
         .store(&mut invalid_model_construction_namespace)
@@ -498,10 +571,10 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .oriented_model_endpoints
-        .push([
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        ]);
+        .push(crate::test_support::test_b5::points([
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ]));
     let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_oriented_endpoints
         .store(&mut invalid_oriented_endpoint_namespace)
@@ -521,11 +594,11 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 "catia:zero-entity:record#2".to_string(),
                 "catia:zero-entity:record#2".to_string(),
             ],
-            model_endpoints: [
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            ],
-            model_midpoint: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            model_endpoints: crate::test_support::test_b5::points([
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ]),
+            model_midpoint: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         });
     let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_pair
@@ -541,11 +614,14 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             incident_endpoint_pair_endpoints: vec![
                 crate::native::CatiaZeroEntityEndpointPairEndpoint {
                     endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
-                    endpoint_index: crate::native::CatiaZeroEntityEndpointIndex::Start,
+                    endpoint_index: crate::families::zero_entity::topology::EdgeEnd::Start,
                 },
-            ],
-            representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            maximum_deviation: 0.0,
+            ]
+            .try_into()
+            .expect("nonempty incidence"),
+            representative_point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(0.0)
+                .expect("zero deviation"),
         });
     let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_locus
@@ -553,17 +629,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity endpoint-locus candidate");
     assert!(crate::native::CatiaNative::load(&invalid_endpoint_locus_namespace).is_err());
 
-    let mut invalid_model_endpoint = native.clone();
-    invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
-        .model_endpoints
-        .as_mut()
-        .expect("model endpoints")[0]
-        .x = f64::NAN;
-    let mut invalid_model_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_model_endpoint
-        .store(&mut invalid_model_endpoint_namespace)
-        .expect("store invalid CATIA zero-entity model endpoint");
-    assert!(crate::native::CatiaNative::load(&invalid_model_endpoint_namespace).is_err());
+    // A support model endpoint holds an admitted point, so a non-finite
+    // coordinate is refused before a native record can hold it.
+    assert!(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::NAN, 6.0, 3.0))
+            .is_none()
+    );
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
@@ -773,115 +844,133 @@ fn decode_reports_zero_entity_surface_support_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity support run");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT.as_str()
+        ),
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss
                 .message
                 .contains("1 zero-entity surface-support run(s)")
@@ -903,73 +992,84 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity topology registries");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT.as_str()
+        ),
         8
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT.as_str()
+        ),
         5
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT.as_str()
+        ),
         4
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT.as_str()
+        ),
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
             && loss.message.contains("1 vertex-incidence record(s)")

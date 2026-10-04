@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern row layouts with their exact scalar families.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 use super::branch_items::BranchItems;
@@ -29,9 +32,9 @@ impl PatternTerminal {
         }
     }
 
-    pub(crate) fn value(self) -> f64 {
+    pub(crate) fn value(self) -> FiniteReal {
         match self {
-            Self::ExactOne => 1.0,
+            Self::ExactOne => FiniteReal::ONE,
             Self::Binary32(atom) => atom.value(),
         }
     }
@@ -83,32 +86,39 @@ impl<I, O> PatternRows<I, O> {
         }
     }
 
-    pub(crate) fn map<J, P>(
+    pub(crate) fn map_charged<J, P>(
         self,
+        ctx: &DecodeContext<'_>,
         mut selector: impl FnMut(I) -> J,
         mut offset: impl FnMut(O) -> P,
-    ) -> PatternRows<J, P> {
+    ) -> Result<PatternRows<J, P>, CodecError> {
         match self {
-            Self::Scalar(rows) => PatternRows::Scalar(rows.map_indexed(|_, row| PatternRow {
-                values: PatternValue {
-                    scalar: row.values.scalar,
-                    offset: offset(row.values.offset),
-                },
-                selector: selector(row.selector),
-            })),
-            Self::Wide(rows) => PatternRows::Wide(rows.map_indexed(|_, row| PatternRow {
-                values: PatternWideValues {
-                    first: row.values.first.map(|value| PatternValue {
-                        scalar: value.scalar,
-                        offset: offset(value.offset),
-                    }),
-                    terminal: PatternValue {
-                        scalar: row.values.terminal.scalar,
-                        offset: offset(row.values.terminal.offset),
+            Self::Scalar(rows) => Ok(PatternRows::Scalar(rows.map_indexed_charged(
+                ctx,
+                |_, row| PatternRow {
+                    values: PatternValue {
+                        scalar: row.values.scalar,
+                        offset: offset(row.values.offset),
                     },
+                    selector: selector(row.selector),
                 },
-                selector: selector(row.selector),
-            })),
+            )?)),
+            Self::Wide(rows) => Ok(PatternRows::Wide(rows.map_indexed_charged(
+                ctx,
+                |_, row| PatternRow {
+                    values: PatternWideValues {
+                        first: row.values.first.map(|value| PatternValue {
+                            scalar: value.scalar,
+                            offset: offset(value.offset),
+                        }),
+                        terminal: PatternValue {
+                            scalar: row.values.terminal.scalar,
+                            offset: offset(row.values.terminal.offset),
+                        },
+                    },
+                    selector: selector(row.selector),
+                },
+            )?)),
         }
     }
 }

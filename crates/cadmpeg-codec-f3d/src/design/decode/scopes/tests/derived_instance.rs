@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::prelude::*;
-use crate::design::decode::scopes::exact_derived_instance_construction;
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
+use crate::design::test_support::identity_matrix;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
 };
-use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
+use crate::records::feature::{
+    assembly_features::DesignComponentOccurrence, scope::DesignParameterScope,
+};
 
 const COMPONENT: &str = "3ad5b67c-2bc5-4ccd-bac9-26ac75616116";
 const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
@@ -20,48 +17,58 @@ const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
 #[test]
 fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let (mut bytes, mut scope, occurrence) = fixture();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
-    let construction = exact_derived_instance_construction(
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .expect("exact DerivedInstance construction");
-    assert_eq!(construction.reference_record_index, 305);
-    assert_eq!(construction.relation_record_index, 383);
-    assert_eq!(construction.carrier_record_index, 382);
-    assert_eq!(construction.component_guid.as_str(), COMPONENT);
-    assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
-    assert_eq!(
-        construction.transform,
-        occurrence.transform().as_ref().copied().unwrap().value
-    );
-    assert_eq!(
-        construction.transform_offset,
-        425 + scope_279::TRANSFORM as u64
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let construction = exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .expect("exact DerivedInstance construction");
+        assert_eq!(construction.reference_record_index, 305);
+        assert_eq!(construction.relation_record_index, 383);
+        assert_eq!(construction.carrier_record_index, 382);
+        assert_eq!(construction.component_guid.as_str(), COMPONENT);
+        assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
+        assert_eq!(
+            construction.transform,
+            occurrence.transform().as_ref().copied().unwrap().value
+        );
+        assert_eq!(
+            construction.transform_offset,
+            425 + u64_from_index(scope_279::TRANSFORM)
+        );
 
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert!(exact_derived_instance_construction(
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .is_none());
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+        assert!(exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .is_none());
 
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    bytes[425 + scope_279::TRANSFORM + 6] = 0;
-    let records = IndexedRecordOffsets::build(&bytes);
-    assert!(exact_derived_instance_construction(
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .is_none());
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
+        bytes[425 + scope_279::TRANSFORM + 6] = 0;
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .is_none());
+    });
 }
 
 fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
@@ -108,33 +115,51 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#425",
-        crate::records::feature::DesignFeatureKind::DerivedInstance,
+        crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
         385,
     );
-    scope.byte_offset = SCOPE_AT as u64;
-    scope.class_tag = crate::records::DesignClassTag::try_from("279".to_owned()).unwrap();
-    scope.frame_length = scope_279::LEN as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![383]);
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = u64_from_index(SCOPE_AT);
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("279".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(scope_279::LEN);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![383]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
 
-    let occurrence = DesignComponentOccurrence {
-        id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
-        class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
-        record_index: 382,
-        byte_offset: 0,
-        component_record_index: 305,
-        component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-        component_guid_offset: 0,
-        occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-        occurrence_guid_offset: 0,
-        placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
-            ordinal: std::num::NonZeroU32::MIN,
-            transform: crate::records::Located {
-                value: transform,
-                offset: 209,
+    let occurrence = DesignComponentOccurrence::try_new(
+        crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+            id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
+            class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
+                .unwrap(),
+            record_index: 382,
+            byte_offset: 0,
+            component_record_index: 305,
+            component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+            occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
+            placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
+                ordinal: std::num::NonZeroU32::MIN,
+                transform: transform.try_into().unwrap(),
             },
         },
-    };
+    )
+    .unwrap();
     (bytes, scope, occurrence)
 }
 
@@ -144,11 +169,27 @@ fn header(bytes: &mut [u8], at: usize, class_tag: &[u8; 3], record_index: u32) {
     bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
 }
 
-fn identity_matrix() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
+#[test]
+fn derived_instance_guid_copies_preserve_retained_refusals() {
+    let (bytes, scope, occurrence) = fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    for limit in [0, 36] {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = exact_derived_instance_construction(
+                ctx,
+                &bytes,
+                &records,
+                &scope,
+                std::slice::from_ref(&occurrence),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "retain F3D construction GUID")
+            );
+        });
+    }
 }

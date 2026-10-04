@@ -8,6 +8,8 @@
 //! compressor output.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
 pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     const SECTOR: usize = 512;
     const END: u32 = 0xffff_fffe;
@@ -33,7 +35,11 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     for index in 0..109 {
         put_u32(&mut file, 76 + index * 4, FREE);
     }
-    put_u32(&mut file, 76, FAT_SECTOR as u32);
+    put_u32(
+        &mut file,
+        76,
+        u32::try_from(FAT_SECTOR).expect("fixture value fits u32"),
+    );
 
     let directory = sector_mut(&mut file, 0);
     for index in 0..4 {
@@ -50,7 +56,7 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
         2,
         1,
         END,
-        (STREAM_SECTORS * SECTOR) as u64,
+        cadmpeg_core::decode::u64_from_index(STREAM_SECTORS * SECTOR),
     );
 
     let payload = sector_mut(&mut file, 1);
@@ -60,7 +66,9 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     let mut at = 9;
     payload[at..at + 2].copy_from_slice(b"PS");
     at += 2;
-    payload[at..at + 4].copy_from_slice(&(description.len() as u32).to_be_bytes());
+    payload[at..at + 4].copy_from_slice(
+        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     at += 4;
     payload[at..at + description.len()].copy_from_slice(description);
 
@@ -74,7 +82,7 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
             if sector == STREAM_SECTORS {
                 END
             } else {
-                (sector + 1) as u32
+                u32::try_from(sector + 1).expect("fixture value fits u32")
             },
         );
     }
@@ -111,7 +119,11 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
     const FAT_SECTOR: usize = 20;
     let mut file = legacy_cfb_with_ug_part();
     file.resize(SECTOR * (1 + FAT_SECTOR + 1), 0);
-    put_u32(&mut file, 76, FAT_SECTOR as u32);
+    put_u32(
+        &mut file,
+        76,
+        u32::try_from(FAT_SECTOR).expect("fixture value fits u32"),
+    );
     sector_mut(&mut file, 11).fill(0xff);
 
     let directory = sector_mut(&mut file, 0);
@@ -120,9 +132,9 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
         3,
         "Extra",
         2,
-        EXTRA_FIRST_SECTOR as u32,
+        u32::try_from(EXTRA_FIRST_SECTOR).expect("fixture value fits u32"),
         END,
-        (EXTRA_SECTORS * SECTOR) as u64,
+        cadmpeg_core::decode::u64_from_index(EXTRA_SECTORS * SECTOR),
     );
     put_u32(directory, 128 + 76, 3);
     put_u32(directory, 3 * 128 + 72, 2);
@@ -142,7 +154,7 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
             if sector == 10 {
                 END
             } else {
-                (sector + 1) as u32
+                u32::try_from(sector + 1).expect("fixture value fits u32")
             },
         );
     }
@@ -153,7 +165,7 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
             if sector + 1 == EXTRA_FIRST_SECTOR + EXTRA_SECTORS {
                 END
             } else {
-                (sector + 1) as u32
+                u32::try_from(sector + 1).expect("fixture value fits u32")
             },
         );
     }
@@ -161,7 +173,7 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
     file
 }
 
-pub(crate) fn cfb_directory_entry(
+fn cfb_directory_entry(
     directory: &mut [u8],
     index: usize,
     name: &str,
@@ -174,7 +186,11 @@ pub(crate) fn cfb_directory_entry(
     for (offset, unit) in name.encode_utf16().enumerate() {
         put_u16(entry, offset * 2, unit);
     }
-    put_u16(entry, 64, ((name.encode_utf16().count() + 1) * 2) as u16);
+    put_u16(
+        entry,
+        64,
+        u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16"),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     put_u32(entry, 68, 0xffff_ffff);
@@ -184,15 +200,7 @@ pub(crate) fn cfb_directory_entry(
     entry[120..128].copy_from_slice(&size.to_le_bytes());
 }
 
-pub(crate) fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
+fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
     let start = (sector + 1) * 512;
     &mut file[start..start + 512]
-}
-
-pub(crate) fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
-pub(crate) fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }

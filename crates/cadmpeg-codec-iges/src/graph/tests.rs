@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::ReferenceOrigin;
-use crate::directory::{DirectoryEntry, SourceStatus};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -14,159 +13,512 @@ use super::{
     MAX_POINTER_SEQUENCE,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::directory_target;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+};
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
-fn directory_entry(sequence: u32, entity_type: i64) -> DirectoryEntry {
-    DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 1,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
+#[test]
+fn reference_summary_refuses_note_limit_without_heap_group_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let graph = BTreeMap::from([(
+        1,
+        vec![ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+            raw_pointer: 3,
+            resolution: Resolution::Dangling,
+            expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+        }],
+    )]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&graph, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges reference summary notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&graph, &ctx).unwrap(),
+        ["references.dangling=1"]
+    );
+}
+
+#[test]
+fn parameter_resolver_directory_index_refuses_collection_limit_before_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = ParameterResolver::new(&directory, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver directory index"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(ParameterResolver::new(&directory, &ctx).is_ok());
+}
+
+#[test]
+fn parameter_resolver_edges_refuse_each_collection_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    for (cap, operation) in [
+        (1, "iges parameter resolver edge groups"),
+        (2, "iges parameter resolver edges"),
+        (3, "iges parameter resolver graph groups"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+        let resolution = resolver.resolve(
+            1,
+            0,
+            3,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true,
+        );
+        let result = if cap == 3 {
+            assert_eq!(resolution.unwrap(), None);
+            resolver.append_to(&mut BTreeMap::new())
+        } else {
+            resolution.map(|_| ())
+        };
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
     }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::new();
+    resolver.append_to(&mut graph).unwrap();
+    assert_eq!(graph[&1].len(), 1);
+}
+
+#[test]
+fn parameter_resolver_expected_forms_refuse_collection_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    let result = resolver.resolve_type(1, 0, 1, 116, &[0]);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver expected forms"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(resolver.resolve_type(1, 0, 1, 116, &[0]).unwrap(), Some(1));
+}
+
+#[test]
+fn parameter_resolver_append_refuses_existing_graph_edge_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::from([(1, Vec::new())]);
+    let result = resolver.append_to(&mut graph);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 3
+                && limit.additional == 1
+                && limit.operation == "iges appended parameter reference edges"
+    ));
+    assert!(graph[&1].is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::from([(1, Vec::new())]);
+    resolver.append_to(&mut graph).unwrap();
+    assert_eq!(graph[&1].len(), 1);
+}
+
+#[test]
+fn parameter_resolver_expected_types_refuse_collection_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    let result = resolver.resolve_any_of(1, 0, 1, (212, 312, &[402]), |_| false);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver expected types"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve_any_of(1, 0, 1, (212, 312, &[402]), |_| false)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
 fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
-    let directory = [directory_entry(maximum, 116)];
-    let resolver = ParameterResolver::new(&directory);
+    let directory = [directory_target(maximum, 116)];
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
 
     assert_eq!(
-        resolver.resolve(
-            1,
-            0,
-            i64::from(maximum),
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve(
+                1,
+                0,
+                i64::from(maximum),
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve(
-            1,
-            1,
-            i64::from(maximum) + 1,
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve(
+                1,
+                1,
+                i64::from(maximum) + 1,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(
-            2,
-            0,
-            -i64::from(maximum),
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve_negative(
+                2,
+                0,
+                -i64::from(maximum),
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve_negative(
-            2,
-            1,
-            -i64::from(maximum) - 1,
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve_negative(
+                2,
+                1,
+                -i64::from(maximum) - 1,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         None
     );
 
     let mut graph = BTreeMap::new();
-    resolver.append_to(&mut graph);
+    resolver.append_to(&mut graph).unwrap();
     assert_eq!(
         graph[&1]
             .iter()
             .map(|edge| edge.resolution)
             .collect::<Vec<_>>(),
-        vec![Resolution::Resolved, Resolution::OutOfRange]
+        vec![Resolution::Resolved(maximum), Resolution::OutOfRange]
     );
     assert_eq!(
         graph[&2]
             .iter()
             .map(|edge| edge.resolution)
             .collect::<Vec<_>>(),
-        vec![Resolution::Resolved, Resolution::OutOfRange]
+        vec![Resolution::Resolved(maximum), Resolution::OutOfRange]
     );
 }
 
 #[test]
 fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
-    let directory = [directory_entry(1, 116)];
-    let resolver = ParameterResolver::new(&directory);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let directory = [directory_target(1, 116)];
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
     assert_eq!(
-        resolver.resolve(
-            1,
-            1,
-            3,
-            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
-            |target| target.entity_type == 124,
-        ),
+        resolver
+            .resolve(
+                1,
+                1,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+                |target| target.entity_type == 124,
+            )
+            .unwrap(),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(
-            1,
-            2,
-            -3,
-            ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
-            |target| target.entity_type == 310 && target.form == 0,
-        ),
+        resolver
+            .resolve_negative(
+                1,
+                2,
+                -3,
+                ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
+                |target| target.entity_type == 310 && target.form == 0,
+            )
+            .unwrap(),
         None
     );
     let mut graph = BTreeMap::new();
-    resolver.append_to(&mut graph);
+    resolver.append_to(&mut graph).unwrap();
     let source = point_file();
-    let scan = crate::card::scan(&source).unwrap();
-    let messages = super::losses(&graph, &scan, &[])
+    let scan = crate::test_support::scan(&source).unwrap();
+    let messages = super::losses(&graph, &scan, &[], &ctx)
+        .unwrap()
         .into_iter()
         .map(|note| note.message)
         .collect::<Vec<_>>();
     assert_eq!(
         messages,
         [
-            "IGES Directory Entry D1 Parameter pointer 3 has Dangling resolution; expected type-124-transformation",
-            "IGES Directory Entry D1 Parameter pointer -3 has Dangling resolution; expected type-310-form-0-font-definition",
+            "IGES Directory Entry D1 Parameter pointer 3 has dangling resolution; expected type-124-transformation",
+            "IGES Directory Entry D1 Parameter pointer -3 has dangling resolution; expected type-310-form-0-font-definition",
         ]
     );
 }
 
 #[test]
+fn graph_losses_admit_indexes_notes_and_provenance_text() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let graph = BTreeMap::from([(
+        1,
+        vec![ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+            raw_pointer: 3,
+            resolution: Resolution::Dangling,
+            expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+        }],
+    )]);
+    let source = point_file();
+    let scan = crate::test_support::scan(&source).unwrap();
+    let directory_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Directory).count());
+    let parameter_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Parameter).count());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::losses(&graph, &scan, &[], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == cadmpeg_core::decode::u64_from_index(scan.lines.len()) * 2
+                && limit.operation == "iges graph loss offset scans"
+    ));
+
+    for (cap, operation) in [
+        (0, "iges graph loss directory offsets"),
+        (directory_count, "iges graph loss parameter offsets"),
+        (directory_count + parameter_count, "iges graph loss notes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::losses(&graph, &scan, &[], &ctx);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::losses(&graph, &scan, &[], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
+                && limit.additional == 2
+                && limit.operation == "iges graph loss tag"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let losses = super::losses(&graph, &scan, &[], &ctx).unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("D1")
+    );
+}
+
+#[test]
 fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
-    let mut source = directory_entry(1, 116);
+    let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum);
-    let graph = build(&[source, directory_entry(maximum, 124)]);
+    let graph = build(&[source, directory_target(maximum, 124)], &ctx).unwrap();
     let edge = graph[&1]
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
-    assert_eq!(edge.resolution, Resolution::Resolved);
+    assert_eq!(edge.resolution, Resolution::Resolved(maximum));
 
-    let mut source = directory_entry(1, 116);
+    let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum) + 1;
-    let graph = build(&[source]);
+    let graph = build(&[source], &ctx).unwrap();
     let edge = graph[&1]
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::OutOfRange);
-    assert!(edge.target.is_none());
+    assert!(edge.resolution.target_sequence().is_none());
+}
+
+#[test]
+fn directory_reference_edge_refuses_collection_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut source = directory_target(1, 116);
+    source.transform = 3;
+    let directory = [source];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = build(&directory, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges directory reference edges"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(build(&directory, &ctx).is_ok());
 }
 
 #[test]
@@ -180,8 +532,7 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                 vec![ReferenceEdge {
                     origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
-                    target: Some(format!("iges:entity:directory#{target}")),
-                    resolution: Resolution::Resolved,
+                    resolution: Resolution::Resolved(target),
                     expected: ReferenceExpectation::Type {
                         entity_type: 124,
                         forms: vec![],
@@ -191,7 +542,22 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
         })
         .collect::<BTreeMap<_, _>>();
 
-    assert!(cyclic_transform_nodes(&edges).is_empty());
+    // The unchanged graph supplies the input-dependent envelope. Three ordered
+    // indices can each charge one split path for every graph node.
+    let input = serde_json::to_vec(&edges).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let node_bytes = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<usize>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    let path_nodes = usize::try_from(chain_length.ilog2()).unwrap() + 2;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        3 * edges.len() * path_nodes * node_bytes + 2 * edges.len() * std::mem::size_of::<u32>(),
+    );
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
+
+    assert!(cyclic_transform_nodes(&edges, &ctx).unwrap().is_empty());
 }
 
 #[test]
@@ -247,7 +613,125 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         .filter(|loss| loss.code == IgesLossCode::PointerUnresolved.kind())
         .collect::<Vec<_>>();
     assert_eq!(cycle_losses.len(), 2);
-    assert!(cycle_losses
-        .iter()
-        .all(|loss| loss.message.contains("Cyclic resolution")));
+    assert_eq!(
+        cycle_losses
+            .iter()
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "IGES Directory Entry D1 Transform pointer 3 has cyclic resolution; expected type-124",
+            "IGES Directory Entry D3 Transform pointer 1 has cyclic resolution; expected type-124",
+        ],
+    );
+}
+
+#[test]
+fn zero_pointer_absence_creates_no_reference_edge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let directory = [directory_target(1, 116)];
+    let mut graph = build(&directory, &ctx).unwrap();
+    assert!(graph[&1].is_empty());
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    let expectation = ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry);
+    assert_eq!(
+        resolver
+            .resolve(1, 1, 0, expectation.clone(), |_| panic!("absent target"))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        resolver
+            .resolve_negative(1, 2, 0, expectation, |_| panic!("absent target"))
+            .unwrap(),
+        None
+    );
+    resolver.append_to(&mut graph).unwrap();
+    assert!(graph[&1].is_empty());
+    assert!(super::summary_notes(&graph, &ctx).unwrap().is_empty());
+}
+
+#[test]
+fn reference_target_id_streams_once_with_native_retained_limit() {
+    use cadmpeg_test_support::native_serialization::assert_native_limit;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct Row<'a> {
+        id: &'static str,
+        edge: &'a super::ReferenceEdge,
+    }
+
+    let edge = super::ReferenceEdge {
+        origin: super::ReferenceOrigin::Directory(super::ReferenceKind::Transform),
+        raw_pointer: 1,
+        resolution: super::Resolution::Resolved(1),
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    };
+    let record = Row {
+        id: "iges:reference:edge#1",
+        edge: &edge,
+    };
+    assert_native_limit(
+        &record,
+        serde_json::json!({
+            "id": "iges:reference:edge#1",
+            "edge": {
+                "kind": "transform", "raw_pointer": 1,
+                "target": "iges:entity:directory#1", "resolution": "resolved",
+                "expected": "type-124-transformation"
+            }
+        }),
+    );
+}
+
+#[test]
+fn native_reference_copy_refuses_nested_forms_and_types() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for (expected, operation) in [
+        (
+            ReferenceExpectation::Type {
+                entity_type: 406,
+                forms: vec![1],
+            },
+            "iges native reference forms",
+        ),
+        (
+            ReferenceExpectation::AnyOf {
+                first: 212,
+                second: 312,
+                rest: vec![402],
+            },
+            "iges native reference types",
+        ),
+    ] {
+        let edge = ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Structure),
+            raw_pointer: 3,
+            resolution: Resolution::Resolved(3),
+            expected,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            edge.copy_for_native(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(edge.copy_for_native(&ctx).unwrap(), edge);
+    }
 }

@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Built-in history-record decoding.
 
+use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
-use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
-use crate::wire::Uuid;
+use crate::settings::{
+    point, utf16_retained, vector, xform, MillimeterScale, Point3, Vector3, Xform,
+};
+use crate::wire::{uuid, Uuid};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -19,14 +25,14 @@ const HISTORY_CLASS: Uuid = Uuid::from_canonical([
 const VALUE_CAP: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RecordType {
+enum RecordType {
     HistoryParameters,
     FeatureParameters,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryValue {
-    pub(crate) id: i32,
+    id: i32,
     pub(crate) value: Value,
 }
 
@@ -51,68 +57,103 @@ pub(crate) enum Value {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EmbeddedGeometry {
-    pub(crate) class_id: Uuid,
-    pub(crate) class_data_range: Range<usize>,
-    pub(crate) userdata: Vec<UserdataDescriptor>,
+    class_id: Uuid,
+    class_data_range: Range<usize>,
+    userdata: Vec<UserdataDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SubdEdgeChain {
-    pub(crate) subd_id: Uuid,
-    pub(crate) edges: Vec<SubdEdge>,
+    subd_id: Uuid,
+    edges: Vec<SubdEdge>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SubdEdge {
-    pub(crate) id: u32,
-    pub(crate) reversed: bool,
+struct SubdEdge {
+    id: u32,
+    reversed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObjectReference {
-    pub(crate) object_id: Uuid,
-    pub(crate) component: [i32; 2],
-    pub(crate) geometry_type: i32,
-    pub(crate) point: Point3,
-    pub(crate) evaluation: EvaluationParameter,
-    pub(crate) instance_path: Vec<InstanceReference>,
-    pub(crate) osnap_mode: i32,
+    object_id: Uuid,
+    component: [i32; 2],
+    geometry_type: i32,
+    point: Point3,
+    evaluation: EvaluationParameter,
+    instance_path: Vec<InstanceReference>,
+    osnap_mode: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EvaluationParameter {
-    pub(crate) parameter_type: i32,
-    pub(crate) component: [i32; 2],
-    pub(crate) parameters: [f64; 4],
-    pub(crate) intervals: [Option<[f64; 2]>; 3],
+struct EvaluationParameter {
+    parameter_type: i32,
+    component: [i32; 2],
+    parameters: [f64; 4],
+    intervals: [Option<[f64; 2]>; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct InstanceReference {
-    pub(crate) reference_id: Uuid,
-    pub(crate) transform: Xform,
-    pub(crate) definition_id: Uuid,
-    pub(crate) geometry_index: i32,
-    pub(crate) evaluation: Option<InstanceEvaluation>,
+struct InstanceReference {
+    reference_id: Uuid,
+    transform: Xform,
+    definition_id: Uuid,
+    geometry_index: i32,
+    evaluation: Option<InstanceEvaluation>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct InstanceEvaluation {
-    pub(crate) component: [i32; 2],
-    pub(crate) parameter: EvaluationParameter,
+struct InstanceEvaluation {
+    component: [i32; 2],
+    parameter: EvaluationParameter,
+}
+
+struct UuidText<'a>(&'a Uuid);
+
+impl serde::Serialize for UuidText<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self.0)
+    }
+}
+
+struct UuidList<'a>(&'a [Uuid]);
+
+impl serde::Serialize for UuidList<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for id in self.0 {
+            sequence.serialize_element(&UuidText(id))?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct NativeHistoryRecord<'a> {
+    id: &'a str,
+    source_offset: u64,
+    source_uuid: Option<UuidText<'a>>,
+    command_uuid: UuidText<'a>,
+    record_version: i32,
+    record_type: &'static str,
+    copy_on_replace: bool,
+    antecedent_object_uuids: UuidList<'a>,
+    descendant_object_uuids: UuidList<'a>,
+    value_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,
-    pub(crate) id: Uuid,
-    pub(crate) version: i32,
-    pub(crate) command_id: Uuid,
-    pub(crate) descendants: Vec<Uuid>,
-    pub(crate) antecedents: Vec<Uuid>,
+    id: Uuid,
+    version: i32,
+    command_id: Uuid,
+    descendants: Vec<Uuid>,
+    antecedents: Vec<Uuid>,
     pub(crate) values: Vec<HistoryValue>,
-    pub(crate) record_type: RecordType,
-    pub(crate) copy_on_replace: bool,
+    record_type: RecordType,
+    copy_on_replace: bool,
 }
 
 /// Result of scanning the history-record table.
@@ -122,10 +163,6 @@ pub(crate) struct HistoryScan {
     pub(crate) records: Vec<HistoryRecord>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn anonymous(
@@ -161,6 +198,7 @@ fn count(reader: &mut BoundedReader<'_>, element_size: usize) -> Result<usize, F
 }
 
 fn uuid_list(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -168,7 +206,9 @@ fn uuid_list(
 ) -> Result<(Vec<Uuid>, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let count = count(&mut reader, 16)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = ctx
+        .collection_vec(count, "Rhino history UUID list")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(uuid(&mut reader)?);
     }
@@ -177,12 +217,15 @@ fn uuid_list(
 }
 
 fn array<'a, T>(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'a>,
     element_size: usize,
     mut read: impl FnMut(&mut BoundedReader<'a>) -> Result<T, FramingError>,
 ) -> Result<Vec<T>, FramingError> {
     let count = count(reader, element_size)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = ctx
+        .collection_vec(count, "Rhino history value array")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(read(reader)?);
     }
@@ -255,6 +298,7 @@ fn instance_reference(
 }
 
 fn object_reference(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -267,7 +311,9 @@ fn object_reference(
     let point = point(&mut reader)?;
     let mut evaluation = evaluation(&mut reader, 0)?;
     let path_count = count(&mut reader, 1)?;
-    let mut instance_path = Vec::new();
+    let mut instance_path = ctx
+        .collection_vec(path_count, "Rhino history instance path")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..path_count {
         let (value, value_next) =
             instance_reference(bytes, reader.position(), reader.end(), archive)?;
@@ -298,13 +344,17 @@ fn object_reference(
 }
 
 fn object_references(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<ObjectReference>, FramingError> {
     let count = count(reader, 1)?;
-    let mut values = Vec::new();
+    let mut values = ctx
+        .collection_vec(count, "Rhino history object references")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, next) = object_reference(
+            ctx,
             reader.backing_bytes(),
             reader.position(),
             reader.end(),
@@ -317,6 +367,7 @@ fn object_references(
 }
 
 fn geometries(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<EmbeddedGeometry>, FramingError> {
@@ -327,12 +378,15 @@ fn geometries(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = ctx
+        .collection_vec(count, "Rhino history embedded geometries")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let (class, userdata) = parse_class_wrapper_with_userdata(
+            ctx,
             nested.backing_bytes(),
             start..wrapper.next_offset(),
             archive,
@@ -351,13 +405,15 @@ fn geometries(
 }
 
 fn curve_proxy(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(Segment<HistoryReference>, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    let (curve, curve_next) = object_reference(bytes, reader.position(), reader.end(), archive)?;
+    let (curve, curve_next) =
+        object_reference(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(curve_next - reader.position())?;
     let reversed = reader.bool()?;
     let full_domain = interval(&mut reader)?;
@@ -388,6 +444,7 @@ fn curve_proxy(
 }
 
 fn poly_edge(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -395,13 +452,16 @@ fn poly_edge(
 ) -> Result<(HistoryPolyEdge, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let segment_count = count(&mut reader, 1)?;
-    let mut segments = Vec::new();
+    let mut segments = ctx
+        .collection_vec(segment_count, "Rhino history polyedge segments")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..segment_count {
-        let (segment, segment_next) = curve_proxy(bytes, reader.position(), reader.end(), archive)?;
+        let (segment, segment_next) =
+            curve_proxy(ctx, bytes, reader.position(), reader.end(), archive)?;
         reader.skip(segment_next - reader.position())?;
         segments.push(segment);
     }
-    let parameters = array(&mut reader, 8, BoundedReader::f64)?;
+    let parameters = array(ctx, &mut reader, 8, BoundedReader::f64)?;
     let evaluation_mode = reader.i32()?;
     reader.skip_remaining()?;
     Ok((
@@ -417,6 +477,7 @@ fn poly_edge(
 }
 
 fn poly_edges(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<HistoryPolyEdge>, FramingError> {
@@ -427,9 +488,12 @@ fn poly_edges(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = ctx
+        .collection_vec(count, "Rhino history polyedges")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, value_next) = poly_edge(
+            ctx,
             nested.backing_bytes(),
             nested.position(),
             nested.end(),
@@ -444,11 +508,12 @@ fn poly_edges(
 }
 
 fn subd_edge_chain(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
@@ -459,31 +524,48 @@ fn subd_edge_chain(
     }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
-    let edge_ids = array(&mut reader, 4, BoundedReader::u32)?;
-    let orientations = array(&mut reader, 1, BoundedReader::u8)?;
+    let edge_ids = array(ctx, &mut reader, 4, BoundedReader::u32)?;
+    let orientations = array(ctx, &mut reader, 1, BoundedReader::u8)?;
+    let orientation_start = reader.position() - orientations.len();
+    for (index, orientation) in orientations.iter().enumerate() {
+        if *orientation > 1 {
+            return Err(FramingError::structural(
+                orientation_start + index,
+                "invalid history SubD edge orientation",
+            ));
+        }
+    }
     let edges = if edge_ids.len() != count || orientations.len() != count {
-        warnings.push(
-            "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
-        );
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format_args!("redundant history SubD edge-chain count mismatch; both arrays dropped"),
+        )?;
         Vec::new()
     } else {
-        edge_ids
-            .into_iter()
-            .zip(orientations)
-            .map(|(id, orientation)| SubdEdge {
-                id,
-                reversed: orientation == 1,
-            })
-            .collect()
+        let mut edges = ctx
+            .collection_vec(count, "Rhino history SubD edges")
+            .map_err(crate::chunks::FramingError::from)?;
+        edges.extend(
+            edge_ids
+                .into_iter()
+                .zip(orientations)
+                .map(|(id, orientation)| SubdEdge {
+                    id,
+                    reversed: orientation == 1,
+                }),
+        );
+        edges
     };
     reader.skip_remaining()?;
     Ok((SubdEdgeChain { subd_id, edges }, next))
 }
 
 fn subd_edge_chains(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
     let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
@@ -498,9 +580,12 @@ fn subd_edge_chains(
         ));
     }
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = ctx
+        .collection_vec(count, "Rhino history SubD edge chains")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, value_next) = subd_edge_chain(
+            ctx,
             nested.backing_bytes(),
             nested.position(),
             nested.end(),
@@ -517,21 +602,23 @@ fn subd_edge_chains(
 
 #[cfg(test)]
 fn parse_value(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
-    let mut warnings = Vec::new();
-    parse_value_with_warnings(bytes, offset, end, archive, &mut warnings)
+    let mut warnings = Diagnostics::new();
+    parse_value_with_warnings(ctx, bytes, offset, end, archive, &mut warnings)
 }
 
 fn parse_value_with_warnings(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let type_code = reader.i32()?;
@@ -539,19 +626,21 @@ fn parse_value_with_warnings(
     let payload = reader.position()..reader.end();
     let value = match type_code {
         0 => Value::None,
-        1 => Value::Booleans(array(&mut reader, 1, BoundedReader::bool)?),
-        2 => Value::Integers(array(&mut reader, 4, BoundedReader::i32)?),
-        3 => Value::Doubles(array(&mut reader, 8, BoundedReader::f64)?),
-        4 => Value::Colors(array(&mut reader, 4, BoundedReader::array)?),
-        5 => Value::Points(array(&mut reader, 24, point)?),
-        6 => Value::Vectors(array(&mut reader, 24, vector)?),
-        7 => Value::Transforms(array(&mut reader, 128, xform)?),
-        8 => Value::Strings(array(&mut reader, 4, utf16)?),
-        9 => Value::ObjectReferences(object_references(&mut reader, archive)?),
-        10 => Value::Geometries(geometries(&mut reader, archive)?),
-        11 => Value::Uuids(array(&mut reader, 16, uuid)?),
-        13 => Value::PolyEdges(poly_edges(&mut reader, archive)?),
-        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive, warnings)?),
+        1 => Value::Booleans(array(ctx, &mut reader, 1, BoundedReader::bool)?),
+        2 => Value::Integers(array(ctx, &mut reader, 4, BoundedReader::i32)?),
+        3 => Value::Doubles(array(ctx, &mut reader, 8, BoundedReader::f64)?),
+        4 => Value::Colors(array(ctx, &mut reader, 4, BoundedReader::array)?),
+        5 => Value::Points(array(ctx, &mut reader, 24, point)?),
+        6 => Value::Vectors(array(ctx, &mut reader, 24, vector)?),
+        7 => Value::Transforms(array(ctx, &mut reader, 128, xform)?),
+        8 => Value::Strings(array(ctx, &mut reader, 4, |reader| {
+            utf16_retained(ctx, reader, "Rhino history string")
+        })?),
+        9 => Value::ObjectReferences(object_references(ctx, &mut reader, archive)?),
+        10 => Value::Geometries(geometries(ctx, &mut reader, archive)?),
+        11 => Value::Uuids(array(ctx, &mut reader, 16, uuid)?),
+        13 => Value::PolyEdges(poly_edges(ctx, &mut reader, archive)?),
+        14 => Value::SubdEdgeChains(subd_edge_chains(ctx, &mut reader, archive, warnings)?),
         _ => {
             reader.skip(reader.remaining())?;
             Value::Opaque {
@@ -565,10 +654,11 @@ fn parse_value_with_warnings(
 }
 
 fn parse_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<HistoryRecord, FramingError> {
     if record.typecode != HISTORY_RECORD || record.is_short() {
         return Err(FramingError::structural(
@@ -576,7 +666,7 @@ fn parse_record(
             "invalid history table record",
         ));
     }
-    let class = parse_class_wrapper(bytes, record.body(), archive, warnings)?;
+    let class = parse_class_wrapper(ctx, bytes, record.body(), archive, warnings)?;
     if class.class_uuid != HISTORY_CLASS {
         return Err(FramingError::structural(
             record.body().start,
@@ -592,15 +682,18 @@ fn parse_record(
     let id = uuid(&mut reader)?;
     let version = reader.i32()?;
     let command_id = uuid(&mut reader)?;
-    let (descendants, next) = uuid_list(bytes, reader.position(), reader.end(), archive)?;
+    let (descendants, next) = uuid_list(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(next - reader.position())?;
-    let (antecedents, next) = uuid_list(bytes, reader.position(), reader.end(), archive)?;
+    let (antecedents, next) = uuid_list(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(next - reader.position())?;
     let (mut values_reader, next, _) = anonymous(bytes, reader.position(), reader.end(), archive)?;
     let value_count = count(&mut values_reader, 1)?;
-    let mut values = Vec::new();
+    let mut values = ctx
+        .collection_vec(value_count, "Rhino history record values")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..value_count {
         let (value, value_next) = parse_value_with_warnings(
+            ctx,
             bytes,
             values_reader.position(),
             values_reader.end(),
@@ -613,10 +706,16 @@ fn parse_record(
     values_reader.skip_remaining()?;
     reader.skip(next - reader.position())?;
     let record_type = if minor >= 1 {
+        let offset = reader.position();
         match reader.i32()? {
             0 => RecordType::HistoryParameters,
             1 => RecordType::FeatureParameters,
-            _ => RecordType::HistoryParameters,
+            _ => {
+                return Err(FramingError::structural(
+                    offset,
+                    "invalid history record type",
+                ))
+            }
         }
     } else {
         RecordType::HistoryParameters
@@ -638,21 +737,35 @@ fn parse_record(
 
 /// Decodes valid built-in records and isolates malformed records at table boundaries.
 pub(crate) fn parse_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     table_typecode: u32,
-) -> HistoryScan {
+) -> Result<HistoryScan, CodecError> {
     let mut result = HistoryScan::default();
     for record in records {
-        match parse_record(bytes, record, archive, warnings) {
-            Ok(value) => result.records.push(value),
+        match parse_record(ctx, bytes, record, archive, warnings) {
+            Ok(value) => {
+                ctx.reserve_vec(&mut result.records, 1, "Rhino history records")
+                    .map_err(crate::chunks::FramingError::from)
+                    .map_err(history_resource_error)?;
+                result.records.push(value);
+            }
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                warnings.push(format!(
-                    "history record at {} degraded: {error}",
-                    record.range.start
-                ));
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("history record at {} degraded: {error}", record.range.start),
+                )?;
+                ctx.reserve_vec(
+                    &mut result.opaque_records,
+                    1,
+                    "Rhino opaque history records",
+                )
+                .map_err(crate::chunks::FramingError::from)
+                .map_err(history_resource_error)?;
                 result.opaque_records.push(OpaqueRecord {
                     table_typecode,
                     record: record.clone(),
@@ -660,145 +773,816 @@ pub(crate) fn parse_records(
             }
         }
     }
-    result
+    Ok(result)
 }
 
-fn list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+fn history_resource_error(error: FramingError) -> CodecError {
+    match error {
+        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+        other => CodecError::Malformed(other.to_string()),
+    }
 }
 
-fn value_text(value: &Value) -> Option<String> {
-    Some(match value {
-        Value::None => String::new(),
-        Value::Booleans(values) => list(values),
-        Value::Integers(values) => list(values),
-        Value::Doubles(values) => list(values),
-        Value::Colors(values) => values
-            .iter()
-            .map(|value| {
-                value
-                    .iter()
-                    .map(u8::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            })
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Points(values) => values
-            .iter()
-            .map(|value| list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Vectors(values) => values
-            .iter()
-            .map(|value| list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Transforms(values) => values
-            .iter()
-            .map(|value| list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Strings(values) => values.join("\u{1f}"),
-        Value::ObjectReferences(values) => values
-            .iter()
-            .map(|value| {
-                format!(
-                    "{}@{}:{}",
-                    value.object_id, value.component[0], value.component[1]
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Geometries(values) => values
-            .iter()
-            .map(|value| value.class_id.to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Uuids(values) => list(values),
-        Value::PolyEdges(_) | Value::SubdEdgeChains(_) => return None,
-        Value::Opaque { .. } => return None,
-    })
+struct Joined<I>(I, &'static str);
+
+impl<I> fmt::Display for Joined<I>
+where
+    I: Clone + Iterator,
+    I::Item: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.clone().enumerate() {
+            if index != 0 {
+                f.write_str(self.1)?;
+            }
+            write!(f, "{value}")?;
+        }
+        Ok(())
+    }
+}
+
+struct ReferenceList<'a>(&'a [ObjectReference]);
+
+impl fmt::Display for ReferenceList<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index != 0 {
+                f.write_str(",")?;
+            }
+            write!(
+                f,
+                "{}@{}:{}",
+                value.object_id, value.component[0], value.component[1]
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn insert_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: impl fmt::Display,
+    value: impl fmt::Display,
+) -> Result<(), CodecError> {
+    let key = ctx.format_retained(format_args!("{key}"), "Rhino history property key")?;
+    let value = ctx.format_retained(format_args!("{value}"), "Rhino history property value")?;
+    ctx.insert_btree_map(properties, key, value, "Rhino history property entries")?;
+    Ok(())
+}
+
+fn admitted_named_properties(
+    ctx: &DecodeContext<'_>,
+    record: &str,
+    entries: BTreeMap<String, String>,
+    warnings: &mut Diagnostics,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    use std::collections::btree_map::Entry;
+
+    let mut kept = BTreeMap::new();
+    for (name, value) in entries {
+        match cadmpeg_core::text::NonBlankString::new(name) {
+            Some(key) => {
+                ctx.admit_btree_entry(&kept, &key, "Rhino history named property entries")?;
+                match kept.entry(key) {
+                    Entry::Vacant(slot) => {
+                        slot.insert(value);
+                    }
+                    Entry::Occupied(slot) => warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                        format_args!("{record} states the property {} a second time; the property is not transferred", slot.key()),
+                    )?,
+                }
+            }
+            None => warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                format_args!(
+                    "{record} states a property with a blank key; the property is not transferred"
+                ),
+            )?,
+        }
+    }
+    Ok(kept)
+}
+
+fn value_text(ctx: &DecodeContext<'_>, value: &Value) -> Result<Option<String>, CodecError> {
+    let text = match value {
+        Value::None => ctx.format_retained(format_args!(""), "Rhino history value text")?,
+        Value::Booleans(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Integers(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Doubles(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Colors(values) => ctx.format_retained(
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Points(values) => ctx.format_retained(
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Vectors(values) => ctx.format_retained(
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Transforms(values) => ctx.format_retained(
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Strings(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter(), "\u{1f}")),
+            "Rhino history value text",
+        )?,
+        Value::ObjectReferences(values) => ctx.format_retained(
+            format_args!("{}", ReferenceList(values)),
+            "Rhino history value text",
+        )?,
+        Value::Geometries(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter().map(|value| value.class_id), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Uuids(values) => ctx.format_retained(
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. } => return Ok(None),
+    };
+    Ok(Some(text))
 }
 
 fn evaluation_properties(
+    ctx: &DecodeContext<'_>,
     prefix: &str,
     value: &EvaluationParameter,
     properties: &mut BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}.type"), value.parameter_type.to_string());
-    properties.insert(format!("{prefix}.component"), list(value.component));
-    properties.insert(format!("{prefix}.parameters"), list(value.parameters));
+) -> Result<(), CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.type"),
+        value.parameter_type,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.component"),
+        Joined(value.component.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.parameters"),
+        Joined(value.parameters.iter(), ","),
+    )?;
     for (index, interval) in value.intervals.iter().enumerate() {
         if let Some(interval) = interval {
-            properties.insert(format!("{prefix}.interval_{index}"), list(interval));
+            insert_property(
+                ctx,
+                properties,
+                format_args!("{prefix}.interval_{index}"),
+                Joined(interval.iter(), ","),
+            )?;
         }
     }
+    Ok(())
 }
 
 fn object_reference_properties(
+    ctx: &DecodeContext<'_>,
     prefix: &str,
     value: &ObjectReference,
     properties: &mut BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}.object_id"), value.object_id.to_string());
-    properties.insert(format!("{prefix}.component"), list(value.component));
-    properties.insert(
-        format!("{prefix}.geometry_type"),
-        value.geometry_type.to_string(),
-    );
-    properties.insert(format!("{prefix}.point"), list(value.point.0));
-    properties.insert(format!("{prefix}.osnap_mode"), value.osnap_mode.to_string());
+) -> Result<(), CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.object_id"),
+        value.object_id,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.component"),
+        Joined(value.component.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.geometry_type"),
+        value.geometry_type,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.point"),
+        Joined(value.point.0.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.osnap_mode"),
+        value.osnap_mode,
+    )?;
     evaluation_properties(
-        &format!("{prefix}.evaluation"),
+        ctx,
+        &ctx.format_retained(
+            format_args!("{prefix}.evaluation"),
+            "Rhino history evaluation prefix",
+        )?,
         &value.evaluation,
         properties,
-    );
-    properties.insert(
-        format!("{prefix}.instance_count"),
-        value.instance_path.len().to_string(),
-    );
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.instance_count"),
+        value.instance_path.len(),
+    )?;
     for (index, instance) in value.instance_path.iter().enumerate() {
-        let path = format!("{prefix}.instance_{index}");
-        properties.insert(
-            format!("{path}.reference_id"),
-            instance.reference_id.to_string(),
-        );
-        properties.insert(format!("{path}.transform"), list(instance.transform.0));
-        properties.insert(
-            format!("{path}.definition_id"),
-            instance.definition_id.to_string(),
-        );
-        properties.insert(
-            format!("{path}.geometry_index"),
-            instance.geometry_index.to_string(),
-        );
+        let path = ctx.format_retained(
+            format_args!("{prefix}.instance_{index}"),
+            "Rhino history instance prefix",
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.reference_id"),
+            instance.reference_id,
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.transform"),
+            Joined(instance.transform.0.iter(), ","),
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.definition_id"),
+            instance.definition_id,
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.geometry_index"),
+            instance.geometry_index,
+        )?;
         if let Some(evaluation) = &instance.evaluation {
-            properties.insert(format!("{path}.component"), list(evaluation.component));
+            insert_property(
+                ctx,
+                properties,
+                format_args!("{path}.component"),
+                Joined(evaluation.component.iter(), ","),
+            )?;
             evaluation_properties(
-                &format!("{path}.evaluation"),
+                ctx,
+                &ctx.format_retained(
+                    format_args!("{path}.evaluation"),
+                    "Rhino history evaluation prefix",
+                )?,
                 &evaluation.parameter,
                 properties,
-            );
+            )?;
+        }
+    }
+    Ok(())
+}
+
+struct CageJson<'a>(&'a crate::cage::Cage);
+
+struct MeshVertices<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
+
+impl serde::Serialize for MeshVertices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { vertices, .. }
+            | TessellationMesh::CornerShadedList { vertices, .. } => vertices.serialize(serializer),
+            TessellationMesh::ShadedList { vertices, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(vertices.len()))?;
+                for vertex in vertices {
+                    sequence.serialize_element(&vertex.position)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::Strips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(vertex)?;
+                    }
+                }
+                sequence.end()
+            }
+            TessellationMesh::ShadedStrips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(&vertex.position)?;
+                    }
+                }
+                sequence.end()
+            }
         }
     }
 }
 
-fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
-    serde_json::json!({
-        "kind": "nurbs_cage",
-        "dimension": cage.dimension,
-        "rational": cage.rational(),
-        "orders": cage.orders,
-        "counts": cage.counts,
-        "knots": cage.knots,
-        "control_points": cage.control_points,
-        "weights": cage.weights,
-    })
+struct MeshTriangles<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
+
+fn serialize_strip_triangles<S: serde::Serializer, V>(
+    strips: &cadmpeg_ir::tessellation::Strips<V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::{Error as _, SerializeSeq};
+    let count = strips
+        .as_slice()
+        .iter()
+        .map(cadmpeg_ir::tessellation::Strip::triangle_count)
+        .sum();
+    let mut sequence = serializer.serialize_seq(Some(count))?;
+    let mut base = 0_u32;
+    for strip in strips.as_slice() {
+        for index in 0..strip.triangle_count() {
+            let index = u32::try_from(index).map_err(S::Error::custom)?;
+            let a = base
+                .checked_add(index)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let b = a
+                .checked_add(1)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let c = a
+                .checked_add(2)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            sequence.serialize_element(&if index.is_multiple_of(2) {
+                [a, b, c]
+            } else {
+                [a, c, b]
+            })?;
+        }
+        let length = u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?;
+        base = base
+            .checked_add(length)
+            .ok_or_else(|| S::Error::custom("mesh strip base overflow"))?;
+    }
+    sequence.end()
+}
+
+fn serialize_strip_lengths<S: serde::Serializer, V>(
+    strips: &cadmpeg_ir::tessellation::Strips<V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::{Error as _, SerializeSeq};
+    let mut sequence = serializer.serialize_seq(Some(strips.as_slice().len()))?;
+    for strip in strips.as_slice() {
+        sequence
+            .serialize_element(&u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?)?;
+    }
+    sequence.end()
+}
+
+impl serde::Serialize for MeshTriangles<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { triangles, .. }
+            | TessellationMesh::ShadedList { triangles, .. } => triangles.serialize(serializer),
+            TessellationMesh::CornerShadedList { triangles, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(triangles.len()))?;
+                for triangle in triangles {
+                    sequence.serialize_element(&triangle.corners)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::Strips { strips } => serialize_strip_triangles(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => {
+                serialize_strip_triangles(strips, serializer)
+            }
+        }
+    }
+}
+
+struct MeshStripLengths<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
+
+impl serde::Serialize for MeshStripLengths<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        match self.0 {
+            TessellationMesh::List { .. }
+            | TessellationMesh::ShadedList { .. }
+            | TessellationMesh::CornerShadedList { .. } => {
+                let empty: [u32; 0] = [];
+                empty.serialize(serializer)
+            }
+            TessellationMesh::Strips { strips } => serialize_strip_lengths(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => {
+                serialize_strip_lengths(strips, serializer)
+            }
+        }
+    }
+}
+
+struct MeshNormals<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
+
+impl serde::Serialize for MeshNormals<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { .. }
+            | TessellationMesh::CornerShadedList { .. }
+            | TessellationMesh::Strips { .. } => {
+                let empty: [u32; 0] = [];
+                empty.serialize(serializer)
+            }
+            TessellationMesh::ShadedList { vertices, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(vertices.len()))?;
+                for vertex in vertices {
+                    sequence.serialize_element(&vertex.normal)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::ShadedStrips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(&vertex.normal)?;
+                    }
+                }
+                sequence.end()
+            }
+        }
+    }
+}
+
+struct MeshJson<'a>(&'a crate::mesh::DecodedMesh);
+
+impl serde::Serialize for MeshJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let tessellation = &self.0.tessellation;
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("channels", tessellation.channels())?;
+        map.serialize_entry("id", &tessellation.id)?;
+        map.serialize_entry("kind", "mesh")?;
+        map.serialize_entry("normals", &MeshNormals(tessellation.mesh()))?;
+        map.serialize_entry("strip_lengths", &MeshStripLengths(tessellation.mesh()))?;
+        map.serialize_entry("triangles", &MeshTriangles(tessellation.mesh()))?;
+        map.serialize_entry("vertices", &MeshVertices(tessellation.mesh()))?;
+        map.end()
+    }
+}
+
+struct CapPcurveJson<'a>(&'a crate::extrusion::CapPcurve);
+
+impl serde::Serialize for CapPcurveJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("control_points", &self.0.control_points)?;
+        map.serialize_entry("degree", &self.0.degree)?;
+        map.serialize_entry("knots", &self.0.knots)?;
+        map.serialize_entry("periodic", &self.0.periodic)?;
+        map.serialize_entry("weights", &self.0.weights)?;
+        map.end()
+    }
+}
+
+struct BoundaryJson<'a>(&'a crate::extrusion::ExtrusionBoundary);
+
+impl serde::Serialize for BoundaryJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("end_nurbs", &self.0.end_nurbs)?;
+        map.serialize_entry("end_pcurve", &CapPcurveJson(&self.0.end_pcurve))?;
+        map.serialize_entry("start_curve", self.0.start_curve.reported_geometry())?;
+        map.serialize_entry("start_nurbs", &self.0.start_nurbs)?;
+        map.serialize_entry("start_pcurve", &CapPcurveJson(&self.0.start_pcurve))?;
+        map.end()
+    }
+}
+
+struct BoundariesJson<'a>(&'a [crate::extrusion::ExtrusionBoundary]);
+
+impl serde::Serialize for BoundariesJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for boundary in self.0 {
+            sequence.serialize_element(&BoundaryJson(boundary))?;
+        }
+        sequence.end()
+    }
+}
+
+struct LateralsJson<'a>(&'a [crate::extrusion::ExtrusionBoundary]);
+
+impl serde::Serialize for LateralsJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for boundary in self.0 {
+            sequence.serialize_element(&boundary.lateral)?;
+        }
+        sequence.end()
+    }
+}
+
+struct ExtrusionJson<'a>(&'a crate::extrusion::DecodedExtrusion);
+
+impl serde::Serialize for ExtrusionJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(8))?;
+        map.serialize_entry("boundaries", &BoundariesJson(&self.0.boundaries))?;
+        map.serialize_entry("cap_normals", &self.0.cap_normals)?;
+        map.serialize_entry("cap_origins", &self.0.cap_origins)?;
+        map.serialize_entry("cap_u_axes", &self.0.cap_u_axes)?;
+        map.serialize_entry("caps", &self.0.caps)?;
+        map.serialize_entry("direction", &self.0.direction)?;
+        map.serialize_entry("kind", "extrusion")?;
+        map.serialize_entry("laterals", &LateralsJson(&self.0.boundaries))?;
+        map.end()
+    }
+}
+
+struct MorphControlJson<'a>(&'a crate::morph::Control);
+
+impl serde::Serialize for MorphControlJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(3))?;
+        match self.0 {
+            crate::morph::Control::Curve { start, end } => {
+                map.serialize_entry("end", end)?;
+                map.serialize_entry("kind", "curve")?;
+                map.serialize_entry("start", start)?;
+            }
+            crate::morph::Control::Surface { start, end } => {
+                map.serialize_entry("end", end)?;
+                map.serialize_entry("kind", "surface")?;
+                map.serialize_entry("start", start)?;
+            }
+            crate::morph::Control::Cage {
+                start_transform,
+                end,
+            } => {
+                map.serialize_entry("end", &CageJson(end))?;
+                map.serialize_entry("kind", "cage")?;
+                map.serialize_entry("start_transform", start_transform)?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct LocalizerJson<'a>(&'a crate::morph::Localizer);
+
+impl serde::Serialize for LocalizerJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(6))?;
+        map.serialize_entry("curve", &self.0.curve)?;
+        map.serialize_entry("interval", &self.0.interval)?;
+        map.serialize_entry("kind", &self.0.kind)?;
+        map.serialize_entry("point", &self.0.point)?;
+        map.serialize_entry("surface", &self.0.surface)?;
+        map.serialize_entry("vector", &self.0.vector)?;
+        map.end()
+    }
+}
+
+struct LocalizersJson<'a>(&'a [crate::morph::Localizer]);
+
+impl serde::Serialize for LocalizersJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for localizer in self.0 {
+            sequence.serialize_element(&LocalizerJson(localizer))?;
+        }
+        sequence.end()
+    }
+}
+
+struct MorphJson<'a>(&'a crate::morph::Morph);
+
+impl serde::Serialize for MorphJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("captive_ids", &UuidList(&self.0.captive_ids))?;
+        map.serialize_entry("control", &MorphControlJson(&self.0.control))?;
+        map.serialize_entry("kind", "morph_control")?;
+        map.serialize_entry("localizers", &LocalizersJson(&self.0.localizers))?;
+        map.serialize_entry("preserve_structure", &self.0.preserve_structure)?;
+        map.serialize_entry("quick_preview", &self.0.quick_preview)?;
+        map.serialize_entry("tolerance", &self.0.tolerance)?;
+        map.end()
+    }
+}
+
+struct DetailJson<'a>(&'a crate::detail::Detail);
+
+impl serde::Serialize for DetailJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("boundary", self.0.boundary.reported_geometry())?;
+        map.serialize_entry("kind", "detail_view")?;
+        map.serialize_entry("page_per_model_ratio", &self.0.page_per_model_ratio)?;
+        map.end()
+    }
+}
+
+struct HatchLoopJson<'a>(&'a crate::hatch::HatchLoop);
+
+impl serde::Serialize for HatchLoopJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("curve", self.0.curve.reported_geometry())?;
+        map.serialize_entry(
+            "kind",
+            match self.0.kind {
+                crate::hatch::LoopKind::Outer => "outer",
+                crate::hatch::LoopKind::Inner => "inner",
+            },
+        )?;
+        map.end()
+    }
+}
+
+struct HatchLoopsJson<'a>(&'a [crate::hatch::HatchLoop]);
+
+impl serde::Serialize for HatchLoopsJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for hatch_loop in self.0 {
+            sequence.serialize_element(&HatchLoopJson(hatch_loop))?;
+        }
+        sequence.end()
+    }
+}
+
+struct HatchPlaneJson<'a> {
+    plane: &'a crate::settings::Plane,
+    origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+    equation_constant: cadmpeg_ir::scalar::FiniteReal,
+}
+
+impl serde::Serialize for HatchPlaneJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry(
+            "equation",
+            &[
+                self.plane.equation[0],
+                self.plane.equation[1],
+                self.plane.equation[2],
+                self.equation_constant.get(),
+            ],
+        )?;
+        map.serialize_entry("origin", &self.origin)?;
+        map.serialize_entry("xaxis", &self.plane.xaxis.get())?;
+        map.serialize_entry("yaxis", &self.plane.yaxis.get())?;
+        map.serialize_entry("zaxis", &self.plane.zaxis.get())?;
+        map.end()
+    }
+}
+
+struct HatchJson<'a> {
+    hatch: &'a crate::hatch::Hatch,
+    plane: HatchPlaneJson<'a>,
+}
+
+impl serde::Serialize for HatchJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map =
+            serializer.serialize_map(Some(7 + usize::from(self.hatch.gradient.is_some())))?;
+        map.serialize_entry("basepoint", &self.hatch.basepoint)?;
+        if let Some(gradient) = &self.hatch.gradient {
+            map.serialize_entry("gradient", &crate::hatch::gradient_semantic(gradient))?;
+        }
+        map.serialize_entry("kind", "hatch")?;
+        map.serialize_entry("loops", &HatchLoopsJson(&self.hatch.loops))?;
+        map.serialize_entry("pattern_index", &self.hatch.pattern_index)?;
+        map.serialize_entry("pattern_rotation", &self.hatch.pattern_rotation)?;
+        map.serialize_entry("pattern_scale", &self.hatch.pattern_scale)?;
+        map.serialize_entry("plane", &self.plane)?;
+        map.end()
+    }
+}
+
+struct SubdDiagnostics<'a>(&'a [crate::subd::SubdEnumDiagnostic]);
+
+impl serde::Serialize for SubdDiagnostics<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        struct Text(crate::subd::SubdEnumDiagnostic);
+        impl serde::Serialize for Text {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.collect_str(&self.0)
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for diagnostic in self.0 {
+            sequence.serialize_element(&Text(*diagnostic))?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SubdJson<'a, S: serde::Serialize, M: serde::Serialize> {
+    enum_diagnostics: SubdDiagnostics<'a>,
+    kind: &'static str,
+    neutral_metadata: &'a M,
+    surface: &'a S,
+}
+
+#[derive(serde::Serialize)]
+struct EmptySubdJson {
+    empty: bool,
+    kind: &'static str,
+}
+
+impl serde::Serialize for CageJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let cage = self.0;
+        let mut map = serializer.serialize_map(Some(8))?;
+        map.serialize_entry("control_points", &cage.control_points)?;
+        map.serialize_entry("counts", &cage.counts)?;
+        map.serialize_entry("dimension", &cage.dimension)?;
+        map.serialize_entry("kind", "nurbs_cage")?;
+        map.serialize_entry("knots", &cage.knots)?;
+        map.serialize_entry("orders", &cage.orders)?;
+        map.serialize_entry("rational", &cage.rational())?;
+        map.serialize_entry("weights", &cage.weights)?;
+        map.end()
+    }
+}
+
+fn embedded_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    refusal: &mut Option<CodecError>,
+) -> Option<String> {
+    match crate::wire::admitted_canonical_json(ctx, value, "Rhino embedded history geometry JSON") {
+        Ok(text) => Some(text),
+        Err(error @ CodecError::ResourceLimit(_)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 fn extended_geometry_json(
@@ -806,391 +1590,630 @@ fn extended_geometry_json(
     value: &EmbeddedGeometry,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
+    warnings: &mut Diagnostics,
+    refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
     let data = expand.data();
-    let semantic = if crate::mesh::supported_class(value.class_id) {
+    if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let mesh = crate::mesh::decode(
-            expand,
-            data,
-            value.class_data_range.clone(),
-            archive,
-            crate::mesh::MeshDecodeOptions {
-                writer_version,
-                association: None,
-                id: "rhino:history:embedded-mesh".to_string(),
-                scale,
-                userdata: &value.userdata,
-            },
-            &mut budget,
-        )
-        .ok()?;
-        serde_json::json!({
-            "kind": "mesh",
-            "vertices": mesh.tessellation.vertices(),
-            "triangles": mesh.tessellation.triangles(),
-            "strip_lengths": mesh.tessellation.strip_lengths(),
-            "normals": mesh.tessellation.normals(),
-            "channels": mesh.tessellation.channels(),
-        })
+        let mesh = optional_geometry(
+            crate::mesh::decode(
+                expand,
+                data,
+                value.class_data_range.clone(),
+                archive,
+                crate::mesh::MeshDecodeOptions {
+                    writer_version,
+                    association: None,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "history", "mesh"),
+                            cadmpeg_ir::identity_key!("embedded"),
+                        ),
+                    ),
+                    scale,
+                    userdata: &value.userdata,
+                },
+                &mut budget,
+            ),
+            refusal,
+        )?;
+        embedded_json(expand.ctx(), &MeshJson(&mesh), refusal)
     } else if crate::subd::supported_class(value.class_id) {
-        let subd = crate::subd::decode(
+        let subd = match crate::subd::decode(
+            expand.ctx(),
             data,
             value.class_data_range.clone(),
             archive,
             scale,
-            cadmpeg_ir::ids::SubdId::mint("rhino:history:subd#embedded".to_string())
-                .expect("identity grammar"),
-        )
-        .ok()?;
+            cadmpeg_ir::ids::SubdId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "history", "subd"),
+                cadmpeg_ir::identity_key!("embedded"),
+            ),
+        ) {
+            Ok(subd) => subd,
+            Err(crate::subd::SubdError::Resource(limit)) => {
+                *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(_) => return None,
+        };
         match subd {
-            None => serde_json::json!({
-                "kind": "subd",
-                "empty": true,
-            }),
+            None => embedded_json(
+                expand.ctx(),
+                &EmptySubdJson {
+                    empty: true,
+                    kind: "subd",
+                },
+                refusal,
+            ),
             Some(crate::subd::DecodedSubd {
                 surface,
                 neutral_metadata,
                 enum_diagnostics,
                 ..
-            }) => serde_json::json!({
-                "kind": "subd",
-                "surface": surface,
-                "neutral_metadata": neutral_metadata,
-                "enum_diagnostics": enum_diagnostics
-                    .into_iter()
-                    .map(crate::subd::SubdEnumDiagnostic::message)
-                    .collect::<Vec<_>>(),
-            }),
+            }) => embedded_json(
+                expand.ctx(),
+                &SubdJson {
+                    enum_diagnostics: SubdDiagnostics(&enum_diagnostics),
+                    kind: "subd",
+                    neutral_metadata: &neutral_metadata,
+                    surface: &surface,
+                },
+                refusal,
+            ),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let extrusion = crate::extrusion::decode(
-            expand,
-            data,
-            value.class_data_range.clone(),
-            archive,
-            writer_version,
-            scale,
-            &value.userdata,
-            &mut budget,
-        )
-        .ok()?;
-        let boundaries = extrusion
-            .boundaries
-            .iter()
-            .map(|boundary| {
-                serde_json::json!({
-                    "start_curve": boundary.start_curve.reported_geometry(),
-                    "start_nurbs": boundary.start_nurbs,
-                    "end_nurbs": boundary.end_nurbs,
-                    "start_pcurve": {
-                        "degree": boundary.start_pcurve.degree,
-                        "knots": boundary.start_pcurve.knots,
-                        "control_points": boundary.start_pcurve.control_points,
-                        "weights": boundary.start_pcurve.weights,
-                        "periodic": boundary.start_pcurve.periodic,
-                    },
-                    "end_pcurve": {
-                        "degree": boundary.end_pcurve.degree,
-                        "knots": boundary.end_pcurve.knots,
-                        "control_points": boundary.end_pcurve.control_points,
-                        "weights": boundary.end_pcurve.weights,
-                        "periodic": boundary.end_pcurve.periodic,
-                    },
-                })
-            })
-            .collect::<Vec<_>>();
-        serde_json::json!({
-            "kind": "extrusion",
-            "boundaries": boundaries,
-            "laterals": extrusion
-                .boundaries
-                .iter()
-                .map(|boundary| boundary.lateral.clone())
-                .collect::<Vec<_>>(),
-            "direction": extrusion.direction,
-            "cap_origins": extrusion.cap_origins,
-            "cap_normals": extrusion.cap_normals,
-            "cap_u_axes": extrusion.cap_u_axes,
-            "caps": extrusion.caps,
-        })
+        let extrusion = optional_geometry(
+            crate::extrusion::decode(
+                expand,
+                data,
+                value.class_data_range.clone(),
+                crate::extrusion::ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
+                &value.userdata,
+                &mut budget,
+            ),
+            refusal,
+        )?;
+        embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal)
     } else if value.class_id == crate::cage::CLASS {
-        cage_json(
-            &crate::cage::decode(expand, value.class_data_range.clone(), scale, archive).ok()?,
-        )
+        let cage = optional_geometry(
+            crate::cage::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
+        embedded_json(expand.ctx(), &CageJson(&cage), refusal)
     } else if value.class_id == crate::morph::CLASS {
-        let morph =
-            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
-        let control = match &morph.control {
-            crate::morph::Control::Curve { start, end } => serde_json::json!({
-                "kind": "curve",
-                "start": start,
-                "end": end,
-            }),
-            crate::morph::Control::Surface { start, end } => serde_json::json!({
-                "kind": "surface",
-                "start": start,
-                "end": end,
-            }),
-            crate::morph::Control::Cage {
-                start_transform,
-                end,
-            } => serde_json::json!({
-                "kind": "cage",
-                "start_transform": start_transform,
-                "end": cage_json(end),
-            }),
-        };
-        let localizers = morph
-            .localizers
-            .iter()
-            .map(|localizer| {
-                serde_json::json!({
-                    "kind": localizer.kind,
-                    "point": localizer.point,
-                    "vector": localizer.vector,
-                    "interval": localizer.interval,
-                    "curve": localizer.curve,
-                    "surface": localizer.surface,
-                })
-            })
-            .collect::<Vec<_>>();
-        serde_json::json!({
-            "kind": "morph_control",
-            "control": control,
-            "captive_ids": morph.captive_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            "localizers": localizers,
-            "tolerance": morph.tolerance,
-            "quick_preview": morph.quick_preview,
-            "preserve_structure": morph.preserve_structure,
-        })
+        let morph = optional_geometry(
+            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
+        embedded_json(expand.ctx(), &MorphJson(&morph), refusal)
     } else if crate::brep::supported_class(value.class_id) {
-        return crate::decode::embedded_brep_json(
+        crate::decode::embedded_brep_json(
             expand,
             data,
             value.class_data_range.clone(),
             archive,
             writer_version,
             scale,
-        );
+            refusal,
+        )
     } else if value.class_id == crate::hatch::CLASS {
-        let mut hatch =
-            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
-        crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
-        let mut plane = hatch.plane;
-        for coordinate in &mut plane.origin.0 {
-            *coordinate *= scale;
-        }
-        plane.equation[3] *= scale;
-        let loops = hatch
-            .loops
-            .iter()
-            .map(|hatch_loop| {
-                serde_json::json!({
-                    "kind": match hatch_loop.kind {
-                        crate::hatch::LoopKind::Outer => "outer",
-                        crate::hatch::LoopKind::Inner => "inner",
-                    },
-                    "curve": hatch_loop.curve.reported_geometry(),
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut semantic = serde_json::json!({
-            "kind": "hatch",
-            "plane": {
-                "origin": plane.origin.0,
-                "xaxis": plane.xaxis.0,
-                "yaxis": plane.yaxis.0,
-                "zaxis": plane.zaxis.0,
-                "equation": plane.equation,
-            },
-            "pattern_scale": hatch.pattern_scale,
-            "pattern_rotation": hatch.pattern_rotation,
-            "pattern_index": hatch.pattern_index,
-            "loops": loops,
-            "basepoint": hatch.basepoint,
-        });
-        if let Some(gradient) = hatch
-            .gradient
-            .as_ref()
-            .and_then(crate::hatch::gradient_json)
-            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+        let mut hatch = optional_geometry(
+            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
+        if let Err(errors) =
+            crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch)
         {
-            semantic["gradient"] = gradient;
+            for error in errors {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history hatch userdata at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+            }
         }
-        semantic
+        let plane = hatch.plane;
+        let millimetres = |coordinate: f64, field: &str| {
+            crate::wire::scaled_coordinate(coordinate, scale).ok_or_else(|| {
+                cadmpeg_core::CodecError::NotImplemented(format!(
+                    "history hatch {field} {coordinate} at {} millimetres per unit has no \
+                     finite millimetre value",
+                    scale.value()
+                ))
+            })
+        };
+        let scaled = (|| {
+            Ok::<_, cadmpeg_core::CodecError>((
+                [
+                    millimetres(plane.origin[0], "plane.origin[0]")?,
+                    millimetres(plane.origin[1], "plane.origin[1]")?,
+                    millimetres(plane.origin[2], "plane.origin[2]")?,
+                ],
+                millimetres(plane.equation[3], "plane.equation[3]")?,
+            ))
+        })();
+        let (origin, equation_constant) = match scaled {
+            Ok(scaled) => scaled,
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history hatch at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                return None;
+            }
+        };
+        embedded_json(
+            expand.ctx(),
+            &HatchJson {
+                hatch: &hatch,
+                plane: HatchPlaneJson {
+                    plane: &plane,
+                    origin,
+                    equation_constant,
+                },
+            },
+            refusal,
+        )
     } else if value.class_id == crate::detail::CLASS {
-        let detail = crate::detail::decode(data, value.class_data_range.clone(), archive).ok()?;
-        serde_json::json!({
-            "kind": "detail_view",
-            "boundary": detail.boundary.reported_geometry(),
-            "page_per_model_ratio": detail.page_per_model_ratio,
-        })
+        let detail = optional_geometry(
+            crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive),
+            refusal,
+        )?;
+        embedded_json(expand.ctx(), &DetailJson(&detail), refusal)
     } else if crate::dimensions::supported_class(value.class_id) {
-        let dimension = crate::dimensions::decode(
+        let dimension = match crate::dimensions::decode(
+            expand.ctx(),
             data,
             value.class_id,
             value.class_data_range.clone(),
             scale,
             archive,
-        )
-        .ok()?;
+        ) {
+            Ok(dimension) => dimension,
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history dimension at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                return None;
+            }
+        };
         let mut dimension = dimension;
-        crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
-            .ok()?;
-        return crate::dimensions::semantic_json(&dimension);
+        if let Err(error) =
+            crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
+        {
+            optional_warning(
+                expand.ctx(),
+                warnings,
+                refusal,
+                format_args!(
+                    "embedded history dimension userdata at offset {}: {error}",
+                    value.class_data_range.start
+                ),
+            )?;
+            return None;
+        }
+        match crate::dimensions::semantic_json(expand.ctx(), &dimension) {
+            Ok(semantic) => Some(semantic),
+            Err(error @ CodecError::ResourceLimit(_)) => {
+                *refusal = Some(error);
+                None
+            }
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history dimension at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                None
+            }
+        }
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
-        let polyedge =
-            crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
-        return crate::polyedge::semantic_json(&polyedge);
+        let mut polyedge_storage = match expand
+            .ctx()
+            .reserve_scoped(0, "Rhino embedded polyedge storage")
+        {
+            Ok(storage) => storage,
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
+        };
+        let polyedge = match polyedge_storage.with_storage(|| {
+            crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
+        }) {
+            Ok(polyedge) => polyedge,
+            Err(FramingError::Resource(limit)) => {
+                *refusal = Some(CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history polyedge at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                return None;
+            }
+        };
+        match crate::polyedge::semantic_json(expand.ctx(), &polyedge) {
+            Ok(semantic) => semantic,
+            Err(error) => {
+                *refusal = Some(error);
+                None
+            }
+        }
     } else {
-        return None;
-    };
-    serde_json::to_string(&semantic).ok()
+        None
+    }
 }
 
 /// Accounting for geometry decoded out of a history record's values.
 ///
 /// History curves/surfaces are stringified into native properties; putting them
 /// in `model.curves`/`surfaces` fails `Check::CarrierReachability`.
-struct GeometrySink {
+struct GeometrySink<'a> {
+    warnings: &'a mut Diagnostics,
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
+    refusal: Option<cadmpeg_core::CodecError>,
+}
+
+#[derive(Debug)]
+pub(crate) enum ProjectionError {
+    Admission(String),
+    Codec(cadmpeg_core::CodecError),
+}
+
+impl From<String> for ProjectionError {
+    fn from(message: String) -> Self {
+        Self::Admission(message)
+    }
+}
+
+impl From<CodecError> for ProjectionError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
+fn optional_geometry<T>(
+    result: Result<T, crate::curves::GeometryError>,
+    refusal: &mut Option<cadmpeg_core::CodecError>,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(crate::curves::GeometryError::Codec(error)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+fn optional_warning(
+    ctx: &DecodeContext<'_>,
+    warnings: &mut Diagnostics,
+    refusal: &mut Option<CodecError>,
+    message: fmt::Arguments<'_>,
+) -> Option<()> {
+    match warnings.push_admitted(ctx, message) {
+        Ok(()) => Some(()),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 fn structured_value_properties(
+    ctx: &DecodeContext<'_>,
     key: &str,
     value: &Value,
     geometry_context: Option<(
         crate::mesh::MeshExpand<'_>,
         ArchiveVersion,
         Option<i64>,
-        f64,
+        MillimeterScale,
     )>,
     properties: &mut BTreeMap<String, String>,
-    sink: &mut GeometrySink,
-) {
+    sink: &mut GeometrySink<'_>,
+) -> Result<(), CodecError> {
     match value {
         Value::ObjectReferences(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in values.iter().enumerate() {
-                object_reference_properties(&format!("{key}.{index}"), value, properties);
+                let prefix = ctx.format_retained(
+                    format_args!("{key}.{index}"),
+                    "Rhino history reference prefix",
+                )?;
+                object_reference_properties(ctx, &prefix, value, properties)?;
             }
         }
         Value::Geometries(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in values.iter().enumerate() {
-                properties.insert(
-                    format!("{key}.{index}.class_id"),
-                    value.class_id.to_string(),
-                );
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{key}.{index}.class_id"),
+                    value.class_id,
+                )?;
                 if let Some((expand, archive, writer_version, scale)) = geometry_context {
                     let data = expand.data();
-                    if let Ok(decoded) = crate::curves::decode(
-                        data,
-                        value.class_id,
-                        value.class_data_range.clone(),
-                        scale,
-                        archive,
-                    ) {
+                    let decoded = optional_geometry(
+                        crate::curves::decode(
+                            expand.ctx(),
+                            data,
+                            value.class_id,
+                            value.class_data_range.clone(),
+                            scale,
+                            archive,
+                        ),
+                        &mut sink.refusal,
+                    );
+                    if sink.refusal.is_some() {
+                        return Ok(());
+                    }
+                    if let Some(decoded) = decoded {
                         sink.untyped += 1;
                         let semantic = match decoded {
                             crate::curves::DecodedGeometry::Point { position, .. } => {
-                                serde_json::to_string(&position)
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &position,
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::PointCloud(cloud) => {
                                 sink.redundant_repairs += cloud.warnings.len();
-                                serde_json::to_string(&cloud.points)
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &cloud.points,
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::Curve { curve } => {
-                                serde_json::to_string(&curve.reported_geometry())
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &curve.reported_geometry(),
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                                 crate::surfaces::DecodedSurface::Typed { geometry, .. } => {
-                                    serde_json::to_string(&geometry)
+                                    crate::wire::admitted_json(
+                                        ctx,
+                                        &geometry.into_geometry(),
+                                        "Rhino history geometry JSON",
+                                    )
                                 }
                                 crate::surfaces::DecodedSurface::Procedural {
                                     geometry, ..
-                                } => serde_json::to_string(&geometry),
+                                } => crate::wire::admitted_json(
+                                    ctx,
+                                    &geometry,
+                                    "Rhino history geometry JSON",
+                                ),
                             },
                         };
-                        if let Ok(semantic) = semantic {
-                            properties.insert(format!("{key}.{index}.geometry"), semantic);
+                        match semantic {
+                            Ok(semantic) => {
+                                let property_key = ctx.format_retained(
+                                    format_args!("{key}.{index}.geometry"),
+                                    "Rhino history property key",
+                                )?;
+                                ctx.insert_btree_map(
+                                    properties,
+                                    property_key,
+                                    semantic,
+                                    "Rhino history property entries",
+                                )?;
+                            }
+                            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                            Err(_) => {}
                         }
-                    } else if let Some(semantic) =
-                        extended_geometry_json(expand, value, archive, writer_version, scale)
-                    {
-                        sink.untyped += 1;
-                        properties.insert(format!("{key}.{index}.geometry"), semantic);
                     } else {
-                        sink.failed += 1;
+                        let semantic = extended_geometry_json(
+                            expand,
+                            value,
+                            archive,
+                            writer_version,
+                            scale,
+                            sink.warnings,
+                            &mut sink.refusal,
+                        );
+                        if sink.refusal.is_some() {
+                            return Ok(());
+                        }
+                        if let Some(semantic) = semantic {
+                            sink.untyped += 1;
+                            let property_key = ctx.format_retained(
+                                format_args!("{key}.{index}.geometry"),
+                                "Rhino history property key",
+                            )?;
+                            ctx.insert_btree_map(
+                                properties,
+                                property_key,
+                                semantic,
+                                "Rhino history property entries",
+                            )?;
+                        } else {
+                            sink.failed += 1;
+                        }
                     }
+                } else {
+                    sink.untyped += 1;
+                    sink.warnings.push_coded_admitted(ctx,
+                        crate::loss::RhinoLossCode::HistoryGeometryNotTransferred,
+                        format_args!(
+                            "history geometry value {key}.{index} at source range {}..{} has no coordinate-unit binding",
+                            value.class_data_range.start,
+                            value.class_data_range.end
+                        ),
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{key}.{index}.geometry_status"),
+                        "unavailable_unit_binding",
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{key}.{index}.source_range"),
+                        format_args!(
+                            "{}..{}",
+                            value.class_data_range.start, value.class_data_range.end
+                        ),
+                    )?;
                 }
             }
         }
         Value::PolyEdges(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (edge_index, edge) in values.iter().enumerate() {
-                let edge_key = format!("{key}.{edge_index}");
-                properties.insert(
-                    format!("{edge_key}.parameters"),
-                    list(&edge.polyedge.parameters),
-                );
-                properties.insert(
-                    format!("{edge_key}.evaluation_mode"),
-                    edge.evaluation_mode.to_string(),
-                );
-                properties.insert(
-                    format!("{edge_key}.segment_count"),
-                    edge.polyedge.segments.len().to_string(),
-                );
+                let edge_key = ctx.format_retained(
+                    format_args!("{key}.{edge_index}"),
+                    "Rhino history edge prefix",
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.parameters"),
+                    Joined(edge.polyedge.parameters.iter(), ","),
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.evaluation_mode"),
+                    edge.evaluation_mode,
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.segment_count"),
+                    edge.polyedge.segments.len(),
+                )?;
                 for (segment_index, segment) in edge.polyedge.segments.iter().enumerate() {
-                    let segment_key = format!("{edge_key}.segment_{segment_index}");
+                    let segment_key = ctx.format_retained(
+                        format_args!("{edge_key}.segment_{segment_index}"),
+                        "Rhino history segment prefix",
+                    )?;
+                    let curve_key = ctx.format_retained(
+                        format_args!("{segment_key}.curve"),
+                        "Rhino history curve prefix",
+                    )?;
                     object_reference_properties(
-                        &format!("{segment_key}.curve"),
+                        ctx,
+                        &curve_key,
                         &segment.reference.curve,
                         properties,
-                    );
-                    properties.insert(
-                        format!("{segment_key}.reversed"),
-                        segment.reversed.to_string(),
-                    );
-                    properties.insert(format!("{segment_key}.full_domain"), list(segment.domain));
-                    properties.insert(
-                        format!("{segment_key}.sub_domain"),
-                        list(segment.reference.sub_domain),
-                    );
-                    properties.insert(
-                        format!("{segment_key}.proxy_domain"),
-                        list(segment.proxy_domain),
-                    );
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.reversed"),
+                        segment.reversed,
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.full_domain"),
+                        Joined(segment.domain.iter(), ","),
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.sub_domain"),
+                        Joined(segment.reference.sub_domain.iter(), ","),
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.proxy_domain"),
+                        Joined(segment.proxy_domain.iter(), ","),
+                    )?;
                     if let Some(domains) = &segment.reference.domains {
-                        properties.insert(format!("{segment_key}.edge_domain"), list(domains.edge));
-                        properties.insert(format!("{segment_key}.trim_domain"), list(domains.trim));
+                        insert_property(
+                            ctx,
+                            properties,
+                            format_args!("{segment_key}.edge_domain"),
+                            Joined(domains.edge.iter(), ","),
+                        )?;
+                        insert_property(
+                            ctx,
+                            properties,
+                            format_args!("{segment_key}.trim_domain"),
+                            Joined(domains.trim.iter(), ","),
+                        )?;
                     }
                 }
             }
         }
         Value::SubdEdgeChains(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, chain) in values.iter().enumerate() {
-                let chain_key = format!("{key}.{index}");
-                properties.insert(format!("{chain_key}.subd_id"), chain.subd_id.to_string());
-                properties.insert(
-                    format!("{chain_key}.edge_ids"),
-                    list(chain.edges.iter().map(|edge| edge.id)),
-                );
-                properties.insert(
-                    format!("{chain_key}.orientations"),
-                    list(chain.edges.iter().map(|edge| u8::from(edge.reversed))),
-                );
+                let chain_key = ctx
+                    .format_retained(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.subd_id"),
+                    chain.subd_id,
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.edge_ids"),
+                    Joined(chain.edges.iter().map(|edge| edge.id), ","),
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.orientations"),
+                    Joined(chain.edges.iter().map(|edge| u8::from(edge.reversed)), ","),
+                )?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 /// Projects source history into ordered neutral native operations.
@@ -1199,66 +2222,98 @@ fn structured_value_properties(
 /// Returns counts for untyped values, failed geometry, later dependencies, and
 /// repaired optional geometry channels. The caller reports these counts.
 pub(crate) fn project(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[HistoryRecord],
     geometry_context: Option<(
         crate::mesh::MeshExpand<'_>,
         ArchiveVersion,
         Option<i64>,
-        f64,
+        MillimeterScale,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-) -> (usize, usize, usize, usize) {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
-
-    #[derive(serde::Serialize)]
-    struct NativeHistoryRecord {
-        id: String,
-        source_offset: u64,
-        source_uuid: Option<String>,
-        command_uuid: String,
-        record_version: i32,
-        record_type: &'static str,
-        copy_on_replace: bool,
-        antecedent_object_uuids: Vec<String>,
-        descendant_object_uuids: Vec<String>,
-        value_count: usize,
-    }
+    warnings: &mut Diagnostics,
+) -> Result<(usize, usize, usize, usize), ProjectionError> {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut sink = GeometrySink {
+        warnings,
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
+        refusal: None,
     };
-    let mut ids = Vec::with_capacity(records.len());
-    let mut native_ids = Vec::with_capacity(records.len());
+    let mut ids = ctx
+        .collection_vec(records.len(), "Rhino history feature ids")
+        .map_err(crate::chunks::FramingError::from)
+        .map_err(history_resource_error)?;
+    let mut native_ids = ctx
+        .collection_vec(records.len(), "Rhino history native ids")
+        .map_err(crate::chunks::FramingError::from)
+        .map_err(history_resource_error)?;
     let mut seen_record_ids = HashSet::new();
+    ctx.reserve_set(
+        &mut seen_record_ids,
+        records.len(),
+        "Rhino history record identities",
+    )
+    .map_err(ProjectionError::Codec)?;
     for record in records {
         let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
         let key = if unique {
-            record.id.to_string()
+            ctx.format_retained(format_args!("{}", record.id), "Rhino history identity key")
         } else {
-            format!("offset-{}", record.source_range.start)
-        };
-        ids.push(
-            FeatureId::mint(format!("rhino:history:feature#{key}")).expect("identity grammar"),
+            ctx.format_retained(
+                format_args!("offset-{}", record.source_range.start),
+                "Rhino history identity key",
+            )
+        }
+        .map_err(ProjectionError::Codec)?;
+        let feature_id = ctx
+            .format_retained(
+                format_args!("rhino:history:feature#{key}"),
+                "Rhino history feature identity",
+            )
+            .map_err(ProjectionError::Codec)?;
+        ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
+        native_ids.push(
+            ctx.format_retained(
+                format_args!("rhino:history:record#{key}"),
+                "Rhino history native identity",
+            )
+            .map_err(ProjectionError::Codec)?,
         );
-        native_ids.push(format!("rhino:history:record#{key}"));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
         let mut record_descendants = HashSet::new();
-        for descendant in record
-            .descendants
-            .iter()
-            .filter(|descendant| record_descendants.insert(**descendant))
-        {
+        ctx.reserve_set(
+            &mut record_descendants,
+            record.descendants.len(),
+            "Rhino history unique descendants",
+        )
+        .map_err(ProjectionError::Codec)?;
+        for descendant in &record.descendants {
+            if !record_descendants.insert(*descendant) {
+                continue;
+            }
             if descendant.is_nil() {
                 continue;
             }
-            producers
-                .entry(*descendant)
-                .and_modify(|producer| *producer = None)
-                .or_insert_with(|| Some((index, ids[index].clone())));
+            if let Some(producer) = producers.get_mut(descendant) {
+                *producer = None;
+            } else {
+                ctx.reserve_map(&mut producers, 1, "Rhino history producers")
+                    .map_err(ProjectionError::Codec)?;
+                producers.insert(
+                    *descendant,
+                    Some((
+                        index,
+                        ids[index]
+                            .try_clone_for_decode(ctx, "Rhino history producer identity")
+                            .map_err(ProjectionError::Codec)?,
+                    )),
+                );
+            }
         }
     }
     let mut dropped_dependencies = 0;
@@ -1273,104 +2328,225 @@ pub(crate) fn project(
             }
         }
         let mut dependency_seen = HashSet::new();
-        let dependencies = record
-            .antecedents
-            .iter()
-            .filter_map(|antecedent| producers.get(antecedent).and_then(Option::as_ref))
-            .filter(|(producer_index, _)| *producer_index < index)
-            .filter(|(_, id)| dependency_seen.insert((*id).clone()))
-            .map(|(_, id)| id.clone())
-            .collect();
+        ctx.reserve_set(
+            &mut dependency_seen,
+            record.antecedents.len(),
+            "Rhino history seen dependencies",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let mut dependencies = ctx
+            .collection_vec(record.antecedents.len(), "Rhino history dependencies")
+            .map_err(crate::chunks::FramingError::from)
+            .map_err(history_resource_error)?;
+        for antecedent in &record.antecedents {
+            let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
+            else {
+                continue;
+            };
+            if *producer_index >= index || dependency_seen.contains(id) {
+                continue;
+            }
+            dependency_seen.insert(
+                id.try_clone_for_decode(ctx, "Rhino history seen dependency identity")
+                    .map_err(ProjectionError::Codec)?,
+            );
+            dependencies.push(
+                id.try_clone_for_decode(ctx, "Rhino history dependency identity")
+                    .map_err(ProjectionError::Codec)?,
+            );
+        }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
         let mut value_occurrences = HashMap::<i32, usize>::new();
+        ctx.reserve_map(
+            &mut value_occurrences,
+            record.values.len(),
+            "Rhino history value occurrences",
+        )
+        .map_err(ProjectionError::Codec)?;
         for value in &record.values {
             let occurrence = value_occurrences.entry(value.id).or_default();
             let key = if *occurrence == 0 {
-                format!("value_{}", value.id)
+                ctx.format_retained(
+                    format_args!("value_{}", value.id),
+                    "Rhino history value key",
+                )
             } else {
-                format!("value_{}_{}", value.id, occurrence)
-            };
+                ctx.format_retained(
+                    format_args!("value_{}_{}", value.id, occurrence),
+                    "Rhino history value key",
+                )
+            }
+            .map_err(ProjectionError::Codec)?;
             *occurrence += 1;
             structured_value_properties(
+                ctx,
                 &key,
                 &value.value,
                 geometry_context,
                 &mut properties,
                 &mut sink,
-            );
-            if let Some(text) = value_text(&value.value) {
-                parameters.insert(key, text);
+            )
+            .map_err(ProjectionError::Codec)?;
+            if let Some(error) = sink.refusal.take() {
+                return Err(ProjectionError::Codec(error));
+            }
+            if geometry_context.is_none()
+                && matches!(&value.value, Value::Geometries(values) if !values.is_empty())
+            {
+                insert_property(
+                    ctx,
+                    &mut properties,
+                    format_args!("{key}.source_fidelity_id"),
+                    format_args!("rhino:history:source#{:012}", record.source_range.start),
+                )
+                .map_err(ProjectionError::Codec)?;
+            }
+            if let Some(text) = value_text(ctx, &value.value).map_err(ProjectionError::Codec)? {
+                ctx.insert_btree_map(
+                    &mut parameters,
+                    key,
+                    text,
+                    "Rhino history parameter entries",
+                )
+                .map_err(ProjectionError::Codec)?;
             } else if let Value::Opaque { type_code, range } = &value.value {
-                properties.insert(format!("{key}.type"), type_code.to_string());
-                properties.insert(
-                    format!("{key}.source_range"),
-                    format!("{}..{}", range.start, range.end),
-                );
+                insert_property(ctx, &mut properties, format_args!("{key}.type"), type_code)
+                    .map_err(ProjectionError::Codec)?;
+                insert_property(
+                    ctx,
+                    &mut properties,
+                    format_args!("{key}.source_range"),
+                    format_args!("{}..{}", range.start, range.end),
+                )
+                .map_err(ProjectionError::Codec)?;
             }
         }
-        properties.insert("record_version".to_string(), record.version.to_string());
-        properties.insert(
-            "record_type".to_string(),
+        insert_property(ctx, &mut properties, "record_version", record.version)
+            .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "record_type",
             match record.record_type {
                 RecordType::HistoryParameters => "history_parameters",
                 RecordType::FeatureParameters => "feature_parameters",
-            }
-            .to_string(),
-        );
-        properties.insert(
-            "copy_on_replace".to_string(),
-            record.copy_on_replace.to_string(),
-        );
-        properties.insert("antecedent_objects".to_string(), list(&record.antecedents));
-        properties.insert("descendant_objects".to_string(), list(&record.descendants));
+            },
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "copy_on_replace",
+            record.copy_on_replace,
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "antecedent_objects",
+            Joined(record.antecedents.iter(), ","),
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "descendant_objects",
+            Joined(record.descendants.iter(), ","),
+        )
+        .map_err(ProjectionError::Codec)?;
+        let properties =
+            admitted_named_properties(ctx, &native_ids[index], properties, sink.warnings)
+                .map_err(ProjectionError::Codec)?;
+        let parameters =
+            admitted_named_properties(ctx, &native_ids[index], parameters, sink.warnings)
+                .map_err(ProjectionError::Codec)?;
+        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+            .map_err(|error| ProjectionError::Codec(error.into()))?;
+        ctx.reserve_vec(
+            &mut ir.model.features,
+            1,
+            "Rhino history projected features",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let feature_id_text = ctx
+            .copy_retained_text(
+                ids[index].as_str(),
+                "Rhino history projected feature identity",
+            )
+            .map_err(ProjectionError::Codec)?;
+        let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
+        let source_tag = ctx
+            .copy_retained_text("HistoryRecord", "Rhino history feature source tag")
+            .map_err(ProjectionError::Codec)?;
+        let kind = ctx
+            .format_retained(
+                format_args!("{}", record.command_id),
+                "Rhino history feature kind",
+            )
+            .map_err(ProjectionError::Codec)?;
+        let native_ref = ctx
+            .copy_retained_text(&native_ids[index], "Rhino history feature native reference")
+            .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
-            id: ids[index].clone(),
-            ordinal: u64::try_from(index).expect("history source order fits u64"),
+            id: feature_id,
+            ordinal: cadmpeg_core::decode::u64_from_index(index),
             name: None,
             suppressed: Some(false),
             dependencies,
             source_properties: properties,
-            source_tag: Some("HistoryRecord".to_string()),
+            source_tag: Some(source_tag),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: record.command_id.to_string().into(),
-                parameters,
-            },
-            native_ref: Some(native_ids[index].clone()),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: kind.into(),
+                    parameters,
+                }),
+            ),
+            native_ref: Some(native_ref),
         });
+    }
+    for record in records {
+        cadmpeg_core::decode::u64_from_index(record.source_range.start);
     }
     let native = records
         .iter()
         .enumerate()
         .map(|(index, record)| NativeHistoryRecord {
-            id: native_ids[index].clone(),
-            source_offset: record.source_range.start as u64,
-            source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
-            command_uuid: record.command_id.to_string(),
+            id: &native_ids[index],
+            source_offset: cadmpeg_core::decode::u64_from_index(record.source_range.start),
+            source_uuid: (!record.id.is_nil()).then_some(UuidText(&record.id)),
+            command_uuid: UuidText(&record.command_id),
             record_version: record.version,
             record_type: match record.record_type {
                 RecordType::HistoryParameters => "history_parameters",
                 RecordType::FeatureParameters => "feature_parameters",
             },
             copy_on_replace: record.copy_on_replace,
-            antecedent_object_uuids: record.antecedents.iter().map(ToString::to_string).collect(),
-            descendant_object_uuids: record.descendants.iter().map(ToString::to_string).collect(),
+            antecedent_object_uuids: UuidList(&record.antecedents),
+            descendant_object_uuids: UuidList(&record.descendants),
             value_count: record.values.len(),
-        })
-        .collect::<Vec<_>>();
+        });
     ir.native
         .namespace_mut("rhino")
-        .set_arena("history_records", &native)
-        .expect("Rhino history records serialize");
-    (
+        .set_arena_from(ctx, "history_records", native)
+        .map_err(|error| {
+            let detail = error.to_string();
+            match cadmpeg_core::CodecError::from(error) {
+                resource @ cadmpeg_core::CodecError::ResourceLimit(_) => {
+                    ProjectionError::Codec(resource)
+                }
+                _ => ProjectionError::Admission(detail),
+            }
+        })?;
+    Ok((
         sink.untyped,
         sink.failed,
         dropped_dependencies,
         sink.redundant_repairs,
-    )
+    ))
 }
 
 #[cfg(test)]

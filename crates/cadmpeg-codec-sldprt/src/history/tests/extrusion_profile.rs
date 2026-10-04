@@ -2,11 +2,17 @@
 //! Extrusion projection and adjacent-profile binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::add_solidworks_version;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -22,26 +28,27 @@ fn decode_projects_cut_extrude_with_canonical_length() {
         .unwrap();
 
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
+        decoded.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(12.7),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }
+        }) if actual_length.get() == 12.7
     ));
 }
 
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -53,20 +60,20 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
             op: BooleanOp::Unresolved,
             ..
-        }
+        })
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact extrusion".into());
@@ -81,23 +88,25 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn decode_does_not_globalize_configuration_local_extrusion_termination() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
 
     fn compact_extrusion_payload(through_all: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]);
@@ -130,9 +139,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         &compact_extrusion_payload(false),
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let feature = decoded
         .ir()
         .model
@@ -141,16 +152,16 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .unwrap();
     assert!(matches!(
-        feature.definition,
-        FeatureDefinition::Extrude {
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
     let feature_id = feature.id.clone();
     assert!(matches!(
@@ -158,30 +169,30 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             .feature_states
             .get(&feature_id)
             .map(|state| &state.definition),
-        Some(FeatureDefinition::Extrude {
+        Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll,
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
             ..
-        })
+        }))
     ));
     assert!(matches!(
         decoded.ir().model.configurations[1]
             .feature_states
             .get(&feature_id)
             .map(|state| &state.definition),
-        Some(FeatureDefinition::Extrude {
+        Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
             ..
-        })
+        }))
     ));
     assert!(decoded
         .ir()
@@ -223,7 +234,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
 #[test]
 fn decode_binds_adjacent_profile_feature_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -263,18 +274,18 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .unwrap();
     assert!(matches!(
-        &extrusion.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+        extrusion.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
-        } if feature == &profile.id
+        }) if feature == &profile.id
     ));
-    assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![profile.id.clone()]);
 }
 
 #[test]
 fn decode_does_not_globalize_configuration_local_adjacent_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -310,11 +321,11 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .unwrap();
     assert!(matches!(
-        &extrusion.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(owner),
+        extrusion.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)),
             ..
-        } if owner == extrusion.native_ref.as_deref().unwrap()
+        }) if owner == extrusion.native_ref.as_deref().unwrap()
     ));
     let extrusion_id = extrusion.id.clone();
     let profile_a = decoded
@@ -335,25 +346,25 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     let state_b = &decoded.ir().model.configurations[1].feature_states[&extrusion_id];
     assert!(matches!(
         &state_a.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
-        } if profile == &profile_a.id
+        }) if profile == &profile_a.id
     ));
     assert!(matches!(
         &state_b.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
-        } if profile == &profile_b.id
+        }) if profile == &profile_b.id
     ));
-    assert_eq!(state_a.dependencies, vec![profile_a.id.clone()]);
-    assert_eq!(state_b.dependencies, vec![profile_b.id.clone()]);
+    assert_eq!(state_a.dependencies.as_slice(), vec![profile_a.id.clone()]);
+    assert_eq!(state_b.dependencies.as_slice(), vec![profile_b.id.clone()]);
 }
 
 #[test]
 fn decode_binds_following_profile_marked_as_dissected_child() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -393,18 +404,20 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .unwrap();
     assert!(matches!(
-        &extrusion.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+        extrusion.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             ..
-        } if feature == &profile.id
+        }) if feature == &profile.id
     ));
-    assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![profile.id.clone()]);
 }
 
 #[test]
 fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{
+        BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -450,19 +463,20 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
         .find(|feature| feature.name.as_deref() == Some("Cut"))
         .unwrap();
     assert!(matches!(
-        &extrusion.definition,
-        FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(feature),
+        extrusion.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(feature)),
             op: BooleanOp::Cut,
             ..
-        } if feature == &profile.id
+        }) if feature == &profile.id
     ));
 }
 
 #[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
+        LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -475,19 +489,19 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             op: BooleanOp::NewBody,
             ..
-        }
+        }) if actual_length.get() == 6.0
     ));
 }
 
@@ -518,8 +532,8 @@ fn decode_projects_hyphenated_extrusion_operations() {
             .find(|feature| feature.name.as_deref() == Some("Extrude1"))
             .expect("projected extrusion feature");
         assert!(matches!(
-            &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { op, .. }) if *op == expected
         ));
     }
 }
@@ -551,14 +565,14 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
-    assert_eq!(extrusion.dependencies, vec![sketch.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![sketch.id.clone()]);
     assert!(sketch.ordinal < extrusion.ordinal);
     assert!(matches!(
-        &extrusion.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Feature(profile),
+        extrusion.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),
             ..
-        } if profile == &sketch.id
+        }) if profile == &sketch.id
     ));
     cadmpeg_test_support::roundtrip::verbatim_replay_holds(
         &SldprtCodec,
@@ -582,13 +596,13 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload.extend(std::iter::repeat_n(0, padding));
         if direct_class {
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-            payload.extend_from_slice(&(class_name.len() as u16).to_le_bytes());
+            payload.extend_from_slice(&u16::try_from(class_name.len()).unwrap().to_le_bytes());
             payload.extend_from_slice(class_name.as_bytes());
         } else {
             payload.extend_from_slice(&0x84d8u16.to_le_bytes());
         }
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
-        payload.push(name.encode_utf16().count() as u8);
+        payload.push(u8::try_from(name.encode_utf16().count()).unwrap());
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -683,11 +697,11 @@ fn decode_projects_feature_input_extrusion_operations() {
                 .expect("projected extrusion feature");
             assert!(
                 matches!(
-                    &feature.definition,
-                    cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { op, .. }) if *op == expected
                 ),
                 "code {code}, class {class_name}, direct {direct_class}, padding {padding}: {:?}",
-                feature.definition
+                feature.evaluation.definition()
             );
         }
     }
@@ -715,11 +729,13 @@ fn decode_projects_feature_input_extrusion_operations() {
             .find(|feature| feature.name.as_deref() == Some("Extrude1"))
             .expect("projected extrusion feature");
         assert!(matches!(
-            &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Extrude {
-                op: cadmpeg_ir::features::BooleanOp::Unresolved,
-                ..
-            }
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude {
+                    op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                    ..
+                }
+            )
         ));
         if code == 11 {
             assert!(decoded
@@ -762,8 +778,8 @@ fn decode_projects_feature_input_extrusion_operations() {
             .find(|feature| feature.name.as_deref() == Some("Extrude1"))
             .expect("projected extrusion feature");
         assert!(matches!(
-            &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { op, .. }) if *op == expected
         ));
     }
 
@@ -793,8 +809,8 @@ fn decode_projects_feature_input_extrusion_operations() {
             .find(|feature| feature.name.as_deref() == Some("Extrude1"))
             .expect("projected extrusion feature");
         assert!(matches!(
-            &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { op, .. }) if *op == expected
         ));
     }
 }

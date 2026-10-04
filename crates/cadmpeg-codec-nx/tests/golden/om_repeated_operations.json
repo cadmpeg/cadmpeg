@@ -16,98 +16,134 @@
         "faces": [],
         "feature_result_topologies": [
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000000"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000000",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000000",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
             "output_of": "nx:feature-history:feature#0000000000-0000000000"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000001"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000001",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000001",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000001",
             "output_of": "nx:feature-history:feature#0000000000-0000000001"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000002",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000002",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000002",
             "output_of": "nx:feature-history:feature#0000000000-0000000002"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000003"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000003",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000003",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000003",
             "output_of": "nx:feature-history:feature#0000000000-0000000003"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000004"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000004",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000004",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000004",
             "output_of": "nx:feature-history:feature#0000000000-0000000004"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000005"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000005",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000005",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000005",
             "output_of": "nx:feature-history:feature#0000000000-0000000005"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000006"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000006",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000006",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000006",
             "output_of": "nx:feature-history:feature#0000000000-0000000006"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000007"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000007",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000007",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000007",
             "output_of": "nx:feature-history:feature#0000000000-0000000007"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000008"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000008",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000008",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000008",
             "output_of": "nx:feature-history:feature#0000000000-0000000008"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000009"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000009",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000009",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000009",
             "output_of": "nx:feature-history:feature#0000000000-0000000009"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000010"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000010",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000010",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000010",
             "output_of": "nx:feature-history:feature#0000000000-0000000010"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000011"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000011",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000011",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000011",
             "output_of": "nx:feature-history:feature#0000000000-0000000011"
           }
@@ -117,13 +153,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -151,13 +189,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -185,13 +225,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -219,13 +261,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -253,13 +297,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -287,13 +333,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -321,13 +369,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -355,13 +405,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -389,13 +441,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -423,13 +477,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -457,13 +513,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "dependencies": [
@@ -491,13 +549,15 @@
             "definition": {
               "definition": "combine",
               "op": "join",
-              "target": {
-                "kind": "native",
-                "value": "nx:om-object-index#6466"
-              },
-              "tools": {
-                "kind": "native",
-                "value": "nx:om-object-indices#6476,127"
+              "operands": {
+                "target": {
+                  "kind": "native",
+                  "value": "nx:om-object-index#6466"
+                },
+                "tools": {
+                  "kind": "native",
+                  "value": "nx:om-object-indices#6476,127"
+                }
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000011",
@@ -1826,7 +1886,6 @@
               "id": "nx:segment-om-links:link#0",
               "row": "nx:segment-index:row#0",
               "schema_role": "feature_history",
-              "section_offset": 100,
               "separator_byte_len": 0,
               "slot": "type_code",
               "source_offset": 100
@@ -1835,13 +1894,11 @@
               "id": "nx:segment-om-links:link#1",
               "row": "nx:segment-index:row#1",
               "schema_role": "feature_history",
-              "section_offset": 100,
               "separator_byte_len": 0,
               "slot": "value",
               "source_offset": 100
             }
-          ],
-          "unknowns": []
+          ]
         }
       },
       "source": {
@@ -1857,18 +1914,19 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
-        "dialects": {
-          "extra": [],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "splmsstr_version": "6"
-            },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -1879,26 +1937,27 @@
       }
     },
     "report": {
-      "container_only": false,
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
         }
       },
-      "format": "nx",
-      "geometry_transferred": false,
       "losses": [
         {
           "code": {
             "code": "geometry.not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
@@ -1908,473 +1967,489 @@
         "SPLMSSTR container: file tag 0, footer offset 1184, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
-      ]
+      ],
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {
         "exactness": {
           "nx:feature-history:feature#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {
           "nx:feature-history:body-reference#0000000000-0000000000": {
             "offset": 366,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000001": {
             "offset": 440,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000002": {
             "offset": 514,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000003": {
             "offset": 588,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000004": {
             "offset": 662,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000005": {
             "offset": 736,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000006": {
             "offset": 810,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000007": {
             "offset": 884,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000008": {
             "offset": 958,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000009": {
             "offset": 1032,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000010": {
             "offset": 1106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference#0000000000-0000000011": {
             "offset": 1180,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000": {
             "offset": 366,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000": {
             "offset": 440,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000002-0000000000": {
             "offset": 514,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000003-0000000000": {
             "offset": 588,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000004-0000000000": {
             "offset": 662,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000005-0000000000": {
             "offset": 736,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000006-0000000000": {
             "offset": 810,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000007-0000000000": {
             "offset": 884,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000008-0000000000": {
             "offset": 958,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000009-0000000000": {
             "offset": 1032,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000010-0000000000": {
             "offset": 1106,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:body-reference-occurrence#0000000000-0000000011-0000000000": {
             "offset": 1180,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BODY_REFERENCE_OCCURRENCE"
           },
           "nx:feature-history:boolean#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:boolean#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_BOOLEAN_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION"
           },
           "nx:feature-history:operation-label#0000000000-0000000000": {
             "offset": 318,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000001": {
             "offset": 392,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000002": {
             "offset": 466,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000003": {
             "offset": 540,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000004": {
             "offset": 614,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000005": {
             "offset": 688,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000006": {
             "offset": 762,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000007": {
             "offset": 836,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000008": {
             "offset": 910,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000009": {
             "offset": 984,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000010": {
             "offset": 1058,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-label#0000000000-0000000011": {
             "offset": 1132,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_LABEL"
           },
           "nx:feature-history:operation-record#0000000000-0000000000": {
             "offset": 296,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000001": {
             "offset": 370,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000002": {
             "offset": 444,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000003": {
             "offset": 518,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000004": {
             "offset": 592,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000005": {
             "offset": 666,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000006": {
             "offset": 740,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000007": {
             "offset": 814,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000008": {
             "offset": 888,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000009": {
             "offset": 962,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000010": {
             "offset": 1036,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:feature-history:operation-record#0000000000-0000000011": {
             "offset": 1110,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "FEATURE_OPERATION_RECORD"
           },
           "nx:om-record-areas:area#0-177": {
             "offset": 253,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-record-areas:area#1-177": {
             "offset": 253,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_RECORD_AREA"
           },
           "nx:segment-index:row#0": {
             "offset": 76,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
             "offset": 88,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-om-links:link#0": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           },
           "nx:segment-om-links:link#1": {
             "offset": 100,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 1108,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 1108
+        "size": {
+          "form": "exact",
+          "size": 1108
+        }
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 1184, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",

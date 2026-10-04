@@ -1,55 +1,64 @@
 {
   "container_kind": "psb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "residual",
-      "declared": {
-        "version_line": "#UGC:2 P c"
-      },
-      "dialect": "creo:unknown",
-      "format": "creo"
-    }
-  },
   "entries": [
     {
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 67,
       "compression": "none",
       "name": "VisibGeom",
       "role": "psb-geometry",
-      "uncompressed_size": 67
+      "size": {
+        "form": "exact",
+        "size": 67
+      }
     },
     {
       "attributes": {
         "offset": "143"
       },
-      "compressed_size": 15,
       "compression": "none",
       "name": "NovisGeom",
       "role": "psb-geometry",
-      "uncompressed_size": 15
+      "size": {
+        "form": "exact",
+        "size": 15
+      }
     },
     {
       "attributes": {
         "offset": "158"
       },
-      "compressed_size": 12,
       "compression": "none",
       "name": "AllFeatur",
       "role": "model-data",
-      "uncompressed_size": 12
+      "size": {
+        "form": "exact",
+        "size": 12
+      }
     }
   ],
-  "format": "creo",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "creo"
+        "namespace": "creo",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
       "severity": "warning"

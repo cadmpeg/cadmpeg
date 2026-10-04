@@ -6,18 +6,18 @@
 pub const FORMAT: &str = "acis";
 
 /// Registry-owned dialect id `acis:asm-binaryfile-4`.
-pub const ACIS_ASM_BINARYFILE_4: DialectId = DialectId::pinned("acis:asm-binaryfile-4");
+pub const ACIS_ASM_BINARYFILE_4: DialectId = cadmpeg_core::dialect_id!("acis:asm-binaryfile-4");
 /// Registry-owned dialect id `acis:asm-binaryfile-8`.
-pub const ACIS_ASM_BINARYFILE_8: DialectId = DialectId::pinned("acis:asm-binaryfile-8");
+pub const ACIS_ASM_BINARYFILE_8: DialectId = cadmpeg_core::dialect_id!("acis:asm-binaryfile-8");
 /// Registry-owned dialect id `acis:save-format-217`.
-pub const ACIS_SAVE_FORMAT_217: DialectId = DialectId::pinned("acis:save-format-217");
+pub const ACIS_SAVE_FORMAT_217: DialectId = cadmpeg_core::dialect_id!("acis:save-format-217");
 /// Registry-owned dialect id `acis:save-format-218`.
-pub const ACIS_SAVE_FORMAT_218: DialectId = DialectId::pinned("acis:save-format-218");
+pub const ACIS_SAVE_FORMAT_218: DialectId = cadmpeg_core::dialect_id!("acis:save-format-218");
 /// Registry-owned dialect id `acis:save-format-binary-other`.
-pub const ACIS_SAVE_FORMAT_BINARY_OTHER: DialectId = DialectId::pinned("acis:save-format-binary-other");
+pub const ACIS_SAVE_FORMAT_BINARY_OTHER: DialectId = cadmpeg_core::dialect_id!("acis:save-format-binary-other");
 /// Registry-owned dialect id `acis:text-asm`.
-pub const ACIS_TEXT_ASM: DialectId = DialectId::pinned("acis:text-asm");
+pub const ACIS_TEXT_ASM: DialectId = cadmpeg_core::dialect_id!("acis:text-asm");
 /// Registry-owned dialect id `acis:text-acis`.
-pub const ACIS_TEXT_ACIS: DialectId = DialectId::pinned("acis:text-acis");
+pub const ACIS_TEXT_ACIS: DialectId = cadmpeg_core::dialect_id!("acis:text-acis");
 /// Registry-owned dialect id `acis:unknown`.
-pub const ACIS_UNKNOWN: DialectId = DialectId::pinned("acis:unknown");
+pub const ACIS_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("acis:unknown");

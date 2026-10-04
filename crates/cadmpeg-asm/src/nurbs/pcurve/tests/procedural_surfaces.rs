@@ -1,10 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::curve_block_with_endpoint;
+use crate::nurbs::pcurve::tests::pcurve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_position;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::pcurve::tests::surface_block_with_x_offset;
+use crate::nurbs::proc_curve::intersection_patch_layout;
+use crate::nurbs::proc_curve::projection_patch_layout;
+use crate::nurbs::proc_curve::silhouette_patch_layout;
+use crate::nurbs::proc_curve::spring_patch_layout;
+use crate::nurbs::proc_curve::surface_curve_patch_layout;
+use crate::nurbs::proc_curve::surface_offset_patch_layout;
+use crate::nurbs::proc_curve::three_surface_patch_layout;
+use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
+use crate::nurbs::proc_curve::ProjectionTailPatchLayout;
+use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
+use crate::nurbs::toks::lex_test_span;
+use crate::nurbs::toks::test_table;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn offset_surface_uses_direct_support_fields_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["off_spl_sur", "offsur"] {
             let mut bytes = vec![0x0f];
@@ -24,43 +59,50 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             push_f64(&mut bytes, 0.001);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense,
-                v_sense,
-                extension,
-            } = decoded.definition
+                layout:
+                    crate::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy {
+                        u_sense,
+                        v_sense,
+                        extension: flags,
+                    },
+            } = definition
             else {
                 panic!("expected legacy offset surface");
             };
 
-            assert!(matches!(
-                support,
-                SurfaceGeometry::Plane { origin, .. }
-                    if (origin.x - 5.0).abs() < f64::EPSILON
+            assert!(
+                matches!(support, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+                    (origin.x - 5.0).abs() < f64::EPSILON
                         && (origin.y - 10.0).abs() < f64::EPSILON
                         && (origin.z - 15.0).abs() < f64::EPSILON
-            ));
+                })
+            );
             assert!((distance - -2.5).abs() < f64::EPSILON);
-            assert_eq!(u_sense, Some(2));
-            assert_eq!(v_sense, Some(3));
-            let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
-                panic!("expected legacy offset extension")
-            };
+            assert_eq!(u_sense, 2);
+            assert_eq!(v_sense, 3);
             assert_eq!(
-                flags.wire_values(),
+                flags,
                 if name == "off_spl_sur" {
-                    vec![false]
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled {}
                 } else {
-                    vec![]
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
                 }
             );
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
@@ -70,6 +112,13 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
 #[test]
 fn offset_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "offsur");
@@ -88,13 +137,16 @@ fn offset_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -102,6 +154,13 @@ fn offset_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "defm_spl_sur");
@@ -152,26 +211,34 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         bytes.push(0x0b);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
-        let DecodedProceduralSurfaceDefinition::Deformable(construction) = decoded.definition
-        else {
+        assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Deformable(construction) = definition else {
             panic!("expected deformable surface");
         };
-        let Some(revision_form) = construction.revision_form else {
+        let crate::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Revision(revision_form) =
+            construction.layout
+        else {
             panic!("expected revision form");
         };
-        assert_eq!(revision_form.revision, 22_506);
-        assert_eq!(revision_form.cache.selector(), 0);
-        assert_eq!(revision_form.cache.fit_tolerance(), Some(0.01));
+        assert_eq!(revision_form.revision.get(), 22_506);
+        assert!(revision_form.cache.parameterization().is_none());
+        assert_eq!(
+            revision_form
+                .cache
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(0.01)
+        );
         assert_eq!(
             revision_form.support_bounds,
             [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
@@ -206,6 +273,13 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
 
 #[test]
 fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let variants = [
         ("taper_spl_sur", 0u8),
         ("ortho_spl_sur", 1),
@@ -247,13 +321,18 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Taper {
                 reference,
                 pcurve,
@@ -261,7 +340,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 taper,
                 revision_form: None,
                 ..
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy taper surface");
             };
@@ -272,7 +351,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
             assert!(matches!(
                 (kind, taper),
-                (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard)
+                (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard {})
                     | (
                         1,
                         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
@@ -288,6 +367,13 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
 
 #[test]
 fn taper_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "taper_spl_sur");
@@ -306,13 +392,16 @@ fn taper_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -320,6 +409,13 @@ fn taper_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn compound_surface_uses_leading_cache_then_parameterized_components() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "comp_spl_sur");
@@ -337,40 +433,55 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         }
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-        let DecodedProceduralSurfaceDefinition::Compound { components } = decoded.definition else {
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Compound { components } = definition else {
             panic!("expected compound surface");
         };
 
         assert!((components[0].parameter - 0.25).abs() < f64::EPSILON);
         assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
-        assert!(matches!(
-            components[0].component,
-            SurfaceGeometry::Plane { origin, .. }
-                if (origin.x - 10.0).abs() < f64::EPSILON
+        assert!(
+            matches!(components[0].component, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+            if {
+                let origin = plane_surface.origin();
+                (origin.x - 10.0).abs() < f64::EPSILON
                     && (origin.y - 20.0).abs() < f64::EPSILON
                     && (origin.z - 30.0).abs() < f64::EPSILON
-        ));
-        assert!(matches!(
-            components[1].component,
-            SurfaceGeometry::Plane { origin, .. }
-                if (origin.x - 40.0).abs() < f64::EPSILON
+            })
+        );
+        assert!(
+            matches!(components[1].component, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+            if {
+                let origin = plane_surface.origin();
+                (origin.x - 40.0).abs() < f64::EPSILON
                     && (origin.y - 50.0).abs() < f64::EPSILON
                     && (origin.z - 60.0).abs() < f64::EPSILON
-        ));
+            })
+        );
         assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }
 
 #[test]
 fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
@@ -390,13 +501,17 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &asm_decode_ctx,
                     &tokens,
-                    &test_table(&bytes, int_width),
+                    &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
+                .transpose()
+                .expect("resource allocation did not fail")
                 .is_none()
             );
         }
@@ -405,6 +520,13 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn loft_surface_walks_bridge_to_direct_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["loft_spl_sur", "loftsur"] {
             let mut bytes = vec![0x0f];
@@ -427,24 +549,39 @@ fn loft_surface_walks_bridge_to_direct_cache() {
             push_f64(&mut bytes, 0.001);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-            let DecodedProceduralSurfaceDefinition::Loft(loft) = decoded.definition else {
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
+            let DecodedProceduralSurfaceDefinition::Loft(loft) = definition else {
                 panic!("expected legacy loft surface");
             };
 
             assert!(loft.sections.iter().all(Vec::is_empty));
-            assert_eq!(loft.closures, [1, 2]);
-            assert_eq!(loft.singularities, [3, 4]);
-            assert_eq!(loft.mode, 7);
-            assert_eq!(loft.bridge.len(), 5);
+            let crate::nurbs::proc_surface::EmbeddedLoftLayout::Legacy {
+                closures,
+                singularities,
+                mode,
+                bridge,
+                ..
+            } = loft.layout
+            else {
+                panic!("expected legacy loft layout")
+            };
+            assert_eq!(closures, [1, 2]);
+            assert_eq!(singularities, [3, 4]);
+            assert_eq!(mode, 7);
+            assert_eq!(bridge.len(), 5);
             assert!(matches!(
-                loft.bridge.as_slice(),
+                bridge.as_slice(),
                 [
                     cadmpeg_ir::geometry::LoftBridgeToken::Boolean(true),
                     cadmpeg_ir::geometry::LoftBridgeToken::Integer(11),
@@ -460,6 +597,13 @@ fn loft_surface_walks_bridge_to_direct_cache() {
 
 #[test]
 fn loft_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "loftsur");
@@ -479,13 +623,16 @@ fn loft_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -493,6 +640,13 @@ fn loft_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn exact_surface_uses_leading_cache_ranges_then_extension() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["exact_spl_sur", "exactsur"] {
             let mut bytes = vec![0x0f];
@@ -505,16 +659,24 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             push_int(&mut bytes, 0x04, 9, int_width);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Exact {
-                spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension },
-            } = decoded.definition
+                spline:
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges, extension, ..
+                    },
+            } = definition
             else {
                 panic!("expected legacy exact surface");
             };
@@ -531,6 +693,13 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
 
 #[test]
 fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
@@ -553,13 +722,17 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &asm_decode_ctx,
                     &tokens,
-                    &test_table(&bytes, int_width),
+                    &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
+                .transpose()
+                .expect("resource allocation did not fail")
                 .is_none()
             );
         }
@@ -568,6 +741,13 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn ruled_surface_uses_two_direct_profiles_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
@@ -577,27 +757,36 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = decoded.definition else {
+        let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = definition else {
             panic!("expected ruled surface");
         };
 
         assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
         assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
+        assert!((cache_fit_tolerance.expect("fit tolerance") - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }
 
 #[test]
 fn ruled_surface_rejects_nested_profile_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
@@ -611,13 +800,16 @@ fn ruled_surface_rejects_nested_profile_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -625,6 +817,13 @@ fn ruled_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn sum_surface_uses_two_direct_curves_origin_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
@@ -635,26 +834,30 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Sum {
             first,
             second,
             basepoint,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy sum surface");
         };
-        let CurveGeometry::Nurbs(first) = first else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)) = first else {
             panic!("expected first NURBS curve");
         };
-        let CurveGeometry::Nurbs(second) = second else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)) = second else {
             panic!("expected second NURBS curve");
         };
 
@@ -669,6 +872,13 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
 
 #[test]
 fn sum_surface_rejects_nested_curve_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
@@ -683,13 +893,16 @@ fn sum_surface_rejects_nested_curve_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -697,6 +910,13 @@ fn sum_surface_rejects_nested_curve_substitution() {
 
 #[test]
 fn revolution_surface_uses_direct_profile_axis_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -707,13 +927,17 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             directrix,
             axis_origin,
@@ -721,11 +945,11 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             angular_interval,
             parameter_interval,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy revolution surface");
         };
-        let CurveGeometry::Nurbs(directrix) = directrix else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)) = directrix else {
             panic!("expected NURBS profile");
         };
 
@@ -733,9 +957,9 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         assert!((axis_origin.x - 5.0).abs() < f64::EPSILON);
         assert!((axis_origin.y - 10.0).abs() < f64::EPSILON);
         assert!((axis_origin.z - 15.0).abs() < f64::EPSILON);
-        assert!((axis_direction.x - 0.0).abs() < f64::EPSILON);
-        assert!((axis_direction.y - 0.0).abs() < f64::EPSILON);
-        assert!((axis_direction.z - 1.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().x - 0.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().y - 0.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().z - 1.0).abs() < f64::EPSILON);
         assert!((angular_interval[0] - 0.0).abs() < f64::EPSILON);
         assert!((angular_interval[1] - 1.0).abs() < f64::EPSILON);
         assert!((parameter_interval[0] - 0.0).abs() < f64::EPSILON);
@@ -746,6 +970,13 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
 
 #[test]
 fn revolution_surface_rejects_nested_profile_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -760,13 +991,16 @@ fn revolution_surface_rejects_nested_profile_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &asm_decode_ctx,
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -774,6 +1008,13 @@ fn revolution_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -791,18 +1032,22 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
         bytes.push(0x0b);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &asm_decode_ctx,
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             angular_interval,
             parameter_interval,
             revision_form: Some(_),
             ..
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected revision revolution surface");
         };
@@ -816,6 +1061,13 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
 
 #[test]
 fn surface_cache_resolves_width4_subtype_ref() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     // Active slice: one named subtype span holding the surface cache.
     let mut active = vec![0x0f, 0x0d, 0x07];
     active.extend_from_slice(b"spl_sur");
@@ -827,15 +1079,27 @@ fn surface_cache_resolves_width4_subtype_ref() {
     push_int(&mut record, 0x04, 0, RefWidth::Four);
     record.push(0x10);
     let surface = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four),
-        &crate::nurbs::toks::test_table(&active, RefWidth::Four),
+        &resource_ctx,
+        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four)
+            .expect("valid single-record byte fixture"),
+        &crate::nurbs::toks::test_table(&active, RefWidth::Four)
+            .expect("valid single-record byte fixture"),
     )
+    .transpose()
+    .expect("resource allocation")
     .expect("resolved width-4 ref");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
 }
 
 #[test]
 fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut active = vec![0x0f];
         push_ident(&mut active, "spl_sur");
@@ -845,9 +1109,14 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
         push_int(&mut record, 0x04, 0, int_width);
         record.push(0x10);
         let surface = crate::nurbs::core::surface_cache_resolving_refs(
-            &crate::nurbs::toks::lex_test_span(&record, int_width),
-            &crate::nurbs::toks::test_table(&active, int_width),
+            &resource_ctx,
+            &crate::nurbs::toks::lex_test_span(&record, int_width)
+                .expect("valid single-record byte fixture"),
+            &crate::nurbs::toks::test_table(&active, int_width)
+                .expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation")
         .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     }
@@ -874,7 +1143,12 @@ fn spring_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 2.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                int_width,
+            );
             for value in values {
                 push_f64(&mut bytes, *value);
             }
@@ -909,7 +1183,12 @@ fn three_surface_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 3.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                int_width,
+            );
             for value in values {
                 push_f64(&mut bytes, *value);
             }
@@ -941,7 +1220,11 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
             ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
             ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
         ] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![
+                0x0f,
+                0x0d,
+                u8::try_from(name.len()).expect("test value fits"),
+            ];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -953,7 +1236,12 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(
+                    &mut bytes,
+                    0x04,
+                    i64::try_from(values.len()).expect("test value fits"),
+                    int_width,
+                );
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -973,7 +1261,11 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
 fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["int_int_cur", "surf_surf_int_cur", "surfintcur"] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![
+                0x0f,
+                0x0d,
+                u8::try_from(name.len()).expect("test value fits"),
+            ];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -985,7 +1277,12 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(
+                    &mut bytes,
+                    0x04,
+                    i64::try_from(values.len()).expect("test value fits"),
+                    int_width,
+                );
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1006,6 +1303,13 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "intersection_support");
@@ -1045,9 +1349,12 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &asm_decode_ctx,
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
             decoded.construction
@@ -1058,11 +1365,15 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane { .. })
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Plane(_)
+            ))
         ));
         assert!(matches!(
             context.surfaces[1],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
@@ -1072,6 +1383,13 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
 
 #[test]
 fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_forms() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "helix_spl_line");
@@ -1121,10 +1439,16 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
             let mut active = support.clone();
             active.extend_from_slice(&record);
-            let toks = lex_test_span(&record, int_width);
-            let table = test_table(&active, int_width);
-            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
-                .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
+            let toks = lex_test_span(&record, int_width).expect("valid single-record byte fixture");
+            let table = test_table(&active, int_width).expect("valid single-record byte fixture");
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+                &asm_decode_ctx,
+                &toks,
+                &table,
+            )
+            .transpose()
+            .expect("resource allocation did not fail")
+            .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
             let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
                 &decoded.construction
             else {
@@ -1138,20 +1462,37 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
                 ]
             ));
             assert!(context.pcurves[0].is_some());
-            assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
-                    .is_some()
-            );
-            assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
-                    .is_none()
-            );
+            assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
+                &asm_decode_ctx,
+                &toks,
+                1,
+                &table
+            )
+            .transpose()
+            .expect("resource allocation did not fail")
+            .is_some());
+            assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
+                &asm_decode_ctx,
+                &toks,
+                2,
+                &table
+            )
+            .transpose()
+            .expect("resource allocation did not fail")
+            .is_none());
         }
     }
 }
 
 #[test]
 fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "blend_support");
@@ -1185,23 +1526,30 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &asm_decode_ctx,
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Blend {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Blend(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("blend surface-curve family")
         };
+        let (context, form) = context.into_intersection(
+            crate::nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve).unwrap(),
+        );
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(matches!(
             context.surfaces[1],
@@ -1210,13 +1558,20 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         ));
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(tail.flags);
+        assert_eq!(form.extension, 7);
+        assert!(flags);
     }
 }
 
 #[test]
 fn cache_first_par_curve_selects_mirrored_support_slot() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     // `flag1 = F` mirrors the support onto the second serialized slot:
     // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
     // parametric support surface and its bs2 pcurve. `par_int_cur`
@@ -1257,15 +1612,17 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &asm_decode_ctx,
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Parametric {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Parametric(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("parametric surface-curve family")
@@ -1277,13 +1634,15 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         ));
         assert!(matches!(
             context.surfaces[1],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Nurbs(_)
+            ))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(!tail.flags.flag);
-        assert_eq!(tail.flags.second_flag, Some(false));
+        assert_eq!(context.form.extension, 7);
+        assert!(!flags.flag);
+        assert_eq!(flags.second_flag, Some(false));
     }
 }
 
@@ -1303,7 +1662,12 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(
+                    &mut bytes,
+                    0x04,
+                    i64::try_from(values.len()).expect("test value fits"),
+                    int_width,
+                );
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1333,7 +1697,53 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                 ProjectionTailPatchLayout::Ranged { flag, role, .. } => {
                     assert!(!early_close);
                     assert_eq!(flag, tail_flag);
-                    assert_eq!(&bytes[role], b"surf1");
+                    let role = role.range();
+                    assert_eq!(&bytes[role.clone()], b"surf1");
+                    for word in [b"surf".as_slice(), b"surf12", b"wrong"] {
+                        let mut malformed = bytes[..role.start - 1].to_vec();
+                        malformed.push(u8::try_from(word.len()).expect("test value fits"));
+                        malformed.extend_from_slice(word);
+                        assert!(projection_patch_layout(&malformed, int_width).is_none());
+                        let record = crate::sab::Record {
+                            index: 0,
+                            name: "intcurve".into(),
+                            tokens: Vec::new().into(),
+                            offset: 0,
+                            len: malformed.len(),
+                        };
+                        let edits = crate::edit::AsmEditSet::from_framed(
+                            vec![record.clone()],
+                            int_width,
+                            1.0,
+                        );
+                        let definition =
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                                    std::array::from_fn(|_| {
+                                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                        }
+                                    }),
+                                    [-2.0, 3.0],
+                                    [vec![0.25], vec![], vec![0.5, 0.75]],
+                                )
+                                .expect("valid projection support fixture"), true, cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
+                                    .unwrap(), cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                                    flag: false,
+                                    parameter_range: [-1.0, 1.0],
+                                    role: cadmpeg_ir::geometry::ProjectionRole::Surf1,
+                                }).unwrap());
+                        let before = malformed.clone();
+                        assert!(matches!(
+                            edits.patch_procedural_curve_definition(
+                                &mut malformed,
+                                &record,
+                                &definition
+                            ),
+                            Err(cadmpeg_core::CodecError::Malformed(_))
+                        ));
+                        assert_eq!(malformed, before);
+                    }
                 }
             }
         }
@@ -1345,14 +1755,20 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
     use cadmpeg_ir::geometry::SilhouetteKind;
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
-            ("silh_int_cur", SilhouetteKind::Standard),
-            ("para_silh_int_cur", SilhouetteKind::Parametric),
+            ("silh_int_cur", SilhouetteKind::Standard {}),
+            ("para_silh_int_cur", SilhouetteKind::Parametric {}),
             (
                 "taper_silh_int_cur",
-                SilhouetteKind::Taper { draft_factor: 0.5 },
+                SilhouetteKind::Taper {
+                    draft_factor: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                },
             ),
         ] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![
+                0x0f,
+                0x0d,
+                u8::try_from(name.len()).expect("test value fits"),
+            ];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1364,7 +1780,12 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(
+                    &mut bytes,
+                    0x04,
+                    i64::try_from(values.len()).expect("test value fits"),
+                    int_width,
+                );
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1393,7 +1814,11 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
 fn surface_offset_layout_walks_both_integer_widths() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let name = "off_surf_int_cur";
-        let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+        let mut bytes = vec![
+            0x0f,
+            0x0d,
+            u8::try_from(name.len()).expect("test value fits"),
+        ];
         bytes.extend_from_slice(name.as_bytes());
         for _ in 0..2 {
             bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1405,7 +1830,12 @@ fn surface_offset_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 3.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                int_width,
+            );
             for value in values {
                 push_f64(&mut bytes, *value);
             }

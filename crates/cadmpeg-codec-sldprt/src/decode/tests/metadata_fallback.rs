@@ -2,11 +2,21 @@
 //! Metadata-only fallback and retained-source-image decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::sldprt_with_partition_and_deltas;
+use crate::test_support::container::synthetic_sldprt;
+use crate::test_support::history::resolved_features_payload_with_names;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 fn direct_extrusion_operation_payload() -> Vec<u8> {
@@ -20,10 +30,10 @@ fn direct_extrusion_operation_payload() -> Vec<u8> {
     payload[..4].copy_from_slice(&1u32.to_le_bytes());
     payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
     payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
     payload[class_offset + 6..name_offset].copy_from_slice(class);
     payload[name_offset..name_offset + 5].copy_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
-    payload[name_offset + 5] = name.encode_utf16().count() as u8;
+    payload[name_offset + 5] = u8::try_from(name.encode_utf16().count()).unwrap();
     for (index, unit) in name.encode_utf16().enumerate() {
         let start = name_offset + 6 + index * 2;
         payload[start..start + 2].copy_from_slice(&unit.to_le_bytes());
@@ -104,21 +114,25 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
 fn decode_without_geometry_falls_back_to_metadata() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
-    let result = SldprtCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(!result.report().geometry_transferred());
     assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
-    assert_eq!(result.source_fidelity().retained_records.len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 2);
     assert!(result
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .is_some_and(|record| record.data().is_some()));
     assert!(result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .any(|record| record.id() != "sldprt:file:source-image#0" && record.sha256().len() == 64));
+        .any(|(id, record)| {
+            id.as_str() != "sldprt:file:source-image#0" && record.sha256().len() == 64
+        }));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format(), "sldprt");
     assert_eq!(
@@ -180,7 +194,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter.native_ref.is_some());
@@ -220,11 +234,13 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .expect("metadata extrusion feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            op: cadmpeg_ir::features::BooleanOp::Join,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                op: cadmpeg_ir::features::BooleanOp::Join,
+                ..
+            }
+        )
     ));
 }
 
@@ -232,9 +248,11 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
 fn retained_source_image_round_trips_byte_exactly() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source.clone());
-    let result = SldprtCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(!result.source_fidelity().annotations.provenance.is_empty());
     for coedge in &result.ir().model.coedges {
         assert!(result

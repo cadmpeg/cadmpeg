@@ -3,19 +3,36 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    view_list_associativity_file, view_list_associativity_file_with_global,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
+    OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::{
+    defaulted_text_and_view_fields_file, distinct_drawing_sheet_ids_file,
+    drawing_with_conflicting_size_properties_file, drawing_with_properties_file,
+    duplicate_drawing_sheet_ids_file, malformed_view_parameter_type_file,
+    out_of_table_depth_clipping_view_file, out_of_table_segmented_display_file,
+    segmented_view_visibility_file, shared_drawing_sheet_id_file, view_forms_file,
+    view_visibility_forms_file,
+};
 use crate::IgesCodec;
 
 use super::{
     clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
-    drawing_property_value, has_in_plane_component, standard_color_valid, standard_line_font_valid,
-    view_directory_valid, views_visible_directory_valid, DrawingPropertyValue,
+    drawing_property_value, has_in_plane_component, push_drawing_entity_loss, standard_color_valid,
+    standard_line_font_valid, view_directory_valid, views_visible_directory_valid,
+    DrawingPropertyValue,
 };
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 
@@ -31,7 +48,7 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 1, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, 1, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -43,6 +60,40 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 }
 
 #[test]
+fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
+    let entry = directory_entry(404, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut losses = Vec::new();
+    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots")
+    );
+    assert!(losses.is_empty());
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message")
+    );
+    assert!(losses.is_empty());
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "IGES entity type 404 form 0 was not projected: missing"
+    );
+}
+
+#[test]
 fn drawing_presentation_directory_rules_match_the_iges_tables() {
     let mut drawing = directory_entry(404, 0);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
@@ -51,19 +102,13 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
     drawing.status.set_subordinate(0);
-    drawing
-        .status
-        .set_use_flag(2, crate::global::GlobalTable::V5Later);
+    drawing.status.set_use_flag(2);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing
-        .status
-        .set_use_flag(0, crate::global::GlobalTable::V5Later);
+    drawing.status.set_use_flag(0);
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing
-        .status
-        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    drawing.status.set_use_flag(1);
     drawing.status.set_blank(1);
     drawing.status.set_hierarchy(3);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
@@ -86,13 +131,11 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     view.status.set_subordinate(2);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     view.status.set_subordinate(0);
-    view.status
-        .set_use_flag(2, crate::global::GlobalTable::V5Later);
+    view.status.set_use_flag(2);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(!view_directory_valid(&view, GlobalTable::V5_0));
     assert!(!view_directory_valid(&view, GlobalTable::V5Later));
-    view.status
-        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    view.status.set_use_flag(1);
     view.status.set_blank(1);
     view.status.set_hierarchy(3);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
@@ -123,19 +166,13 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
         visible.status.set_subordinate(0);
-        visible
-            .status
-            .set_use_flag(0, crate::global::GlobalTable::V5Later);
+        visible.status.set_use_flag(0);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible
-            .status
-            .set_use_flag(2, crate::global::GlobalTable::V5Later);
+        visible.status.set_use_flag(2);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible
-            .status
-            .set_use_flag(1, crate::global::GlobalTable::V5Later);
+        visible.status.set_use_flag(1);
         visible.status.set_blank(1);
         visible.status.set_hierarchy(3);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
@@ -188,11 +225,11 @@ fn drawing_size_accepts_finite_zero_extents() {
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
         ],
@@ -201,7 +238,9 @@ fn drawing_size_accepts_finite_zero_extents() {
 
     assert_eq!(
         drawing_property_value(16, &record),
-        Some(DrawingPropertyValue::Size([0.0, 0.0]))
+        Some(DrawingPropertyValue::Size(
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).expect("finite size")
+        ))
     );
 }
 
@@ -516,7 +555,7 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, 0, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -526,27 +565,21 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         subscript: 0,
     };
     for use_flag in [0, 1, 2, 5] {
-        target
-            .status
-            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
+        target.status.set_use_flag(use_flag);
         assert!(
             clipping_plane_valid(&target, GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     for use_flag in [3, 4] {
-        target
-            .status
-            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
+        target.status.set_use_flag(use_flag);
         assert!(
             !clipping_plane_valid(&target, GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     assert!(!clipping_plane_valid(&target, GlobalTable::V5_0));
-    target
-        .status
-        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    target.status.set_use_flag(1);
     assert!(clipping_plane_valid(&target, GlobalTable::V5_0));
 }
 

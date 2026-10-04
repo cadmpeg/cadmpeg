@@ -1,55 +1,64 @@
 {
   "container_kind": "psb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "residual",
-      "declared": {
-        "version_line": "#UGC:2 P test"
-      },
-      "dialect": "creo:unknown",
-      "format": "creo"
-    }
-  },
   "entries": [
     {
       "attributes": {
         "offset": "79"
       },
-      "compressed_size": 42,
       "compression": "none",
       "name": "VisibGeom",
       "role": "psb-geometry",
-      "uncompressed_size": 42
+      "size": {
+        "form": "exact",
+        "size": 42
+      }
     },
     {
       "attributes": {
         "offset": "121"
       },
-      "compressed_size": 16,
       "compression": "none",
       "name": "AllFeatur",
       "role": "model-data",
-      "uncompressed_size": 16
+      "size": {
+        "form": "exact",
+        "size": 16
+      }
     },
     {
       "attributes": {
         "offset": "137"
       },
-      "compressed_size": 21,
       "compression": "none",
       "name": "THMB_IMG_MAIN",
       "role": "thumbnail",
-      "uncompressed_size": 21
+      "size": {
+        "form": "exact",
+        "size": 21
+      }
     }
   ],
-  "format": "creo",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P test"
+        },
+        "dialect": "creo:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "creo"
+        "namespace": "creo",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
       "severity": "warning"

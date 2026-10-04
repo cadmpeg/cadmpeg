@@ -2,9 +2,11 @@
 //! XML-backed mesh modifier userdata attached to object attributes.
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::loss::Diagnostics;
 use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
 use crate::settings;
 use crate::wire::Uuid;
+use cadmpeg_ir::scalar::FiniteReal;
 
 const XML_USERDATA_VERSION: i32 = 2;
 const DISPLACEMENT_ROOT: &str = "new-displacement-object-data";
@@ -86,7 +88,6 @@ pub(crate) struct MeshModifiers {
 
 /// The XML parameters written by `ON_DisplacementUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -97,21 +98,21 @@ pub(crate) struct DisplacementModifier {
     /// Texture mapping channel.
     pub(crate) channel: i32,
     /// Black-point remapping value.
-    pub(crate) black_point: f64,
+    pub(crate) black_point: FiniteReal,
     /// White-point remapping value.
-    pub(crate) white_point: f64,
+    pub(crate) white_point: FiniteReal,
     /// Initial sweep quality (`sweep-pitch`).
     pub(crate) sweep_pitch: i32,
     /// Number of refinement steps.
     pub(crate) refine_steps: i32,
     /// Refinement sensitivity.
-    pub(crate) refine_sensitivity: f64,
+    pub(crate) refine_sensitivity: FiniteReal,
     /// Whether the final face-count limit is enabled.
     pub(crate) face_count_limit_enabled: bool,
     /// Final face-count limit.
     pub(crate) face_count_limit: i32,
     /// Post-weld angle in degrees.
-    pub(crate) post_weld_angle: f64,
+    pub(crate) post_weld_angle: FiniteReal,
     /// Mesh memory limit in megabytes.
     pub(crate) mesh_memory_limit: i32,
     /// Whether fairing is enabled.
@@ -128,7 +129,6 @@ pub(crate) struct DisplacementModifier {
 
 /// A displacement override for one sub-object face index.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementSubItem {
     /// Sub-object face index.
     pub(crate) face_index: i32,
@@ -139,59 +139,64 @@ pub(crate) struct DisplacementSubItem {
     /// Sub-object texture mapping channel.
     pub(crate) channel: i32,
     /// Sub-object black-point remapping value.
-    pub(crate) black_point: f64,
+    pub(crate) black_point: FiniteReal,
     /// Sub-object white-point remapping value.
-    pub(crate) white_point: f64,
+    pub(crate) white_point: FiniteReal,
 }
 
 /// The XML parameters written by `ON_EdgeSofteningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct EdgeSofteningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether edge softening is enabled.
     pub(crate) on: bool,
     /// Edge-softening radius.
-    pub(crate) softening: f64,
-    /// Whether softened edges are chamfered.
-    pub(crate) chamfer: bool,
-    /// Whether edges are left faceted; serialized as `unweld`.
-    pub(crate) faceted: bool,
-    /// Whether to soften edges despite an excessive radius.
-    pub(crate) force_softening: bool,
+    pub(crate) softening: FiniteReal,
+    /// Edge treatment switches.
+    pub(crate) options: EdgeSofteningOptions,
     /// Adjacent-face angle threshold in degrees.
-    pub(crate) edge_angle_threshold: f64,
+    pub(crate) edge_angle_threshold: FiniteReal,
+}
+
+/// Edge treatment switches for a softening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct EdgeSofteningOptions {
+    pub(crate) chamfer: bool,
+    pub(crate) faceted: bool,
+    pub(crate) force_softening: bool,
 }
 
 /// The XML parameters written by `ON_ThickeningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ThickeningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether thickening is enabled.
     pub(crate) on: bool,
-    /// Whether an open mesh receives side walls.
-    pub(crate) solid: bool,
-    /// Whether thickening is applied to both sides.
-    pub(crate) both_sides: bool,
-    /// Whether only the offset surface is produced.
-    pub(crate) offset_only: bool,
+    /// Thickening side and surface switches.
+    pub(crate) options: ThickeningOptions,
     /// Thickening distance.
-    pub(crate) distance: f64,
+    pub(crate) distance: FiniteReal,
+}
+
+/// Side and surface switches for a thickening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ThickeningOptions {
+    pub(crate) solid: bool,
+    pub(crate) both_sides: bool,
+    pub(crate) offset_only: bool,
 }
 
 /// The XML parameters written by `ON_CurvePipingUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct CurvePipingModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether curve piping is enabled.
     pub(crate) on: bool,
     /// Pipe radius.
-    pub(crate) radius: f64,
+    pub(crate) radius: FiniteReal,
     /// Number of pipe segments.
     pub(crate) segments: i32,
     /// Whether the pipe is faceted; serialized as the inverse `weld` value.
@@ -222,7 +227,7 @@ impl serde::Serialize for CapType {
 }
 
 impl CapType {
-    pub(crate) fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Flat => "flat",
@@ -234,12 +239,11 @@ impl CapType {
 
 /// One ordered curve entry written by `ON_ShutLining`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningCurve {
     /// Curve object UUID; nil UUIDs are represented as `None`.
     pub(crate) uuid: Option<Uuid>,
     /// Shut-line radius.
-    pub(crate) radius: f64,
+    pub(crate) radius: FiniteReal,
     /// Shut-line profile.
     pub(crate) profile: i32,
     /// Whether this curve creates a shut-line.
@@ -252,29 +256,33 @@ pub(crate) struct ShutLiningCurve {
 
 /// The XML parameters and ordered curves written by `ON_ShutLiningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether shut lining is enabled.
     pub(crate) on: bool,
-    /// Whether shut lining is faceted.
-    pub(crate) faceted: bool,
-    /// Whether shut lining updates automatically.
-    pub(crate) auto_update: bool,
-    /// Whether shut lining updates are forced.
-    pub(crate) force_update: bool,
+    /// Shut-lining update and facet switches.
+    pub(crate) options: ShutLiningOptions,
     /// Direct curve children, including empty entries, in serialized order.
     pub(crate) curves: Vec<ShutLiningCurve>,
 }
 
+/// Update and facet switches for a shut-lining modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ShutLiningOptions {
+    pub(crate) faceted: bool,
+    pub(crate) auto_update: bool,
+    pub(crate) force_update: bool,
+}
+
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-) -> Option<MeshModifiers> {
+    warnings: &mut Diagnostics,
+) -> Result<Option<MeshModifiers>, FramingError> {
     let displacement_descriptor =
         first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
     let edge_softening_descriptor =
@@ -291,75 +299,65 @@ pub(crate) fn parse_attribute_userdata(
         && curve_piping_descriptor.is_none()
         && shut_lining_descriptor.is_none()
     {
-        return None;
+        return Ok(None);
     }
 
-    let displacement = displacement_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_displacement(bytes, payload_range, archive) {
-            Ok(displacement) => Some(displacement),
-            Err(error) => {
-                warnings.push(format!(
-                    "displacement userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_edge_softening(bytes, payload_range) {
-            Ok(edge_softening) => Some(edge_softening),
-            Err(error) => {
-                warnings.push(format!(
-                    "edge-softening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let thickening = thickening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_thickening(bytes, payload_range) {
-            Ok(thickening) => Some(thickening),
-            Err(error) => {
-                warnings.push(format!(
-                    "thickening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_curve_piping(bytes, payload_range) {
-            Ok(curve_piping) => Some(curve_piping),
-            Err(error) => {
-                warnings.push(format!(
-                    "curve-piping userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_shut_lining(bytes, payload_range) {
-            Ok(shut_lining) => Some(shut_lining),
-            Err(error) => {
-                warnings.push(format!(
-                    "shut-lining userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    (displacement.is_some()
+    let displacement = if let Some(descriptor) = displacement_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
+            "displacement",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let edge_softening = if let Some(descriptor) = edge_softening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
+            "edge-softening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let thickening = if let Some(descriptor) = thickening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
+            "thickening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let curve_piping = if let Some(descriptor) = curve_piping_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
+            "curve-piping",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let shut_lining = if let Some(descriptor) = shut_lining_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
+            "shut-lining",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    Ok((displacement.is_some()
         || edge_softening.is_some()
         || thickening.is_some()
         || curve_piping.is_some()
@@ -370,7 +368,27 @@ pub(crate) fn parse_attribute_userdata(
         thickening,
         curve_piping,
         shut_lining,
-    })
+    }))
+}
+
+fn optional_modifier<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    warnings: &mut Diagnostics,
+    parsed: Result<T, FramingError>,
+    label: &str,
+    offset: usize,
+) -> Result<Option<T>, FramingError> {
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ FramingError::Resource(_)) => Err(error),
+        Err(error) => {
+            warnings.push_admitted(
+                ctx,
+                format_args!("{label} userdata at {offset} dropped: {error}"),
+            )?;
+            Ok(None)
+        }
+    }
 }
 
 fn first_matching_descriptor(
@@ -389,54 +407,75 @@ fn first_matching_descriptor(
 }
 
 fn parse_displacement(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_xml(&xml, xml_version, archive)
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    parse_xml(ctx, &xml, xml_version, archive)
 }
 
 fn parse_edge_softening(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_edge_softening_xml(&xml, xml_version)
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    parse_edge_softening_xml(ctx, &xml, xml_version)
 }
 
 fn parse_thickening(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ThickeningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_thickening_xml(&xml, xml_version)
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    parse_thickening_xml(ctx, &xml, xml_version)
 }
 
 fn parse_curve_piping(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_curve_piping_xml(&xml, xml_version)
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    parse_curve_piping_xml(ctx, &xml, xml_version)
 }
 
 fn parse_shut_lining(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ShutLiningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_shut_lining_xml(&xml, xml_version)
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    parse_shut_lining_xml(ctx, &xml, xml_version)
 }
 
-fn parse_xml_userdata(
+fn parse_xml_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
-) -> Result<(i32, String), FramingError> {
+) -> Result<(cadmpeg_core::decode::ScopedReservation<'ctx>, i32, String), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
-    let xml = match xml_version {
-        1 => settings::utf16(&mut reader)?,
+    let (xml, reservation) = match xml_version {
+        1 => {
+            let bytes = settings::utf16_payload(&mut reader)?;
+            ctx.utf16le_scoped_text(
+                bytes,
+                bytes.len() / 2,
+                false,
+                "Rhino mesh modifier XML text",
+            )
+            .map_err(|error| {
+                if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
+                    error.into()
+                } else {
+                    FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
+                }
+            })?
+        }
         XML_USERDATA_VERSION => {
             let length_offset = reader.position();
             let length = reader.i32()?;
@@ -453,9 +492,15 @@ fn parse_xml_userdata(
                 ));
             }
             let raw = reader.take(length)?;
-            std::str::from_utf8(raw)
-                .map(str::to_owned)
-                .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?
+            let work = cadmpeg_core::decode::u64_from_index(raw.len())
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("Rhino mesh modifier XML text", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "Rhino mesh modifier XML text")?;
+            let text = std::str::from_utf8(raw)
+                .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?;
+            ctx.format_scoped(format_args!("{text}"), "Rhino mesh modifier XML text")?
         }
         version => {
             return Err(FramingError::structural(
@@ -465,214 +510,240 @@ fn parse_xml_userdata(
         }
     };
     reader.skip_remaining()?;
-    Ok((xml_version, xml))
+    Ok((reservation, xml_version, xml))
 }
 
 fn parse_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid displacement XML: {error}"))
-    })?;
+    let admitted_document =
+        ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+            .map_err(|error| {
+                let cadmpeg_core::CodecError::Malformed(error) = error else {
+                    return error.into();
+                };
+                FramingError::unpositioned(format!("invalid displacement XML: {error}"))
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "displacement XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "displacement XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let displacement = direct_child(root, DISPLACEMENT_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("displacement XML has no `{DISPLACEMENT_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "displacement XML has no `{DISPLACEMENT_ROOT}` child"
+        ))
     })?;
-    let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")
+    let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")?
         .unwrap_or_else(|| i32::from(archive.value() < 60));
-    let sub_items = displacement
-        .children()
-        .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB))
-        .map(parse_sub_item)
-        .collect();
+    let sub_items = ctx.try_collect_retained_with(
+        displacement
+            .children()
+            .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB)),
+        "Rhino displacement sub-items",
+        parse_sub_item,
+    )?;
     Ok(DisplacementModifier {
         xml_version,
-        on: field_bool(displacement, "on", false),
+        on: field_bool(displacement, "on", false)?,
         texture: field_uuid(displacement, "texture"),
-        channel: field_i32(displacement, "channel", 0),
-        black_point: field_f64(displacement, "black-point", 0.0),
-        white_point: field_f64(displacement, "white-point", 1.0),
-        sweep_pitch: field_i32(displacement, "sweep-pitch", 1000),
-        refine_steps: field_i32(displacement, "refine-steps", 1),
-        refine_sensitivity: field_f64(displacement, "refine-sensitivity", 0.5),
-        face_count_limit_enabled: field_bool(displacement, "face-count-limit-enabled", false),
-        face_count_limit: field_i32(displacement, "face-count-limit", 10_000),
-        post_weld_angle: field_f64(displacement, "post-weld-angle", 40.0),
-        mesh_memory_limit: field_i32(displacement, "mesh-memory-limit", 512),
-        fairing_enabled: field_bool(displacement, "fairing-enabled", false),
-        fairing_amount: field_i32(displacement, "fairing-amount", 4),
-        sub_object_count: field_i32_optional(displacement, "sub-object-count"),
+        channel: field_i32(displacement, "channel", 0)?,
+        black_point: field_f64(displacement, "black-point", 0.0)?,
+        white_point: field_f64(displacement, "white-point", 1.0)?,
+        sweep_pitch: field_i32(displacement, "sweep-pitch", 1000)?,
+        refine_steps: field_i32(displacement, "refine-steps", 1)?,
+        refine_sensitivity: field_f64(displacement, "refine-sensitivity", 0.5)?,
+        face_count_limit_enabled: field_bool(displacement, "face-count-limit-enabled", false)?,
+        face_count_limit: field_i32(displacement, "face-count-limit", 10_000)?,
+        post_weld_angle: field_f64(displacement, "post-weld-angle", 40.0)?,
+        mesh_memory_limit: field_i32(displacement, "mesh-memory-limit", 512)?,
+        fairing_enabled: field_bool(displacement, "fairing-enabled", false)?,
+        fairing_amount: field_i32(displacement, "fairing-amount", 4)?,
+        sub_object_count: field_i32_optional(displacement, "sub-object-count")?,
         sweep_resolution_formula,
         sub_items,
     })
 }
 
 fn parse_edge_softening_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid edge-softening XML: {error}"))
-    })?;
+    let admitted_document =
+        ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+            .map_err(|error| {
+                let cadmpeg_core::CodecError::Malformed(error) = error else {
+                    return error.into();
+                };
+                FramingError::unpositioned(format!("invalid edge-softening XML: {error}"))
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "edge-softening XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "edge-softening XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let edge_softening = direct_child(root, EDGE_SOFTENING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"
+        ))
     })?;
     Ok(EdgeSofteningModifier {
         xml_version,
-        on: field_bool(edge_softening, "on", false),
-        softening: field_f64(edge_softening, "softening", 0.1),
-        chamfer: field_bool(edge_softening, "chamfer", false),
-        faceted: field_bool(edge_softening, "unweld", false),
-        force_softening: field_bool(edge_softening, "force-softening", false),
-        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0),
+        on: field_bool(edge_softening, "on", false)?,
+        softening: field_f64(edge_softening, "softening", 0.1)?,
+        options: EdgeSofteningOptions {
+            chamfer: field_bool(edge_softening, "chamfer", false)?,
+            faceted: field_bool(edge_softening, "unweld", false)?,
+            force_softening: field_bool(edge_softening, "force-softening", false)?,
+        },
+        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0)?,
     })
 }
 
-fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml)
-        .map_err(|error| FramingError::structural(0, format!("invalid thickening XML: {error}")))?;
+fn parse_thickening_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    xml: &str,
+    xml_version: i32,
+) -> Result<ThickeningModifier, FramingError> {
+    let admitted_document =
+        ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+            .map_err(|error| {
+                let cadmpeg_core::CodecError::Malformed(error) = error else {
+                    return error.into();
+                };
+                FramingError::unpositioned(format!("invalid thickening XML: {error}"))
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "thickening XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "thickening XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let thickening = direct_child(root, THICKENING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("thickening XML has no `{THICKENING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!("thickening XML has no `{THICKENING_ROOT}` child"))
     })?;
     Ok(ThickeningModifier {
         xml_version,
-        on: field_bool(thickening, "on", false),
-        solid: field_bool(thickening, "solid", true),
-        both_sides: field_bool(thickening, "both-sides", false),
-        offset_only: field_bool(thickening, "offset-only", false),
-        distance: field_f64(thickening, "distance", 0.1),
+        on: field_bool(thickening, "on", false)?,
+        options: ThickeningOptions {
+            solid: field_bool(thickening, "solid", true)?,
+            both_sides: field_bool(thickening, "both-sides", false)?,
+            offset_only: field_bool(thickening, "offset-only", false)?,
+        },
+        distance: field_f64(thickening, "distance", 0.1)?,
     })
 }
 
 fn parse_curve_piping_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid curve-piping XML: {error}"))
-    })?;
+    let admitted_document =
+        ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+            .map_err(|error| {
+                let cadmpeg_core::CodecError::Malformed(error) = error else {
+                    return error.into();
+                };
+                FramingError::unpositioned(format!("invalid curve-piping XML: {error}"))
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "curve-piping XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "curve-piping XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let curve_piping = direct_child(root, CURVE_PIPING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("curve-piping XML has no `{CURVE_PIPING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "curve-piping XML has no `{CURVE_PIPING_ROOT}` child"
+        ))
     })?;
     Ok(CurvePipingModifier {
         xml_version,
-        on: field_bool(curve_piping, "on", false),
-        radius: field_f64(curve_piping, "radius", 1.0),
-        segments: field_i32(curve_piping, "segments", 16),
-        faceted: !field_bool(curve_piping, "weld", true),
-        accuracy: field_i32(curve_piping, "accuracy", 50),
+        on: field_bool(curve_piping, "on", false)?,
+        radius: field_f64(curve_piping, "radius", 1.0)?,
+        segments: field_i32(curve_piping, "segments", 16)?,
+        faceted: !field_bool(curve_piping, "weld", true)?,
+        accuracy: field_i32(curve_piping, "accuracy", 50)?,
         cap_type: field_cap_type(curve_piping, "cap-type"),
     })
 }
 
-fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid shut-lining XML: {error}"))
-    })?;
+fn parse_shut_lining_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    xml: &str,
+    xml_version: i32,
+) -> Result<ShutLiningModifier, FramingError> {
+    let admitted_document =
+        ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+            .map_err(|error| {
+                let cadmpeg_core::CodecError::Malformed(error) = error else {
+                    return error.into();
+                };
+                FramingError::unpositioned(format!("invalid shut-lining XML: {error}"))
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "shut-lining XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "shut-lining XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let shut_lining = direct_child(root, SHUT_LINING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"))
     })?;
     let curves = shut_lining
         .children()
         .filter(|node| node.is_element() && same_name(*node, "curve"))
         .map(parse_shut_lining_curve)
-        .collect();
+        .collect::<Result<_, _>>()?;
     Ok(ShutLiningModifier {
         xml_version,
-        on: field_bool(shut_lining, "on", false),
-        faceted: field_bool(shut_lining, "faceted", false),
-        auto_update: field_bool(shut_lining, "auto-update", false),
-        force_update: field_bool(shut_lining, "force-update", false),
+        on: field_bool(shut_lining, "on", false)?,
+        options: ShutLiningOptions {
+            faceted: field_bool(shut_lining, "faceted", false)?,
+            auto_update: field_bool(shut_lining, "auto-update", false)?,
+            force_update: field_bool(shut_lining, "force-update", false)?,
+        },
         curves,
     })
 }
 
-fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
-    ShutLiningCurve {
+fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
+    Ok(ShutLiningCurve {
         uuid: field_uuid_untyped(node, "uuid"),
-        radius: field_f64_untyped(node, "radius", 1.0),
-        profile: field_i32_untyped(node, "profile", 0),
+        radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
+        profile: field_i32_untyped(node, "profile", 0)?,
         enabled: field_bool_untyped(node, "enabled", false),
         pull: field_bool_untyped(node, "pull", false),
         is_bump: field_bool_untyped(node, "is-bump", false),
-    }
+    })
 }
 
-fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> DisplacementSubItem {
-    DisplacementSubItem {
-        face_index: field_i32(node, "sub-index", -1),
-        on: field_bool(node, "sub-on", false),
+fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
+    Ok(DisplacementSubItem {
+        face_index: field_i32(node, "sub-index", -1)?,
+        on: field_bool(node, "sub-on", false)?,
         texture: field_uuid(node, "sub-texture"),
-        channel: field_i32(node, "sub-channel", 0),
-        black_point: field_f64(node, "sub-black-point", 0.0),
-        white_point: field_f64(node, "sub-white-point", 1.0),
-    }
+        channel: field_i32(node, "sub-channel", 0)?,
+        black_point: field_f64(node, "sub-black-point", 0.0)?,
+        white_point: field_f64(node, "sub-white-point", 1.0)?,
+    })
 }
 
 fn direct_child<'a, 'input>(
@@ -699,86 +770,126 @@ fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Option<&'a str> {
         .map(|attribute| attribute.value())
 }
 
-fn field_bool(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> bool {
+fn malformed_typed_field(name: &str, kind: &str) -> FramingError {
+    FramingError::unpositioned(format!("XML field `{name}` has invalid {kind} value"))
+}
+
+fn parse_bool_text(text: &str) -> Option<bool> {
+    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1" {
+        Some(true)
+    } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") || text == "0" {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn field_bool(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: bool,
+) -> Result<bool, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
-    if kind.eq_ignore_ascii_case("string") {
-        text.eq_ignore_ascii_case("true")
-            || text.eq_ignore_ascii_case("t")
-            || text.parse::<i32>().is_ok_and(|value| value != 0)
+    let value = if kind.eq_ignore_ascii_case("string") {
+        parse_bool_text(text).or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
     } else if kind.eq_ignore_ascii_case("bool") {
-        text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1"
+        parse_bool_text(text)
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
     ) {
-        text.parse::<f64>().is_ok_and(|value| value != 0.0)
+        text.parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| value != 0.0)
     } else {
-        false
-    }
+        None
+    };
+    value.ok_or_else(|| malformed_typed_field(name, kind))
 }
 
-fn field_i32(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
-    field_i32_optional(parent, name).unwrap_or(default)
+fn field_i32(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
+    Ok(field_i32_optional(parent, name)?.unwrap_or(default))
 }
 
-fn field_i32_optional(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<i32> {
-    let node = typed_child(parent, name)?;
+fn field_i32_optional(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+) -> Result<Option<i32>, FramingError> {
+    let Some(node) = typed_child(parent, name) else {
+        return Ok(None);
+    };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
-        i32::from(
-            text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
-        )
+        parse_bool_text(text).map(i32::from)
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "float" | "double" | "real"
     ) {
-        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+        text.parse::<f64>().ok().and_then(|value| {
+            if value.is_finite()
+                && value >= f64::from(i32::MIN)
+                && value < f64::from(i32::MAX) + 1.0
+            {
+                cadmpeg_core::convert::truncate_f64_to_i32(value)
+            } else {
+                None
+            }
+        })
     } else if kind.eq_ignore_ascii_case("string") {
         if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
-            1
+            Some(1)
+        } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") {
+            Some(0)
         } else {
-            text.parse::<i32>().unwrap_or(0)
+            text.parse::<i32>().ok()
         }
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long"
     ) {
-        text.parse::<i32>().unwrap_or(0)
+        text.parse::<i32>().ok()
     } else {
-        0
+        None
     };
-    Some(value)
+    value
+        .map(Some)
+        .ok_or_else(|| malformed_typed_field(name, kind))
 }
 
-fn field_f64(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
+fn field_f64(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: f64,
+) -> Result<FiniteReal, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return default;
+        return FiniteReal::new(default).ok_or_else(|| malformed_typed_field(name, "default"));
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
-        f64::from(
-            text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
-        )
+        parse_bool_text(text).map(|value| f64::from(u8::from(value)))
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
     ) || kind.eq_ignore_ascii_case("string")
     {
-        text.parse::<f64>().unwrap_or(0.0)
+        text.parse::<f64>().ok()
     } else {
-        0.0
+        None
     };
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    value
+        .and_then(FiniteReal::new)
+        .ok_or_else(|| malformed_typed_field(name, kind))
 }
 
 fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
@@ -805,29 +916,39 @@ fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool
         || text.parse::<i32>().is_ok_and(|value| value != 0)
 }
 
-fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
+fn field_i32_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
     let Some(node) = direct_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
-        1
+        Ok(1)
     } else {
-        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+        match text.parse::<f64>() {
+            Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
+                .ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
+            Err(_) => Ok(0),
+        }
     }
 }
 
-fn field_f64_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
+fn field_f64_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: FiniteReal,
+) -> FiniteReal {
     let Some(node) = direct_child(parent, name) else {
         return default;
     };
     let text = node.text().unwrap_or_default().trim();
-    let value = text.parse::<f64>().unwrap_or(0.0);
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    text.parse::<f64>()
+        .ok()
+        .and_then(FiniteReal::new)
+        .unwrap_or(FiniteReal::ZERO)
 }
 
 fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> CapType {
@@ -854,7 +975,7 @@ fn parse_uuid(value: &str) -> Option<Uuid> {
     while index < bytes.len() {
         let high = digits.next()?.to_digit(16)?;
         let low = digits.next()?.to_digit(16)?;
-        bytes[index] = ((high << 4) | low) as u8;
+        bytes[index] = u8::try_from((high << 4) | low).ok()?;
         index += 1;
     }
     digits.next().is_none().then(|| Uuid::from_canonical(bytes))
@@ -866,7 +987,126 @@ fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[test]
+    fn shut_lining_profile_refuses_positive_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            xml,
+            2
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_negative_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-2147483649</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            xml,
+            2
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_nan() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>NaN</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            xml,
+            2
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            xml,
+            2
+        )
+        .is_err());
+    }
+    #[test]
+    fn shut_lining_profile_refuses_negative_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            xml,
+            2
+        )
+        .is_err());
+    }
+
+    use super::{
+        field_uuid, parse_xml, CapType, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM, DISPLACEMENT_CLASS,
+        DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN,
+        SHUT_LINING_CLASS, SHUT_LINING_ITEM, THICKENING_CLASS, THICKENING_ITEM,
+        XML_USERDATA_VERSION,
+    };
+    use crate::chunks::{ArchiveVersion, FramingError};
+    use crate::loss::Diagnostics;
+    use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
+    use crate::wire::Uuid;
+
+    fn parse_attribute_userdata(
+        bytes: &[u8],
+        descriptors: &[AttributeUserdataDescriptor],
+        archive: ArchiveVersion,
+        warnings: &mut Diagnostics,
+    ) -> Option<super::MeshModifiers> {
+        super::parse_attribute_userdata(
+            &cadmpeg_test_support::service_decode_context(),
+            bytes,
+            descriptors,
+            archive,
+            warnings,
+        )
+        .expect("service profile admits modifier diagnostics")
+    }
+
+    #[test]
+    fn malformed_modifier_diagnostic_refuses_collection_limit() {
+        let payload = v2_payload("<xml><new-displacement-object-data><on type=\"bool\">maybe</on></new-displacement-object-data></xml>");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        for _ in 0..4096 {
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                    .expect("root bytes admitted");
+            let refused = super::parse_attribute_userdata(
+                &ctx,
+                &payload,
+                &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+                ArchiveVersion::V6,
+                &mut Diagnostics::new(),
+            )
+            .expect_err("modifier diagnostic exceeds its collection admission");
+            let FramingError::Resource(limit) = refused else {
+                panic!("resource refusal expected");
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let threshold = limit
+                .used
+                .checked_add(limit.additional)
+                .expect("collection threshold");
+            assert!(threshold > policy.limits.max_collection_items);
+            if limit.operation == "Rhino diagnostics" {
+                assert_eq!(threshold, policy.limits.max_collection_items + 1);
+                return;
+            }
+            policy.limits.max_collection_items = threshold;
+        }
+        panic!("Rhino diagnostics must refuse after the XML tree admissions");
+    }
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
         descriptor_with_ids(
@@ -943,7 +1183,7 @@ mod tests {
 
     fn v2_payload(xml: &str) -> Vec<u8> {
         let mut payload = XML_USERDATA_VERSION.to_le_bytes().to_vec();
-        payload.extend((xml.len() as i32).to_le_bytes());
+        payload.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
         payload.extend(xml.as_bytes());
         payload.extend([0xde, 0xad]);
         payload
@@ -953,11 +1193,43 @@ mod tests {
         let mut units = xml.encode_utf16().collect::<Vec<_>>();
         units.push(0);
         let mut payload = 1_i32.to_le_bytes().to_vec();
-        payload.extend((units.len() as u32).to_le_bytes());
+        payload.extend((u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for unit in units {
             payload.extend(unit.to_le_bytes());
         }
         payload
+    }
+
+    #[test]
+    fn mesh_modifier_xml_text_refusals_propagate() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for payload in [v1_payload(XML), v2_payload(XML)] {
+            for dimension in [
+                ResourceDimension::MaterializedBytes,
+                ResourceDimension::WorkUnits,
+            ] {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = 0;
+                    }
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    _ => unreachable!(),
+                }
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                let error =
+                    super::parse_displacement(&ctx, &payload, 0..payload.len(), ArchiveVersion::V6)
+                        .expect_err("text admission refuses");
+                let FramingError::Resource(limit) = error else {
+                    panic!("resource refusal expected");
+                };
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "Rhino mesh modifier XML text");
+                assert!(ctx.charge_work(0, "fused context").is_err());
+            }
+        }
     }
 
     const XML: &str = "<xml><new-displacement-object-data>\
@@ -980,6 +1252,46 @@ mod tests {
 <sub-channel type=\"int\">9</sub-channel><sub-black-point type=\"double\">-0.1</sub-black-point>\
 <sub-white-point type=\"double\">0.6</sub-white-point></sub>\
 </new-displacement-object-data></xml>";
+
+    fn assert_malformed_present_field_is_reported(field: &str, kind: &str, value: &str) {
+        let xml = format!(
+            "<xml><new-displacement-object-data><{field} type=\"{kind}\">{value}</{field}></new-displacement-object-data></xml>"
+        );
+        let error = parse_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            &xml,
+            2,
+            ArchiveVersion::V6,
+        )
+        .expect_err("malformed field");
+        assert!(error.to_string().contains(field), "{error}");
+
+        let payload = v2_payload(&xml);
+        let mut warnings = Diagnostics::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        );
+        assert!(modifiers.is_none());
+        assert!(warnings.messages().any(|warning| warning.contains(field)));
+    }
+
+    #[test]
+    fn malformed_present_bool_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("on", "bool", "maybe");
+    }
+
+    #[test]
+    fn malformed_present_int_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("channel", "int", "bad");
+    }
+
+    #[test]
+    fn malformed_present_real_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("refine-sensitivity", "double", "bad");
+    }
 
     const EDGE_SOFTENING_XML: &str = "<xml><edge-softening-object-data>\
 <on type=\"bool\">true</on>\
@@ -1034,7 +1346,7 @@ mod tests {
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
         let payload = v2_payload(XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1046,14 +1358,14 @@ mod tests {
         assert_eq!(displacement.xml_version, 2);
         assert!(displacement.on);
         assert_eq!(displacement.channel, 7);
-        assert_eq!(displacement.black_point, -0.25);
-        assert_eq!(displacement.white_point, 0.85);
+        assert_eq!(displacement.black_point.get(), -0.25);
+        assert_eq!(displacement.white_point.get(), 0.85);
         assert_eq!(displacement.sweep_pitch, 12);
         assert_eq!(displacement.refine_steps, 3);
-        assert_eq!(displacement.refine_sensitivity, 0.75);
+        assert_eq!(displacement.refine_sensitivity.get(), 0.75);
         assert!(displacement.face_count_limit_enabled);
         assert_eq!(displacement.face_count_limit, 5432);
-        assert_eq!(displacement.post_weld_angle, 22.5);
+        assert_eq!(displacement.post_weld_angle.get(), 22.5);
         assert_eq!(displacement.mesh_memory_limit, 1024);
         assert!(displacement.fairing_enabled);
         assert_eq!(displacement.fairing_amount, 6);
@@ -1063,15 +1375,36 @@ mod tests {
         assert_eq!(displacement.sub_items[0].face_index, 3);
         assert!(displacement.sub_items[0].on);
         assert_eq!(displacement.sub_items[0].channel, 9);
-        assert_eq!(displacement.sub_items[0].black_point, -0.1);
-        assert_eq!(displacement.sub_items[0].white_point, 0.6);
+        assert_eq!(displacement.sub_items[0].black_point.get(), -0.1);
+        assert_eq!(displacement.sub_items[0].white_point.get(), 0.6);
         assert!(warnings.is_empty());
+    }
+
+    /// The XML text is already decoded, so a refusal about the document as a
+    /// whole names no offset instead of naming byte 0.
+    #[test]
+    fn an_xml_refusal_names_no_byte() {
+        let error = parse_xml(
+            &cadmpeg_test_support::service_decode_context(),
+            "<unterminated",
+            2,
+            ArchiveVersion::V6,
+        )
+        .expect_err("invalid XML");
+        assert!(matches!(
+            error,
+            FramingError::Unpositioned { ref message }
+                if message.starts_with("invalid displacement XML: ")
+        ));
+        assert!(error
+            .to_string()
+            .starts_with("framing error: invalid displacement XML: "));
     }
 
     #[test]
     fn parses_v2_edge_softening_fields() {
         let payload = v2_payload(EDGE_SOFTENING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1082,11 +1415,11 @@ mod tests {
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert_eq!(edge_softening.xml_version, 2);
         assert!(edge_softening.on);
-        assert_eq!(edge_softening.softening, 0.25);
-        assert!(edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(edge_softening.force_softening);
-        assert_eq!(edge_softening.edge_angle_threshold, 17.5);
+        assert_eq!(edge_softening.softening.get(), 0.25);
+        assert!(edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(edge_softening.options.force_softening);
+        assert_eq!(edge_softening.edge_angle_threshold.get(), 17.5);
         assert!(modifiers.displacement.is_none());
         assert!(warnings.is_empty());
     }
@@ -1100,7 +1433,7 @@ mod tests {
 <unknown type=\"double\">99</unknown>\
 </EDGE-SOFTENING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1110,18 +1443,18 @@ mod tests {
         .expect("edge-softening userdata");
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert!(edge_softening.on);
-        assert_eq!(edge_softening.softening, 0.1);
-        assert!(!edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(!edge_softening.force_softening);
-        assert_eq!(edge_softening.edge_angle_threshold, 12.5);
+        assert_eq!(edge_softening.softening.get(), 0.1);
+        assert!(!edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(!edge_softening.options.force_softening);
+        assert_eq!(edge_softening.edge_angle_threshold.get(), 12.5);
         assert!(warnings.is_empty());
     }
 
     #[test]
     fn parses_v2_thickening_fields() {
         let payload = v2_payload(THICKENING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1132,10 +1465,10 @@ mod tests {
         let thickening = modifiers.thickening.expect("thickening");
         assert_eq!(thickening.xml_version, 2);
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
-        assert_eq!(thickening.distance, 0.25);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
+        assert_eq!(thickening.distance.get(), 0.25);
         assert!(modifiers.displacement.is_none());
         assert!(modifiers.edge_softening.is_none());
         assert!(warnings.is_empty());
@@ -1152,7 +1485,7 @@ mod tests {
 <unknown type=\"double\">99</unknown>\
 </THICKENING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1162,17 +1495,17 @@ mod tests {
         .expect("thickening userdata");
         let thickening = modifiers.thickening.expect("thickening");
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
-        assert_eq!(thickening.distance, 0.1);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
+        assert_eq!(thickening.distance.get(), 0.1);
         assert!(warnings.is_empty());
     }
 
     #[test]
     fn parses_v2_curve_piping_fields() {
         let payload = v2_payload(CURVE_PIPING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[curve_piping_descriptor(
@@ -1186,7 +1519,7 @@ mod tests {
         let curve_piping = modifiers.curve_piping.expect("curve piping");
         assert_eq!(curve_piping.xml_version, 2);
         assert!(curve_piping.on);
-        assert_eq!(curve_piping.radius, 2.25);
+        assert_eq!(curve_piping.radius.get(), 2.25);
         assert_eq!(curve_piping.segments, 12);
         assert!(!curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 73);
@@ -1205,7 +1538,7 @@ mod tests {
 <CAP-TYPE TYPE=\"STRING\">FLAT</CAP-TYPE>\
 </CURVE-PIPING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[curve_piping_descriptor(
@@ -1218,7 +1551,7 @@ mod tests {
         .expect("curve-piping userdata");
         let curve_piping = modifiers.curve_piping.expect("curve piping");
         assert!(curve_piping.on);
-        assert_eq!(curve_piping.radius, 1.0);
+        assert_eq!(curve_piping.radius.get(), 1.0);
         assert_eq!(curve_piping.segments, 16);
         assert!(curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 50);
@@ -1229,7 +1562,7 @@ mod tests {
     #[test]
     fn parses_v2_shut_lining_fields_and_ordered_curves() {
         let payload = v2_payload(SHUT_LINING_XML);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1240,12 +1573,12 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 2);
         assert!(shut_lining.on);
-        assert!(shut_lining.faceted);
-        assert!(shut_lining.auto_update);
-        assert!(shut_lining.force_update);
+        assert!(shut_lining.options.faceted);
+        assert!(shut_lining.options.auto_update);
+        assert!(shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 3);
         assert_eq!(shut_lining.curves[0].uuid, None);
-        assert_eq!(shut_lining.curves[0].radius, 1.0);
+        assert_eq!(shut_lining.curves[0].radius.get(), 1.0);
         assert_eq!(shut_lining.curves[0].profile, 0);
         assert!(!shut_lining.curves[0].enabled);
         assert!(!shut_lining.curves[0].pull);
@@ -1254,12 +1587,12 @@ mod tests {
             shut_lining.curves[1].uuid.map(|uuid| uuid.to_string()),
             Some("10000000-0000-0000-0000-000000000001".into())
         );
-        assert_eq!(shut_lining.curves[1].radius, 0.25);
+        assert_eq!(shut_lining.curves[1].radius.get(), 0.25);
         assert_eq!(shut_lining.curves[1].profile, 1);
         assert!(shut_lining.curves[1].enabled);
         assert!(shut_lining.curves[1].pull);
         assert!(!shut_lining.curves[1].is_bump);
-        assert_eq!(shut_lining.curves[2].radius, 2.5);
+        assert_eq!(shut_lining.curves[2].radius.get(), 2.5);
         assert_eq!(shut_lining.curves[2].profile, 4);
         assert!(!shut_lining.curves[2].enabled);
         assert!(!shut_lining.curves[2].pull);
@@ -1276,7 +1609,7 @@ mod tests {
 <PULL>1</PULL><IS-BUMP>FALSE</IS-BUMP></CURVE>\
 </SHUT-LINING-OBJECT-DATA></XML>";
         let payload = v2_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1286,12 +1619,12 @@ mod tests {
         .expect("shut-lining userdata");
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         let curve = &shut_lining.curves[0];
-        assert_eq!(curve.radius, 3.25);
+        assert_eq!(curve.radius.get(), 3.25);
         assert_eq!(curve.profile, 7);
         assert!(curve.enabled);
         assert!(curve.pull);
@@ -1303,7 +1636,7 @@ mod tests {
     fn parses_v1_shut_lining_userdata_and_defaults() {
         let xml = "<xml><shut-lining-object-data><curve><radius>2.75</radius><profile>3</profile></curve></shut-lining-object-data></xml>";
         let payload = v1_payload(xml);
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers = parse_attribute_userdata(
             &payload,
             &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1314,11 +1647,11 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 1);
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
-        assert_eq!(shut_lining.curves[0].radius, 2.75);
+        assert_eq!(shut_lining.curves[0].radius.get(), 2.75);
         assert_eq!(shut_lining.curves[0].profile, 3);
         assert!(!shut_lining.curves[0].enabled);
         assert!(!shut_lining.curves[0].pull);
@@ -1369,7 +1702,7 @@ mod tests {
                 Some(MESH_MODIFIER_PLUGIN),
             ),
         ];
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         let modifiers =
             parse_attribute_userdata(&bytes, &descriptors, ArchiveVersion::V6, &mut warnings)
                 .expect("mesh modifiers");
@@ -1390,7 +1723,7 @@ mod tests {
             (ArchiveVersion::V5, 1),
             (ArchiveVersion::V6, 0),
         ] {
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let modifiers = parse_attribute_userdata(
                 &payload,
                 &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
@@ -1426,7 +1759,7 @@ mod tests {
     #[test]
     fn malformed_xml_is_dropped_and_wrong_application_is_ignored() {
         let malformed = v2_payload("<xml><new-displacement-object-data>");
-        let mut warnings = Vec::new();
+        let mut warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed,
             &[descriptor(&malformed, Some(MESH_MODIFIER_PLUGIN))],
@@ -1438,7 +1771,7 @@ mod tests {
             |warning| warning.contains("displacement userdata") && warning.contains("dropped")
         ));
 
-        let mut ignored_warnings = Vec::new();
+        let mut ignored_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed,
             &[descriptor(&malformed, None)],
@@ -1449,7 +1782,7 @@ mod tests {
         assert!(ignored_warnings.is_empty());
 
         let malformed_edge = v2_payload("<xml><edge-softening-object-data>");
-        let mut edge_warnings = Vec::new();
+        let mut edge_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_edge,
             &[edge_descriptor(&malformed_edge, Some(MESH_MODIFIER_PLUGIN))],
@@ -1462,7 +1795,7 @@ mod tests {
         }));
 
         let malformed_thickening = v2_payload("<xml><thickening-object-data>");
-        let mut thickening_warnings = Vec::new();
+        let mut thickening_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_thickening,
             &[thickening_descriptor(
@@ -1478,7 +1811,7 @@ mod tests {
         }));
 
         let malformed_curve_piping = v2_payload("<xml><curve-piping-object-data>");
-        let mut curve_piping_warnings = Vec::new();
+        let mut curve_piping_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_curve_piping,
             &[curve_piping_descriptor(
@@ -1494,7 +1827,7 @@ mod tests {
         }));
 
         let malformed_shut_lining = v2_payload("<xml><shut-lining-object-data>");
-        let mut shut_lining_warnings = Vec::new();
+        let mut shut_lining_warnings = Diagnostics::new();
         assert!(parse_attribute_userdata(
             &malformed_shut_lining,
             &[shut_lining_descriptor(
@@ -1508,5 +1841,18 @@ mod tests {
         assert!(shut_lining_warnings.iter().any(|warning| {
             warning.contains("shut-lining userdata") && warning.contains("dropped")
         }));
+    }
+    #[test]
+    fn displacement_sub_items_refuse_retained_limit_before_projection() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        let error = parse_xml(&ctx, XML, 2, ArchiveVersion::V6)
+            .expect_err("sub-items need retained storage");
+        assert!(
+            matches!(error, FramingError::Resource(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "Rhino displacement sub-items" && ctx.resource_refusal() == Some(limit))
+        );
     }
 }

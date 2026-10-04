@@ -2,7 +2,7 @@
 //! Synthetic standard-family topology streams for fixture CATParts.
 
 #![allow(clippy::unwrap_used)]
-use super::{be_f32, le_f32};
+use crate::test_support::test_bytes::{be_f32, le_f32};
 
 pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
@@ -139,7 +139,7 @@ pub(crate) fn fbb_only_quad_unmatched_edge_topology_stream() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn fbb_only_quad_surface_stream() -> Vec<u8> {
+pub(super) fn fbb_only_quad_surface_stream() -> Vec<u8> {
     let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
     bytes.resize(49, 0);
     bytes[48] = 0x01;

@@ -2,45 +2,137 @@
 //! Native partition patch tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::make_cache_cell;
+use crate::test_support::container::make_directory_entry;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::coedge;
+use crate::test_support::parasolid::compact_counted_nurbs_surface_carrier;
+use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::line_carrier;
+use crate::test_support::parasolid::loop_head;
+use crate::test_support::parasolid::nurbs_curve_carrier;
+use crate::test_support::parasolid::nurbs_surface_carrier_with_terminal_knot_slot;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::vertex_use;
+use crate::test_support::parasolid::world_point;
+use crate::test_support::parasolid::DIRTY_TERMINAL_KNOT;
 use crate::SldprtCodec;
 
 #[test]
 fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
 
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
-    let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+    let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("compact NURBS carrier");
-    let SurfaceGeometry::Nurbs(old) = carrier.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
-    new.edit_control_points(|points| points[3].z = 750.0)
-        .unwrap();
-    new.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
-    new.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
+    let target = new.v_count() + 1;
+    new.try_map_control_points(
+        |index, pole| {
+            let mut pole = pole.get();
+            if index == target {
+                pole.z = 750.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        },
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("pole edit admission")
+    .unwrap();
+    edit::replace(&mut new, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots[2..].fill(2.0);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
+    edit::replace(&mut new, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots[2..].fill(3.0);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
     let dirty_slots = [
         f64::from_bits(0x7ff8_0000_0000_0001).to_be_bytes(),
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::patch_nurbs_surface(&mut bytes, 0, &old, &new, 0.001)
+    crate::brep::spline::patch_nurbs_surface(&ctx, &mut bytes, 0, old, &new, 0.001)
+        .expect("compact NURBS patch fits policy")
         .expect("compact NURBS patch");
 
-    let patched = crate::brep::spline::scan_surface_carriers(&bytes)
+    let patched = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("patched compact NURBS carrier");
-    let SurfaceGeometry::Nurbs(patched) = patched.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(patched)) = patched.geometry.solved() else {
         panic!("patched compact NURBS surface");
     };
-    assert_eq!(patched, new);
+    assert_eq!(patched, &new);
     for dirty in dirty_slots {
         assert_eq!(
             bytes
@@ -54,7 +146,9 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
 
 #[test]
 fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
@@ -84,7 +178,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let curve = ir_edit
@@ -92,29 +186,109 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .curves
             .iter_mut()
             .find_map(|curve| match &mut curve.geometry {
-                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
                 _ => None,
             })
             .unwrap();
         curve
-            .edit_control_points(|points| points[1].y = 1_500.0)
+            .try_map_control_points(
+                |index, point| {
+                    let mut point = point.get();
+                    if index == 1 {
+                        point.y = 1_500.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .unwrap();
-        curve.edit_knots(|knots| knots[3..].fill(2.0)).unwrap();
+        curve
+            .edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| {
+                knots[3..].fill(2.0);
+            })
+            .expect("knot edit admission")
+            .unwrap();
         let expected_curve = curve.clone();
         let surface = ir_edit
             .model
             .surfaces
             .iter_mut()
             .find_map(|surface| match &mut surface.geometry {
-                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
                 _ => None,
             })
             .unwrap();
+        let target = surface.v_count() + 1;
         surface
-            .edit_control_points(|points| points[3].z = 750.0)
+            .try_map_control_points(
+                |index, pole| {
+                    let mut pole = pole.get();
+                    if index == target {
+                        pole.z = 750.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .unwrap();
-        surface.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
-        surface.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
+        edit::replace(surface, |previous| {
+            let mut knots = previous.u_knots().to_vec();
+            {
+                let knots: &mut [f64] = &mut knots;
+                knots[2..].fill(2.0);
+            };
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    knots,
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+            .expect("fixture final NURBS admission")
+        })
+        .unwrap();
+        edit::replace(surface, |previous| {
+            let mut knots = previous.v_knots().to_vec();
+            {
+                let knots: &mut [f64] = &mut knots;
+                knots[2..].fill(3.0);
+            };
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    knots,
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+            .expect("fixture final NURBS admission")
+        })
+        .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)
     };
@@ -126,7 +300,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         &mut encoded,
     )
     .unwrap();
-    assert!(crate::container::scan_bytes(&encoded)
+    assert!(crate::test_support::container::scan(&encoded)
         .blocks
         .iter()
         .flat_map(|block| block.ps_streams.iter())
@@ -139,22 +313,25 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .unwrap();
 
     assert!(regenerated.ir().model.curves.iter().any(
-        |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
+        |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
     ));
     assert!(regenerated.ir().model.surfaces.iter().any(
-        |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
     assert!(regenerated
         .ir()
         .model
         .surfaces
         .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
+        .any(|surface| matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )));
 }
 
 #[test]
 fn native_patch_edits_points_without_dropping_untyped_surfaces() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -182,8 +359,14 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let moved = decoded.ir_mut().model.points[1].position().get();
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -192,14 +375,16 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+    let regenerated = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap(),
+    );
 
-    assert_eq!(regenerated.ir().model.points[1].position.x, 1_250.0);
+    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_250.0);
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert_eq!(regenerated.ir().model.faces.len(), 1);
     let written = regenerated
@@ -207,9 +392,9 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data())
         .unwrap();
-    let scan = container::scan_bytes(written);
+    let scan = crate::test_support::container::scan(written);
     assert!(scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-Deltas") && block.payload == deltas
+        block.section.name() == Some("Contents/Config-0-Deltas") && block.payload == deltas
     }));
 }
 
@@ -237,14 +422,20 @@ fn native_patch_requires_point_provenance_annotation() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let point_id = decoded.ir().model.points[1].id.as_str().to_owned();
     assert!(decoded
         .source_fidelity()
         .annotations
         .provenance
         .contains_key(&point_id));
-    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+    let moved = decoded.ir_mut().model.points[1].position().get();
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     decoded
         .source_fidelity_mut()
         .annotations
@@ -266,7 +457,9 @@ fn native_patch_requires_point_provenance_annotation() {
 
 #[test]
 fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
@@ -292,29 +485,53 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let plane = ir_edit
             .model
             .surfaces
             .iter_mut()
-            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+            .find(|surface| {
+                matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
             .unwrap();
-        let SurfaceGeometry::Plane { origin, .. } = &mut plane.geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &mut plane.geometry
+        else {
             unreachable!()
         };
+        let origin = plane_surface.origin();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
+        let mut origin = *origin;
         origin.x = 25.0;
+        *plane_surface =
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .unwrap();
         let line = ir_edit
             .model
             .curves
             .iter_mut()
-            .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
+            .find(|curve| {
+                matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                )
+            })
             .unwrap();
-        let CurveGeometry::Line { origin, .. } = &mut line.geometry else {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut line.geometry
+        else {
             unreachable!()
         };
+        let direction = line_curve.direction();
+        let mut origin = line_curve.origin().get();
         origin.y = 12.0;
+        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+        *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     }
 
     let mut encoded = Vec::new();
@@ -328,6 +545,13 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
+    assert!(regenerated.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+        if {
+            let origin = plane_surface.origin();
+            origin.x == 25.0
+        })
+    ));
     assert!(regenerated
         .ir()
         .model
@@ -335,23 +559,20 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .iter()
         .any(|surface| matches!(
             surface.geometry,
-            SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         )));
-    assert!(regenerated
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
-    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Line { origin, .. } if origin.y == 12.0
-    )));
+    assert!(regenerated.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
+        if {
+            let origin = line_curve.origin().get();
+            origin.y == 12.0
+        })
+    ));
 }
 
 #[test]
 fn auxiliary_edit_retains_opaque_partition_payload() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -381,16 +602,16 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     ));
     source.extend(make_cache_cell(90, "Contents/Config-0-Partition"));
     source.extend(make_cache_cell(100, "Contents/Keywords"));
-    let indexed = container::scan_bytes(&source);
+    let indexed = crate::test_support::container::scan(&source);
     let partition = indexed
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap();
     let keywords = indexed
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Keywords"))
+        .find(|block| block.section.name() == Some("Contents/Keywords"))
         .unwrap();
     let mut directory = make_directory_entry(
         partition.type_id,
@@ -410,61 +631,68 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let trailer = directory.len() - 6;
     directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
     source.extend(directory);
-    let source_scan = container::scan_bytes(&source);
+    let source_scan = crate::test_support::container::scan(&source);
     let source_partition = source_scan
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap()
         .payload
         .clone();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let brep_hash = crate::decode::brep_local_sha256(decoded.ir());
-    let document_hash = crate::decode::document_local_sha256(decoded.ir());
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let brep_hash = crate::decode::brep_local_sha256(decoded.ir()).unwrap();
+    let document_hash = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
-            .insert("Depth".into(), "30000mm".into());
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "30000mm".into());
     });
     decoded.ir_mut().model.configurations[0]
         .parameter_values
         .insert(
-            cadmpeg_ir::features::ParameterId::mint("configuration-only")
+            cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#configuration-only")
                 .expect("identity grammar"),
             cadmpeg_ir::features::ParameterValue::Integer(3),
         );
     {
-        let mut source_fidelity = decoded.source_fidelity_mut();
+        let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
-        annotations.clear_exactness();
+        annotations
+            .retain_exactness(&cadmpeg_test_support::service_decode_context(), |_| {
+                Ok(false)
+            })
+            .unwrap();
         source_fidelity.annotations = annotations.build();
     }
-    assert_eq!(crate::decode::brep_local_sha256(decoded.ir()), brep_hash);
+    assert_eq!(
+        crate::decode::brep_local_sha256(decoded.ir()).unwrap(),
+        brep_hash
+    );
     assert_ne!(
-        crate::decode::document_local_sha256(decoded.ir()),
+        crate::decode::document_local_sha256(decoded.ir()).unwrap(),
         document_hash
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
-    let written_scan = container::scan_bytes(&encoded);
+    let written_scan = crate::test_support::container::scan(&encoded);
     let written_partition = written_scan
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap();
     assert_eq!(written_partition.payload, source_partition);
     assert!(written_scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-Deltas")
+        block.section.name() == Some("Contents/Config-0-Deltas")
             && block.payload == b"opaque-deltas"
     }));
     assert_eq!(written_scan.cache_cells.len(), 1);
@@ -495,7 +723,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         [0xcd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     );
     assert!(written_scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-GhostPartition")
+        block.section.name() == Some("Contents/Config-0-GhostPartition")
             && block.payload == b"opaque-ghost"
     }));
     let regenerated = SldprtCodec
@@ -503,7 +731,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
@@ -513,7 +741,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
 
 #[test]
 fn opaque_curve_is_retained_and_does_not_block_point_edits() {
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
     body.extend(edge_use(40, 999));
@@ -523,11 +751,10 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
 
     let curve_id = decoded.ir().model.edges[0]
-        .curve
-        .as_ref()
+        .curve()
         .expect("opaque edge curve");
     let curve = decoded
         .ir()
@@ -536,9 +763,9 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .find(|curve| curve.id == *curve_id)
         .expect("opaque curve carrier");
-    let CurveGeometry::Unknown {
+    let Some(SolvedCurveGeometry::Unknown {
         record: Some(record),
-    } = &curve.geometry
+    }) = curve.geometry.solved()
     else {
         panic!("opaque curve has no replay record");
     };
@@ -547,9 +774,18 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque curve record");
-    assert!(retained.links.iter().any(|link| link == curve.id.as_str()));
+    assert!(retained
+        .links
+        .iter()
+        .any(|link| link.as_str() == curve.id.as_str()));
 
-    decoded.ir_mut().model.points[1].position.x = 1_500.0;
+    let moved = decoded.ir_mut().model.points[1].position().get();
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_500.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -561,11 +797,165 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position.x, 1_500.0);
-    assert!(regenerated
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. })));
+    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_500.0);
+    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+    )));
+}
+
+/// A Parasolid stream whose header states a body offset past the bytes the
+/// extractor gives it: a second `PS\0\0` signature stands inside this stream's
+/// own description, so the extracted payload ends before the header does.
+/// `crate::brep::graph::decode_bodies` refuses it by name.
+fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
+    const SCHEMA: &[u8] = b"SCH_SW_33103_11000";
+    let mut nested = Vec::new();
+    nested.extend_from_slice(b"PS\0\0");
+    nested.extend_from_slice(&6u16.to_be_bytes());
+    nested.extend_from_slice(b"deltas");
+    nested.extend_from_slice(&[0x00, 0x00]);
+    nested.push(u8::try_from(SCHEMA.len()).expect("length fits u8"));
+    nested.extend_from_slice(SCHEMA);
+
+    let mut description = b"deltas ".to_vec();
+    description.extend_from_slice(&nested);
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"PS\0\0");
+    payload.extend_from_slice(
+        &(u16::try_from(description.len()).expect("length fits u16")).to_be_bytes(),
+    );
+    payload.extend_from_slice(&description);
+    payload.extend_from_slice(&[0x00, 0x00]);
+    payload.push(u8::try_from(SCHEMA.len()).expect("length fits u8"));
+    payload.extend_from_slice(SCHEMA);
+    payload.extend_from_slice(&[0u8; 8]);
+    payload
+}
+
+#[test]
+fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let moved = decoded.ir_mut().model.points[1].position().get();
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+
+    // The retained baseline carries a deltas site beside the partition the
+    // patch route edits. Both sites join the baseline decode.
+    let mut image = crate::test_support::container::outer_header();
+    image.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    image.extend(make_block(
+        0x20,
+        "Contents/Config-0-Deltas",
+        &deltas_stream_whose_header_overruns_its_payload(),
+    ));
+    let fidelity = decoded.source_fidelity_mut();
+    fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("the decode retains the source image");
+    fidelity
+        .insert_retained_record(
+            crate::source_image_id(),
+            cadmpeg_ir::RetainedSourceRecord::from_bytes(
+                "source",
+                0,
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: image },
+            )
+            .expect("the retained baseline is a source record"),
+        )
+        .expect("the source image record was removed first");
+
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("states body offset")
+                    && message.contains("past its")
+        ),
+        "the write must state the baseline decode's cause, not report no patch: {error}"
+    );
+}
+
+#[test]
+fn retained_point_patch_preserves_topology_resource_refusal() {
+    let body = triangle_body();
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
+    let baseline_ctx = cadmpeg_test_support::service_decode_context();
+    let header = crate::parasolid::stream_header(&baseline_ctx, &payload)
+        .unwrap()
+        .unwrap();
+    let native = crate::brep::graph::decode(
+        &baseline_ctx,
+        &payload,
+        &header,
+        &cadmpeg_ir::stream_name!("point-patch-test"),
+    )
+    .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.points = native.points.clone();
+    let mut point = ir.model.points[0].position().get();
+    point.x += 1.0;
+    ir.model.points[0].set_position(cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(ir.model.points.len()).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+    let mut edited = payload.clone();
+    let error = super::patch_points(
+        &ctx,
+        &ir,
+        &native.annotations,
+        &native,
+        &mut edited[header.body_offset..],
+        0.001,
+    )
+    .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("topology refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_ne!(limit.operation, "index SLDPRT patch points");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(edited, payload);
 }

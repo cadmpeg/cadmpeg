@@ -5,9 +5,9 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::CadIr;
-use serde_json::Value;
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
@@ -20,8 +20,8 @@ use crate::application::refusal::ApplicationError;
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
-/// because the flag is this crate's. Ambiguity is the only resolution error.
-pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
+/// because the flag is this crate's.
+pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
     anyhow!("{error}; pass --input-format")
 }
 
@@ -33,25 +33,30 @@ pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
-pub fn load_artifact(
+pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
-    let prefix = artifact_store::read_detection_input(
-        path,
-        DETECTION_PREFIX_LEN,
-        options.policy.limits.max_input_bytes,
-    )?;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &options.policy, options.container_only);
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut prefix =
+        cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
     let resolved = catalog
-        .resolve_source(&prefix, forced)
-        .map_err(|error| detection_failure(&error))?;
+        .resolve_source(&ctx, View::over_retained(&prefix), forced)
+        .map_err(|error| match error {
+            ResolveSourceError::Codec(error) => ApplicationError::from(error),
+            error => ApplicationError::from(detection_failure(&error)),
+        })?;
     match resolved {
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
-            let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-            let result = codec.decode(&mut f, &options).map_err(|failure| {
+            ctx.complete_input(&mut file, &mut prefix)?;
+            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix), &options);
+            ctx.finish_session()?;
+            let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
             })?;
             return Ok(LoadedDocument::decoded(result, selection));
@@ -67,17 +72,17 @@ pub fn load_artifact(
     }
 
     let max_bytes = options.policy.limits.max_input_bytes;
-    let text = artifact_store::read_bounded_text(path, max_bytes)
-        .with_context(|| format!("reading {} as a .cadir.json document", path.display()))?;
+    ctx.complete_input(&mut file, &mut prefix)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(prefix.len()),
+        "validate CADIR input UTF-8",
+    )?;
+    let text =
+        String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
+    ctx.finish_session()?;
     let ir = CadIr::from_json(&text).map_err(|e| {
         anyhow!(
             "{} is neither a recognized CAD file nor a valid .cadir.json document: {e}",
-            path.display()
-        )
-    })?;
-    validate_cadir_witnesses(&ir).with_context(|| {
-        format!(
-            "{} is not a consistent .cadir.json document",
             path.display()
         )
     })?;
@@ -92,57 +97,34 @@ pub fn load_artifact(
     ))
 }
 
-/// Reject contradictory duplicate facts at the CADIR wire boundary.
-///
-/// Native decoders author the `FCStd` source declaration and retained document
-/// record from one scan. Only deserialization can produce different values.
-fn validate_cadir_witnesses(ir: &CadIr) -> anyhow::Result<()> {
-    let Some(source) = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format() == "fcstd")
-    else {
-        return Ok(());
-    };
-    let Some(source_schema) = source
-        .dialect()
-        .and_then(|dialect| dialect.declared().get("schema_version"))
-    else {
-        return Ok(());
-    };
-    let Some(documents) = ir
-        .native
-        .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas().get("document"))
-    else {
-        return Ok(());
-    };
-    let [document] = documents.as_slice() else {
-        return Ok(());
-    };
-    let Some(Value::String(document_schema)) = document.field("schema_version") else {
-        return Ok(());
-    };
-    if document_schema != *source_schema {
-        return Err(anyhow!(
-            "FCStd source schema_version {source_schema:?} disagrees with native document \
-             schema_version {document_schema:?}"
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 #[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
-    use super::*;
+    use super::load_artifact;
     use crate::application::document::LoadOrigin;
-    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-    use cadmpeg_ir::document::SourceMeta;
-    use cadmpeg_ir::native::NativeRecord;
-    use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
-    use serde_json::Map;
-    use std::collections::BTreeMap;
+    use cadmpeg_ir::codec::DecodeOptions;
+    use cadmpeg_ir::CadIr;
+    use cadmpeg_ir::{report::decode::DecodeReport, DecodeSidecar, SourceFidelity};
+    use cadmpeg_registry::{ForcedInput, InputCatalog};
+
+    #[test]
+    fn input_acquisition_resource_refusal_stays_typed() {
+        let directory = tempfile::tempdir().expect("directory");
+        let path = directory.path().join("input.json");
+        std::fs::write(&path, b"12345").expect("input");
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_input_bytes = 4;
+        let error = load_artifact(
+            &InputCatalog::with_builtins(),
+            &path,
+            options,
+            Some(ForcedInput::Cadir),
+        )
+        .expect_err("input limit");
+        assert!(
+            matches!(error, crate::application::refusal::ApplicationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+        );
+    }
 
     #[test]
     fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
@@ -151,17 +133,19 @@ mod tests {
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
-            "format": "test",
-            "container_only": false,
-            "geometry_transferred": false,
+            "identity": {"classification": "unclassified", "format": "test"},
+            "transfer": {"transfer": "full", "geometry_transferred": false},
             "losses": [],
             "notes": [],
-            "dialects": null,
         }))
         .unwrap();
-        let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+            report,
+            SourceFidelity::default(),
+        );
         std::fs::write(
-            cadmpeg_ir::decode_sidecar_path(&path),
+            cadmpeg_ir::decode_sidecar_path(&path).unwrap(),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
@@ -184,40 +168,5 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("does not match"));
-    }
-
-    #[test]
-    fn cadir_reader_refuses_conflicting_fcstd_schema_witnesses() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("part.cadir.json");
-        let mut ir = CadIr::empty();
-        let mut declared = BTreeMap::new();
-        declared.insert("schema_version".to_owned(), "4".to_owned());
-        ir.source = Some(SourceMeta::classified(
-            DialectLayers::of(
-                DialectMatch::admitted(DialectId::pinned("fcstd:schema-4")).with_declared(declared),
-            ),
-            BTreeMap::new(),
-        ));
-        let mut fields = Map::new();
-        fields.insert("schema_version".to_owned(), Value::String("3".to_owned()));
-        ir.native.namespace_mut("fcstd").arenas_mut().insert(
-            "document".to_owned(),
-            vec![
-                NativeRecord::new("fcstd:test:document#0", fields).expect("valid native identity"),
-            ],
-        );
-        std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
-
-        let error = load_artifact(
-            &InputCatalog::with_builtins(),
-            &path,
-            DecodeOptions::default(),
-            Some(ForcedInput::Cadir),
-        )
-        .unwrap_err();
-        assert!(format!("{error:#}").contains(
-            "FCStd source schema_version \"4\" disagrees with native document schema_version \"3\""
-        ));
     }
 }

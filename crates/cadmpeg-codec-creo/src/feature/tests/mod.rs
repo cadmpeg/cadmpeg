@@ -2,7 +2,3 @@
 mod allfeatur;
 mod dump;
 mod featdefs;
-mod owners;
-mod rows;
-mod saved;
-mod tables;

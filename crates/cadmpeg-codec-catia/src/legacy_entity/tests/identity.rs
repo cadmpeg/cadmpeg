@@ -3,11 +3,14 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_container::outer_container_catpart;
+use crate::test_support::test_object_graph::object_graph_stream;
 use crate::CatiaCodec;
 
 #[test]
@@ -73,19 +76,22 @@ fn native_round_trips_legacy_entity_identity_runs() {
     assert!(native.legacy_entity_runs[0]
         .identities
         .iter()
-        .all(|identity| identity.lead == 0x81));
+        .all(|identity| u8::from(identity.lead) == 0x81));
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
-        catalog_offset as u64
+        cadmpeg_core::decode::u64_from_index(catalog_offset)
     );
     let schema_program = native.legacy_entity_runs[0]
         .schema_program
         .as_ref()
         .expect("complete compact schema program");
-    assert_eq!(schema_program.byte_offset, schema_program_offset as u64);
+    assert_eq!(
+        schema_program.byte_offset,
+        cadmpeg_core::decode::u64_from_index(schema_program_offset)
+    );
     assert_eq!(
         schema_program.boundary_byte_offset,
-        schema_footer_offset as u64
+        cadmpeg_core::decode::u64_from_index(schema_footer_offset)
     );
     assert_eq!(
         schema_program.boundary,
@@ -98,7 +104,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     assert_eq!(schema_program.identifiers.len(), 1);
     assert_eq!(
         schema_program.identifiers[0].byte_offset,
-        schema_program_offset as u64 + 1
+        cadmpeg_core::decode::u64_from_index(schema_program_offset) + 1
     );
     assert_eq!(schema_program.identifiers[0].value, "Foo");
     assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 5);
@@ -285,14 +291,6 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store invalid legacy type name");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
-    let mut invalid_lead = native.clone();
-    invalid_lead.legacy_entity_runs[0].identities[0].lead = 0xe6;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_lead
-        .store(&mut namespace)
-        .expect("store invalid legacy identity lead");
-    assert!(crate::native::CatiaNative::load(&namespace).is_err());
-
     let mut invalid_name = native.clone();
     invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -358,7 +356,9 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
     let run = native
         .legacy_entity_runs
         .iter()
-        .find(|run| run.byte_offset == stream_offset + legacy_offset as u64)
+        .find(|run| {
+            run.byte_offset == stream_offset + cadmpeg_core::decode::u64_from_index(legacy_offset)
+        })
         .expect("declared-stream legacy run");
     assert_eq!(
         run.outer_container.as_ref(),
@@ -380,10 +380,32 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode container-bound legacy parameter");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(decoded.ir().model.parameters.len(), 1);
+}
+
+#[test]
+fn identity_lead_wire_admits_only_defined_bytes() {
+    for lead in u8::MIN..=u8::MAX {
+        let wire = serde_json::json!({"byte_offset": 0, "entity_id": 1, "lead": lead});
+        let identity =
+            serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(wire.clone());
+        assert_eq!(identity.is_ok(), matches!(lead, 0x81 | 0x82 | 0xe5 | 0xfd));
+        match identity {
+            Ok(identity) => assert_eq!(serde_json::to_value(identity).unwrap(), wire),
+            Err(error) => assert!(error.to_string().contains("lead")),
+        }
+    }
+    let missing = serde_json::json!({"byte_offset": 0, "entity_id": 1});
+    assert!(
+        serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(missing)
+            .unwrap_err()
+            .to_string()
+            .contains("lead")
+    );
 }

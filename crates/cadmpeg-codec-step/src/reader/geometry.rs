@@ -1,31 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP representation units, placements, and geometry carriers.
 
-use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use crate::ids::{key_word, kind};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    sampled::{PolylineCurve, PolylineSamples},
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
+    CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::index::{step_instance_id, CarrierIndex, CurveIndex, PointIndex, SurfaceIndex};
+use super::index::{CarrierIndex, CurveIndex, PointIndex, SurfaceIndex};
 use super::{opaque_record_id, StageOutcome};
 
 const EPS_GEOMETRY_READ_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -34,15 +45,43 @@ const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
+macro_rules! geometry_or_none {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
+fn attach_geometry_source(
+    source: &mut Option<SourceObjectAssociation>,
+    id: u64,
+    name: Option<&str>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if source.is_none() {
+        let name = name
+            .map(|name| ctx.format_retained(format_args!("{name}"), operation))
+            .transpose()?;
+        *source = Some(super::step_source_association(id, name));
+    }
+    Ok(())
+}
+
 pub(super) struct GeometryData {
-    pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
-    pub transformation_operators: BTreeMap<u64, Transform>,
-    pub units: UnitScales,
+    pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
+    pub(super) transformation_operators: BTreeMap<u64, Transform>,
+    pub(super) units: UnitScales,
 }
 
 pub(super) fn placement_transform(
-    (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
-) -> Transform {
+    (origin, z_axis, x_axis): (FinitePoint3, UnitVector3, UnitVector3),
+) -> Option<Transform> {
+    let origin = origin.get();
+    let z_axis = z_axis.as_raw();
+    let x_axis = x_axis.as_raw();
     let y_axis = Vector3::new(
         z_axis.y * x_axis.z - z_axis.z * x_axis.y,
         z_axis.z * x_axis.x - z_axis.x * x_axis.z,
@@ -53,7 +92,7 @@ pub(super) fn placement_transform(
         [x_axis.y, y_axis.y, z_axis.y],
         [x_axis.z, y_axis.z, z_axis.z],
     ];
-    let mut rows = Transform::identity().rows();
+    let mut rows = Transform::identity().affine_rows();
     for row in 0..3 {
         for column in 0..3 {
             rows[row][column] = placement_basis[row][column];
@@ -62,127 +101,179 @@ pub(super) fn placement_transform(
     rows[0][3] = origin.x;
     rows[1][3] = origin.y;
     rows[2][3] = origin.z;
-    Transform::from_rows(rows).expect("placement is affine")
+    Transform::affine(rows)
 }
 
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let points = ir
-        .model
-        .points
-        .iter()
-        .map(|point| (point.id.as_str(), point.position))
-        .collect::<HashMap<_, _>>();
-    let vertices = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            points
-                .get(vertex.point.as_str())
-                .copied()
-                .map(|point| (vertex.id.as_str(), point))
-        })
-        .collect::<HashMap<_, _>>();
-    let candidates = ir
-        .model
-        .edges
-        .iter()
-        .enumerate()
-        .filter(|(_, edge)| edge.param_range.is_none())
-        .filter_map(|(index, edge)| {
-            let curve = edge.curve.clone()?;
-            let start = vertices.get(edge.start.as_str()).copied()?;
-            let end = vertices.get(edge.end.as_str()).copied()?;
-            Some((index, curve, start, end))
-        })
-        .collect::<Vec<_>>();
-    let work = u64::try_from(candidates.len())
-        .unwrap_or(u64::MAX)
-        .saturating_mul(RANGE_INFERENCE_WORK_UNITS);
-    if let Some(ctx) = ctx {
-        ctx.charge_work(work, "step_edge_parameter_inference")?;
+    let mut points = HashMap::new();
+    for point in &ir.model.points {
+        ctx.reserve_map(&mut points, 1, "step_parameter_inference_points")?;
+        points.insert(point.id.as_str(), point.position().get());
     }
+    let mut vertices = HashMap::new();
+    for vertex in &ir.model.vertices {
+        if let Some(point) = points.get(vertex.point.as_str()).copied() {
+            ctx.reserve_map(&mut vertices, 1, "step_parameter_inference_vertices")?;
+            vertices.insert(vertex.id.as_str(), point);
+        }
+    }
+    let mut candidates = Vec::new();
+    for (index, edge) in ir.model.edges.iter().enumerate() {
+        if edge.param_range().is_some() {
+            continue;
+        }
+        let Some((curve, start, end)) = edge.curve().and_then(|curve| {
+            Some((
+                curve,
+                vertices.get(edge.start.as_str()).copied()?,
+                vertices.get(edge.end.as_str()).copied()?,
+            ))
+        }) else {
+            continue;
+        };
+        ctx.reserve_vec(&mut candidates, 1, "step_parameter_inference_candidates")?;
+        candidates.push((index, curve, start, end));
+    }
+    let work = u64_from_index(candidates.len())
+        .checked_mul(RANGE_INFERENCE_WORK_UNITS)
+        .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
+    ctx.charge_work(work, "step_edge_parameter_inference")?;
 
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
-    let inferred = candidates
-        .into_iter()
-        .filter_map(|(edge_index, curve, start, end)| {
-            let geometry = &model_index.curves(curve.as_str())?.geometry;
-            let start_seed = curve_endpoint_seed(geometry, false, 0.0);
-            let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
+    let inferred = candidates.into_iter().try_fold(
+        Vec::new(),
+        |mut inferred, (edge_index, curve, start, end)| {
+            let Some(geometry) = model_index
+                .curves(curve.as_str(), ctx)?
+                .map(|curve| &curve.geometry)
+            else {
+                return Ok(inferred);
+            };
+            let Some(solved) = geometry.solved() else {
+                return Ok(inferred);
+            };
+            let start_seed = curve_endpoint_seed(solved, false, 0.0);
+            let Some(start_parameter) =
+                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                    ctx,
+                    &model_index,
+                    curve,
+                    start,
+                    start_seed,
+                )?
+            else {
+                return Ok(inferred);
+            };
+            let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
+            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                ctx,
                 &model_index,
-                &curve,
-                start,
-                start_seed,
-            )?;
-            let end_seed = curve_endpoint_seed(geometry, true, start_parameter);
-            let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &model_index,
-                &curve,
+                curve,
                 end,
                 end_seed,
-            )?;
-            edge_parameter_range(geometry, start_parameter, end_parameter)
-                .map(|range| (edge_index, range))
-        })
-        .collect::<Vec<_>>();
+            )?
+            else {
+                return Ok(inferred);
+            };
+            if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
+                ctx.reserve_vec(&mut inferred, 1, "step_parameter_inference_ranges")?;
+                inferred.push((edge_index, range));
+            }
+            Ok::<_, CodecError>(inferred)
+        },
+    )?;
     drop(model_index);
 
     for (index, range) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
-            edge.param_range = Some(range);
+            let curve = edge
+                .curve()
+                .map(|curve| curve.try_clone_for_decode(ctx, "step_parameter_inference_edge_curve"))
+                .transpose()?;
+            edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(range))
+                .map_err(CodecError::malformed)?;
         }
     }
     Ok(())
 }
 
-fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> f64 {
+fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f64) -> f64 {
     match geometry {
-        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
-            nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
-                if upper {
-                    upper_bound
-                } else {
-                    lower
-                }
-            })
+        SolvedCurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
+            nurbs_curve_parameter_domain(nurbs)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                .map_or(
+                    fallback,
+                    |[lower, upper_bound]| {
+                        if upper {
+                            upper_bound
+                        } else {
+                            lower
+                        }
+                    },
+                )
         }
-        CurveGeometry::Transformed { basis, .. } => curve_endpoint_seed(basis, upper, fallback),
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_endpoint_seed(placed.basis(), upper, fallback)
+        }
         _ => fallback,
     }
 }
 
-fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
-    if !start.is_finite() || !end.is_finite() {
-        return None;
-    }
+fn edge_parameter_range(
+    geometry: &SolvedCurveGeometry,
+    start: FiniteReal,
+    end: FiniteReal,
+) -> Option<[f64; 2]> {
     let periodic_domain = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             Some([0.0, std::f64::consts::TAU])
         }
-        CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
-        CurveGeometry::Transformed { basis, .. } => {
-            return edge_parameter_range(basis, start, end);
+        SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
+            nurbs_curve_parameter_domain(nurbs)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+        }
+        SolvedCurveGeometry::Transformed(placed) => {
+            return edge_parameter_range(placed.basis(), start, end);
         }
         _ => None,
     };
+    let (start, end) = (start.get(), end.get());
     let Some([lower, upper]) = periodic_domain else {
         return (end > start).then_some([start, end]);
     };
     let period = upper - lower;
-    if !period.is_finite() || period <= 0.0 {
+    if period <= 0.0 {
         return None;
     }
-    let sweep = (end - start).rem_euclid(period);
-    let tolerance = 1.0e-9_f64.max(period.abs() * EPS_GEOMETRY_READ_GEOMETRY);
+    if !period.is_finite() {
+        let start = cadmpeg_ir::math::wrap_parameter(start, lower, upper)?.get();
+        let end = cadmpeg_ir::math::wrap_parameter(end, lower, upper)?.get();
+        let sweep = if end >= start {
+            end - start
+        } else {
+            (upper - start) + (end - lower)
+        };
+        return (sweep > 0.0)
+            .then_some(start + sweep)
+            .filter(|end| end.is_finite())
+            .map(|end| [start, end]);
+    }
+    let raw_span = end - start;
+    let sweep = if raw_span.is_finite() {
+        raw_span.rem_euclid(period)
+    } else {
+        (end.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
+    };
+    let tolerance = period * EPS_GEOMETRY_READ_GEOMETRY;
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
     }
-    let normalized_start = lower + (start - lower).rem_euclid(period);
+    let normalized_start = cadmpeg_ir::math::wrap_parameter(start, lower, upper)?.get();
     let normalized_start = if (normalized_start - upper).abs() <= tolerance {
         lower
     } else {
@@ -192,20 +283,20 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
 }
 
 pub(super) struct UnitScales {
-    default_length: f64,
-    default_angle: f64,
-    length: BTreeMap<u64, f64>,
-    angle: BTreeMap<u64, f64>,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
+    length: BTreeMap<u64, PositiveReal>,
+    angle: BTreeMap<u64, PositiveReal>,
 }
 
 impl UnitScales {
-    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.length.get(&id).copied())
             .unwrap_or(self.default_length)
     }
 
-    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.angle.get(&id).copied())
             .unwrap_or(self.default_angle)
@@ -215,102 +306,143 @@ impl UnitScales {
 fn resolve_source_curve_parameter_scales(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-) -> BTreeMap<u64, f64> {
-    exchange
-        .records
-        .keys()
-        .filter_map(|id| {
-            source_curve_parameter_scale(*id, exchange, unit_scales, &mut BTreeSet::new())
-                .map(|scale| (*id, scale))
-        })
-        .collect()
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, FiniteReal>, CodecError> {
+    let mut scales = BTreeMap::new();
+    for &id in exchange.records().keys() {
+        let mut active_storage = ctx.reserve_scoped(0, "step source curve traversal storage")?;
+        if let Some(scale) = active_storage.with_storage(|| {
+            source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)
+        })? {
+            ctx.insert_btree_map(&mut scales, id, scale, "step_source_curve_parameter_scales")?;
+        }
+    }
+    Ok(scales)
 }
 
 fn source_curve_parameter_scale(
-    id: u64,
+    mut id: u64,
     exchange: &Exchange,
     unit_scales: &UnitScales,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
-    if !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("step_source_curve_parameter_walk")?;
+    loop {
+        if active.contains(&id) {
+            return Ok(None);
+        }
+        ctx.insert_btree_set(active, id, "step_source_curve_parameter_active")?;
+        match source_curve_parameter_scale_value(id, exchange, unit_scales) {
+            CurveParameterStep::Scale(scale) => return Ok(Some(scale)),
+            CurveParameterStep::Parent(parent) => id = parent,
+            CurveParameterStep::Absent => return Ok(None),
+        }
     }
-    let scale = (|| {
-        let record = exchange.records.get(&id)?;
-        if record.partial("LINE").is_some() {
-            let magnitude = named_parameter(record, "LINE", 2)
-                .and_then(Value::reference)
-                .and_then(|vector| exchange.records.get(&vector))
-                .filter(|vector| vector.partial("VECTOR").is_some())
-                .and_then(|vector| named_parameter(vector, "VECTOR", 2))
-                .and_then(Value::number)
-                .filter(|magnitude| magnitude.is_finite() && *magnitude > 0.0)?;
-            let scale = magnitude * unit_scales.length([id]);
-            return scale.is_finite().then_some(scale);
-        }
-        if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
-            return Some(unit_scales.angle([id]));
-        }
-        if record.partial("PARABOLA").is_some()
-            || record.partial("HYPERBOLA").is_some()
-            || record.partial("POLYLINE").is_some()
-            || record.partials.iter().any(|partial| {
-                matches!(
-                    partial.name.as_str(),
-                    "B_SPLINE_CURVE_WITH_KNOTS"
-                        | "UNIFORM_CURVE"
-                        | "QUASI_UNIFORM_CURVE"
-                        | "BEZIER_CURVE"
-                )
-            })
-        {
-            return Some(1.0);
-        }
-        let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
-            .into_iter()
-            .find_map(|name| {
-                named_parameter(record, name, 1)
-                    .and_then(Value::reference)
-                    .and_then(|parent| curve_carrier_record(parent, exchange))
-            })
-            .or_else(|| {
-                record
-                    .partials
-                    .iter()
-                    .any(|partial| {
-                        matches!(
-                            partial.name.as_str(),
-                            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-                        )
-                    })
-                    .then(|| surface_curve_basis(record))
-                    .flatten()
-            })?;
-        source_curve_parameter_scale(parent, exchange, unit_scales, active)
-    })();
-    active.remove(&id);
-    scale
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
+enum CurveParameterStep {
+    Scale(FiniteReal),
+    Parent(u64),
+    Absent,
+}
+
+fn source_curve_parameter_scale_value(
+    id: u64,
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+) -> CurveParameterStep {
+    let Some(record) = exchange.records().get(&id) else {
+        return CurveParameterStep::Absent;
+    };
+    if record.partial("LINE").is_some() {
+        let Some(magnitude) = named_parameter(record, "LINE", 2)
+            .and_then(Value::reference)
+            .and_then(|vector| exchange.records().get(&vector))
+            .filter(|vector| vector.partial("VECTOR").is_some())
+            .and_then(|vector| named_parameter(vector, "VECTOR", 2))
+            .and_then(Value::number)
+            .and_then(PositiveReal::new)
+        else {
+            return CurveParameterStep::Absent;
+        };
+        let scale = magnitude.get() * unit_scales.length([id]).get();
+        return FiniteReal::new(scale)
+            .map_or(CurveParameterStep::Absent, CurveParameterStep::Scale);
+    }
+    if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
+        return CurveParameterStep::Scale(FiniteReal::from(unit_scales.angle([id])));
+    }
+    if record.partial("PARABOLA").is_some()
+        || record.partial("HYPERBOLA").is_some()
+        || record.partial("POLYLINE").is_some()
+        || record.partials.iter().any(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "B_SPLINE_CURVE_WITH_KNOTS"
+                    | "UNIFORM_CURVE"
+                    | "QUASI_UNIFORM_CURVE"
+                    | "BEZIER_CURVE"
+            )
+        })
+    {
+        return CurveParameterStep::Scale(FiniteReal::ONE);
+    }
+    let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
+        .into_iter()
+        .find_map(|name| {
+            named_parameter(record, name, 1)
+                .and_then(Value::reference)
+                .and_then(|parent| curve_carrier_record(parent, exchange))
+        })
+        .or_else(|| {
+            record
+                .partials
+                .iter()
+                .any(|partial| {
+                    matches!(
+                        partial.name.as_str(),
+                        "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                    )
+                })
+                .then(|| surface_curve_basis(record))
+                .flatten()
+        });
+    match parent {
+        Some(parent) => CurveParameterStep::Parent(parent),
+        None => CurveParameterStep::Absent,
+    }
+}
+
+pub(super) fn decode(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<StageOutcome<GeometryData>, CodecError> {
     let mut losses = Vec::new();
-    let scale = length_scale(exchange).unwrap_or_else(|| {
-        losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
-            "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
-        ));
-        1.0
-    });
-    let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
-        losses.push(StepLossCode::DocumentAngleUnitUnresolved.note(
-            "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
-        ));
-        1.0
-    });
-    let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
+    let scale = match length_scale(exchange, ctx)? {
+        Some(scale) => scale,
+        None => {
+            ctx.push_vec(&mut losses, StepLossCode::DocumentLengthUnitUnresolved.note(
+                    "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+                ), "step_geometry_losses")?;
+            PositiveReal::ONE
+        }
+    };
+    let angle_scale = match plane_angle_scale(exchange, ctx)? {
+        Some(scale) => scale,
+        None => {
+            ctx.push_vec(&mut losses, StepLossCode::DocumentAngleUnitUnresolved.note(
+                    "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+                ), "step_geometry_losses")?;
+            PositiveReal::ONE
+        }
+    };
+    let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses, ctx)?;
+    let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
-        resolve_source_curve_parameter_scales(exchange, &unit_scales);
+        resolve_source_curve_parameter_scales(exchange, &unit_scales, ctx)?;
     let mut typed = HashSet::new();
-    let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
     let mut apll_point_names = BTreeMap::new();
@@ -320,26 +452,39 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    match linear_uncertainty(exchange) {
+    match linear_uncertainty(exchange, ctx)? {
         LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
-                losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
+                ctx.push_vec(&mut losses, StepLossCode::UncertaintyLengthUnresolved.note(format!(
                     "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved} unresolved measure(s); the linear tolerance was not transferred"
-                )));
+                )), "step_geometry_losses")?;
             }
         }
-        LinearUncertainty::Ambiguous { values, unresolved } => {
-            let default_linear = ir.tolerances.linear;
-            let listed = values
-                .iter()
-                .map(|value| format!("{value:?}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
+        LinearUncertainty::Ambiguous {
+            first,
+            second,
+            rest,
+            unresolved,
+        } => {
+            let default_linear = ir.tolerances.linear.get();
+            let listed = ctx.join_display_retained(
+                [first, second]
+                    .iter()
+                    .chain(&rest)
+                    .map(|value| format!("{:?}", value.get())),
+                ", ",
+                "step_uncertainty_values_text",
+            )?;
+            let message = ctx.format_retained(format_args!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
-                values.len()
-            )));
+                2 + rest.len()
+            ), "step_uncertainty_note_text")?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::UncertaintyLengthAmbiguous.note(message),
+                "step_geometry_losses",
+            )?;
         }
     }
 
@@ -359,75 +504,100 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ],
         ) {
             Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
-                    points.insert(id, position);
+                    ctx.insert_btree_map(&mut points, id, position, "step_geometry_points")?;
                     let source_name = representation_item_name(record)
-                        .and_then(|value| {
-                            super::decode_text(
+                        .map(|value| {
+                            super::decode_text_charged(
                                 exchange,
                                 value,
                                 &mut losses,
                                 id,
                                 "APLL point name",
                                 StepLossCode::MetadataStringInvalid,
+                                ctx,
                             )
                         })
+                        .transpose()?
+                        .flatten()
                         .filter(|name| !name.is_empty());
-                    apll_point_names.insert(id, source_name);
+                    ctx.insert_btree_map(
+                        &mut apll_point_names,
+                        id,
+                        source_name,
+                        "step_geometry_apll_point_names",
+                    )?;
                 } else {
-                    warnings.push(format!("{point_type} #{id} has invalid coordinates"));
+                    ctx.push_vec(
+                        &mut losses,
+                        StepLossCode::DecodeWarning
+                            .note(format!("{point_type} #{id} has invalid coordinates")),
+                        "step_geometry_losses",
+                    )?;
                 }
             }
             Some("CARTESIAN_POINT") => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) =
                     named_coordinates(record, "CARTESIAN_POINT", 1, record_scale)
                 {
-                    points.insert(id, position);
-                    typed.insert(id);
+                    ctx.insert_btree_map(&mut points, id, position, "step_geometry_points")?;
+                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else if let Some(position) = named_coordinates2(record, "CARTESIAN_POINT", 1) {
-                    points2.insert(id, position);
-                    typed.insert(id);
+                    ctx.insert_btree_map(&mut points2, id, position, "step_geometry_points2")?;
+                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else {
-                    warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates"));
+                    ctx.push_vec(
+                        &mut losses,
+                        StepLossCode::DecodeWarning
+                            .note(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
+                        "step_geometry_losses",
+                    )?;
                 }
             }
             Some("DIRECTION") => {
                 if let Some(direction) =
                     vector3(named_parameter(record, "DIRECTION", 1), 1.0).and_then(normalize)
                 {
-                    directions.insert(id, direction);
-                    typed.insert(id);
-                } else if let Some(direction) =
-                    vector2(named_parameter(record, "DIRECTION", 1)).and_then(normalize2)
+                    ctx.insert_btree_map(
+                        &mut directions,
+                        id,
+                        direction,
+                        "step_geometry_directions",
+                    )?;
+                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                } else if let Some(direction) = direction2(named_parameter(record, "DIRECTION", 1))
                 {
-                    directions2.insert(id, direction);
-                    typed.insert(id);
+                    ctx.insert_btree_map(
+                        &mut directions2,
+                        id,
+                        direction,
+                        "step_geometry_directions2",
+                    )?;
+                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else {
-                    warnings.push(format!("DIRECTION #{id} is invalid or zero"));
+                    ctx.push_vec(
+                        &mut losses,
+                        StepLossCode::DecodeWarning
+                            .note(format!("DIRECTION #{id} is invalid or zero")),
+                        "step_geometry_losses",
+                    )?;
                 }
             }
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(
-        exchange,
-        &unit_scales,
-        ir,
-        &mut typed,
-        &mut warnings,
-        &mut losses,
-    );
+    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses, ctx)?;
     let mut point_carriers = BTreeSet::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         if record
             .partials
             .iter()
             .any(|partial| partial.name == "VERTEX_POINT")
         {
             if let Some(id) = vertex_point_reference(record) {
-                point_carriers.insert(id);
+                ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
             }
         }
         if record
@@ -436,7 +606,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .any(|partial| super::representation::is_representation_name(&partial.name))
         {
             if let Some(items) = representation_items(record) {
-                point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
+                for id in items.filter(|id| points.contains_key(id)) {
+                    ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                }
             }
         }
         if record.partials.iter().any(|partial| {
@@ -447,7 +619,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }) {
             if let Some(items) = first_named_list(record, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])
             {
-                point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
+                for id in items.filter(|id| points.contains_key(id)) {
+                    ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                }
             }
         }
         if record
@@ -456,19 +630,28 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .any(|partial| partial.name == "POLY_LOOP")
         {
             if let Some(items) = first_named_list(record, &["POLY_LOOP"]) {
-                point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
+                for id in items.filter(|id| points.contains_key(id)) {
+                    ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                }
             }
         }
         if is_apll_leader_line(record) {
-            let mut references = Vec::new();
             for parameter in record
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                collect_references(parameter, &mut references);
+                for id in super::reference::references(parameter, ctx) {
+                    let id = id?;
+                    if points.contains_key(&id) {
+                        ctx.insert_btree_set(
+                            &mut point_carriers,
+                            id,
+                            "step_geometry_point_carriers",
+                        )?;
+                    }
+                }
             }
-            point_carriers.extend(references.into_iter().filter(|id| points.contains_key(id)));
         }
         if let Some(item) = record
             .partials
@@ -483,59 +666,60 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(Value::reference)
         {
             if points.contains_key(&item) {
-                point_carriers.insert(item);
+                ctx.insert_btree_set(&mut point_carriers, item, "step_geometry_point_carriers")?;
             }
         }
         if let Some(id) = super::presentation::styled_item_target(record) {
             if points.contains_key(&id) {
-                point_carriers.insert(id);
+                ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
             }
         }
     }
-    ir.model
-        .points
-        .extend(point_carriers.into_iter().filter_map(|id| {
-            points.get(&id).copied().map(|position| Point {
-                source_object: apll_point_names
-                    .get(&id)
-                    .map(|name| SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: format!("#{id}"),
-                        name: name.clone(),
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    }),
-                id: PointId::mint(ids::data("point", id)).expect("identity grammar"),
+    for id in point_carriers {
+        let Some(position) = points.get(&id).copied() else {
+            continue;
+        };
+        let source_name = apll_point_names.remove(&id);
+        ctx.push_vec(
+            &mut ir.model.points,
+            Point::new(
+                PointId::from(ids::data(kind!("point"), id)),
                 position,
-            })
-        }));
+                source_name.map(|name| super::step_source_association(id, name)),
+            ),
+            "step_geometry_ir_points",
+        )?;
+    }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| direction.scale(magnitude * record_scale));
+                .map(|(direction, magnitude)| direction.as_raw().scale(magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
                 .map(|(direction, magnitude)| {
-                    Point2::new(direction.u * magnitude, direction.v * magnitude)
+                    let [u, v] = direction.get();
+                    Point2::new(u * magnitude, v * magnitude)
                 });
             if let Some(value) = value {
-                vectors.insert(id, value);
-                typed.insert(id);
+                ctx.insert_btree_map(&mut vectors, id, value, "step_geometry_vectors")?;
+                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else if let Some(value) = value2 {
-                vectors2.insert(id, value);
-                typed.insert(id);
+                ctx.insert_btree_map(&mut vectors2, id, value, "step_geometry_vectors2")?;
+                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else {
-                warnings.push(format!(
-                    "VECTOR #{id} has an invalid direction or magnitude"
-                ));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "VECTOR #{id} has an invalid direction or magnitude"
+                    )),
+                    "step_geometry_losses",
+                )?;
             }
         }
     }
@@ -545,15 +729,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         {
+            let mut inferred_reference = false;
             let placement = named_parameter(record, placement_type, 1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
                 .map(|origin| {
-                    let axis = optional_direction(
-                        named_parameter(record, placement_type, 2),
-                        &directions,
-                    )
-                        .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+                    let axis =
+                        optional_direction(named_parameter(record, placement_type, 2), &directions)
+                            .unwrap_or(UnitVector3::Z_AXIS);
                     let reference = match optional_direction(
                         named_parameter(record, placement_type, 3),
                         &directions,
@@ -562,34 +745,50 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             if let Some(reference) = orthogonal_reference(axis, reference) {
                                 reference
                             } else {
-                                losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
-                                        "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
-                                    )));
-                                first_projected_axis(axis)
-                                    .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
+                                inferred_reference = true;
+                                first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS)
                             }
                         }
-                        None => first_projected_axis(axis).unwrap_or(Vector3::new(1.0, 0.0, 0.0)),
+                        None => first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS),
                     };
                     (origin, axis, reference)
                 });
+            if inferred_reference {
+                ctx.push_vec(&mut losses, StepLossCode::PlacementReferenceInferred.note(format!(
+                        "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
+                    )), "step_geometry_losses")?;
+            }
             if let Some(placement) = placement {
-                placements.insert(id, placement);
-                typed.insert(id);
+                ctx.insert_btree_map(&mut placements, id, placement, "step_geometry_placements")?;
+                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else {
-                warnings.push(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location"));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning
+                        .note(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location")),
+                    "step_geometry_losses",
+                )?;
             }
         }
     }
     let mut transformation_operators = BTreeMap::new();
     for (id, record) in exchange.entities("CARTESIAN_TRANSFORMATION_OPERATOR_3D") {
         if let Some(transform) = cartesian_transformation_operator(record, &points, &directions) {
-            transformation_operators.insert(id, transform);
-            typed.insert(id);
+            ctx.insert_btree_map(
+                &mut transformation_operators,
+                id,
+                transform,
+                "step_geometry_transformation_operators",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!(
-                "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
@@ -597,12 +796,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if let Some(transform) =
             cartesian_transformation_operator_2d(record, &points2, &directions2)
         {
-            transformation_operators2.insert(id, transform);
-            typed.insert(id);
+            ctx.insert_btree_map(
+                &mut transformation_operators2,
+                id,
+                transform,
+                "step_geometry_transformation_operators2",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!(
-                "CARTESIAN_TRANSFORMATION_OPERATOR_2D #{id} has invalid axes, origin, or scale"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "CARTESIAN_TRANSFORMATION_OPERATOR_2D #{id} has invalid axes, origin, or scale"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
@@ -615,16 +823,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|origin| {
                 let x_axis = match named_parameter(record, "AXIS2_PLACEMENT_2D", 2) {
                     Some(Value::Reference(direction)) => directions2.get(direction).copied()?,
-                    Some(Value::Omitted) | None => Point2::new(1.0, 0.0),
+                    Some(Value::Omitted) | None => HypotDirection2::X_AXIS,
                     _ => return None,
                 };
-                Some((origin, x_axis, Point2::new(-x_axis.v, x_axis.u)))
+                Some((origin, x_axis, x_axis.quarter_turn()))
             });
         if let Some(placement) = placement {
-            placements2.insert(id, placement);
-            typed.insert(id);
+            ctx.insert_btree_map(&mut placements2, id, placement, "step_geometry_placements2")?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location"));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location")),
+                "step_geometry_losses",
+            )?;
         }
     }
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
@@ -635,75 +848,67 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         let representation_id = named_parameter(record, "PCURVE", 2).and_then(Value::reference);
         let Some(items) = representation_id
-            .and_then(|representation| exchange.records.get(&representation))
+            .and_then(|representation| exchange.records().get(&representation))
             .and_then(representation_items)
         else {
             continue;
         };
         let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
-            unit_scales.angle([representation])
+            unit_scales.angle([representation]).get()
         });
-        let decoded = items
-            .iter()
-            .filter_map(|curve| {
-                decode_pcurve_geometry(
-                    *curve,
-                    exchange,
-                    &points2,
-                    &vectors2,
-                    &placements2,
-                    &transformation_operators2,
-                    pcurve_angle_scale,
-                    &mut warnings,
-                    &mut BTreeSet::new(),
-                    0,
-                )
-                .map(|decoded| (*curve, decoded))
-            })
-            .collect::<Vec<_>>();
-        if let [(curve, decoded)] = decoded.as_slice() {
-            pcurve_geometry_records.extend(decoded.1.iter().copied());
-            pcurve_geometries.insert(*curve, decoded.clone());
+        let mut decoded = None;
+        let mut decoded_count = 0;
+        for curve in items {
+            if let Some(geometry) = decode_pcurve_geometry(
+                curve,
+                exchange,
+                PcurveSources {
+                    points: &points2,
+                    vectors: &vectors2,
+                    placements: &placements2,
+                    transformations: &transformation_operators2,
+                    angle_scale: pcurve_angle_scale,
+                },
+                &mut losses,
+                &mut BTreeSet::new(),
+                0,
+                ctx,
+            )? {
+                decoded_count += 1;
+                decoded = Some((curve, geometry));
+            }
+        }
+        if decoded_count == 1 {
+            if let Some((curve, (geometry, records))) = decoded {
+                for &record in &records {
+                    ctx.insert_btree_set(
+                        &mut pcurve_geometry_records,
+                        record,
+                        "step_pcurve_geometry_records",
+                    )?;
+                }
+                ctx.insert_btree_map(
+                    &mut pcurve_geometries,
+                    curve,
+                    (geometry, records),
+                    "step_pcurve_geometries",
+                )?;
+            }
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
-    for (id, record) in exchange.entities_any(&[
-        "LINE",
-        "CIRCLE",
-        "ELLIPSE",
-        "PARABOLA",
-        "HYPERBOLA",
-        "POLYLINE",
-        "B_SPLINE_CURVE_WITH_KNOTS",
-        "UNIFORM_CURVE",
-        "QUASI_UNIFORM_CURVE",
-        "BEZIER_CURVE",
-    ]) {
-        let Some(curve_type) = entity_type(
-            record,
-            &[
-                "LINE",
-                "CIRCLE",
-                "ELLIPSE",
-                "PARABOLA",
-                "HYPERBOLA",
-                "POLYLINE",
-                "B_SPLINE_CURVE_WITH_KNOTS",
-                "UNIFORM_CURVE",
-                "QUASI_UNIFORM_CURVE",
-                "BEZIER_CURVE",
-            ],
-        ) else {
+    for (id, record) in exchange.entities_any(LeafCurveEntity::NAMES) {
+        let Some(curve_kind) = LeafCurveEntity::of(record) else {
             continue;
         };
         if pcurve_geometry_records.contains(&id) {
             continue;
         }
-        if curve_type == "B_SPLINE_CURVE_WITH_KNOTS" && record.simple_name().is_none() {
+        if curve_kind == LeafCurveEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
-        let parameter_offset = if curve_type == "ELLIPSE" {
+        let record_scale = unit_scales.length([id]).get();
+        let parameter_offset = if curve_kind == LeafCurveEntity::Ellipse {
             let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
             let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
             first_radius
@@ -715,8 +920,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         } else {
             None
         };
-        let geometry = match curve_type {
-            "LINE" => named_parameter(record, "LINE", 1)
+        let geometry = match curve_kind {
+            LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
                 .zip(
@@ -725,104 +930,131 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(|vector| vectors.get(&vector).copied())
                         .and_then(normalize),
                 )
-                .map(|(origin, direction)| CurveGeometry::Line { origin, direction }),
-            "CIRCLE" => named_parameter(record, "CIRCLE", 1)
+                .map(|(origin, direction)| {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction),
+                    ))
+                }),
+            LeafCurveEntity::Circle => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
-                .filter(|(_, radius)| radius.is_finite() && *radius > 0.0)
-                .map(
-                    |((center, axis, ref_direction), radius)| CurveGeometry::Circle {
-                        center,
-                        axis,
-                        ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
-            "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
+                .and_then(|((center, axis, ref_direction), radius)| {
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
+                    )))
+                }),
+            LeafCurveEntity::Ellipse => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "ELLIPSE", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
-                .map(
+                .and_then(
                     |(((center, axis, reference_direction), first_radius), second_radius)| {
                         let first_radius = first_radius * record_scale;
                         let second_radius = second_radius * record_scale;
                         let (major_direction, major_radius, minor_radius) =
                             if first_radius >= second_radius {
-                                (reference_direction, first_radius, second_radius)
+                                (*reference_direction.as_raw(), first_radius, second_radius)
                             } else {
                                 // STEP ELLIPSE stores two ordered semiaxes;
                                 // neither position is required to be the
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
-                                (axis.cross(reference_direction), second_radius, first_radius)
+                                (
+                                    axis.as_raw().cross(*reference_direction.as_raw()),
+                                    second_radius,
+                                    first_radius,
+                                )
                             };
-                        CurveGeometry::Ellipse {
+                        let major_direction = UnitVector3::new(major_direction)?;
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius)?;
+                        let minor_radius = PositiveLength::new(minor_radius)?;
+                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                             center,
-                            axis,
-                            major_direction,
+                            frame,
                             major_radius,
                             minor_radius,
-                        }
+                        )
+                        .ok()
+                        .map(SolvedCurveGeometry::Ellipse)
+                        .map(CurveGeometry::Solved)
                     },
                 ),
-            "PARABOLA" => named_parameter(record, "PARABOLA", 1)
+            LeafCurveEntity::Parabola => named_parameter(record, "PARABOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
-                .filter(|(_, focal_distance)| focal_distance.is_finite() && *focal_distance > 0.0)
-                .map(
-                    |((vertex, axis, major_direction), focal_distance)| CurveGeometry::Parabola {
-                        vertex,
-                        axis,
-                        major_direction,
-                        focal_distance: focal_distance * record_scale,
-                    },
-                ),
-            "HYPERBOLA" => named_parameter(record, "HYPERBOLA", 1)
+                .and_then(|((vertex, axis, major_direction), focal_distance)| {
+                    let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                    let focal_distance = PositiveLength::new(focal_distance * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                        cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                            vertex,
+                            frame,
+                            focal_distance,
+                        ),
+                    )))
+                }),
+            LeafCurveEntity::Hyperbola => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number))
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
-                .map(
+                .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        CurveGeometry::Hyperbola {
-                            center,
-                            axis,
-                            major_direction,
-                            major_radius: major_radius * record_scale,
-                            minor_radius: minor_radius * record_scale,
-                        }
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = PositiveLength::new(minor_radius * record_scale)?;
+                        Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                            cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
-            "POLYLINE" => polyline(record, &points).map(CurveGeometry::Nurbs),
-            "B_SPLINE_CURVE_WITH_KNOTS"
-            | "UNIFORM_CURVE"
-            | "QUASI_UNIFORM_CURVE"
-            | "BEZIER_CURVE" => {
-                nurbs_curve(id, record, &points, &mut warnings).map(CurveGeometry::Nurbs)
-            }
-            _ => unreachable!("curve type was selected from the dispatch list"),
+            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses, ctx)?
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved),
+            LeafCurveEntity::BSplineWithKnots
+            | LeafCurveEntity::UniformCurve
+            | LeafCurveEntity::QuasiUniformCurve
+            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses, ctx)?
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved),
         };
         if let Some(geometry) = geometry {
             if let Some(offset) = parameter_offset {
-                curve_parameter_offsets.insert(id, offset);
+                ctx.insert_btree_map(
+                    &mut curve_parameter_offsets,
+                    id,
+                    offset,
+                    "step_geometry_curve_parameter_offsets",
+                )?;
             }
-            ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
-                geometry,
-                source_object: None,
-            });
-            typed.insert(id);
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: CurveId::from(ids::data(kind!("curve"), id)),
+                    geometry,
+                    source_object: None,
+                },
+                "step_geometry_ir_curves",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!("{curve_type} #{id} has invalid geometry"));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -832,25 +1064,34 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut warnings) {
-            ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
-                geometry: CurveGeometry::Nurbs(nurbs),
-                source_object: None,
-            });
-            typed.insert(id);
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses, ctx)? {
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: CurveId::from(ids::data(kind!("curve"), id)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+                    source_object: None,
+                },
+                "step_geometry_ir_curves",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!(
-                "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
 
     // STEP geometry is a graph, not an ordered stream. Resolve all deferred
     // curve constructors to a fixpoint so nested or forward references do not
     // disappear merely because their source record has a larger instance id.
-    let mut carrier_index = CarrierIndex::from_ir(ir);
-    let deferred_ids = exchange
+    let mut carrier_index = CarrierIndex::from_ir(ir, ctx)?;
+    let mut deferred_ids = Vec::new();
+    for (id, _) in exchange
         .entities_any(&[
             "CURVE_REPLICA",
             "TRIMMED_CURVE",
@@ -860,15 +1101,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             "OFFSET_CURVE_3D",
         ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
-        .map(|(id, _)| id)
-        .collect::<Vec<_>>();
+    {
+        ctx.push_vec(&mut deferred_ids, id, "step_deferred_curve_ids")?;
+    }
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
     while let Some(id) = deferred_queue.pop_front() {
         if carrier_index.curves.contains_key(&id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if let Some(parent_reference_step) = record
@@ -885,50 +1127,82 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
-                waiting_on.entry(parent_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut waiting_on,
+                    parent_step,
+                    id,
+                    ctx,
+                    "step_deferred_curve_groups",
+                    "step_deferred_curve_members",
+                )?;
                 continue;
             };
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir.model.curves.get(parent_index.0).map(|curve| {
-                curve
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&curve.geometry)
-                    .clone()
-            }) else {
+            let Some(basis) = ir
+                .model
+                .curves
+                .get(parent_index.0)
+                .and_then(|curve| curve.geometry.solved())
+            else {
                 continue;
             };
+            let basis = basis.try_clone_for_decode(ctx, "step_curve_replica_basis")?;
+            let Ok(placed) = cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
+            else {
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "CURVE_REPLICA #{id} nests past the admitted inline basis depth"
+                    )),
+                    "step_geometry_losses",
+                )?;
+                continue;
+            };
+            let geometry = SolvedCurveGeometry::Transformed(placed);
             let curve_index = CurveIndex(ir.model.curves.len());
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
-            ir.model.curves.push(Curve {
-                id: curve.clone(),
-                geometry: CurveGeometry::Transformed {
-                    basis: Box::new(basis),
+            let curve = CurveId::from(ids::data(kind!("curve"), id));
+            let procedural = ProceduralCurve::new(
+                ProceduralCurveId::from(ids::construction(kind!("curve_replica"), id)),
+                ProceduralCurveDefinition::Replica {
+                    source: CurveId::from(ids::data(kind!("curve"), parent_step)),
                     transform,
                 },
-                source_object: None,
-            });
-            let _attached = ir.model.add_procedural_curve(
-                curve,
-                ProceduralCurve::new(
-                    ProceduralCurveId::mint(ids::construction("curve_replica", id))
-                        .expect("identity grammar"),
-                    ProceduralCurveDefinition::Replica {
-                        source: CurveId::mint(ids::data("curve", parent_step))
-                            .expect("identity grammar"),
-                        transform,
-                    },
-                ),
             );
-            carrier_index.curves.insert(id, curve_index);
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
+                    geometry: CurveGeometry::Solved(geometry),
+                    source_object: None,
+                },
+                "step_geometry_ir_curves",
+            )?;
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                id,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
-                curve_parameter_offsets.insert(id, offset);
+                ctx.insert_btree_map(
+                    &mut curve_parameter_offsets,
+                    id,
+                    offset,
+                    "step_geometry_curve_parameter_offsets",
+                )?;
             }
-            typed.insert(id);
-            typed.insert(operator_step);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_hash_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
+            wake_deferred_dependents(
+                id,
+                &mut waiting_on,
+                &mut deferred_queue,
+                ctx,
+                "step_deferred_curve_queue",
+            )?;
             continue;
         }
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
@@ -941,114 +1215,212 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             if !carrier_index.curves.contains_key(&basis_step) {
-                waiting_on.entry(basis_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut waiting_on,
+                    basis_step,
+                    id,
+                    ctx,
+                    "step_deferred_curve_groups",
+                    "step_deferred_curve_members",
+                )?;
                 continue;
             }
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
-            let basis = CurveId::mint(ids::data("curve", basis_step)).expect("identity grammar");
+            let curve = CurveId::from(ids::data(kind!("curve"), id));
+            let basis = CurveId::from(ids::data(kind!("curve"), basis_step));
             let Some(geometry) = carrier_index
                 .curves
                 .get(&basis_step)
                 .and_then(|index| ir.model.curves.get(index.0))
-                .map(|candidate| {
-                    candidate
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&candidate.geometry)
-                        .clone()
-                })
+                .map(|candidate| &candidate.geometry)
             else {
                 continue;
             };
+            let Some(solved_geometry) = geometry.solved() else {
+                continue;
+            };
             let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_angle_scale = unit_scales.angle([id]).get();
             let parameter_offset = curve_parameter_offsets
                 .get(&basis_step)
                 .copied()
                 .unwrap_or(0.0);
-            let linear_parameter_scale =
-                line_parameter_scale(exchange, basis_reference_step, record_scale, &mut losses);
+            let linear_parameter_scale = line_parameter_scale(
+                exchange,
+                basis_reference_step,
+                record_scale,
+                &mut losses,
+                ctx,
+            )?;
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
-                    geometry: &geometry,
+                    geometry,
                     angle_scale: record_angle_scale,
-                    linear_parameter_scale,
+                    linear_parameter_scale: linear_parameter_scale.get(),
                     parameter_offset,
-                    tolerance: ir.tolerances.linear,
+                    tolerance: ir.tolerances.linear.get(),
                     master_representation,
                     record_id: id,
-                    warnings: &mut warnings,
+                    losses: &mut losses,
+                    ctx,
                 };
                 (
-                    parameters
-                        .get(2)
-                        .and_then(|value| trim_parameter(value, &mut trim_context)),
-                    parameters
-                        .get(3)
-                        .and_then(|value| trim_parameter(value, &mut trim_context)),
+                    match parameters.get(2) {
+                        Some(value) => trim_parameter(value, &mut trim_context)?,
+                        None => None,
+                    },
+                    match parameters.get(3) {
+                        Some(value) => trim_parameter(value, &mut trim_context)?,
+                        None => None,
+                    },
                 )
             };
             let Some((start, end)) = start.zip(end) else {
                 continue;
             };
-            let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
-            let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: curve.clone(),
-                geometry,
-                source_object: None,
-            });
-            if let Ok(procedural) = ProceduralCurve::try_new(
-                ProceduralCurveId::mint(ids::construction("trimmed_curve", id))
-                    .expect("identity grammar"),
-                ProceduralCurveDefinition::Subset {
-                    source: basis,
+            let parameter_range = trimmed_curve_parameter_range(geometry, start, end, sense);
+            let procedural =
+                match cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                    basis,
                     parameter_range,
                     sense,
+                    None,
+                )
+                .and_then(|admitted_payload| {
+                    let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
+                    definition.set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::geometry::FitTolerance::ZERO,
+                    ))?;
+                    Ok(ProceduralCurve::new(
+                        ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id)),
+                        definition,
+                    ))
+                }) {
+                    Ok(procedural) => procedural,
+                    Err(error) => {
+                        ctx.push_vec(
+                            &mut losses,
+                            StepLossCode::DecodeWarning
+                                .note(format!("TRIMMED_CURVE #{id}: {error}")),
+                            "step_geometry_losses",
+                        )?;
+                        continue;
+                    }
+                };
+            let curve_index = CurveIndex(ir.model.curves.len());
+            let copied_geometry =
+                solved_geometry.try_clone_for_decode(ctx, "step_trim_curve_carrier")?;
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
+                    geometry: CurveGeometry::Solved(copied_geometry),
+                    source_object: None,
                 },
-                Some(0.0),
-            ) {
-                let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
-            }
-            carrier_index.curves.insert(id, curve_index);
+                "step_geometry_ir_curves",
+            )?;
+
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                id,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
             if parameter_offset != 0.0 {
-                curve_parameter_offsets.insert(id, parameter_offset);
+                ctx.insert_btree_map(
+                    &mut curve_parameter_offsets,
+                    id,
+                    parameter_offset,
+                    "step_geometry_curve_parameter_offsets",
+                )?;
             }
-            typed.insert(id);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            wake_deferred_dependents(
+                id,
+                &mut waiting_on,
+                &mut deferred_queue,
+                ctx,
+                "step_deferred_curve_queue",
+            )?;
             continue;
         }
         if composite_curve_parameters(record).is_some() {
-            let missing = composite_curve_dependencies(record, exchange)
-                .into_iter()
-                .filter(|dependency| !carrier_index.curves.contains_key(dependency))
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                for dependency in missing {
-                    waiting_on.entry(dependency).or_default().push(id);
+            let mut missing = false;
+            for dependency in composite_curve_dependencies(record, exchange) {
+                if !carrier_index.curves.contains_key(&dependency) {
+                    defer_geometry_dependency(
+                        &mut waiting_on,
+                        dependency,
+                        id,
+                        ctx,
+                        "step_deferred_curve_groups",
+                        "step_deferred_curve_members",
+                    )?;
+                    missing = true;
                 }
+            }
+            if missing {
                 continue;
             }
             let Some((segments, self_intersect)) =
-                composite_curve(record, exchange, &carrier_index)
+                composite_curve(record, exchange, &carrier_index, ctx)?
             else {
                 continue;
             };
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
-            typed.extend(segments.iter().map(|(segment, _)| *segment));
+            let curve = CurveId::from(ids::data(kind!("curve"), id));
+            for &(segment, _) in &segments {
+                ctx.insert_hash_set(&mut typed, segment, "step_geometry_typed_ids")?;
+            }
+            let mut model_segments = Vec::new();
+            for (_, segment) in segments {
+                ctx.push_vec(
+                    &mut model_segments,
+                    segment,
+                    "step_composite_curve_model_segments",
+                )?;
+            }
+            let segments =
+                match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(model_segments) {
+                    Ok(segments) => segments,
+                    Err(error) => {
+                        ctx.push_vec(
+                            &mut losses,
+                            StepLossCode::DecodeWarning
+                                .note(format!("COMPOSITE_CURVE #{id}: {error}")),
+                            "step_geometry_losses",
+                        )?;
+                        continue;
+                    }
+                };
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: curve.clone(),
-                geometry: CurveGeometry::Composite {
-                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
-                    self_intersect,
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                        segments,
+                        self_intersect,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            carrier_index.curves.insert(id, curve_index);
-            typed.insert(id);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+                "step_geometry_ir_curves",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                id,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            wake_deferred_dependents(
+                id,
+                &mut waiting_on,
+                &mut deferred_queue,
+                ctx,
+                "step_deferred_curve_queue",
+            )?;
             continue;
         }
         let Some(parameters) = entity_parameters(record, "OFFSET_CURVE_3D") else {
@@ -1057,8 +1429,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let source_reference_step = parameters.get(1).and_then(Value::reference);
         let source_step =
             source_reference_step.and_then(|source| curve_carrier_record(source, exchange));
-        let source = source_step
-            .map(|source| CurveId::mint(ids::data("curve", source)).expect("identity grammar"));
+        let source = source_step.map(|source| CurveId::from(ids::data(kind!("curve"), source)));
         let distance = parameters.get(2).and_then(Value::number);
         let self_intersect = parameters
             .get(3)
@@ -1081,67 +1452,111 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         if !carrier_index.curves.contains_key(&source_step) {
-            waiting_on.entry(source_step).or_default().push(id);
+            defer_geometry_dependency(
+                &mut waiting_on,
+                source_step,
+                id,
+                ctx,
+                "step_deferred_curve_groups",
+                "step_deferred_curve_members",
+            )?;
             continue;
         }
         let Some(geometry) = carrier_index
             .curves
             .get(&source_step)
             .and_then(|index| ir.model.curves.get(index.0))
-            .map(|candidate| {
-                candidate
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&candidate.geometry)
-                    .clone()
-            })
+            .and_then(|candidate| candidate.geometry.solved())
         else {
             continue;
         };
-        let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+        let curve = CurveId::from(ids::data(kind!("curve"), id));
         let curve_index = CurveIndex(ir.model.curves.len());
-        ir.model.curves.push(Curve {
-            id: curve.clone(),
-            geometry,
-            source_object: None,
-        });
-        let _attached = ir.model.add_procedural_curve(
-            curve.clone(),
-            ProceduralCurve::new(
-                ProceduralCurveId::mint(ids::construction("offset_curve", id))
-                    .expect("identity grammar"),
-                ProceduralCurveDefinition::SpatialOffset {
-                    source,
-                    distance: distance * unit_scales.length([id]),
-                    reference_direction,
-                    self_intersect,
-                },
-            ),
-        );
-        carrier_index.curves.insert(id, curve_index);
+        let copied_geometry = geometry.try_clone_for_decode(ctx, "step_offset_curve_carrier")?;
+        let procedural =
+            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_from_parts(
+                source,
+                distance * unit_scales.length([id]).get(),
+                reference_direction,
+                self_intersect,
+            )
+            .map(|admitted_payload| {
+                ProceduralCurve::new(
+                    ProceduralCurveId::from(ids::construction(kind!("offset_curve"), id)),
+                    ProceduralCurveDefinition::SpatialOffset(admitted_payload),
+                )
+            }) {
+                Ok(procedural) => procedural,
+                Err(error) => {
+                    ctx.push_vec(&mut losses, StepLossCode::DecodeWarning
+                            .note(format!("curve construction #{id}: {error}")), "step_geometry_losses")?;
+                    continue;
+                }
+            };
+        ctx.push_vec(
+            &mut ir.model.curves,
+            Curve {
+                id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
+                geometry: CurveGeometry::Solved(copied_geometry),
+                source_object: None,
+            },
+            "step_geometry_ir_curves",
+        )?;
+        let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+        ctx.insert_hash_map(
+            &mut carrier_index.curves,
+            id,
+            curve_index,
+            "step_geometry_curve_index",
+        )?;
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
-            curve_parameter_offsets.insert(id, offset);
+            ctx.insert_btree_map(
+                &mut curve_parameter_offsets,
+                id,
+                offset,
+                "step_geometry_curve_parameter_offsets",
+            )?;
         }
-        typed.insert(id);
-        wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+        wake_deferred_dependents(
+            id,
+            &mut waiting_on,
+            &mut deferred_queue,
+            ctx,
+            "step_deferred_curve_queue",
+        )?;
     }
     for (id, _) in exchange.entities("CURVE_REPLICA") {
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
-            warnings.push(format!(
-                "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
-            ));
+        if !carrier_index.curves.contains_key(&id) {
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )),
+                "step_geometry_losses",
+            )?;
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
-                geometry: CurveGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: CurveId::from(ids::data(kind!("curve"), id)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            entry.insert(curve_index);
+                "step_geometry_ir_curves",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                id,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
         }
     }
     for (id, _) in exchange
@@ -1149,26 +1564,38 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
-                "TRIMMED_CURVE #{id} has invalid or unresolved basis/trim selectors"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TRIMMED_CURVE #{id} has invalid or unresolved basis/trim selectors"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, record) in
         exchange.entities_any(&["COMPOSITE_CURVE", "BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"])
     {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
-                "{} #{id} has invalid, cyclic, or unresolved segments",
-                record.simple_name().unwrap_or("COMPOSITE_CURVE")
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{} #{id} has invalid, cyclic, or unresolved segments",
+                    record.simple_name().unwrap_or("COMPOSITE_CURVE")
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, _) in exchange.entities("OFFSET_CURVE_3D") {
         if !carrier_index.curves.contains_key(&id) {
-            warnings.push(format!(
-                "OFFSET_CURVE_3D #{id} has invalid or unresolved basis parameters"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "OFFSET_CURVE_3D #{id} has invalid or unresolved basis parameters"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, _) in exchange
@@ -1181,226 +1608,264 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+        if !carrier_index.curves.contains_key(&id) {
+            let curve = CurveId::from(ids::data(kind!("curve"), id));
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: curve.clone(),
-                geometry: CurveGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            warnings.push(format!(
-                "retained unresolved deferred curve #{id} as an unknown carrier"
-            ));
-            entry.insert(curve_index);
+                "step_geometry_ir_curves",
+            )?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "retained unresolved deferred curve #{id} as an unknown carrier"
+                )),
+                "step_geometry_losses",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                id,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
         }
     }
     for (id, record) in
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
     {
         let Some(basis) = surface_curve_basis(record) else {
-            warnings.push(format!(
-                "{} #{id} has no decoded 3D curve",
-                record.simple_name().unwrap_or("SURFACE_CURVE")
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{} #{id} has no decoded 3D curve",
+                    record.simple_name().unwrap_or("SURFACE_CURVE")
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
         if carrier_index.curves.contains_key(&basis) {
-            typed.insert(id);
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!(
-                "{} #{id} has no decoded 3D curve",
-                record.simple_name().unwrap_or("SURFACE_CURVE")
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{} #{id} has no decoded 3D curve",
+                    record.simple_name().unwrap_or("SURFACE_CURVE")
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
 
     for (id, record) in
         exchange.entities_any(&["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"])
     {
-        let definition = match entity_type(
+        let (surface_type, definition) = match entity_type(
             record,
             &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
         ) {
-            Some("SURFACE_OF_LINEAR_EXTRUSION") => {
+            Some(surface_type @ "SURFACE_OF_LINEAR_EXTRUSION") => (surface_type,
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
                     .filter(|curve| carrier_index.curves.contains_key(curve))
-                    .map(|curve| {
-                        CurveId::mint(ids::data("curve", curve)).expect("identity grammar")
-                    })
+                    .map(|curve| CurveId::from(ids::data(kind!("curve"), curve)))
                     .zip(
                         named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 2)
                             .and_then(Value::reference)
                             .and_then(|vector| vectors.get(&vector).copied()),
                     )
-                    .map(
-                        |(directrix, direction)| ProceduralSurfaceDefinition::LinearSweep {
-                            directrix,
-                            direction,
-                        },
-                    )
-            }
-            Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
+                    .map(|(directrix, direction)| {
+                        cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                            directrix, direction,
+                        )
+                        .map(ProceduralSurfaceDefinition::LinearSweep)
+                    })
+            ),
+            Some(surface_type @ "SURFACE_OF_REVOLUTION") => (surface_type, named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
                 .filter(|curve| carrier_index.curves.contains_key(curve))
-                .map(|curve| CurveId::mint(ids::data("curve", curve)).expect("identity grammar"))
+                .map(|curve| CurveId::from(ids::data(kind!("curve"), curve)))
                 .zip(
                     named_parameter(record, "SURFACE_OF_REVOLUTION", 2)
                         .and_then(Value::reference)
                         .and_then(|placement| placements.get(&placement).copied()),
                 )
                 .map(|(directrix, (axis_origin, axis_direction, _))| {
-                    ProceduralSurfaceDefinition::AxisRevolution {
-                        directrix,
-                        axis_origin,
-                        axis_direction,
-                    }
-                }),
+                    let construction =
+                        cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::from_parts(
+                            directrix,
+                            axis_origin,
+                            axis_direction,
+                        );
+                    Ok(ProceduralSurfaceDefinition::AxisRevolution(construction))
+                })),
             _ => continue,
         };
         let Some(definition) = definition else {
-            warnings.push(format!(
-                "{} #{id} has an unresolved directrix, vector, or axis",
-                entity_type(
-                    record,
-                    &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
-                )
-                .expect("matched swept surface")
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{surface_type} #{id} has an unresolved directrix, vector, or axis"
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
-            source_object: None,
-        });
+        let definition = match definition {
+            Ok(definition) => definition,
+            Err(error) => {
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")),
+                    "step_geometry_losses",
+                )?;
+                continue;
+            }
+        };
+        let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+        ctx.push_vec(
+            &mut ir.model.surfaces,
+            Surface {
+                id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+            "step_geometry_ir_surfaces",
+        )?;
         let _attached = ir.model.add_procedural_surface(
-            surface,
+            ctx,
+            &surface,
             ProceduralSurface::new(
-                ProceduralSurfaceId::mint(ids::construction("swept_surface", id))
-                    .expect("identity grammar"),
+                ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
                 definition,
                 None,
             ),
-        );
-        typed.insert(id);
+        )?;
+        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
     }
 
-    for (id, record) in exchange.entities_any(&[
-        "PLANE",
-        "CYLINDRICAL_SURFACE",
-        "CONICAL_SURFACE",
-        "SPHERICAL_SURFACE",
-        "DEGENERATE_TOROIDAL_SURFACE",
-        "TOROIDAL_SURFACE",
-        "B_SPLINE_SURFACE_WITH_KNOTS",
-        "UNIFORM_SURFACE",
-        "QUASI_UNIFORM_SURFACE",
-        "BEZIER_SURFACE",
-    ]) {
-        let Some(surface_type) = entity_type(
-            record,
-            &[
-                "PLANE",
-                "CYLINDRICAL_SURFACE",
-                "CONICAL_SURFACE",
-                "SPHERICAL_SURFACE",
-                "DEGENERATE_TOROIDAL_SURFACE",
-                "TOROIDAL_SURFACE",
-                "B_SPLINE_SURFACE_WITH_KNOTS",
-                "UNIFORM_SURFACE",
-                "QUASI_UNIFORM_SURFACE",
-                "BEZIER_SURFACE",
-            ],
-        ) else {
+    for (id, record) in exchange.entities_any(LeafSurfaceEntity::NAMES) {
+        let Some(surface_kind) = LeafSurfaceEntity::of(record) else {
             continue;
         };
-        if surface_type == "B_SPLINE_SURFACE_WITH_KNOTS" && record.simple_name().is_none() {
+        let surface_type = surface_kind.name();
+        if surface_kind == LeafSurfaceEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
-        let record_angle_scale = unit_scales.angle([id]);
+        let record_scale = unit_scales.length([id]).get();
+        let record_angle_scale = unit_scales.angle([id]).get();
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
-        let geometry = match surface_type {
-            "PLANE" => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
+        let geometry = match surface_kind {
+            LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
+                let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
+                )))
             }),
-            "CYLINDRICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "CYLINDRICAL_SURFACE", 2)))
-                .map(
-                    |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
-            "CONICAL_SURFACE" => placement
-                .zip(nonnegative(named_parameter(record, "CONICAL_SURFACE", 2)))
-                .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
-                .filter(|(_, angle)| angle.is_finite())
-                .map(|(((origin, axis, ref_direction), radius), half_angle)| {
-                    SurfaceGeometry::Cone {
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius: radius * record_scale,
-                        ratio: 1.0,
-                        half_angle: half_angle * record_angle_scale,
-                    }
+            LeafSurfaceEntity::Cylindrical => placement
+                .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
+                .and_then(|((origin, axis, ref_direction), radius)| {
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                        cadmpeg_ir::geometry::analytic::CylinderSurface::new(origin, frame, radius),
+                    )))
                 }),
-            "SPHERICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "SPHERICAL_SURFACE", 2)))
-                .map(
-                    |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
-                        center,
-                        axis,
-                        ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
-            "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, surface_type, 2)))
-                .zip(positive(named_parameter(record, surface_type, 3)))
-                .map(
+            // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
+            // Every finite value comes through, because the IR cone uses the
+            // chart STEP states and reproduces the surface the record names at
+            // any slope. Each arm of this match refuses what its IR carrier
+            // refuses and nothing more: the cone radius stops at
+            // `NonNegativeLength`, which is the entity's own `radius >= 0`, and
+            // the toroidal arm below serves `TOROIDAL_SURFACE` and
+            // `DEGENERATE_TOROIDAL_SURFACE` without separating their radius
+            // rules. A refused carrier withholds the one surface with a
+            // `DecodeWarning` note and leaves the rest of the decode standing.
+            LeafSurfaceEntity::Conical => placement
+                .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
+                .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
+                .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonNegativeLength::new(radius * record_scale)?;
+                    let half_angle = Angle::new(half_angle * record_angle_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                        cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                            origin,
+                            frame,
+                            radius,
+                            PositiveReal::ONE,
+                            half_angle,
+                        ),
+                    )))
+                }),
+            LeafSurfaceEntity::Spherical => placement
+                .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
+                .and_then(|((center, axis, ref_direction), radius)| {
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonZeroLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        cadmpeg_ir::geometry::analytic::SphereSurface::new(center, frame, radius),
+                    )))
+                }),
+            LeafSurfaceEntity::Toroidal | LeafSurfaceEntity::DegenerateToroidal => placement
+                .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
+                .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
+                .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
-                        SurfaceGeometry::Torus {
-                            center,
-                            axis,
-                            ref_direction,
-                            major_radius: major_radius * record_scale,
-                            minor_radius: minor_radius * record_scale,
-                        }
+                        let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = NonZeroLength::new(minor_radius * record_scale)?;
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                            cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
-            "B_SPLINE_SURFACE_WITH_KNOTS"
-            | "UNIFORM_SURFACE"
-            | "QUASI_UNIFORM_SURFACE"
-            | "BEZIER_SURFACE" => {
-                nurbs_surface(id, record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
+            LeafSurfaceEntity::BSplineWithKnots
+            | LeafSurfaceEntity::UniformSurface
+            | LeafSurfaceEntity::QuasiUniformSurface
+            | LeafSurfaceEntity::BezierSurface => {
+                nurbs_surface(id, record, &points, &mut losses, ctx)?
+                    .map(SolvedSurfaceGeometry::Nurbs)
+                    .map(SurfaceGeometry::Solved)
             }
-            _ => unreachable!("surface type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
-            ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
-                geometry,
-                source_object: None,
-            });
-            typed.insert(id);
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: SurfaceId::from(ids::data(kind!("surface"), id)),
+                    geometry,
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!("{surface_type} #{id} has invalid geometry"));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("{surface_type} #{id} has invalid geometry")),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
@@ -1409,48 +1874,56 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut warnings) {
-            ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
-                geometry: SurfaceGeometry::Nurbs(nurbs),
-                source_object: None,
-            });
-            typed.insert(id);
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses, ctx)? {
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: SurfaceId::from(ids::data(kind!("surface"), id)),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
-            warnings.push(format!(
-                "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
 
     // Surface constructors form the same kind of dependency graph as curves.
     // Resolve replicas in the same fixpoint as trims, bounded surfaces, and
     // offsets so a forward or nested replica cannot become an opaque carrier.
-    carrier_index = CarrierIndex::from_ir(ir);
-    let deferred_surface_ids = exchange
-        .entities_any(&[
-            "CURVE_BOUNDED_SURFACE",
-            "OFFSET_SURFACE",
-            "RECTANGULAR_TRIMMED_SURFACE",
-            "SURFACE_REPLICA",
-        ])
-        .map(|(id, _)| id)
-        .collect::<Vec<_>>();
+    carrier_index = CarrierIndex::from_ir(ir, ctx)?;
+    let mut deferred_surface_ids = Vec::new();
+    for (id, _) in exchange.entities_any(&[
+        "CURVE_BOUNDED_SURFACE",
+        "OFFSET_SURFACE",
+        "RECTANGULAR_TRIMMED_SURFACE",
+        "SURFACE_REPLICA",
+    ]) {
+        ctx.push_vec(&mut deferred_surface_ids, id, "step_deferred_surface_ids")?;
+    }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
     let mut surface_waiting_on = HashMap::<u64, Vec<u64>>::new();
     while let Some(id) = deferred_surface_queue.pop_front() {
         if carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let resolved = if record.partial("RECTANGULAR_TRIMMED_SURFACE").is_some() {
             let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_scale = unit_scales.length([id]).get();
+            let record_angle_scale = unit_scales.angle([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1488,82 +1961,125 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .surfaces
                 .get(&support_step)
                 .and_then(|index| ir.model.surfaces.get(index.0))
-                .map(|surface| {
-                    surface
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&surface.geometry)
-                        .clone()
-                })
+                .map(|surface| &surface.geometry)
             else {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut surface_waiting_on,
+                    support_step,
+                    id,
+                    ctx,
+                    "step_deferred_surface_groups",
+                    "step_deferred_surface_members",
+                )?;
+                continue;
+            };
+            let Some(solved_geometry) = geometry.solved() else {
                 continue;
             };
             let Some(parameter_scales) = surface_parameter_scales_for_step(
                 ir,
-                &SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar"),
-                &geometry,
+                &SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                geometry,
                 record_scale,
                 record_angle_scale,
                 &source_curve_parameter_scales,
-            ) else {
-                warnings.push(format!(
+                ctx,
+            )?
+            else {
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
                     "RECTANGULAR_TRIMMED_SURFACE #{id} has no established support parameterization"
-                ));
+                )),
+                    "step_geometry_losses",
+                )?;
                 continue;
             };
             for (range, parameter_scale) in parameter_ranges.iter_mut().zip(parameter_scales) {
                 range[0] *= parameter_scale;
                 range[1] *= parameter_scale;
             }
-            for ((range, sense), period) in parameter_ranges
+            for ((range, sense), domain) in parameter_ranges
                 .iter_mut()
                 .zip([u_sense, v_sense])
-                .zip(surface_parameter_periods(&geometry))
+                .zip(surface_periodic_domains(solved_geometry))
             {
-                if let Some(period) = period {
+                if let Some(domain) = domain {
                     if sense && range[1] < range[0] {
-                        range[1] += period;
+                        range[1] = shift_periodic_parameter(range[1], domain);
                     } else if !sense && range[0] < range[1] {
-                        range[0] += period;
+                        range[0] = shift_periodic_parameter(range[0], domain);
                     }
                 }
             }
-            if parameter_ranges
-                .iter()
-                .flatten()
-                .any(|parameter| !parameter.is_finite())
-            {
+            let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
+            let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = [
+                FiniteReal::new(u_start),
+                FiniteReal::new(u_end),
+                FiniteReal::new(v_start),
+                FiniteReal::new(v_end),
+            ] else {
                 continue;
-            }
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
-            ir.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry,
-                source_object: None,
-            });
-            let _attached = ir.model.add_procedural_surface(
-                surface,
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("rectangular_trimmed_surface", id))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Subset {
-                        support: SurfaceId::mint(ids::data("surface", support_step))
-                            .expect("identity grammar"),
-                        parameter_ranges,
-                        u_sense: Some(u_sense),
-                        v_sense: Some(v_sense),
-                    },
-                    None,
-                ),
-            );
-            carrier_index
-                .surfaces
-                .insert(id, SurfaceIndex(ir.model.surfaces.len() - 1));
-            typed.insert(id);
+            };
+            let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
+            let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+            let copied_geometry =
+                solved_geometry.try_clone_for_decode(ctx, "step_trim_surface_carrier")?;
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                    geometry: SurfaceGeometry::Solved(copied_geometry),
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, match (|| {
+                    let ranges = parameter_ranges.map(|range| {
+                        DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
+                            ProceduralGeometryError::Payload(
+                                "surface subset ranges are not finite and non-zero",
+                            )
+                        })
+                    });
+                    let [u_range, v_range] = ranges;
+                    Ok::<_, ProceduralGeometryError>(
+                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
+                            SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                            [u_range?, v_range?],
+                            Some(u_sense),
+                            Some(v_sense),
+                            None,
+                        ),
+                    )
+                })()
+                .map(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::from(ids::construction(
+                            kind!("rectangular_trimmed_surface"),
+                            id,
+                        )),
+                        ProceduralSurfaceDefinition::Subset(admitted_payload),
+                        None,
+                    )
+                }) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        ctx.push_vec(&mut losses, StepLossCode::DecodeWarning
+                                .note(format!("procedural surface #{id}: {error}")), "step_geometry_losses")?;
+                        continue;
+                    }
+                })?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                SurfaceIndex(ir.model.surfaces.len() - 1),
+                "step_geometry_surface_index",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial("CURVE_BOUNDED_SURFACE").is_some() {
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let Some(parameters) = entity_parameters(record, "CURVE_BOUNDED_SURFACE") else {
                 continue;
             };
@@ -1571,43 +2087,54 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let Some(support_index) = carrier_index.surfaces.get(&support_step).copied() else {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut surface_waiting_on,
+                    support_step,
+                    id,
+                    ctx,
+                    "step_deferred_surface_groups",
+                    "step_deferred_surface_members",
+                )?;
                 continue;
             };
-            let support =
-                SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar");
-            let boundary_steps = parameters.get(2).and_then(references);
-            let boundaries = boundary_steps.as_ref().map(|boundaries| {
-                boundaries
-                    .iter()
-                    .copied()
-                    .map(|boundary| {
-                        CurveId::mint(ids::data("curve", boundary)).expect("identity grammar")
-                    })
-                    .collect::<Vec<_>>()
-            });
-            let boundary_pcurves = boundary_steps
-                .iter()
-                .flatten()
-                .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
-                .map(|pcurve| {
-                    PcurveId::mint(ids::data("pcurve", pcurve)).expect("identity grammar")
-                })
-                .collect::<BTreeSet<_>>()
+            let support = SurfaceId::from(ids::data(kind!("surface"), support_step));
+            let boundary_steps = parameters
+                .get(2)
+                .and_then(Value::list)
+                .filter(|values| values.iter().all(|value| value.reference().is_some()));
+            let mut boundaries = boundary_steps.map(|_| Vec::new());
+            if let (Some(values), Some(boundaries)) = (boundary_steps, boundaries.as_mut()) {
+                for boundary in values.iter().filter_map(Value::reference) {
+                    ctx.push_vec(
+                        boundaries,
+                        CurveId::from(ids::data(kind!("curve"), boundary)),
+                        "step_curve_bounded_boundaries",
+                    )?;
+                }
+            }
+            let mut boundary_pcurve_set = BTreeSet::new();
+            for pcurve in boundary_steps
                 .into_iter()
-                .collect();
+                .flatten()
+                .filter_map(Value::reference)
+                .flat_map(|boundary| boundary_pcurve_steps(boundary, support_step, exchange))
+            {
+                ctx.insert_btree_set(
+                    &mut boundary_pcurve_set,
+                    PcurveId::from(ids::data(kind!("pcurve"), pcurve)),
+                    "step_curve_bounded_pcurve_set",
+                )?;
+            }
+            let mut boundary_pcurves = Vec::new();
+            for pcurve in boundary_pcurve_set {
+                ctx.push_vec(&mut boundary_pcurves, pcurve, "step_curve_bounded_pcurves")?;
+            }
             let implicit_outer = parameters.get(3).and_then(Value::logical);
             let Some((boundaries, implicit_outer, geometry)) = ir
                 .model
                 .surfaces
                 .get(support_index.0)
-                .map(|surface| {
-                    surface
-                        .geometry
-                        .solved_cache()
-                        .unwrap_or(&surface.geometry)
-                        .clone()
-                })
+                .and_then(|surface| surface.geometry.solved())
                 .zip(boundaries)
                 .zip(implicit_outer)
                 .map(|((geometry, boundaries), implicit_outer)| {
@@ -1624,16 +2151,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry,
-                source_object: None,
-            });
+            let copied_geometry =
+                geometry.try_clone_for_decode(ctx, "step_curve_bounded_surface_carrier")?;
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                    geometry: SurfaceGeometry::Solved(copied_geometry),
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                ctx,
+                &surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("curve_bounded_surface", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction(
+                        kind!("curve_bounded_surface"),
+                        id,
+                    )),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support,
                         boundaries,
@@ -1642,25 +2178,36 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     },
                     None,
                 ),
-            );
-            carrier_index.surfaces.insert(id, surface_index);
-            typed.insert(id);
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial("OFFSET_SURFACE").is_some() {
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
             if !carrier_index.surfaces.contains_key(&support_step) {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut surface_waiting_on,
+                    support_step,
+                    id,
+                    ctx,
+                    "step_deferred_surface_groups",
+                    "step_deferred_surface_members",
+                )?;
                 continue;
             }
-            let support =
-                SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar");
+            let support = SurfaceId::from(ids::data(kind!("surface"), support_step));
             let distance = parameters.get(2).and_then(Value::number);
             let self_intersect = parameters
                 .get(3)
@@ -1669,26 +2216,35 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: None,
-            });
-            let _attached = ir.model.add_procedural_surface(
-                surface,
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("offset_surface", id))
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::ParallelOffset {
-                        support,
-                        distance: distance * record_scale,
-                        self_intersect,
-                    },
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: None,
+                    }),
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+                    ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
+                    ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
-                ),
-            );
-            carrier_index.surfaces.insert(id, surface_index);
-            typed.insert(id);
+                )) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")), "step_geometry_losses")?;
+                        continue;
+                    }
+                })?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial("SURFACE_REPLICA").is_some() {
             let Some(parent_step) =
@@ -1702,93 +2258,150 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let Some(parent_index) = carrier_index.surfaces.get(&parent_step).copied() else {
-                surface_waiting_on.entry(parent_step).or_default().push(id);
+                defer_geometry_dependency(
+                    &mut surface_waiting_on,
+                    parent_step,
+                    id,
+                    ctx,
+                    "step_deferred_surface_groups",
+                    "step_deferred_surface_members",
+                )?;
                 continue;
             };
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir.model.surfaces.get(parent_index.0).map(|surface| {
-                surface
-                    .geometry
-                    .solved_cache()
-                    .unwrap_or(&surface.geometry)
-                    .clone()
-            }) else {
+            let Some(basis) = ir
+                .model
+                .surfaces
+                .get(parent_index.0)
+                .and_then(|surface| surface.geometry.solved())
+            else {
                 continue;
             };
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let basis = basis.try_clone_for_decode(ctx, "step_surface_replica_basis")?;
+            let Ok(placed) =
+                cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
+            else {
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "SURFACE_REPLICA #{id} nests past the admitted inline basis depth"
+                    )),
+                    "step_geometry_losses",
+                )?;
+                continue;
+            };
+            let geometry = SolvedSurfaceGeometry::Transformed(placed);
+            let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                    geometry: SurfaceGeometry::Solved(geometry),
+                    source_object: None,
                 },
-                source_object: None,
-            });
+                "step_geometry_ir_surfaces",
+            )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                ctx,
+                &surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("surface_replica", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
                     ProceduralSurfaceDefinition::Replica {
-                        source: SurfaceId::mint(ids::data("surface", parent_step))
-                            .expect("identity grammar"),
+                        source: SurfaceId::from(ids::data(kind!("surface"), parent_step)),
                         transform,
                     },
                     None,
                 ),
-            );
-            carrier_index.surfaces.insert(id, surface_index);
-            typed.insert(id);
-            typed.insert(operator_step);
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_hash_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
             true
         } else {
             false
         };
         if resolved {
-            wake_deferred_dependents(id, &mut surface_waiting_on, &mut deferred_surface_queue);
+            wake_deferred_dependents(
+                id,
+                &mut surface_waiting_on,
+                &mut deferred_surface_queue,
+                ctx,
+                "step_deferred_surface_queue",
+            )?;
         }
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
-            warnings.push(format!(
-                "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
-            ));
+        if !carrier_index.surfaces.contains_key(&id) {
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )),
+                "step_geometry_losses",
+            )?;
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
-                geometry: SurfaceGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: SurfaceId::from(ids::data(kind!("surface"), id)),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            entry.insert(surface_index);
+                "step_geometry_ir_surfaces",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
         }
     }
     for (id, _) in exchange.entities("RECTANGULAR_TRIMMED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
                 "RECTANGULAR_TRIMMED_SURFACE #{id} has invalid or unresolved basis/trim selectors"
-            ));
+            )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, _) in exchange.entities("CURVE_BOUNDED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
-                "CURVE_BOUNDED_SURFACE #{id} has invalid or unresolved support/boundaries"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "CURVE_BOUNDED_SURFACE #{id} has invalid or unresolved support/boundaries"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
     for (id, _) in exchange.entities("OFFSET_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
-            warnings.push(format!(
-                "OFFSET_SURFACE #{id} has invalid or unresolved support parameters"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "OFFSET_SURFACE #{id} has invalid or unresolved support parameters"
+                )),
+                "step_geometry_losses",
+            )?;
         }
     }
 
@@ -1798,22 +2411,36 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         else {
             continue;
         };
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
+        if !carrier_index.curves.contains_key(&curve_step) {
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", curve_step)).expect("identity grammar"),
-                geometry: CurveGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&curve_step)
-                        .map(|record| opaque_record_id(curve_step, record)),
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: CurveId::from(ids::data(kind!("curve"), curve_step)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&curve_step)
+                            .map(|record| opaque_record_id(curve_step, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            warnings.push(format!(
-                "retained undecoded topology curve #{curve_step} as an unknown carrier"
-            ));
-            entry.insert(curve_index);
+                "step_geometry_ir_curves",
+            )?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "retained undecoded topology curve #{curve_step} as an unknown carrier"
+                )),
+                "step_geometry_losses",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.curves,
+                curve_step,
+                curve_index,
+                "step_geometry_curve_index",
+            )?;
         }
     }
     for (id, _) in exchange.entities_any(&[
@@ -1821,26 +2448,40 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         "OFFSET_SURFACE",
         "RECTANGULAR_TRIMMED_SURFACE",
     ]) {
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
+        let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+        if !carrier_index.surfaces.contains_key(&id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: surface,
-                geometry: SurfaceGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            warnings.push(format!(
-                "retained unresolved deferred surface #{id} as an unknown carrier"
-            ));
-            entry.insert(surface_index);
+                "step_geometry_ir_surfaces",
+            )?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "retained unresolved deferred surface #{id} as an unknown carrier"
+                )),
+                "step_geometry_losses",
+            )?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                id,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
         }
     }
-    for (&face_id, face) in &exchange.records {
+    for (&face_id, face) in exchange.records() {
         if !face
             .partials
             .iter()
@@ -1851,41 +2492,56 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let Some(surface_step) = face_surface_reference(face) else {
             continue;
         };
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
+        if !carrier_index.surfaces.contains_key(&surface_step) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", surface_step)).expect("identity grammar"),
-                geometry: SurfaceGeometry::Unknown {
-                    record: exchange
-                        .records
-                        .get(&surface_step)
-                        .map(|record| opaque_record_id(surface_step, record)),
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&surface_step)
+                            .map(|record| opaque_record_id(surface_step, record, ctx))
+                            .transpose()?,
+                    }),
+                    source_object: None,
                 },
-                source_object: None,
-            });
-            warnings.push(format!(
+                "step_geometry_ir_surfaces",
+            )?;
+            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
-            ));
-            entry.insert(surface_index);
+            )), "step_geometry_losses")?;
+            ctx.insert_hash_map(
+                &mut carrier_index.surfaces,
+                surface_step,
+                surface_index,
+                "step_geometry_surface_index",
+            )?;
         }
     }
-    let surface_parameter_scales = ir
-        .model
-        .surfaces
-        .iter()
-        .filter_map(|surface| {
-            let id = step_instance_id(surface.id.as_str())?;
-            let scales = surface_parameter_scales_for_step(
-                ir,
-                &surface.id,
-                &surface.geometry,
-                unit_scales.length([id]),
-                unit_scales.angle([id]),
-                &source_curve_parameter_scales,
+    let mut surface_parameter_scales = BTreeMap::new();
+    for surface in &ir.model.surfaces {
+        let Some(id) = step_instance_id(surface.id.as_str()) else {
+            continue;
+        };
+        if let Some(scales) = surface_parameter_scales_for_step(
+            ir,
+            &surface.id,
+            &surface.geometry,
+            unit_scales.length([id]).get(),
+            unit_scales.angle([id]).get(),
+            &source_curve_parameter_scales,
+            ctx,
+        )? {
+            ctx.insert_btree_map(
+                &mut surface_parameter_scales,
+                id,
+                scales,
+                "step_surface_parameter_scales",
             )?;
-            Some((id, scales))
-        })
-        .collect::<BTreeMap<_, _>>();
+        }
+    }
     for (id, record) in exchange.entities("PCURVE") {
         if record.partial("PCURVE").is_none() {
             continue;
@@ -1893,66 +2549,80 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let surface_step = named_parameter(record, "PCURVE", 1).and_then(Value::reference);
         let representation = named_parameter(record, "PCURVE", 2)
             .and_then(Value::reference)
-            .and_then(|representation| exchange.records.get(&representation));
+            .and_then(|representation| exchange.records().get(&representation));
         let curve_steps = representation
             .and_then(representation_items)
-            .unwrap_or_default();
-        let decoded = curve_steps
-            .iter()
-            .filter_map(|curve| {
-                pcurve_geometries
-                    .get(curve)
-                    .map(|decoded| (*curve, decoded))
-            })
-            .collect::<Vec<_>>();
+            .into_iter()
+            .flatten();
+        let mut decoded = None;
+        let mut decoded_count = 0;
+        for curve in curve_steps {
+            if let Some(geometry) = pcurve_geometries.get(&curve) {
+                decoded = Some((curve, geometry));
+                decoded_count += 1;
+            }
+        }
+        let decoded = if decoded_count == 1 { decoded } else { None };
         let Some((curve_step, (geometry, geometry_records))) = surface_step
             .filter(|surface| carrier_index.surfaces.contains_key(surface))
-            .and(match decoded.as_slice() {
-                [decoded] => Some(*decoded),
-                _ => None,
-            })
+            .and(decoded)
         else {
-            warnings.push(format!("PCURVE #{id} has no decoded surface or 2D curve"));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("PCURVE #{id} has no decoded surface or 2D curve")),
+                "step_geometry_losses",
+            )?;
             continue;
         };
         let Some(scales) = surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
         else {
-            warnings.push(format!(
-                "PCURVE #{id} has no established owning surface parameterization"
-            ));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PCURVE #{id} has no established owning surface parameterization"
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
-        let mut geometry = geometry.clone();
-        if !scale_pcurve_geometry(&mut geometry, *scales) {
-            warnings.push(format!(
+        let geometry = geometry.try_clone_for_decode(ctx, "step_pcurve_carrier_copy")?;
+        let Ok(geometry) = geometry.scaled_coordinates_owned(ctx, *scales)? else {
+            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
-            ));
+            )), "step_geometry_losses")?;
             continue;
-        }
-        ir.model.pcurves.push(Pcurve {
-            id: PcurveId::mint(ids::data("pcurve", id)).expect("identity grammar"),
-            geometry,
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
-        });
-        typed.insert(id);
+        };
+        ctx.push_vec(
+            &mut ir.model.pcurves,
+            Pcurve {
+                id: PcurveId::from(ids::data(kind!("pcurve"), id)),
+                geometry,
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            },
+            "step_geometry_ir_pcurves",
+        )?;
+        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         if let Some(representation) =
             named_parameter(record, "PCURVE", 2).and_then(Value::reference)
         {
-            typed.insert(representation);
+            ctx.insert_hash_set(&mut typed, representation, "step_geometry_typed_ids")?;
         }
-        typed.insert(curve_step);
-        typed.extend(geometry_records.iter().copied());
+        ctx.insert_hash_set(&mut typed, curve_step, "step_geometry_typed_ids")?;
+        for &record in geometry_records {
+            ctx.insert_hash_set(&mut typed, record, "step_geometry_typed_ids")?;
+        }
     }
 
     // Curve-bounded surfaces resolve before the PCURVE pass because their 3D
     // boundaries do not depend on parameter-space geometry. Remove candidate
     // references whose pcurve carrier did not decode.
-    let decoded_pcurve_steps = ir
-        .model
-        .pcurves
-        .iter()
-        .filter_map(|pcurve| step_instance_id(pcurve.id.as_str()))
-        .collect::<BTreeSet<_>>();
+    let mut decoded_pcurve_steps = BTreeSet::new();
+    for pcurve in &ir.model.pcurves {
+        if let Some(id) = step_instance_id(pcurve.id.as_str()) {
+            ctx.insert_btree_set(&mut decoded_pcurve_steps, id, "step_decoded_pcurve_steps")?;
+        }
+    }
     for surface in &mut ir.model.procedural_surfaces {
         surface.edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CurveBounded {
@@ -1973,28 +2643,32 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|value| logical_value(value).ok().flatten())
         else {
             if carrier_index.surfaces.contains_key(&id) {
-                warnings.push(format!(
-                    "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
-                ));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
+                    )),
+                    "step_geometry_losses",
+                )?;
             }
             continue;
         };
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+        let surface = SurfaceId::from(ids::data(kind!("surface"), id));
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
         let _attached = ir.model.add_procedural_surface(
-            surface,
+            ctx,
+            &surface,
             ProceduralSurface::new(
-                ProceduralSurfaceId::mint(ids::construction("degenerate_torus", id))
-                    .expect("identity grammar"),
+                ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
             ),
-        );
+        )?;
     }
 
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if record.partials.iter().any(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -2013,20 +2687,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             )
         }) || entity_type(record, &["SHAPE_REPRESENTATION"]).is_some()
         {
-            typed.insert(id);
+            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: GeometryData {
             placements,
             transformation_operators,
             units: unit_scales,
         },
         claims: typed,
-        warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn decode_tessellated_curve_sets(
@@ -2034,80 +2707,117 @@ fn decode_tessellated_curve_sets(
     unit_scales: &UnitScales,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-    warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
-) {
-    for (&id, record) in &exchange.records {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
         }
         let Some(coordinates_id) =
             tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
         else {
-            warnings.push(format!(
-                "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
-            ));
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
-        let Some(coordinates_record) = exchange.records.get(&coordinates_id) else {
-            warnings.push(format!(
+        let Some(coordinates_record) = exchange.records().get(&coordinates_id) else {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
-            ));
+            )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
-        let scale = unit_scales.length([coordinates_id]);
-        let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
-            warnings.push(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
-            ));
+        let scale = unit_scales.length([coordinates_id]).get();
+        let Some(vertices) = coordinate_rows(coordinates_record, scale, ctx)? else {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
         let Some(strips) =
-            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
+            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len(), ctx)?
         else {
-            warnings.push(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid line strips"
-            ));
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid line strips"
+                )),
+                "step_geometry_losses",
+            )?;
             continue;
         };
         let source_name = representation_item_name(record)
-            .and_then(|value| {
-                super::decode_text(
+            .map(|value| {
+                super::decode_text_charged(
                     exchange,
                     value,
                     losses,
                     id,
                     "tessellated curve name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|name| !name.is_empty());
         for (strip_index, indices) in strips.into_iter().enumerate() {
             let curve_key = if strip_index == 0 {
-                id.to_string()
+                IdentityKey::from(id)
             } else {
-                format!("{id}-strip-{strip_index}")
+                IdentityKey::from(id)
+                    .dash(key_word!("strip"))
+                    .dash(strip_index)
             };
-            let points = indices.into_iter().map(|index| vertices[index]).collect();
-            let Some(polyline) = PolylineCurve::new(points, None, 0.0).ok() else {
+            let mut points = Vec::new();
+            for index in indices {
+                ctx.push_vec(&mut points, vertices[index], "step_curve_strip_points")?;
+            }
+            let Ok(points) = points.try_into() else {
                 continue;
             };
-            ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", curve_key)).expect("identity grammar"),
-                geometry: CurveGeometry::Polyline(polyline),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{id}"),
-                    name: source_name.clone(),
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            let Some(polyline) = PolylineCurve::from_checked_samples(
+                PolylineSamples::Unparameterized { points },
+                0.0,
+                ctx,
+            )?
+            .ok() else {
+                continue;
+            };
+            let source_name = source_name
+                .as_ref()
+                .map(|name| {
+                    ctx.format_retained(format_args!("{name}"), "step_curve_strip_source_name")
+                })
+                .transpose()?;
+            ctx.push_vec(
+                &mut ir.model.curves,
+                Curve {
+                    id: CurveId::from(ids::data(kind!("curve"), curve_key)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
+                    source_object: Some(super::step_source_association(id, source_name)),
+                },
+                "step_geometry_ir_curves",
+            )?;
         }
-        typed.extend([id, coordinates_id]);
+        for source_id in [id, coordinates_id] {
+            ctx.insert_hash_set(typed, source_id, "step_geometry_typed_ids")?;
+        }
     }
+    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2116,28 +2826,42 @@ fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Valu
     partial.parameters.get(index + offset)
 }
 
-fn tessellated_line_strips(value: Option<&Value>, point_count: usize) -> Option<Vec<Vec<usize>>> {
-    let strips = value?.list()?;
+fn tessellated_line_strips(
+    value: Option<&Value>,
+    point_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    let Some(strips) = value.and_then(Value::list) else {
+        return Ok(None);
+    };
     if strips.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut decoded = Vec::with_capacity(strips.len());
+    let mut decoded = Vec::new();
     for strip in strips {
-        let values = strip.list()?;
+        let Some(values) = strip.list() else {
+            return Ok(None);
+        };
         if values.len() < 2 {
-            return None;
+            return Ok(None);
         }
-        let mut indices = Vec::with_capacity(values.len());
+        let mut indices = Vec::new();
         for value in values {
-            let index = usize::try_from(value.integer()?).ok()?.checked_sub(1)?;
+            let Some(index) = value
+                .integer()
+                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|value| value.checked_sub(1))
+            else {
+                return Ok(None);
+            };
             if index >= point_count {
-                return None;
+                return Ok(None);
             }
-            indices.push(index);
+            ctx.push_vec(&mut indices, index, "step_curve_strip_indices")?;
         }
-        decoded.push(indices);
+        ctx.push_vec(&mut decoded, indices, "step_curve_strips")?;
     }
-    Some(decoded)
+    Ok(Some(decoded))
 }
 
 fn face_surface_reference(record: &RawRecord) -> Option<u64> {
@@ -2161,8 +2885,9 @@ pub(super) fn associate_free_geometric_set_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
-    for set in exchange.records.values() {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -2171,55 +2896,62 @@ pub(super) fn associate_free_geometric_set_members(
         };
         for member in members.iter().filter_map(Value::reference) {
             let name = exchange
-                .records
+                .records()
                 .get(&member)
                 .and_then(representation_item_name)
-                .and_then(|value| {
-                    super::decode_text(
+                .map(|value| {
+                    super::decode_text_charged(
                         exchange,
                         value,
                         losses,
                         member,
                         "geometric-set member name",
                         StepLossCode::MetadataStringInvalid,
+                        ctx,
                     )
                 })
+                .transpose()?
+                .flatten()
                 .filter(|name| !name.is_empty());
-            let association = || SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{member}"),
-                name: name.clone(),
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            };
             if let Some(index) = index.curves.get(&member) {
                 if owned.curves.contains(index) {
                     continue;
                 }
-                ir.model.curves[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(
+                    &mut ir.model.curves[index.0].source_object,
+                    member,
+                    name.as_deref(),
+                    ctx,
+                    "step_geometric_set_association_name_copy",
+                )?;
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                ir.model.points[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(
+                    &mut ir.model.points[index.0].source_object,
+                    member,
+                    name.as_deref(),
+                    ctx,
+                    "step_geometric_set_association_name_copy",
+                )?;
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                ir.model.surfaces[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(
+                    &mut ir.model.surfaces[index.0].source_object,
+                    member,
+                    name.as_deref(),
+                    ctx,
+                    "step_geometric_set_association_name_copy",
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2233,8 +2965,9 @@ pub(super) fn associate_free_representation_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
-    for representation in exchange.records.values().filter(|record| {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for representation in exchange.records().values().filter(|record| {
         record
             .partials
             .iter()
@@ -2245,52 +2978,59 @@ pub(super) fn associate_free_representation_members(
         };
         for member in items {
             let source_name = exchange
-                .records
+                .records()
                 .get(&member)
                 .and_then(representation_item_name)
-                .and_then(|value| {
-                    super::decode_text(
+                .map(|value| {
+                    super::decode_text_charged(
                         exchange,
                         value,
                         losses,
                         member,
                         "representation member name",
                         StepLossCode::MetadataStringInvalid,
+                        ctx,
                     )
                 })
+                .transpose()?
+                .flatten()
                 .filter(|name| !name.is_empty());
-            let association = || SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{member}"),
-                name: source_name.clone(),
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            };
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
-                    ir.model.curves[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(
+                        &mut ir.model.curves[index.0].source_object,
+                        member,
+                        source_name.as_deref(),
+                        ctx,
+                        "step_representation_association_name_copy",
+                    )?;
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
-                    ir.model.points[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(
+                        &mut ir.model.points[index.0].source_object,
+                        member,
+                        source_name.as_deref(),
+                        ctx,
+                        "step_representation_association_name_copy",
+                    )?;
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
-                    ir.model.surfaces[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(
+                        &mut ir.model.surfaces[index.0].source_object,
+                        member,
+                        source_name.as_deref(),
+                        ctx,
+                        "step_representation_association_name_copy",
+                    )?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2303,29 +3043,44 @@ pub(super) fn associate_free_presentation_carriers(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
-    for (style_id, target) in exchange.records.iter().filter_map(|(style_id, record)| {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for (style_id, target) in exchange.records().iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
+        associate_presentation_carrier(
+            exchange,
+            ir,
+            index,
+            owned,
+            (target, style_id),
+            losses,
+            ctx,
+        )?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
-        let mut targets = Vec::new();
         for parameter in plane
             .partials
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            collect_references(parameter, &mut targets);
-        }
-        for target in targets {
-            if index.surfaces.contains_key(&target) {
-                associate_presentation_carrier(
-                    exchange, ir, index, owned, target, plane_id, losses,
-                );
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
+                if index.surfaces.contains_key(&target) {
+                    associate_presentation_carrier(
+                        exchange,
+                        ir,
+                        index,
+                        owned,
+                        (target, plane_id),
+                        losses,
+                        ctx,
+                    )?;
+                }
             }
         }
     }
+    Ok(())
 }
 
 fn associate_presentation_carrier(
@@ -2333,87 +3088,71 @@ fn associate_presentation_carrier(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-    target: u64,
-    source_id: u64,
+    (target, source_id): (u64, u64),
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let name = exchange
-        .records
+        .records()
         .get(&target)
         .and_then(representation_item_name)
-        .and_then(|value| {
-            super::decode_text(
+        .map(|value| {
+            super::decode_text_charged(
                 exchange,
                 value,
                 losses,
                 target,
                 "presentation carrier name",
                 StepLossCode::MetadataStringInvalid,
+                ctx,
             )
         })
+        .transpose()?
+        .flatten()
         .filter(|name| !name.is_empty());
-    let association = || SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-        object_id: format!("#{source_id}"),
-        name: name.clone(),
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
-    };
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
-            ir.model.curves[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(
+                &mut ir.model.curves[index.0].source_object,
+                source_id,
+                name.as_deref(),
+                ctx,
+                "step_presentation_association_name_copy",
+            )?;
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
-            ir.model.points[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(
+                &mut ir.model.points[index.0].source_object,
+                source_id,
+                name.as_deref(),
+                ctx,
+                "step_presentation_association_name_copy",
+            )?;
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
-            ir.model.surfaces[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(
+                &mut ir.model.surfaces[index.0].source_object,
+                source_id,
+                name.as_deref(),
+                ctx,
+                "step_presentation_association_name_copy",
+            )?;
         }
     }
+    Ok(())
 }
 
-fn collect_references(value: &Value, references: &mut Vec<u64>) {
-    match value {
-        Value::Reference(id) => references.push(*id),
-        Value::List(values) => {
-            for value in values {
-                collect_references(value, references);
-            }
-        }
-        Value::Typed(_, value) => collect_references(value, references),
-        Value::Integer(_)
-        | Value::Real(_)
-        | Value::String(_)
-        | Value::Enumeration(_)
-        | Value::Binary(_)
-        | Value::Resource(_)
-        | Value::ValueReference(_)
-        | Value::ConstantEntity(_)
-        | Value::ConstantValue(_)
-        | Value::Omitted
-        | Value::Derived => {}
-    }
-}
-
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
+fn representation_items(record: &RawRecord) -> Option<impl Iterator<Item = u64> + '_> {
+    let items = record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
-        .find_map(Value::list)
-        .map(|items| items.iter().filter_map(Value::reference).collect())
+        .find_map(Value::list)?;
+    Some(items.iter().filter_map(Value::reference))
 }
 
 fn representation_item_name(record: &RawRecord) -> Option<&Value> {
@@ -2432,10 +3171,6 @@ fn entity_parameters<'a>(record: &'a RawRecord, name: &str) -> Option<&'a [Value
         .map(|partial| partial.parameters.as_slice())
 }
 
-fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record.partial(name)?.parameters.get(index)
-}
-
 fn transformation_parameter<'a>(
     record: &'a RawRecord,
     name: &str,
@@ -2450,6 +3185,128 @@ fn transformation_parameter<'a>(
         _ => return None,
     };
     (index < attribute_count).then(|| &parameters[offset + index])
+}
+
+/// One leaf curve carrier entity dispatched by the STEP reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeafCurveEntity {
+    Line,
+    Circle,
+    Ellipse,
+    Parabola,
+    Hyperbola,
+    Polyline,
+    BSplineWithKnots,
+    UniformCurve,
+    QuasiUniformCurve,
+    BezierCurve,
+}
+
+impl LeafCurveEntity {
+    const NAMES: &'static [&'static str] = &[
+        "LINE",
+        "CIRCLE",
+        "ELLIPSE",
+        "PARABOLA",
+        "HYPERBOLA",
+        "POLYLINE",
+        "B_SPLINE_CURVE_WITH_KNOTS",
+        "UNIFORM_CURVE",
+        "QUASI_UNIFORM_CURVE",
+        "BEZIER_CURVE",
+    ];
+
+    fn of(record: &RawRecord) -> Option<Self> {
+        entity_type(record, Self::NAMES).and_then(|name| match name {
+            "LINE" => Some(Self::Line),
+            "CIRCLE" => Some(Self::Circle),
+            "ELLIPSE" => Some(Self::Ellipse),
+            "PARABOLA" => Some(Self::Parabola),
+            "HYPERBOLA" => Some(Self::Hyperbola),
+            "POLYLINE" => Some(Self::Polyline),
+            "B_SPLINE_CURVE_WITH_KNOTS" => Some(Self::BSplineWithKnots),
+            "UNIFORM_CURVE" => Some(Self::UniformCurve),
+            "QUASI_UNIFORM_CURVE" => Some(Self::QuasiUniformCurve),
+            "BEZIER_CURVE" => Some(Self::BezierCurve),
+            _ => None,
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Line => "LINE",
+            Self::Circle => "CIRCLE",
+            Self::Ellipse => "ELLIPSE",
+            Self::Parabola => "PARABOLA",
+            Self::Hyperbola => "HYPERBOLA",
+            Self::Polyline => "POLYLINE",
+            Self::BSplineWithKnots => "B_SPLINE_CURVE_WITH_KNOTS",
+            Self::UniformCurve => "UNIFORM_CURVE",
+            Self::QuasiUniformCurve => "QUASI_UNIFORM_CURVE",
+            Self::BezierCurve => "BEZIER_CURVE",
+        }
+    }
+}
+
+/// One leaf surface carrier entity dispatched by the STEP reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeafSurfaceEntity {
+    Plane,
+    Cylindrical,
+    Conical,
+    Spherical,
+    DegenerateToroidal,
+    Toroidal,
+    BSplineWithKnots,
+    UniformSurface,
+    QuasiUniformSurface,
+    BezierSurface,
+}
+
+impl LeafSurfaceEntity {
+    const NAMES: &'static [&'static str] = &[
+        "PLANE",
+        "CYLINDRICAL_SURFACE",
+        "CONICAL_SURFACE",
+        "SPHERICAL_SURFACE",
+        "DEGENERATE_TOROIDAL_SURFACE",
+        "TOROIDAL_SURFACE",
+        "B_SPLINE_SURFACE_WITH_KNOTS",
+        "UNIFORM_SURFACE",
+        "QUASI_UNIFORM_SURFACE",
+        "BEZIER_SURFACE",
+    ];
+
+    fn of(record: &RawRecord) -> Option<Self> {
+        entity_type(record, Self::NAMES).and_then(|name| match name {
+            "PLANE" => Some(Self::Plane),
+            "CYLINDRICAL_SURFACE" => Some(Self::Cylindrical),
+            "CONICAL_SURFACE" => Some(Self::Conical),
+            "SPHERICAL_SURFACE" => Some(Self::Spherical),
+            "DEGENERATE_TOROIDAL_SURFACE" => Some(Self::DegenerateToroidal),
+            "TOROIDAL_SURFACE" => Some(Self::Toroidal),
+            "B_SPLINE_SURFACE_WITH_KNOTS" => Some(Self::BSplineWithKnots),
+            "UNIFORM_SURFACE" => Some(Self::UniformSurface),
+            "QUASI_UNIFORM_SURFACE" => Some(Self::QuasiUniformSurface),
+            "BEZIER_SURFACE" => Some(Self::BezierSurface),
+            _ => None,
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Plane => "PLANE",
+            Self::Cylindrical => "CYLINDRICAL_SURFACE",
+            Self::Conical => "CONICAL_SURFACE",
+            Self::Spherical => "SPHERICAL_SURFACE",
+            Self::DegenerateToroidal => "DEGENERATE_TOROIDAL_SURFACE",
+            Self::Toroidal => "TOROIDAL_SURFACE",
+            Self::BSplineWithKnots => "B_SPLINE_SURFACE_WITH_KNOTS",
+            Self::UniformSurface => "UNIFORM_SURFACE",
+            Self::QuasiUniformSurface => "QUASI_UNIFORM_SURFACE",
+            Self::BezierSurface => "BEZIER_SURFACE",
+        }
+    }
 }
 
 fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
@@ -2471,21 +3328,22 @@ fn is_apll_leader_line(record: &RawRecord) -> bool {
     })
 }
 
-fn first_named_list(record: &RawRecord, names: &[&str]) -> Option<Vec<u64>> {
-    record
+fn first_named_list<'a>(
+    record: &'a RawRecord,
+    names: &[&str],
+) -> Option<impl Iterator<Item = u64> + 'a> {
+    let items = record
         .partials
         .iter()
         .find(|partial| names.iter().any(|name| partial.name == *name))
         .and_then(|partial| {
-            partial.parameters.iter().find_map(|value| {
-                value.list().and_then(|items| {
-                    items
-                        .iter()
-                        .map(Value::reference)
-                        .collect::<Option<Vec<_>>>()
-                })
-            })
-        })
+            partial
+                .parameters
+                .iter()
+                .filter_map(Value::list)
+                .find(|items| items.iter().all(|item| item.reference().is_some()))
+        })?;
+    Some(items.iter().filter_map(Value::reference))
 }
 
 fn vertex_point_reference(record: &RawRecord) -> Option<u64> {
@@ -2511,7 +3369,7 @@ enum TrimMasterRepresentation {
 }
 
 struct TrimParameterContext<'a> {
-    points: &'a BTreeMap<u64, Point3>,
+    points: &'a BTreeMap<u64, FinitePoint3>,
     geometry: &'a CurveGeometry,
     angle_scale: f64,
     linear_parameter_scale: f64,
@@ -2519,7 +3377,8 @@ struct TrimParameterContext<'a> {
     tolerance: f64,
     master_representation: TrimMasterRepresentation,
     record_id: u64,
-    warnings: &'a mut Vec<String>,
+    losses: &'a mut Vec<LossNote>,
+    ctx: &'a DecodeContext<'a>,
 }
 
 fn trimmed_curve_attributes(parameters: &[Value]) -> Option<(u64, bool, TrimMasterRepresentation)> {
@@ -2546,17 +3405,22 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
 }
 
 pub(super) struct OwnedCarriers {
-    pub(super) curves: HashSet<CurveIndex>,
-    pub(super) surfaces: HashSet<SurfaceIndex>,
-    pub(super) points: HashSet<PointIndex>,
+    curves: HashSet<CurveIndex>,
+    surfaces: HashSet<SurfaceIndex>,
+    points: HashSet<PointIndex>,
 }
 
-pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> OwnedCarriers {
-    let curves = ir
+pub(super) fn topology_owned_carriers(
+    ir: &CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<OwnedCarriers, CodecError> {
+    let mut curves = HashSet::new();
+    for curve in ir
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref())
+        .filter_map(|edge| edge.curve())
         .chain(
             ir.model
                 .coedges
@@ -2565,26 +3429,34 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
         )
         .filter_map(|curve| step_instance_id(curve.as_str()))
         .filter_map(|id| index.curves.get(&id).copied())
-        .collect();
-    let surfaces = ir
+    {
+        ctx.insert_hash_set(&mut curves, curve, "step_owned_curve_carriers")?;
+    }
+    let mut surfaces = HashSet::new();
+    for surface in ir
         .model
         .faces
         .iter()
         .filter_map(|face| step_instance_id(face.surface.as_str()))
         .filter_map(|id| index.surfaces.get(&id).copied())
-        .collect();
-    let points = ir
+    {
+        ctx.insert_hash_set(&mut surfaces, surface, "step_owned_surface_carriers")?;
+    }
+    let mut points = HashSet::new();
+    for point in ir
         .model
         .vertices
         .iter()
         .filter_map(|vertex| step_instance_id(vertex.point.as_str()))
         .filter_map(|id| index.points.get(&id).map(|point| &point.index).copied())
-        .collect();
-    OwnedCarriers {
+    {
+        ctx.insert_hash_set(&mut points, point, "step_owned_point_carriers")?;
+    }
+    Ok(OwnedCarriers {
         curves,
         surfaces,
         points,
-    }
+    })
 }
 
 pub(super) fn associate_topology_carriers(
@@ -2605,17 +3477,10 @@ pub(super) fn associate_topology_carriers(
         if owned.curves.contains(index) {
             continue;
         }
-        ir.model.curves[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{edge_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.curves[index.0].source_object.is_none() {
+            ir.model.curves[index.0].source_object =
+                Some(super::step_source_association(edge_id, None));
+        }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
         let Some(surface_step) = face_surface_reference(face) else {
@@ -2627,17 +3492,10 @@ pub(super) fn associate_topology_carriers(
         if owned.surfaces.contains(index) {
             continue;
         }
-        ir.model.surfaces[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{face_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.surfaces[index.0].source_object.is_none() {
+            ir.model.surfaces[index.0].source_object =
+                Some(super::step_source_association(face_id, None));
+        }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_step) = vertex_point_reference(vertex) else {
@@ -2649,17 +3507,10 @@ pub(super) fn associate_topology_carriers(
         if owned.points.contains(index) {
             continue;
         }
-        ir.model.points[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{vertex_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.points[index.0].source_object.is_none() {
+            ir.model.points[index.0].source_object =
+                Some(super::step_source_association(vertex_id, None));
+        }
     }
 }
 
@@ -2679,17 +3530,10 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.curves.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.curves[parent_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{replica_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.curves[parent_index.0].source_object.is_none() {
+            ir.model.curves[parent_index.0].source_object =
+                Some(super::step_source_association(replica_id, None));
+        }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
         let Some(parent_id) =
@@ -2700,17 +3544,10 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.surfaces.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.surfaces[parent_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{replica_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.surfaces[parent_index.0].source_object.is_none() {
+            ir.model.surfaces[parent_index.0].source_object =
+                Some(super::step_source_association(replica_id, None));
+        }
     }
 }
 
@@ -2718,8 +3555,14 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate
 /// support carrier.
-pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
-    let owned_pcurves = ir
+pub(super) fn associate_pcurve_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let mut owned_pcurves = BTreeSet::new();
+    for pcurve in ir
         .model
         .coedges
         .iter()
@@ -2746,9 +3589,12 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                 .flatten()
                 .map(cadmpeg_ir::ids::PcurveId::as_str),
         )
-        .collect::<BTreeSet<_>>();
+    {
+        ctx.insert_btree_set(&mut owned_pcurves, pcurve, "step_owned_pcurve_supports")?;
+    }
+
     for (pcurve_id, record) in exchange.entities("PCURVE") {
-        let pcurve_identity = ids::data("pcurve", pcurve_id);
+        let pcurve_identity = ids::data(kind!("pcurve"), pcurve_id);
         if !owned_pcurves.contains(pcurve_identity.as_str()) {
             continue;
         }
@@ -2759,18 +3605,12 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        ir.model.surfaces[surface_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{pcurve_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+        if ir.model.surfaces[surface_index.0].source_object.is_none() {
+            ir.model.surfaces[surface_index.0].source_object =
+                Some(super::step_source_association(pcurve_id, None));
+        }
     }
+    Ok(())
 }
 
 /// Associate surfaces listed by retained `SURFACE_CURVE` records.
@@ -2787,8 +3627,9 @@ pub(super) fn associate_surface_curve_supports(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) {
-    let retained = retained_surface_curve_ids(exchange, index, owned);
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let retained = retained_surface_curve_ids(exchange, index, owned, ctx)?;
     for (surface_curve_id, record) in
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
     {
@@ -2799,49 +3640,37 @@ pub(super) fn associate_surface_curve_supports(
             .and_then(|basis| index.curves.get(&basis))
             .copied()
         {
-            ir.model.curves[curve_index.0]
-                .source_object
-                .get_or_insert_with(|| SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{surface_curve_id}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                });
+            if ir.model.curves[curve_index.0].source_object.is_none() {
+                ir.model.curves[curve_index.0].source_object =
+                    Some(super::step_source_association(surface_curve_id, None));
+            }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
             let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
                 continue;
             };
-            ir.model.surfaces[surface_index.0]
-                .source_object
-                .get_or_insert_with(|| SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{surface_curve_id}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                });
+            if ir.model.surfaces[surface_index.0].source_object.is_none() {
+                ir.model.surfaces[surface_index.0].source_object =
+                    Some(super::step_source_association(surface_curve_id, None));
+            }
         }
     }
+    Ok(())
 }
 
 fn retained_surface_curve_ids(
     exchange: &Exchange,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) -> BTreeSet<u64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut retained = BTreeSet::new();
 
     for (_, edge) in exchange.entities("EDGE_CURVE") {
         let Some(surface_curve) = edge_curve_geometry_reference(edge) else {
             continue;
         };
-        let Some(record) = exchange.records.get(&surface_curve) else {
+        let Some(record) = exchange.records().get(&surface_curve) else {
             continue;
         };
         if !is_surface_curve_record(record) {
@@ -2855,11 +3684,15 @@ fn retained_surface_curve_ids(
             .get(&basis)
             .is_some_and(|curve| owned.curves.contains(curve))
         {
-            retained.insert(surface_curve);
+            ctx.insert_btree_set(
+                &mut retained,
+                surface_curve,
+                "step_retained_surface_curve_ids",
+            )?;
         }
     }
 
-    for set in exchange.records.values() {
+    for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -2868,12 +3701,12 @@ fn retained_surface_curve_ids(
         };
         for member in members.iter().filter_map(Value::reference) {
             if decoded_surface_curve(member, exchange, index) {
-                retained.insert(member);
+                ctx.insert_btree_set(&mut retained, member, "step_retained_surface_curve_ids")?;
             }
         }
     }
 
-    for representation in exchange.records.values().filter(|record| {
+    for representation in exchange.records().values().filter(|record| {
         record
             .partials
             .iter()
@@ -2884,39 +3717,38 @@ fn retained_surface_curve_ids(
         };
         for item in items {
             if decoded_surface_curve(item, exchange, index) {
-                retained.insert(item);
+                ctx.insert_btree_set(&mut retained, item, "step_retained_surface_curve_ids")?;
             }
         }
     }
 
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         if let Some(target) = super::presentation::styled_item_target(record) {
             if decoded_surface_curve(target, exchange, index) {
-                retained.insert(target);
+                ctx.insert_btree_set(&mut retained, target, "step_retained_surface_curve_ids")?;
             }
         }
     }
     for (_, plane) in exchange.entities("ANNOTATION_PLANE") {
-        let mut references = Vec::new();
         for parameter in plane
             .partials
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            collect_references(parameter, &mut references);
-        }
-        for target in references {
-            if decoded_surface_curve(target, exchange, index) {
-                retained.insert(target);
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
+                if decoded_surface_curve(target, exchange, index) {
+                    ctx.insert_btree_set(&mut retained, target, "step_retained_surface_curve_ids")?;
+                }
             }
         }
     }
 
-    retained
+    Ok(retained)
 }
 
 fn decoded_surface_curve(id: u64, exchange: &Exchange, index: &CarrierIndex) -> bool {
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return false;
     };
     is_surface_curve_record(record)
@@ -2932,19 +3764,18 @@ fn is_surface_curve_record(record: &RawRecord) -> bool {
     })
 }
 
-fn surface_curve_supports(
-    record: &RawRecord,
-    exchange: &Exchange,
-    index: &CarrierIndex,
-) -> Vec<u64> {
-    let Some(associated_geometry) = surface_curve_associated_geometry(record) else {
-        return Vec::new();
-    };
-    associated_geometry
+fn surface_curve_supports<'a>(
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
+    index: &'a CarrierIndex,
+) -> impl Iterator<Item = u64> + 'a {
+    surface_curve_associated_geometry(record)
         .into_iter()
-        .filter_map(|associated| {
+        .flatten()
+        .filter_map(Value::reference)
+        .filter_map(move |associated| {
             let surface = exchange
-                .records
+                .records()
                 .get(&associated)
                 .and_then(|record| named_parameter(record, "PCURVE", 1))
                 .and_then(Value::reference)
@@ -2956,10 +3787,9 @@ fn surface_curve_supports(
                 });
             surface.filter(|surface| index.surfaces.contains_key(surface))
         })
-        .collect()
 }
 
-fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
+fn surface_curve_associated_geometry(record: &RawRecord) -> Option<&[Value]> {
     let values = if record.partials.len() == 1 {
         record.parameter(2)?.list()?
     } else {
@@ -2969,96 +3799,131 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
             .or_else(|| record.partial("INTERSECTION_CURVE"))
             .and_then(|partial| partial.parameters.iter().find_map(Value::list))?
     };
-    Some(values.iter().filter_map(Value::reference).collect())
+    Some(values)
 }
 
 fn resolve_unit_scales(
     exchange: &Exchange,
-    default_length: f64,
-    default_angle: f64,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
     losses: &mut Vec<LossNote>,
-) -> UnitScales {
-    let mut length_candidates = BTreeMap::<u64, Vec<f64>>::new();
-    let mut angle_candidates = BTreeMap::<u64, Vec<f64>>::new();
-    for (&representation_id, representation) in &exchange.records {
+    ctx: &DecodeContext<'_>,
+) -> Result<UnitScales, CodecError> {
+    let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
+    let mut angle_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
+    for (&representation_id, representation) in exchange.records() {
         if !is_representation_record(representation) {
             continue;
         }
         let Some(context_id) = representation_context(representation) else {
             continue;
         };
-        let (length, angle) = context_unit_scales(context_id, exchange);
+        let (length, angle) = context_unit_scales(context_id, exchange, ctx)?;
         if length.is_none() && angle.is_none() {
             continue;
         }
         if let Some(length) = length {
-            length_candidates
-                .entry(representation_id)
-                .or_default()
-                .push(length);
+            add_unit_candidate(
+                &mut length_candidates,
+                representation_id,
+                length,
+                ctx,
+                "step_length_candidate_groups",
+                "step_length_candidate_values",
+            )?;
         }
         if let Some(angle) = angle {
-            angle_candidates
-                .entry(representation_id)
-                .or_default()
-                .push(angle);
+            add_unit_candidate(
+                &mut angle_candidates,
+                representation_id,
+                angle,
+                ctx,
+                "step_angle_candidate_groups",
+                "step_angle_candidate_values",
+            )?;
         }
         let Some(items) = representation_items(representation) else {
             continue;
         };
         let mut members = BTreeSet::new();
         for item in items {
-            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new());
+            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new(), ctx)?;
         }
         for member in members {
             if let Some(length) = length {
-                length_candidates.entry(member).or_default().push(length);
+                add_unit_candidate(
+                    &mut length_candidates,
+                    member,
+                    length,
+                    ctx,
+                    "step_length_candidate_groups",
+                    "step_length_candidate_values",
+                )?;
             }
             if let Some(angle) = angle {
-                angle_candidates.entry(member).or_default().push(angle);
+                add_unit_candidate(
+                    &mut angle_candidates,
+                    member,
+                    angle,
+                    ctx,
+                    "step_angle_candidate_groups",
+                    "step_angle_candidate_values",
+                )?;
             }
         }
     }
-    let length = finalize_unit_candidates(length_candidates, "length", losses);
-    let angle = finalize_unit_candidates(angle_candidates, "plane-angle", losses);
-    UnitScales {
+    let length =
+        finalize_unit_candidates(length_candidates, default_length, "length", losses, ctx)?;
+    let angle =
+        finalize_unit_candidates(angle_candidates, default_angle, "plane-angle", losses, ctx)?;
+    Ok(UnitScales {
         default_length,
         default_angle,
-        length: length
-            .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_length)
-            .collect(),
-        angle: angle
-            .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_angle)
-            .collect(),
-    }
+        length,
+        angle,
+    })
+}
+
+fn add_unit_candidate(
+    candidates: &mut BTreeMap<u64, Vec<PositiveReal>>,
+    id: u64,
+    scale: PositiveReal,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    value_operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.admit_btree_entry(candidates, &id, group_operation)?;
+    let values = candidates.entry(id).or_default();
+    ctx.push_vec(values, scale, value_operation)
 }
 
 fn finalize_unit_candidates(
-    candidates: BTreeMap<u64, Vec<f64>>,
+    candidates: BTreeMap<u64, Vec<PositiveReal>>,
+    default: PositiveReal,
     dimension: &str,
     losses: &mut Vec<LossNote>,
-) -> BTreeMap<u64, f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, PositiveReal>, CodecError> {
     let mut selected = BTreeMap::new();
     let mut ambiguous = 0;
     for (id, values) in candidates {
         match unique_scale(&values) {
-            Some(scale) => {
-                selected.insert(id, scale);
+            Some(scale) if scale != default => {
+                ctx.insert_btree_map(&mut selected, id, scale, "step_unit_selected_scales")?;
             }
+            Some(_) => {}
             None => ambiguous += 1,
         }
     }
     if ambiguous > 0 {
-        losses.push(StepLossCode::ConflictingRepresentationUnits.note(format!(
+        ctx.push_vec(losses, StepLossCode::ConflictingRepresentationUnits.note(format!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
-            )));
+            )), "step_geometry_losses")?;
     }
-    selected
+    Ok(selected)
 }
 
-fn unique_scale(values: &[f64]) -> Option<f64> {
+fn unique_scale(values: &[PositiveReal]) -> Option<PositiveReal> {
     let first = *values.first()?;
     values
         .iter()
@@ -3066,7 +3931,9 @@ fn unique_scale(values: &[f64]) -> Option<f64> {
         .then_some(first)
 }
 
-fn same_scale(left: f64, right: f64) -> bool {
+fn same_scale(left: PositiveReal, right: PositiveReal) -> bool {
+    let left = left.get();
+    let right = right.get();
     let tolerance = EPS_GEOMETRY_READ_EXACT_GEOMETRY * left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= tolerance
 }
@@ -3087,30 +3954,34 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
         .find_map(Value::reference)
 }
 
-fn context_unit_scales(id: u64, exchange: &Exchange) -> (Option<f64>, Option<f64>) {
-    let Some(context) = exchange.records.get(&id) else {
-        return (None, None);
+fn context_unit_scales(
+    id: u64,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<(Option<PositiveReal>, Option<PositiveReal>), CodecError> {
+    let Some(context) = exchange.records().get(&id) else {
+        return Ok((None, None));
     };
     let Some(units) = context
         .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
         .and_then(Value::list)
     else {
-        return (None, None);
+        return Ok((None, None));
     };
-    let length_values = units
-        .iter()
-        .filter_map(Value::reference)
-        .filter_map(|unit| unit_scale_mm(unit, exchange, &mut BTreeSet::new()))
-        .collect::<Vec<_>>();
-    let angle_values = units
-        .iter()
-        .filter_map(Value::reference)
-        .filter_map(|unit| unit_scale_radians(unit, exchange, &mut BTreeSet::new()))
-        .collect::<Vec<_>>();
+    let mut length_values = Vec::new();
+    let mut angle_values = Vec::new();
+    for unit in units.iter().filter_map(Value::reference) {
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)? {
+            ctx.push_vec(&mut length_values, scale, "step_context_length_scales")?;
+        }
+        if let Some(scale) = unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)? {
+            ctx.push_vec(&mut angle_values, scale, "step_context_angle_scales")?;
+        }
+    }
     let length = unique_scale(&length_values);
     let angle = unique_scale(&angle_values);
-    (length, angle)
+    Ok((length, angle))
 }
 
 fn collect_unit_scope_members(
@@ -3118,52 +3989,61 @@ fn collect_unit_scope_members(
     exchange: &Exchange,
     members: &mut BTreeSet<u64>,
     active: &mut BTreeSet<u64>,
-) {
-    if !active.insert(id) {
-        return;
-    }
-    let Some(record) = exchange.records.get(&id) else {
-        return;
-    };
-    if is_unit_record(record) || is_representation_context_record(record) {
-        return;
-    }
-    members.insert(id);
-    if record.partial("PCURVE").is_some() {
-        return;
-    }
-    if record.partial("MAPPED_ITEM").is_some() {
-        // The mapping source keeps the units of its mapped representation.
-        // Only the mapping target is an item in this representation's context.
-        if let Some(target) = record
-            .partial("MAPPED_ITEM")
-            .and_then(|partial| partial.parameters.last())
-            .and_then(Value::reference)
-        {
-            collect_unit_scope_members(target, exchange, members, active);
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _root_depth = ctx.enter_nested("step_unit_scope_walk")?;
+    let mut pending = Vec::new();
+    let mut next = Some(id);
+    while let Some(current) = next {
+        let _nested = (current != id)
+            .then(|| ctx.enter_nested("step_unit_scope_walk"))
+            .transpose()?;
+        if ctx.insert_btree_set(active, current, "step_unit_scope_active")? {
+            if let Some(record) = exchange.records().get(&current) {
+                if !is_unit_record(record) && !is_representation_context_record(record) {
+                    ctx.insert_btree_set(members, current, "step_unit_scope_members")?;
+                    if record.partial("PCURVE").is_none() {
+                        if let Some(mapped) = record.partial("MAPPED_ITEM") {
+                            // The mapping source keeps the units of its mapped representation.
+                            // Only the mapping target belongs to this context.
+                            if let Some(target) =
+                                mapped.parameters.last().and_then(Value::reference)
+                            {
+                                ctx.push_vec(&mut pending, target, "step_unit_scope_pending")?;
+                            }
+                        } else {
+                            for parameter in record
+                                .partials
+                                .iter()
+                                .flat_map(|partial| &partial.parameters)
+                            {
+                                for reference in super::reference::references(parameter, ctx) {
+                                    let reference = reference?;
+                                    let Some(referenced) = exchange.records().get(&reference)
+                                    else {
+                                        continue;
+                                    };
+                                    if is_representation_record(referenced)
+                                        || is_unit_record(referenced)
+                                        || is_representation_context_record(referenced)
+                                    {
+                                        continue;
+                                    }
+                                    ctx.push_vec(
+                                        &mut pending,
+                                        reference,
+                                        "step_unit_scope_pending",
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return;
+        next = pending.pop();
     }
-    let mut references = Vec::new();
-    for parameter in record
-        .partials
-        .iter()
-        .flat_map(|partial| &partial.parameters)
-    {
-        collect_references(parameter, &mut references);
-    }
-    for reference in references {
-        let Some(referenced) = exchange.records.get(&reference) else {
-            continue;
-        };
-        if is_representation_record(referenced)
-            || is_unit_record(referenced)
-            || is_representation_context_record(referenced)
-        {
-            continue;
-        }
-        collect_unit_scope_members(reference, exchange, members, active);
-    }
+    Ok(())
 }
 
 fn is_unit_record(record: &RawRecord) -> bool {
@@ -3192,23 +4072,58 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
     })
 }
 
-fn length_scale(exchange: &Exchange) -> Option<f64> {
-    document_unit_scale(exchange, "LENGTH_UNIT", unit_scale_mm)
+fn length_scale(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    document_unit_scale(exchange, UnitScaleKind::Length, ctx)
 }
 
-fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
-    document_unit_scale(exchange, "PLANE_ANGLE_UNIT", unit_scale_radians)
+fn plane_angle_scale(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    document_unit_scale(exchange, UnitScaleKind::Angle, ctx)
+}
+
+#[derive(Clone, Copy)]
+enum UnitScaleKind {
+    Length,
+    Angle,
+}
+
+impl UnitScaleKind {
+    fn partial(self) -> &'static str {
+        match self {
+            Self::Length => "LENGTH_UNIT",
+            Self::Angle => "PLANE_ANGLE_UNIT",
+        }
+    }
+
+    fn resolve(
+        self,
+        id: u64,
+        exchange: &Exchange,
+        active: &mut BTreeSet<u64>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<PositiveReal>, CodecError> {
+        match self {
+            Self::Length => unit_scale_mm(id, exchange, active, ctx),
+            Self::Angle => unit_scale_radians(id, exchange, active, ctx),
+        }
+    }
 }
 
 fn document_unit_scale(
     exchange: &Exchange,
-    dimension_partial: &str,
-    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<f64>,
-) -> Option<f64> {
+    kind: UnitScaleKind,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    let dimension_partial = kind.partial();
     let mut context_scales = Vec::new();
     let mut has_context_unit = false;
 
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some(units) = record
             .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
             .and_then(|partial| partial.parameters.first())
@@ -3216,49 +4131,61 @@ fn document_unit_scale(
         else {
             continue;
         };
-        let unit_ids = units
-            .iter()
-            .filter_map(Value::reference)
-            .filter(|id| {
-                exchange
-                    .records
-                    .get(id)
-                    .is_some_and(|unit| unit.partial(dimension_partial).is_some())
-            })
-            .collect::<Vec<_>>();
+        let mut unit_ids = Vec::new();
+        for id in units.iter().filter_map(Value::reference) {
+            if exchange
+                .records()
+                .get(&id)
+                .is_some_and(|unit| unit.partial(dimension_partial).is_some())
+            {
+                ctx.push_vec(&mut unit_ids, id, "step_document_unit_ids")?;
+            }
+        }
         if unit_ids.is_empty() {
             continue;
         }
         has_context_unit = true;
-        let scales = unit_ids
-            .into_iter()
-            .map(|id| resolve(id, exchange, &mut BTreeSet::new()))
-            .collect::<Option<Vec<_>>>()?;
-        context_scales.push(unique_scale(&scales)?);
+        let mut scales = Vec::new();
+        for id in unit_ids {
+            let Some(scale) = kind.resolve(id, exchange, &mut BTreeSet::new(), ctx)? else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut scales, scale, "step_document_unit_scales")?;
+        }
+        let Some(scale) = unique_scale(&scales) else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut context_scales, scale, "step_document_context_scales")?;
     }
 
     if has_context_unit {
-        return unique_scale(&context_scales);
+        return Ok(unique_scale(&context_scales));
     }
 
     // STEP assigns units to representation contexts, not to the document.
     // This branch is CADIR salvage for an unscoped dimension: accept only a
     // scale to which every unit occurrence in the exchange resolves.
-    let scales = exchange
-        .records
+    let mut scales = Vec::new();
+    for (&id, _) in exchange
+        .records()
         .iter()
         .filter(|(_, record)| record.partial(dimension_partial).is_some())
-        .map(|(&id, _)| resolve(id, exchange, &mut BTreeSet::new()))
-        .collect::<Option<Vec<_>>>()?;
-    unique_scale(&scales)
+    {
+        let Some(scale) = kind.resolve(id, exchange, &mut BTreeSet::new(), ctx)? else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut scales, scale, "step_document_fallback_scales")?;
+    }
+    Ok(unique_scale(&scales))
 }
 
 pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
-    unit_scale_radians_inner(id, exchange, active, 0)
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    unit_scale_radians_inner(id, exchange, active, 0, ctx)
 }
 
 fn unit_scale_radians_inner(
@@ -3266,48 +4193,63 @@ fn unit_scale_radians_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
     if depth >= 256 {
-        return None;
+        return Ok(None);
     }
-    if !active.insert(id) {
-        return None;
+    let _depth = ctx.enter_nested("step_angle_unit_scale_walk")?;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let record = exchange.records.get(&id)?;
+    ctx.insert_btree_set(active, id, "step_angle_unit_active")?;
+    let result = (|| -> Result<Option<f64>, CodecError> {
+        let Some(record) = exchange.records().get(&id) else {
+            return Ok(None);
+        };
         if let Some(unit) = record.partial("SI_UNIT") {
-            if unit.parameters.get(1)?.enumeration()? == "RADIAN" {
-                let prefix = match unit.parameters.first()? {
-                    Value::Omitted => 1.0,
-                    Value::Enumeration(prefix) => si_prefix(prefix)?,
-                    _ => return None,
+            if unit.parameters.get(1).and_then(Value::enumeration) == Some("RADIAN") {
+                let prefix = match unit.parameters.first() {
+                    Some(Value::Omitted) => Some(1.0),
+                    Some(Value::Enumeration(prefix)) => si_prefix(prefix),
+                    _ => None,
                 };
-                Some(prefix)
+                Ok(prefix)
             } else {
-                None
+                Ok(None)
             }
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let factor_id = unit.parameters.get(1)?.reference()?;
-            let factor = exchange.records.get(&factor_id)?;
-            let value = record_values(factor).find_map(measure_number)?;
-            let base = record_values(factor)
-                .find_map(Value::reference)
-                .and_then(|base| unit_scale_radians_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
+                return Ok(None);
+            };
+            let Some(factor) = exchange.records().get(&factor_id) else {
+                return Ok(None);
+            };
+            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
+                return Ok(None);
+            };
+            let Some(base_id) = record_values(factor).find_map(Value::reference) else {
+                return Ok(None);
+            };
+            Ok(
+                unit_scale_radians_inner(base_id, exchange, active, depth + 1, ctx)?
+                    .map(|base| value * base.get()),
+            )
         } else {
-            None
+            Ok(None)
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    Ok(result?.and_then(PositiveReal::new))
 }
 
 pub(super) fn unit_scale_mm(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
-    unit_scale_mm_inner(id, exchange, active, 0)
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    unit_scale_mm_inner(id, exchange, active, 0, ctx)
 }
 
 fn unit_scale_mm_inner(
@@ -3315,43 +4257,59 @@ fn unit_scale_mm_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PositiveReal>, CodecError> {
     if depth >= 256 {
-        return None;
+        return Ok(None);
     }
-    if !active.insert(id) {
-        return None;
+    let _depth = ctx.enter_nested("step_length_unit_scale_walk")?;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let record = exchange.records.get(&id)?;
+    ctx.insert_btree_set(active, id, "step_length_unit_active")?;
+    let result = (|| -> Result<Option<f64>, CodecError> {
+        let Some(record) = exchange.records().get(&id) else {
+            return Ok(None);
+        };
         if let Some(unit) = record.partial("SI_UNIT") {
-            if unit.parameters.get(1)?.enumeration()? == "METRE" {
-                let prefix = match unit.parameters.first()? {
-                    Value::Omitted => 1.0,
-                    Value::Enumeration(prefix) => si_prefix(prefix)?,
-                    _ => return None,
+            if unit.parameters.get(1).and_then(Value::enumeration) == Some("METRE") {
+                let prefix = match unit.parameters.first() {
+                    Some(Value::Omitted) => Some(1.0),
+                    Some(Value::Enumeration(prefix)) => si_prefix(prefix),
+                    _ => None,
                 };
-                Some(prefix * 1000.0)
+                Ok(prefix.map(|prefix| prefix * 1000.0))
             } else {
-                None
+                Ok(None)
             }
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let factor_id = unit.parameters.get(1)?.reference()?;
-            let factor = exchange.records.get(&factor_id)?;
-            let value = record_values(factor).find_map(measure_number)?;
-            let base = factor
+            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
+                return Ok(None);
+            };
+            let Some(factor) = exchange.records().get(&factor_id) else {
+                return Ok(None);
+            };
+            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
+                return Ok(None);
+            };
+            let Some(base_id) = factor
                 .partials
                 .iter()
                 .flat_map(|partial| &partial.parameters)
                 .find_map(Value::reference)
-                .and_then(|base| unit_scale_mm_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            else {
+                return Ok(None);
+            };
+            Ok(
+                unit_scale_mm_inner(base_id, exchange, active, depth + 1, ctx)?
+                    .map(|base| value * base.get()),
+            )
         } else {
-            None
+            Ok(None)
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    Ok(result?.and_then(PositiveReal::new))
 }
 
 const SI_MICRO: f64 = EPS_GEOMETRY_READ_COARSE_GEOMETRY;
@@ -3389,22 +4347,28 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 /// the only contribution of the context. Every other context contributes each
 /// of its resolvable length measures. `linear_uncertainty` merges the equal
 /// contributions of all contexts and decides what a disagreement means.
-fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Vec<f64>, usize) {
+fn context_length_uncertainties(
+    context: &RawRecord,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<PositiveLength>, usize), CodecError> {
     let Some(references) = context
         .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
         .and_then(Value::list)
     else {
-        return (Vec::new(), 0);
+        return Ok((Vec::new(), 0));
     };
     let mut measures = Vec::new();
+    let mut named_count = 0;
+    let mut named_value = None;
     let mut unresolved = 0;
     for uncertainty_id in references.iter().filter_map(Value::reference) {
-        let Some(measure) = exchange.records.get(&uncertainty_id) else {
+        let Some(measure) = exchange.records().get(&uncertainty_id) else {
             unresolved += 1;
             continue;
         };
-        let Some(value) = record_values(measure).find_map(measure_number) else {
+        let Some(value) = record_values(measure).find_map(ValueExt::typed_number) else {
             unresolved += 1;
             continue;
         };
@@ -3412,96 +4376,127 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
             unresolved += 1;
             continue;
         };
-        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
-            let result = value * scale;
-            if !result.is_finite() || result <= 0.0 {
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)? {
+            let Some(result) = PositiveLength::new(value * scale.get()) else {
                 unresolved += 1;
                 continue;
-            }
+            };
             // The CADIR convention applies to the name attribute, not
             // the optional description attribute.
             let named_distance_accuracy = measure
                 .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
                 .and_then(|partial| partial.parameters.get(2))
-                .and_then(string_value)
+                .map(|value| string_value(value, exchange, ctx))
+                .transpose()?
+                .flatten()
                 .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
-            measures.push((named_distance_accuracy, result));
-        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
+            if named_distance_accuracy {
+                named_count += 1;
+                named_value = Some(result);
+            }
+            ctx.push_vec(&mut measures, result, "step_uncertainty_context_measures")?;
+        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)?.is_none() {
             unresolved += 1;
         }
     }
 
-    let named = measures
-        .iter()
-        .filter(|(named, _)| *named)
-        .map(|(_, value)| *value)
-        .collect::<Vec<_>>();
-    if named.len() == 1 {
-        return (named, unresolved);
+    if named_count == 1 {
+        measures.clear();
+        if let Some(value) = named_value {
+            measures.push(value);
+        }
     }
-    (
-        measures.into_iter().map(|(_, value)| value).collect(),
-        unresolved,
-    )
+    Ok((measures, unresolved))
 }
 
 /// The document projection of the per-context linear uncertainty candidates.
 enum LinearUncertainty {
     /// One distinct candidate, in millimetres.
-    Value(f64),
+    Value(PositiveLength),
     /// No candidate, with the number of measures that did not resolve.
     Empty { unresolved: usize },
     /// Several distinct candidates in millimetres, sorted and without
     /// duplicates, with the number of measures that did not resolve.
-    Ambiguous { values: Vec<f64>, unresolved: usize },
+    Ambiguous {
+        first: PositiveLength,
+        second: PositiveLength,
+        rest: Vec<PositiveLength>,
+        unresolved: usize,
+    },
 }
 
-fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
-    let mut candidates: Vec<f64> = Vec::new();
+fn linear_uncertainty(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<LinearUncertainty, CodecError> {
+    let mut candidates: Vec<PositiveLength> = Vec::new();
     let mut unresolved = 0;
     for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
         let (context_candidates, context_unresolved) =
-            context_length_uncertainties(context, exchange);
+            context_length_uncertainties(context, exchange, ctx)?;
         unresolved += context_unresolved;
         for candidate in context_candidates {
             // Exact equality: the candidates come from one file, so equal
             // declarations corroborate each other and are not a conflict.
             if !candidates.contains(&candidate) {
-                candidates.push(candidate);
+                ctx.push_vec(
+                    &mut candidates,
+                    candidate,
+                    "step_uncertainty_distinct_candidates",
+                )?;
             }
         }
     }
-    candidates.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        "step_uncertainty_candidate_sort",
+    )?;
 
-    if candidates.len() > 1 {
-        return LinearUncertainty::Ambiguous {
-            values: candidates,
-            unresolved,
-        };
-    }
-    match candidates.first() {
-        Some(value) => LinearUncertainty::Value(*value),
-        None => LinearUncertainty::Empty { unresolved },
-    }
+    Ok(match candidates.len() {
+        0 => LinearUncertainty::Empty { unresolved },
+        1 => LinearUncertainty::Value(candidates[0]),
+        _ => {
+            ctx.charge_work(
+                u64_from_index(candidates.len()),
+                "step_uncertainty_projection",
+            )?;
+            let first = candidates.remove(0);
+            ctx.charge_work(
+                u64_from_index(candidates.len()),
+                "step_uncertainty_projection",
+            )?;
+            let second = candidates.remove(0);
+            LinearUncertainty::Ambiguous {
+                first,
+                second,
+                rest: candidates,
+                unresolved,
+            }
+        }
+    })
 }
 
-fn string_value(value: &Value) -> Option<String> {
+fn string_value(
+    value: &Value,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
-        return None;
+        return Ok(None);
     };
-    crate::strings::decode(bytes).ok()
-}
-
-fn measure_number(value: &Value) -> Option<f64> {
-    match value {
-        Value::Integer(value) => Some(*value as f64),
-        Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => measure_number(value),
-        _ => None,
+    match exchange.decode_string_with_context(bytes, ctx) {
+        Ok(value) => Ok(Some(value)),
+        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
     }
 }
 
-fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Option<f64> {
+fn trim_parameter(
+    value: &Value,
+    context: &mut TrimParameterContext<'_>,
+) -> Result<Option<f64>, CodecError> {
     let (parameter, cartesian) = match value {
         Value::List(values) => (
             values.iter().find(|value| is_parameter_trim_value(value)),
@@ -3527,11 +4522,11 @@ fn trimmed_curve_parameter_range(
     // A closed STEP curve may cross its parameter seam. Move the endpoint
     // that follows the declared traversal onto the next parameter branch
     // before projecting the directed trim onto the IR's ordered interval.
-    if let Some(period) = curve_parameter_period(geometry) {
+    if let Some(domain) = curve_periodic_domain(geometry) {
         if sense && end < start {
-            end += period;
+            end = shift_periodic_parameter(end, domain);
         } else if !sense && start < end {
-            start += period;
+            start = shift_periodic_parameter(start, domain);
         }
     }
     let range = if sense { [start, end] } else { [end, start] };
@@ -3542,16 +4537,17 @@ fn trimmed_curve_parameter_range(
     }
 }
 
-fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
-    let period = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => std::f64::consts::TAU,
-        CurveGeometry::Nurbs(curve) if curve.periodic() => {
-            let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
-            upper - lower
+fn curve_periodic_domain(geometry: &CurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
+            Some([0.0, std::f64::consts::TAU])
         }
-        _ => return None,
-    };
-    (period.is_finite() && period > 0.0).then_some(period)
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve.periodic() => {
+            let [lower, upper] = nurbs_curve_parameter_domain(curve)?.endpoints();
+            (upper > lower).then_some([lower, upper])
+        }
+        _ => None,
+    }
 }
 
 fn is_parameter_trim_value(value: &Value) -> bool {
@@ -3562,49 +4558,67 @@ fn is_parameter_trim_value(value: &Value) -> bool {
     }
 }
 
-fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+fn trim_parameter_value(
+    value: &Value,
+    context: &TrimParameterContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = context.ctx.enter_nested("step_trim_parameter_value_walk")?;
+    let Some(geometry) = context.geometry.solved() else {
+        return Ok(None);
+    };
     let scale = parameter_scale(
-        context.geometry,
+        geometry,
         context.angle_scale,
         context.linear_parameter_scale,
-    );
+        context.ctx,
+    )?;
     match value {
-        Value::Integer(value) => Some(scale * *value as f64 + context.parameter_offset),
-        Value::Real(value) => Some(scale * *value + context.parameter_offset),
+        Value::Integer(value) => Ok(cadmpeg_core::convert::f64_from_i64(*value)
+            .map(|value| scale * value + context.parameter_offset)),
+        Value::Real(value) => Ok(Some(scale * value.get() + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
-fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+fn trim_cartesian_parameter(
+    value: &Value,
+    context: &TrimParameterContext<'_>,
+) -> Result<Option<f64>, CodecError> {
     let Value::Reference(id) = value else {
-        return None;
+        return Ok(None);
     };
-    context
-        .points
-        .get(id)
-        .and_then(|point| curve_parameter_at_point(context.geometry, *point, context.tolerance))
+    let Some(point) = context.points.get(id) else {
+        return Ok(None);
+    };
+    let Some(geometry) = context.geometry.solved() else {
+        return Ok(None);
+    };
+    curve_parameter_at_point(context.ctx, geometry, point.get(), context.tolerance)
 }
 
 fn select_trim_parameter(
     parameter: Option<&Value>,
     cartesian: Option<&Value>,
     context: &mut TrimParameterContext<'_>,
-) -> Option<f64> {
+) -> Result<Option<f64>, CodecError> {
     match context.master_representation {
         TrimMasterRepresentation::Parameter => {
             if let Some(value) = parameter {
                 trim_parameter_value(value, context)
             } else {
                 if cartesian.is_some() {
-                    context.warnings.push(format!(
-                        "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
-                        context.record_id
-                    ));
+                    (context.ctx).push_vec(context.losses, StepLossCode::DecodeWarning.note(format!(
+                            "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
+                            context.record_id
+                        )), "step_trim_parameter_fallback_losses")?;
                 }
-                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+                match cartesian {
+                    Some(value) => trim_cartesian_parameter(value, context),
+                    None => Ok(None),
+                }
             }
         }
         TrimMasterRepresentation::Cartesian => {
@@ -3612,55 +4626,60 @@ fn select_trim_parameter(
                 trim_cartesian_parameter(value, context)
             } else {
                 if parameter.is_some() {
-                    context.warnings.push(format!(
-                        "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
-                        context.record_id
-                    ));
+                    (context.ctx).push_vec(context.losses, StepLossCode::DecodeWarning.note(format!(
+                            "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+                            context.record_id
+                        )), "step_trim_parameter_fallback_losses")?;
                 }
-                parameter.and_then(|value| trim_parameter_value(value, context))
+                match parameter {
+                    Some(value) => trim_parameter_value(value, context),
+                    None => Ok(None),
+                }
             }
         }
         TrimMasterRepresentation::Unspecified => {
             if let Some(value) = parameter {
                 trim_parameter_value(value, context)
             } else {
-                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+                match cartesian {
+                    Some(value) => trim_cartesian_parameter(value, context),
+                    None => Ok(None),
+                }
             }
         }
     }
 }
 
-fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_scale: f64) -> f64 {
+fn parameter_scale(
+    geometry: &SolvedCurveGeometry,
+    angle_scale: f64,
+    linear_parameter_scale: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<f64, CodecError> {
+    let _depth = ctx.enter_nested("step_trim_parameter_scale_walk")?;
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => parameter_scale(geometry, angle_scale, linear_parameter_scale),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => angle_scale,
-        CurveGeometry::Line { .. } => linear_parameter_scale,
-        // A replica and the constructions that inherit a parent curve's
-        // parameterization keep the parent's parameter units even when their
-        // model-space dimensions change.
-        CurveGeometry::Transformed { basis, .. } => {
-            parameter_scale(basis, angle_scale, linear_parameter_scale)
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(angle_scale),
+        SolvedCurveGeometry::Line(_) => Ok(linear_parameter_scale),
+        SolvedCurveGeometry::Transformed(placed) => {
+            parameter_scale(placed.basis(), angle_scale, linear_parameter_scale, ctx)
         }
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_)
-        | CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => 1.0,
+        SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_)
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => Ok(1.0),
     }
 }
 
 fn line_parameter_scale(
     exchange: &Exchange,
     curve: u64,
-    length_scale: f64,
+    length_scale: PositiveReal,
     losses: &mut Vec<LossNote>,
-) -> f64 {
+    ctx: &DecodeContext<'_>,
+) -> Result<PositiveReal, CodecError> {
     fn inherited_parent(record: &RawRecord) -> Option<u64> {
         if record.partial("CURVE_REPLICA").is_some() {
             return named_parameter(record, "CURVE_REPLICA", 1).and_then(ValueExt::reference);
@@ -3685,46 +4704,60 @@ fn line_parameter_scale(
     fn resolve(
         exchange: &Exchange,
         curve: u64,
-        length_scale: f64,
+        length_scale: PositiveReal,
         losses: &mut Vec<LossNote>,
         visiting: &mut BTreeSet<u64>,
-    ) -> f64 {
-        if !visiting.insert(curve) {
-            return length_scale;
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PositiveReal, CodecError> {
+        if visiting.contains(&curve) {
+            return Ok(length_scale);
         }
-        let Some(record) = exchange.records.get(&curve) else {
+        let _depth = ctx.enter_nested("step_line_parameter_scale_walk")?;
+        ctx.insert_btree_set(visiting, curve, "step_line_parameter_scale_active")?;
+        let Some(record) = exchange.records().get(&curve) else {
             visiting.remove(&curve);
-            return length_scale;
+            return Ok(length_scale);
         };
         let result = if record.partial("LINE").is_some() {
-            named_parameter(record, "LINE", 2)
+            if let Some(scale) = named_parameter(record, "LINE", 2)
                 .and_then(ValueExt::reference)
-                .and_then(|vector| exchange.records.get(&vector))
+                .and_then(|vector| exchange.records().get(&vector))
                 .filter(|record| record.partial("VECTOR").is_some())
                 .and_then(|record| named_parameter(record, "VECTOR", 2))
                 .and_then(ValueExt::number)
-                .map(|magnitude| magnitude * length_scale)
-                .filter(|scale| scale.is_finite() && *scale > 0.0)
-                .unwrap_or_else(|| {
-                    losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
+                .and_then(PositiveReal::new)
+                .and_then(|magnitude| PositiveReal::new(magnitude.get() * length_scale.get()))
+            {
+                Ok(scale)
+            } else {
+                ctx.push_vec(losses, StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
-                    )));
-                    length_scale
-                })
+                    )), "step_line_parameter_scale_losses")?;
+                Ok(length_scale)
+            }
         } else if let Some(parent) = inherited_parent(record) {
-            resolve(exchange, parent, length_scale, losses, visiting)
+            resolve(exchange, parent, length_scale, losses, visiting, ctx)
         } else {
-            length_scale
+            Ok(length_scale)
         };
         visiting.remove(&curve);
         result
     }
 
-    resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
+    resolve(
+        exchange,
+        curve,
+        length_scale,
+        losses,
+        &mut BTreeSet::new(),
+        ctx,
+    )
 }
 
-fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
-    let projection = axis.dot(reference);
+fn orthogonal_reference(axis: UnitVector3, reference: UnitVector3) -> Option<UnitVector3> {
+    let axis = axis.as_raw();
+    let reference = reference.as_raw();
+    let projection = axis.dot(*reference);
     normalize(Vector3::new(
         reference.x - projection * axis.x,
         reference.y - projection * axis.y,
@@ -3732,104 +4765,139 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
     ))
 }
 
-fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
-    let axis = normalize(axis)?;
+fn first_projected_axis(axis: UnitVector3) -> Option<UnitVector3> {
     project_axis(default_reference_axis(axis), axis)
 }
 
 fn curve_parameter_at_point(
-    geometry: &CurveGeometry,
+    ctx: &DecodeContext<'_>,
+    geometry: &SolvedCurveGeometry,
     point: Point3,
     tolerance: f64,
-) -> Option<f64> {
+) -> Result<Option<f64>, CodecError> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => curve_parameter_at_point(geometry, point, tolerance),
-        CurveGeometry::Line { origin, direction } => Some(offset(*origin).dot(*direction)),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => {
-            let radial = offset(*center);
-            let y_axis = axis.cross(*ref_direction);
-            Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
+        SolvedCurveGeometry::Line(line_curve) => {
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            Ok(Some(offset(origin).dot(direction)))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let radial = offset(*center);
+        SolvedCurveGeometry::Circle(circle_curve) => {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radial = offset(center);
+            let y_axis = axis.cross(*ref_direction);
+            Ok(Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction))))
+        }
+        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
+            let center = ellipse_curve.center().get();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let radial = offset(center);
             let minor_direction = axis.cross(*major_direction);
-            Some(
+            Ok(Some(
                 (radial.dot(minor_direction) / minor_radius)
                     .atan2(radial.dot(*major_direction) / major_radius),
+            ))
+        }
+        SolvedCurveGeometry::Nurbs(curve) => {
+            let Some(domain) = nurbs_curve_parameter_domain(curve)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+            else {
+                return Ok(None);
+            };
+            nurbs_curve_parameter_near_point(
+                ctx,
+                curve,
+                point,
+                tolerance,
+                (domain[0] + domain[1]) * 0.5,
             )
+            .map(|parameter| parameter.map(FiniteReal::get))
         }
-        CurveGeometry::Nurbs(curve) => {
-            let domain = nurbs_curve_parameter_domain(curve)?;
-            nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
+        SolvedCurveGeometry::Transformed(placed) => {
+            let Some(inverse) = placed.transform().try_inverse_affine().ok() else {
+                return Ok(None);
+            };
+            let Some(mapped) = inverse.apply_point(point) else {
+                return Ok(None);
+            };
+            curve_parameter_at_point(ctx, placed.basis(), mapped.get(), tolerance)
         }
-        CurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
-            basis,
-            transform.try_inverse_affine()?.apply_point(point),
-            tolerance,
-        ),
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
 
+fn defer_geometry_dependency(
+    waiting_on: &mut HashMap<u64, Vec<u64>>,
+    dependency: u64,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !waiting_on.contains_key(&dependency) {
+        ctx.reserve_map(waiting_on, 1, group_operation)?;
+    }
+    let dependents = waiting_on.entry(dependency).or_default();
+    ctx.push_vec(dependents, id, item_operation)
+}
+
 fn wake_deferred_dependents(
     id: u64,
     waiting_on: &mut HashMap<u64, Vec<u64>>,
     queue: &mut VecDeque<u64>,
-) {
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     if let Some(dependents) = waiting_on.remove(&id) {
-        queue.extend(dependents);
+        for dependent in dependents {
+            ctx.push_back(queue, dependent, operation)?;
+        }
     }
+    Ok(())
 }
 
-fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
-    let Some((parameters, offset)) = composite_curve_parameters(record) else {
-        return Vec::new();
-    };
-    parameters
-        .get(offset)
+fn composite_curve_dependencies<'a>(
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
+) -> impl Iterator<Item = u64> + 'a {
+    composite_curve_parameters(record)
+        .and_then(|(parameters, offset)| parameters.get(offset))
         .and_then(Value::list)
         .into_iter()
         .flatten()
         .filter_map(Value::reference)
-        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(|segment| exchange.records().get(&segment))
         .filter_map(composite_curve_segment_parameters)
         .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
         .filter_map(|curve| curve_carrier_record(curve, exchange))
-        .collect()
 }
 
 fn composite_curve(
     record: &RawRecord,
     exchange: &Exchange,
     decoded: &CarrierIndex,
-) -> Option<CompositeCurveData> {
-    let (parameters, offset) = composite_curve_parameters(record)?;
-    let segments = parameters
-        .get(offset)?
-        .list()?
-        .iter()
-        .map(|value| {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CompositeCurveData>, CodecError> {
+    let Some((parameters, offset)) = composite_curve_parameters(record) else {
+        return Ok(None);
+    };
+    let Some(values) = parameters.get(offset).and_then(Value::list) else {
+        return Ok(None);
+    };
+    let mut segments = Vec::new();
+    for value in values {
+        let Some(segment) = (|| {
             let id = value.reference()?;
-            let segment = exchange.records.get(&id)?;
-            let parameters = composite_curve_segment_parameters(segment)?;
+            let record = exchange.records().get(&id)?;
+            let parameters = composite_curve_segment_parameters(record)?;
             let transition = match parameters.first()?.enumeration()? {
                 "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
                 "CONTINUOUS" => CompositeCurveTransition::Continuous,
@@ -3844,19 +4912,23 @@ fn composite_curve(
             decoded.curves.contains_key(&curve_step).then_some((
                 id,
                 CompositeCurveSegment {
-                    curve: CurveId::mint(ids::data("curve", curve_step)).expect("identity grammar"),
+                    curve: CurveId::from(ids::data(kind!("curve"), curve_step)),
                     same_sense: parameters.get(1)?.logical()?,
                     transition,
                 },
             ))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    (!segments.is_empty()).then_some((
-        segments,
-        parameters
-            .get(offset + 1)
-            .and_then(|value| logical_value(value).ok())?,
-    ))
+        })() else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut segments, segment, "step_composite_curve_segments")?;
+    }
+    let Some(self_intersect) = parameters
+        .get(offset + 1)
+        .and_then(|value| logical_value(value).ok())
+    else {
+        return Ok(None);
+    };
+    Ok(Some((segments, self_intersect)))
 }
 
 fn composite_curve_parameters(record: &RawRecord) -> Option<(&[Value], usize)> {
@@ -3878,23 +4950,24 @@ fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
         .map(|partial| partial.parameters.as_slice())
 }
 
-fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Vec<u64> {
-    let Some(record) = exchange.records.get(&boundary) else {
-        return Vec::new();
-    };
-    let Some((parameters, offset)) = composite_curve_parameters(record) else {
-        return Vec::new();
-    };
-    parameters
-        .get(offset)
+fn boundary_pcurve_steps(
+    boundary: u64,
+    support: u64,
+    exchange: &Exchange,
+) -> impl Iterator<Item = u64> + '_ {
+    exchange
+        .records()
+        .get(&boundary)
+        .and_then(composite_curve_parameters)
+        .and_then(|(parameters, offset)| parameters.get(offset))
         .and_then(Value::list)
         .into_iter()
         .flatten()
         .filter_map(Value::reference)
-        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(|segment| exchange.records().get(&segment))
         .filter_map(composite_curve_segment_parameters)
         .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
-        .filter_map(|curve| exchange.records.get(&curve))
+        .filter_map(|curve| exchange.records().get(&curve))
         .filter(|curve| {
             curve.partials.iter().any(|partial| {
                 matches!(
@@ -3903,27 +4976,33 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
                 )
             })
         })
-        .flat_map(|curve| surface_curve_pcurves(curve).unwrap_or_default())
-        .filter(|pcurve| {
+        .flat_map(surface_curve_pcurves)
+        .filter(move |pcurve| {
             exchange
-                .records
+                .records()
                 .get(pcurve)
                 .and_then(|record| named_parameter(record, "PCURVE", 1))
                 .and_then(Value::reference)
                 == Some(support)
         })
-        .collect()
 }
 
-fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
-    if record.partials.len() == 1 {
-        return record.parameter(2).and_then(references);
-    }
-    record
-        .partial("SURFACE_CURVE")
-        .or_else(|| record.partial("SEAM_CURVE"))
-        .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.get(1).and_then(references))
+fn surface_curve_pcurves(record: &RawRecord) -> impl Iterator<Item = u64> + '_ {
+    let value = if record.partials.len() == 1 {
+        record.parameter(2)
+    } else {
+        record
+            .partial("SURFACE_CURVE")
+            .or_else(|| record.partial("SEAM_CURVE"))
+            .or_else(|| record.partial("INTERSECTION_CURVE"))
+            .and_then(|partial| partial.parameters.get(1))
+    };
+    value
+        .and_then(Value::list)
+        .filter(|values| values.iter().all(|value| value.reference().is_some()))
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
 }
 
 fn logical_value(value: &Value) -> Result<Option<bool>, ()> {
@@ -3939,67 +5018,88 @@ fn periodic_value(
     value: Option<&Value>,
     field: &str,
     record_id: u64,
-    warnings: &mut Vec<String>,
-) -> Option<bool> {
-    match logical_value(value?).ok()? {
-        Some(value) => Some(value),
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<bool>, CodecError> {
+    let Some(value) = value.and_then(|value| logical_value(value).ok()) else {
+        return Ok(None);
+    };
+    match value {
+        Some(value) => Ok(Some(value)),
         None => {
-            warnings.push(format!(
-                "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
-            ));
-            Some(false)
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
+                )),
+                "step_geometry_losses",
+            )?;
+            Ok(Some(false))
         }
     }
 }
 
-fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-}
-
-pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
-    record
+fn coordinate_rows(
+    record: &RawRecord,
+    scale: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    for rows in record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
-        .find_map(|rows| {
-            rows.iter()
-                .map(|row| {
-                    let values = row.list()?;
-                    if values.len() != 3 {
-                        return None;
-                    }
-                    let point = Point3::new(
-                        values[0].number()? * scale,
-                        values[1].number()? * scale,
-                        values[2].number()? * scale,
-                    );
-                    [point.x, point.y, point.z]
-                        .iter()
-                        .all(|coordinate| coordinate.is_finite())
-                        .then_some(point)
-                })
-                .collect::<Option<Vec<_>>>()
-                .filter(|vertices| !vertices.is_empty())
-        })
+    {
+        let mut vertices = Vec::new();
+        let mut valid = true;
+        for row in rows {
+            let point = (|| {
+                let values = row.list()?;
+                if values.len() != 3 {
+                    return None;
+                }
+                FinitePoint3::new(Point3::new(
+                    values[0].number()? * scale,
+                    values[1].number()? * scale,
+                    values[2].number()? * scale,
+                ))
+            })();
+            let Some(point) = point else {
+                valid = false;
+                break;
+            };
+            ctx.push_vec(&mut vertices, point, "step_curve_coordinate_rows")?;
+        }
+        if valid && !vertices.is_empty() {
+            return Ok(Some(vertices));
+        }
+    }
+    Ok(None)
 }
 
-fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -> Option<Point3> {
+fn named_coordinates(
+    record: &RawRecord,
+    name: &str,
+    index: usize,
+    scale: f64,
+) -> Option<FinitePoint3> {
     let values = named_parameter(record, name, index)?.list()?;
     if values.len() != 3 {
         return None;
     }
-    Some(Point3::new(
+    let point = Point3::new(
         values[0].number()? * scale,
         values[1].number()? * scale,
         values[2].number()? * scale,
-    ))
+    );
+    FinitePoint3::new(point)
 }
 
-fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
+fn apll_point_coordinates(
+    record: &RawRecord,
+    point_type: &str,
+    scale: f64,
+) -> Option<FinitePoint3> {
     let values = if record.partials.len() == 1 {
         named_parameter(record, point_type, 1).and_then(Value::list)
     } else {
@@ -4020,10 +5120,7 @@ fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> O
         values[1].number()? * scale,
         values[2].number()? * scale,
     );
-    [point.x, point.y, point.z]
-        .iter()
-        .all(|coordinate| coordinate.is_finite())
-        .then_some(point)
+    FinitePoint3::new(point)
 }
 
 fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {
@@ -4034,17 +5131,13 @@ fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Po
     Some(Point2::new(values[0].number()?, values[1].number()?))
 }
 
-fn vector2(value: Option<&Value>) -> Option<Point2> {
+fn direction2(value: Option<&Value>) -> Option<HypotDirection2> {
     let values = value?.list()?;
     if values.len() != 2 {
         return None;
     }
-    Some(Point2::new(values[0].number()?, values[1].number()?))
-}
-
-fn normalize2(vector: Point2) -> Option<Point2> {
-    let length = vector.u.hypot(vector.v);
-    (length.is_finite() && length > 0.0).then(|| Point2::new(vector.u / length, vector.v / length))
+    HypotDirection2::normalized_with_length([values[0].number()?, values[1].number()?])
+        .map(|(direction, _)| direction)
 }
 
 fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
@@ -4059,18 +5152,6 @@ fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
     ))
 }
 
-fn positive(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn nonnegative(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value >= 0.0)
-}
-
 #[derive(Clone, Copy)]
 enum DefaultNurbsKnotKind {
     Uniform,
@@ -4081,7 +5162,7 @@ enum DefaultNurbsKnotKind {
 struct NurbsCurveDefinition {
     degree: u32,
     control_points: Vec<u64>,
-    knots: Vec<f64>,
+    knots: KnotVector,
     weights: Option<Vec<f64>>,
     periodic: bool,
 }
@@ -4089,41 +5170,58 @@ struct NurbsCurveDefinition {
 fn nurbs_curve_definition(
     id: u64,
     record: &RawRecord,
-    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
     periodicity_field: &str,
-) -> Option<NurbsCurveDefinition> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurveDefinition>, CodecError> {
     let (base, offset) = if record.partials.len() > 1 {
-        (record.partial("B_SPLINE_CURVE")?, 0)
+        (geometry_or_none!(record.partial("B_SPLINE_CURVE")), 0)
     } else {
-        let base_name = [
+        let base = geometry_or_none!([
             "B_SPLINE_CURVE_WITH_KNOTS",
             "UNIFORM_CURVE",
             "QUASI_UNIFORM_CURVE",
             "BEZIER_CURVE",
         ]
         .into_iter()
-        .find(|name| record.partial(name).is_some())?;
-        (record.partial(base_name)?, 1)
+        .find_map(|name| record.partial(name)));
+        (base, 1)
     };
-    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let control_points = references(base.parameters.get(offset + 1)?)?;
-    if usize::try_from(degree).ok()? >= control_points.len() {
-        return None;
+    let degree = geometry_or_none!(base
+        .parameters
+        .get(offset)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let control_points = geometry_or_none!(references(
+        geometry_or_none!(base.parameters.get(offset + 1)),
+        ctx
+    )?);
+    if usize::try_from(degree)
+        .ok()
+        .is_none_or(|degree| degree >= control_points.len())
+    {
+        return Ok(None);
     }
-    let periodic = periodic_value(
+    let periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 3),
         periodicity_field,
         id,
-        warnings,
-    )?;
-    let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
+        losses,
+        ctx
+    )?);
+    let degree_usize = geometry_or_none!(usize::try_from(degree).ok());
+    let expected_knots = geometry_or_none!(control_points
+        .len()
+        .checked_add(degree_usize)
+        .and_then(|count| count.checked_add(1)));
     let knots = if let Some(knot_leaf) = record.partial("B_SPLINE_CURVE_WITH_KNOTS") {
-        let tail = knot_leaf.parameters.len().checked_sub(3)?;
-        expand_knots(
-            knot_leaf.parameters.get(tail)?,
-            knot_leaf.parameters.get(tail + 1)?,
+        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(3));
+        geometry_or_none!(expand_knots(
+            geometry_or_none!(knot_leaf.parameters.get(tail)),
+            geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
             expected_knots,
-        )?
+            ctx,
+        )?)
     } else {
         let kind = if record.partial("UNIFORM_CURVE").is_some() {
             DefaultNurbsKnotKind::Uniform
@@ -4132,142 +5230,230 @@ fn nurbs_curve_definition(
         } else if record.partial("BEZIER_CURVE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return None;
+            return Ok(None);
         };
-        default_nurbs_knots(control_points.len(), degree, kind)?
+        geometry_or_none!(default_nurbs_knots(
+            control_points.len(),
+            degree,
+            kind,
+            ctx
+        )?)
     };
     if knots.len() != expected_knots {
-        return None;
+        return Ok(None);
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
-        let values = numbers(leaf.parameters.first()?)?;
-        (values.len() == control_points.len())
-            .then_some(values)
-            .map(Some)?
+        Some(geometry_or_none!(numbers(
+            geometry_or_none!(leaf.parameters.first()),
+            ctx
+        )?))
     } else {
         None
     };
-    Some(NurbsCurveDefinition {
+    Ok(Some(NurbsCurveDefinition {
         degree,
         control_points,
         knots,
         weights,
         periodic,
-    })
+    }))
 }
 
 fn default_nurbs_knots(
     control_point_count: usize,
     degree: u32,
     kind: DefaultNurbsKnotKind,
-) -> Option<Vec<f64>> {
-    let degree = usize::try_from(degree).ok()?;
-    let expected = control_point_count.checked_add(degree)?.checked_add(1)?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<KnotVector>, CodecError> {
+    let degree = geometry_or_none!(usize::try_from(degree).ok());
+    let expected = geometry_or_none!(control_point_count
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1)));
     let mut knots = Vec::new();
-    knots.try_reserve_exact(expected).ok()?;
     match kind {
         DefaultNurbsKnotKind::Uniform => {
-            knots.extend((0..expected).map(|index| index as f64 - degree as f64));
+            for index in 0..expected {
+                let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+                let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
+                let knot = geometry_or_none!(FiniteReal::new(index - degree));
+                ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+            }
         }
         DefaultNurbsKnotKind::QuasiUniform => {
-            let distinct_count = control_point_count.checked_sub(degree)?.checked_add(1)?;
+            let distinct_count = geometry_or_none!(control_point_count
+                .checked_sub(degree)
+                .and_then(|count| count.checked_add(1)));
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    degree.checked_add(1)?
+                    geometry_or_none!(degree.checked_add(1))
                 } else {
                     1
                 };
-                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
+                for _ in 0..multiplicity {
+                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                }
             }
         }
         DefaultNurbsKnotKind::Bezier => {
             if degree == 0 {
-                return None;
+                return Ok(None);
             }
-            let segment_count = control_point_count.checked_sub(1)?;
+            let segment_count = geometry_or_none!(control_point_count.checked_sub(1));
             if segment_count % degree != 0 {
-                return None;
+                return Ok(None);
             }
             let segment_count = segment_count / degree;
-            let distinct_count = segment_count.checked_add(1)?;
+            let distinct_count = geometry_or_none!(segment_count.checked_add(1));
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    degree.checked_add(1)?
+                    geometry_or_none!(degree.checked_add(1))
                 } else {
                     degree
                 };
-                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
+                for _ in 0..multiplicity {
+                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                }
             }
         }
     }
-    (knots.len() == expected).then_some(knots)
+    if knots.len() != expected {
+        return Ok(None);
+    }
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
 fn nurbs_curve(
     id: u64,
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
-    warnings: &mut Vec<String>,
-) -> Option<NurbsCurve> {
-    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE")?;
-    let control_points = definition
-        .control_points
-        .into_iter()
-        .map(|id| points.get(&id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    NurbsCurve::new(
+    points: &BTreeMap<u64, FinitePoint3>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let definition = geometry_or_none!(nurbs_curve_definition(
+        id,
+        record,
+        losses,
+        "B_SPLINE_CURVE",
+        ctx
+    )?);
+    let mut control_points = Vec::new();
+    for id in definition.control_points {
+        let point = geometry_or_none!(points.get(&id).copied());
+        ctx.push_vec(
+            &mut control_points,
+            point,
+            "step_nurbs_curve_control_points",
+        )?;
+    }
+    let curve = NurbsCurve::from_lanes(
+        ctx,
         definition.degree,
         definition.knots,
         control_points,
         definition.weights,
         definition.periodic,
-    )
-    .ok()
+    )?;
+    match curve {
+        Ok(curve) => Ok(Some(curve)),
+        Err(error) => {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
+                )),
+                "step_geometry_losses",
+            )?;
+            Ok(None)
+        }
+    }
 }
 
 fn nurbs_pcurve(
     id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
-    warnings: &mut Vec<String>,
-) -> Option<PcurveGeometry> {
-    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE pcurve")?;
-    let control_points = definition
-        .control_points
-        .into_iter()
-        .map(|id| points.get(&id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
-            definition.degree,
-            definition.knots,
-            control_points,
-            definition.weights,
-            definition.periodic,
-        )
-        .ok()?,
-    })
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    let definition = geometry_or_none!(nurbs_curve_definition(
+        id,
+        record,
+        losses,
+        "B_SPLINE_CURVE pcurve",
+        ctx
+    )?);
+    let mut control_points = Vec::new();
+    for id in definition.control_points {
+        let point = geometry_or_none!(points.get(&id).copied());
+        ctx.push_vec(
+            &mut control_points,
+            point,
+            "step_nurbs_pcurve_control_points",
+        )?;
+    }
+    let pcurve = PcurveNurbs::from_lanes(
+        ctx,
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    )?;
+    match pcurve {
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+        Err(error) => {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
+                )),
+                "step_geometry_losses",
+            )?;
+            Ok(None)
+        }
+    }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct PcurveSources<'a> {
+    points: &'a BTreeMap<u64, Point2>,
+    vectors: &'a BTreeMap<u64, Point2>,
+    placements: &'a BTreeMap<u64, (Point2, HypotDirection2, HypotDirection2)>,
+    transformations: &'a BTreeMap<u64, Transform2>,
+    angle_scale: f64,
+}
+
 fn decode_pcurve_geometry(
     id: u64,
     exchange: &Exchange,
-    points: &BTreeMap<u64, Point2>,
-    vectors: &BTreeMap<u64, Point2>,
-    placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
-    transformations: &BTreeMap<u64, Transform2>,
-    angle_scale: f64,
-    warnings: &mut Vec<String>,
+    sources: PcurveSources<'_>,
+    losses: &mut Vec<LossNote>,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<(PcurveGeometry, BTreeSet<u64>)> {
-    if depth >= 256 || !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(PcurveGeometry, BTreeSet<u64>)>, CodecError> {
+    let PcurveSources {
+        points,
+        vectors,
+        placements,
+        transformations,
+        angle_scale,
+    } = sources;
+    if depth >= 256 || active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let record = exchange.records.get(&id)?;
-        let mut records = BTreeSet::from([id]);
+    let _depth = ctx.enter_nested("step_pcurve_geometry_walk")?;
+    ctx.insert_btree_set(active, id, "step_pcurve_geometry_active")?;
+    let result = (|| -> Result<Option<_>, CodecError> {
+        let record = geometry_or_none!(exchange.records().get(&id));
+        let mut records = BTreeSet::new();
+        ctx.insert_btree_set(&mut records, id, "step_pcurve_source_records")?;
         let geometry = if record.partials.iter().any(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -4277,9 +5463,9 @@ fn decode_pcurve_geometry(
                     | "BEZIER_CURVE"
             )
         }) {
-            nurbs_pcurve(id, record, points, warnings)?
+            geometry_or_none!(nurbs_pcurve(id, record, points, losses, ctx)?)
         } else {
-            let curve_type = entity_type(
+            let curve_type = geometry_or_none!(entity_type(
                 record,
                 &[
                     "LINE",
@@ -4295,174 +5481,229 @@ fn decode_pcurve_geometry(
                     "QUASI_UNIFORM_CURVE",
                     "BEZIER_CURVE",
                 ],
-            )?;
+            ));
             match curve_type {
                 "LINE" => {
-                    let origin = named_parameter(record, "LINE", 1)?
-                        .reference()
-                        .and_then(|point| points.get(&point).copied())?;
-                    let direction = named_parameter(record, "LINE", 2)?
-                        .reference()
-                        .and_then(|vector| vectors.get(&vector).copied())?;
-                    PcurveGeometry::Line { origin, direction }
+                    let origin = geometry_or_none!(named_parameter(record, "LINE", 1)
+                        .and_then(Value::reference)
+                        .and_then(|point| points.get(&point).copied()));
+                    let direction = geometry_or_none!(named_parameter(record, "LINE", 2)
+                        .and_then(Value::reference)
+                        .and_then(|vector| vectors.get(&vector).copied()));
+                    PcurveGeometry::Line(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).ok()
+                    ))
                 }
                 "CIRCLE" => {
-                    let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let radius = positive(named_parameter(record, "CIRCLE", 2))?;
-                    records.insert(placement);
-                    PcurveGeometry::Circle {
-                        center,
-                        x_axis,
-                        y_axis,
-                        radius,
-                    }
+                    let placement = geometry_or_none!(
+                        named_parameter(record, "CIRCLE", 1).and_then(Value::reference)
+                    );
+                    let (center, x_axis, y_axis) =
+                        geometry_or_none!(placements.get(&placement).copied());
+                    let radius = geometry_or_none!(
+                        named_parameter(record, "CIRCLE", 2).and_then(Value::number)
+                    );
+                    ctx.insert_btree_set(&mut records, placement, "step_pcurve_source_records")?;
+                    PcurveGeometry::Circle(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            geometry_or_none!(PositiveReal::new(radius)),
+                        )
+                    ))
                 }
                 "ELLIPSE" => {
-                    let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
-                    let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
-                    records.insert(placement);
-                    PcurveGeometry::Ellipse {
-                        center,
-                        x_axis,
-                        y_axis,
-                        major_radius,
-                        minor_radius,
-                    }
+                    let placement = geometry_or_none!(
+                        named_parameter(record, "ELLIPSE", 1).and_then(Value::reference)
+                    );
+                    let (center, x_axis, y_axis) =
+                        geometry_or_none!(placements.get(&placement).copied());
+                    let major_radius = geometry_or_none!(
+                        named_parameter(record, "ELLIPSE", 2).and_then(Value::number)
+                    );
+                    let minor_radius = geometry_or_none!(
+                        named_parameter(record, "ELLIPSE", 3).and_then(Value::number)
+                    );
+                    ctx.insert_btree_set(&mut records, placement, "step_pcurve_source_records")?;
+                    PcurveGeometry::Ellipse(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            geometry_or_none!(PositiveReal::new(major_radius)),
+                            geometry_or_none!(PositiveReal::new(minor_radius)),
+                        )
+                    ))
                 }
                 "PARABOLA" => {
-                    let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
-                    let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
-                    records.insert(placement);
-                    PcurveGeometry::Parabola {
-                        vertex,
-                        x_axis,
-                        y_axis,
-                        focal_distance,
-                    }
+                    let placement = geometry_or_none!(
+                        named_parameter(record, "PARABOLA", 1).and_then(Value::reference)
+                    );
+                    let (vertex, x_axis, y_axis) =
+                        geometry_or_none!(placements.get(&placement).copied());
+                    let focal_distance = geometry_or_none!(
+                        named_parameter(record, "PARABOLA", 2).and_then(Value::number)
+                    );
+                    ctx.insert_btree_set(&mut records, placement, "step_pcurve_source_records")?;
+                    PcurveGeometry::Parabola(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(vertex)),
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            geometry_or_none!(PositiveReal::new(focal_distance)),
+                        )
+                    ))
                 }
                 "HYPERBOLA" => {
-                    let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
-                    let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
-                    records.insert(placement);
-                    PcurveGeometry::Hyperbola {
-                        center,
-                        x_axis,
-                        y_axis,
-                        major_radius,
-                        minor_radius,
-                    }
+                    let placement = geometry_or_none!(
+                        named_parameter(record, "HYPERBOLA", 1).and_then(Value::reference)
+                    );
+                    let (center, x_axis, y_axis) =
+                        geometry_or_none!(placements.get(&placement).copied());
+                    let major_radius = geometry_or_none!(
+                        named_parameter(record, "HYPERBOLA", 2).and_then(Value::number)
+                    );
+                    let minor_radius = geometry_or_none!(
+                        named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)
+                    );
+                    ctx.insert_btree_set(&mut records, placement, "step_pcurve_source_records")?;
+                    PcurveGeometry::Hyperbola(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            geometry_or_none!(PositiveReal::new(major_radius)),
+                            geometry_or_none!(PositiveReal::new(minor_radius)),
+                        )
+                    ))
                 }
-                "POLYLINE" => polyline_pcurve(record, points)?,
+                "POLYLINE" => geometry_or_none!(polyline_pcurve(id, record, points, losses, ctx)?),
                 "CURVE_REPLICA" => {
-                    let basis_id = named_parameter(record, "CURVE_REPLICA", 1)?.reference()?;
-                    let operator_id = named_parameter(record, "CURVE_REPLICA", 2)?.reference()?;
-                    let (basis, basis_records) = decode_pcurve_geometry(
+                    let basis_id = geometry_or_none!(
+                        named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
+                    );
+                    let operator_id =
+                        geometry_or_none!(
+                            named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
+                        );
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        warnings,
+                        sources,
+                        losses,
                         active,
                         depth + 1,
-                    )?;
-                    let transform = transformations.get(&operator_id).copied()?;
-                    records.extend(basis_records);
-                    records.insert(operator_id);
-                    PcurveGeometry::Transformed {
-                        basis: Box::new(basis),
-                        transform,
+                        ctx,
+                    )?);
+                    let transform = geometry_or_none!(transformations.get(&operator_id).copied());
+                    for record in basis_records {
+                        ctx.insert_btree_set(&mut records, record, "step_pcurve_source_records")?;
                     }
+                    ctx.insert_btree_set(&mut records, operator_id, "step_pcurve_source_records")?;
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Transformed(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+                            Box::new(basis),
+                            transform
+                        )
+                        .ok()
+                    ))
                 }
                 "TRIMMED_CURVE" => {
-                    let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
-                    let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
-                    let (basis, basis_records) = decode_pcurve_geometry(
+                    let basis_id = geometry_or_none!(
+                        named_parameter(record, "TRIMMED_CURVE", 1).and_then(Value::reference)
+                    );
+                    let sense = geometry_or_none!(
+                        named_parameter(record, "TRIMMED_CURVE", 4).and_then(Value::logical)
+                    );
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        warnings,
+                        sources,
+                        losses,
                         active,
                         depth + 1,
-                    )?;
+                        ctx,
+                    )?);
                     let scale = if matches!(
                         basis,
-                        PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. }
+                        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_)
                     ) {
                         angle_scale
                     } else {
                         1.0
                     };
                     let start =
-                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?
+                        geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 2)
+                            .and_then(pcurve_trim_parameter))
+                        .get()
                             * scale;
-                    let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
-                        * scale;
-                    records.extend(basis_records);
+                    let end =
+                        geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 3)
+                            .and_then(pcurve_trim_parameter))
+                        .get()
+                            * scale;
+                    for record in basis_records {
+                        ctx.insert_btree_set(&mut records, record, "step_pcurve_source_records")?;
+                    }
                     let (parameter_range, same_sense) =
                         trimmed_pcurve_parameterization(&basis, start, end, sense);
-                    PcurveGeometry::Trimmed {
-                        parameter_range,
-                        same_sense,
-                        basis: Box::new(basis),
-                    }
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Trimmed(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
+                            parameter_range,
+                            same_sense,
+                            Box::new(basis)
+                        )
+                        .ok()
+                    ))
                 }
                 "OFFSET_CURVE_2D" => {
-                    let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
-                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
-                    if !distance.is_finite()
-                        || named_parameter(record, "OFFSET_CURVE_2D", 3)?
-                            .logical()
-                            .is_none()
-                    {
-                        return None;
-                    }
-                    let (basis, basis_records) = decode_pcurve_geometry(
+                    let basis_id =
+                        geometry_or_none!(named_parameter(record, "OFFSET_CURVE_2D", 1)
+                            .and_then(Value::reference));
+                    let distance = geometry_or_none!(named_parameter(record, "OFFSET_CURVE_2D", 2)
+                        .and_then(Value::number)
+                        .and_then(FiniteReal::new));
+                    geometry_or_none!(
+                        named_parameter(record, "OFFSET_CURVE_2D", 3).and_then(Value::logical)
+                    );
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        warnings,
+                        sources,
+                        losses,
                         active,
                         depth + 1,
-                    )?;
-                    records.extend(basis_records);
-                    PcurveGeometry::Offset {
-                        distance,
-                        basis: Box::new(basis),
+                        ctx,
+                    )?);
+                    for record in basis_records {
+                        ctx.insert_btree_set(&mut records, record, "step_pcurve_source_records")?;
                     }
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Offset(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
+                            distance,
+                            Box::new(basis)
+                        )
+                        .ok()
+                    ))
                 }
-                _ => {
-                    return None;
-                }
+                _ => return Ok(None),
             }
         };
-        Some((geometry, records))
+        Ok(Some((geometry, records)))
     })();
     active.remove(&id);
     result
 }
 
-fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
+fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
-            Value::Integer(value) => Some(*value as f64),
-            Value::Real(value) => Some(*value),
+            Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
+            Value::Real(value) => Some(value.get()),
             _ => None,
         }
     }
@@ -4484,7 +5725,7 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
             }),
         _ => None,
     }
-    .filter(|value| value.is_finite())
+    .and_then(FiniteReal::new)
 }
 
 fn trimmed_pcurve_parameterization(
@@ -4498,11 +5739,11 @@ fn trimmed_pcurve_parameterization(
     // Closed STEP pcurves use cyclic parameter branches. Move the endpoint
     // that follows the declared traversal before projecting to an ordered
     // basis interval; non-closed malformed input still gets a valid interval.
-    if let Some(period) = pcurve_parameter_period(geometry) {
+    if let Some(domain) = pcurve_periodic_domain(geometry) {
         if sense && end < start {
-            end += period;
+            end = shift_periodic_parameter(end, domain);
         } else if !sense && start < end {
-            start += period;
+            start = shift_periodic_parameter(start, domain);
         }
     }
     let [from, to] = if sense { [start, end] } else { [end, start] };
@@ -4513,31 +5754,44 @@ fn trimmed_pcurve_parameterization(
     }
 }
 
-fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
-    let period = match geometry {
-        PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Harmonic { .. } => std::f64::consts::TAU,
-        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points().len(),
-        )?,
-        PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
-            pcurve_nurbs_parameter_period(nurbs.degree(), nurbs.knots(), nurbs.poles().len())?
+fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
+            Some([0.0, std::f64::consts::TAU])
         }
-        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_period(basis)?,
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,
-        _ => return None,
-    };
-    (period.is_finite() && period > 0.0).then_some(period)
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => {
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
+        }
+        PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
+        }
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let basis = offset_pcurve.basis();
+            pcurve_periodic_domain(basis)
+        }
+        PcurveGeometry::Transformed(placed) => pcurve_periodic_domain(placed.basis()),
+        _ => None,
+    }
 }
 
-fn pcurve_nurbs_parameter_period(degree: u32, knots: &[f64], count: usize) -> Option<f64> {
+fn pcurve_nurbs_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some(upper - lower)
+    (upper > lower).then_some([lower, upper])
+}
+
+fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
+    let period = upper - lower;
+    if period.is_finite() {
+        value + period
+    } else {
+        upper + (value - lower)
+    }
 }
 
 fn surface_parameter_scales_for_step(
@@ -4546,8 +5800,9 @@ fn surface_parameter_scales_for_step(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
-) -> Option<[f64; 2]> {
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
     procedural_surface_parameter_scales(
         ir,
         surface_id,
@@ -4555,7 +5810,7 @@ fn surface_parameter_scales_for_step(
         length_scale,
         angle_scale,
         source_curve_parameter_scales,
-        &mut BTreeSet::new(),
+        ctx,
     )
 }
 
@@ -4565,97 +5820,122 @@ fn procedural_surface_parameter_scales(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
-    active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
-    if !active.insert(surface_id.clone()) {
-        return None;
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let _depth = ctx.enter_nested("step_surface_parameter_scale_walk")?;
+    let mut active_storage = ctx.reserve_scoped(0, "step surface scale traversal storage")?;
+    let mut active = BTreeSet::new();
+    let mut surface_id = surface_id;
+    let mut geometry = geometry;
+    loop {
+        if active.contains(surface_id) {
+            return Ok(None);
+        }
+        let key = active_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("{}", surface_id.as_str()),
+                "step_surface_scale_active_id",
+            )
+        })?;
+        let key = geometry_or_none!(SurfaceId::mint(key).ok());
+        active_storage
+            .with_storage(|| ctx.insert_btree_set(&mut active, key, "step_surface_scale_active"))?;
+        let Some(solved) = geometry.solved() else {
+            return Ok(None);
+        };
+        match surface_geometry_parameter_scales(
+            ir,
+            surface_id,
+            solved,
+            length_scale,
+            angle_scale,
+            source_curve_parameter_scales,
+            ctx,
+        )? {
+            SurfaceScaleStep::Value(scales) => return Ok(scales),
+            SurfaceScaleStep::Support(support) => {
+                let Some(carrier) = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *support)
+                else {
+                    return Ok(None);
+                };
+                surface_id = support;
+                geometry = &carrier.geometry;
+            }
+        }
     }
-    let scales = surface_geometry_parameter_scales(
-        ir,
-        surface_id,
-        geometry,
-        length_scale,
-        angle_scale,
-        source_curve_parameter_scales,
-        active,
-    );
-    active.remove(surface_id);
-    scales
 }
 
-fn surface_geometry_parameter_scales(
-    ir: &CadIr,
+enum SurfaceScaleStep<'a> {
+    Value(Option<[f64; 2]>),
+    Support(&'a SurfaceId),
+}
+
+fn surface_geometry_parameter_scales<'a>(
+    ir: &'a CadIr,
     surface_id: &SurfaceId,
-    geometry: &SurfaceGeometry,
+    geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
-    active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
-    match geometry {
-        SurfaceGeometry::Plane { .. } => Some([length_scale, length_scale]),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &DecodeContext<'_>,
+) -> Result<SurfaceScaleStep<'a>, CodecError> {
+    let _depth = ctx.enter_nested("step_surface_geometry_scale_walk")?;
+    let mut geometry = geometry;
+    while let SolvedSurfaceGeometry::Transformed(placed) = geometry {
+        geometry = placed.basis();
+    }
+    let scales = match geometry {
+        SolvedSurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
+        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
             Some([angle_scale, length_scale])
         }
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
+        SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_) => {
             Some([angle_scale, angle_scale])
         }
-        SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
-        SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
-            ir,
-            surface_id,
-            basis,
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
-        ),
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_geometry_parameter_scales(
-            ir,
-            surface_id,
-            geometry,
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
-        ),
-        SurfaceGeometry::Procedural { construction, .. } => ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.id == *construction)
-            .and_then(|procedural| {
-                procedural_definition_parameter_scales(
-                    ir,
-                    procedural.definition(),
-                    length_scale,
-                    angle_scale,
-                    source_curve_parameter_scales,
-                    active,
-                )
-            }),
-        SurfaceGeometry::Unknown { .. } => {
+        SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
+        SolvedSurfaceGeometry::Transformed(_) => None,
+        SolvedSurfaceGeometry::Unknown { .. } => {
             let mut candidates = ir.model.procedural_surfaces.iter().filter(|procedural| {
                 ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
             });
-            let procedural = candidates.next()?;
+            let Some(procedural) = candidates.next() else {
+                return Ok(SurfaceScaleStep::Value(None));
+            };
             if candidates.next().is_some() {
-                return None;
+                return Ok(SurfaceScaleStep::Value(None));
             }
-            procedural_definition_parameter_scales(
+            if let Some(support) = procedural_surface_support(procedural.definition()) {
+                return Ok(SurfaceScaleStep::Support(support));
+            }
+            return procedural_definition_parameter_scales(
                 ir,
                 procedural.definition(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-                active,
+                ctx,
             )
+            .map(SurfaceScaleStep::Value);
         }
-        SurfaceGeometry::Polygonal(_) => None,
+        SolvedSurfaceGeometry::Polygonal(_) => None,
+    };
+    Ok(SurfaceScaleStep::Value(scales))
+}
+
+fn procedural_surface_support(definition: &ProceduralSurfaceDefinition) -> Option<&SurfaceId> {
+    match definition {
+        ProceduralSurfaceDefinition::Offset(payload) => Some(payload.support()),
+        ProceduralSurfaceDefinition::ParallelOffset(payload) => Some(payload.support()),
+        ProceduralSurfaceDefinition::Subset(payload) => Some(payload.support()),
+        ProceduralSurfaceDefinition::SubSurface(payload) => Some(payload.support()),
+        ProceduralSurfaceDefinition::CurveBounded { support, .. } => Some(support),
+        ProceduralSurfaceDefinition::Replica { source, .. } => Some(source),
+        _ => None,
     }
 }
 
@@ -4664,75 +5944,63 @@ fn procedural_definition_parameter_scales(
     definition: &ProceduralSurfaceDefinition,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
-    active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
-    let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
-        let carrier = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *support)?;
-        procedural_surface_parameter_scales(
-            ir,
-            support,
-            &carrier.geometry,
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
-        )
-    };
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
     match definition {
-        ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-        | ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
-            directrix_parameter_scale(
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            Ok(Some([
+                geometry_or_none!(directrix_parameter_scale(
+                    ir,
+                    directrix,
+                    length_scale,
+                    angle_scale,
+                    source_curve_parameter_scales,
+                    ctx,
+                )?),
+                1.0,
+            ]))
+        }
+        ProceduralSurfaceDefinition::LinearSweep(definition_payload) => Ok(Some([
+            geometry_or_none!(directrix_parameter_scale(
                 ir,
-                directrix,
+                definition_payload.directrix(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-            )?,
+                ctx,
+            )?),
             1.0,
-        ]),
-        ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => Some([
+        ])),
+        ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => Ok(Some([
             angle_scale,
-            directrix_parameter_scale(
+            geometry_or_none!(directrix_parameter_scale(
                 ir,
-                directrix,
+                definition_payload.directrix(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-            )?,
-        ]),
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            transposed,
-            ..
-        } => {
-            let directrix = directrix_parameter_scale(
+                ctx,
+            )?),
+        ])),
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = geometry_or_none!(directrix_parameter_scale(
                 ir,
-                directrix,
+                definition_payload.directrix(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-            )?;
-            Some(if *transposed {
+                ctx,
+            )?);
+            Ok(Some(if *definition_payload.transposed() {
                 [angle_scale, directrix]
             } else {
                 [directrix, angle_scale]
-            })
+            }))
         }
-        ProceduralSurfaceDefinition::Offset { support, .. }
-        | ProceduralSurfaceDefinition::ParallelOffset { support, .. }
-        | ProceduralSurfaceDefinition::Subset { support, .. }
-        | ProceduralSurfaceDefinition::SubSurface { support, .. }
-        | ProceduralSurfaceDefinition::CurveBounded { support, .. }
-        | ProceduralSurfaceDefinition::Replica {
-            source: support, ..
-        } => support_scales(support, active),
-        ProceduralSurfaceDefinition::DegenerateTorus { .. } => Some([angle_scale, angle_scale]),
-        _ => None,
+        ProceduralSurfaceDefinition::DegenerateTorus { .. } => Ok(Some([angle_scale, angle_scale])),
+        _ => Ok(None),
     }
 }
 
@@ -4741,12 +6009,13 @@ fn directrix_parameter_scale(
     curve_id: &CurveId,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
-) -> Option<f64> {
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
     if let Some(source_scale) =
         step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
     {
-        return Some(*source_scale);
+        return Ok(Some(source_scale.get()));
     }
     directrix_parameter_scale_inner(
         ir,
@@ -4754,6 +6023,7 @@ fn directrix_parameter_scale(
         length_scale,
         angle_scale,
         &mut BTreeSet::new(),
+        ctx,
     )
 }
 
@@ -4763,91 +6033,68 @@ fn directrix_parameter_scale_inner(
     length_scale: f64,
     angle_scale: f64,
     active: &mut BTreeSet<CurveId>,
-) -> Option<f64> {
-    if !active.insert(curve_id.clone()) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    if active.contains(curve_id) {
+        return Ok(None);
     }
-    let scale = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .and_then(|curve| {
-            directrix_geometry_parameter_scale(
-                ir,
-                &curve.geometry,
-                length_scale,
-                angle_scale,
-                active,
-            )
-        });
+    let _depth = ctx.enter_nested("step_directrix_scale_walk")?;
+    let key = ctx.format_retained(
+        format_args!("{}", curve_id.as_str()),
+        "step_directrix_scale_active_id",
+    )?;
+    let key = geometry_or_none!(CurveId::mint(key).ok());
+    ctx.insert_btree_set(active, key, "step_directrix_scale_active")?;
+    let scale = if let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) {
+        if let Some(solved) = curve.geometry.solved() {
+            directrix_geometry_parameter_scale(solved, length_scale, angle_scale, ctx)
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    };
     active.remove(curve_id);
     scale
 }
 
 fn directrix_geometry_parameter_scale(
-    ir: &CadIr,
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     length_scale: f64,
     angle_scale: f64,
-    active: &mut BTreeSet<CurveId>,
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = ctx.enter_nested("step_directrix_geometry_scale_walk")?;
     match geometry {
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => directrix_geometry_parameter_scale(ir, geometry, length_scale, angle_scale, active),
-        CurveGeometry::Line { .. } => Some(length_scale),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Some(angle_scale),
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_) => Some(1.0),
-        CurveGeometry::Transformed { basis, .. } => {
-            directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
+        SolvedCurveGeometry::Line(_) => Ok(Some(length_scale)),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(Some(angle_scale)),
+        SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_) => Ok(Some(1.0)),
+        SolvedCurveGeometry::Transformed(placed) => {
+            directrix_geometry_parameter_scale(placed.basis(), length_scale, angle_scale, ctx)
         }
-        CurveGeometry::Procedural { construction, .. } => ir
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| procedural.id == *construction)
-            .and_then(|procedural| match procedural.definition() {
-                ProceduralCurveDefinition::Offset { source, .. }
-                | ProceduralCurveDefinition::SpatialOffset { source, .. }
-                | ProceduralCurveDefinition::Subset { source, .. }
-                | ProceduralCurveDefinition::VectorOffset { source, .. }
-                | ProceduralCurveDefinition::Projection { source, .. }
-                | ProceduralCurveDefinition::Replica { source, .. } => {
-                    directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
-                }
-                ProceduralCurveDefinition::Deformable {
-                    source: cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve },
-                    ..
-                } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
-                _ => None,
-            }),
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => Ok(None),
     }
 }
 
-pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
+pub(super) fn surface_periodic_domains(geometry: &SolvedSurfaceGeometry) -> [Option<[f64; 2]>; 2] {
     match geometry {
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => surface_parameter_periods(geometry),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            [Some(std::f64::consts::TAU), None]
-        }
-        SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
-        SurfaceGeometry::Nurbs(surface) => [
+        SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_) => [Some([0.0, std::f64::consts::TAU]), None],
+        SolvedSurfaceGeometry::Torus(_) => [
+            Some([0.0, std::f64::consts::TAU]),
+            Some([0.0, std::f64::consts::TAU]),
+        ],
+        SolvedSurfaceGeometry::Nurbs(surface) => [
             surface
                 .u_periodic()
                 .then(|| {
-                    nurbs_surface_parameter_period(
+                    nurbs_surface_parameter_domain(
                         surface.u_degree(),
                         surface.u_knots(),
                         surface.u_count(),
@@ -4857,7 +6104,7 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
             surface
                 .v_periodic()
                 .then(|| {
-                    nurbs_surface_parameter_period(
+                    nurbs_surface_parameter_domain(
                         surface.v_degree(),
                         surface.v_knots(),
                         surface.v_count(),
@@ -4865,262 +6112,174 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
                 })
                 .flatten(),
         ],
-        SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
-        SurfaceGeometry::Plane { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => [None, None],
+        SolvedSurfaceGeometry::Transformed(placed) => surface_periodic_domains(placed.basis()),
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
-fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Option<f64> {
+fn nurbs_surface_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
-    let count = usize::try_from(count).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    let period = upper - lower;
-    (period.is_finite() && period > 0.0).then_some(period)
+    (upper > lower).then_some([lower, upper])
 }
 
-/// Scale a pcurve's coordinates into the units of its owning surface.
-///
-/// The pcurve parameter itself is unchanged. Circle, ellipse, and hyperbola
-/// carriers keep their native trigonometric parameterization by using the
-/// general harmonic forms when the two coordinate scales differ. The remaining
-/// analytic forms require an affine 2D carrier to preserve that parameterization;
-/// report them as unsupported instead of applying a scalar approximation.
-pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> bool {
-    let [u_scale, v_scale] = scales;
-    let scale_point = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
-    let isotropic = u_scale == v_scale;
-
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            *origin = scale_point(*origin);
-            *direction = scale_point(*direction);
-        }
-        PcurveGeometry::Circle {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Harmonic {
-                    center,
-                    cosine: scale_point(Point2::new(*radius * x_axis.u, *radius * x_axis.v)),
-                    sine: scale_point(Point2::new(*radius * y_axis.u, *radius * y_axis.v)),
-                };
-            }
-        }
-        PcurveGeometry::Ellipse {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *major_radius *= u_scale;
-                *minor_radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Harmonic {
-                    center,
-                    cosine: scale_point(Point2::new(
-                        *major_radius * x_axis.u,
-                        *major_radius * x_axis.v,
-                    )),
-                    sine: scale_point(Point2::new(
-                        *minor_radius * y_axis.u,
-                        *minor_radius * y_axis.v,
-                    )),
-                };
-            }
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            focal_distance,
-            ..
-        } => {
-            if !isotropic {
-                return false;
-            }
-            *vertex = scale_point(*vertex);
-            *focal_distance *= u_scale;
-        }
-        PcurveGeometry::Hyperbola {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *major_radius *= u_scale;
-                *minor_radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Hyperbolic {
-                    center,
-                    cosine: scale_point(Point2::new(
-                        *major_radius * x_axis.u,
-                        *major_radius * x_axis.v,
-                    )),
-                    sine: scale_point(Point2::new(
-                        *minor_radius * y_axis.u,
-                        *minor_radius * y_axis.v,
-                    )),
-                };
-            }
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            *center = scale_point(*center);
-            *cosine = scale_point(*cosine);
-            *sine = scale_point(*sine);
-        }
-        PcurveGeometry::Nurbs { nurbs } => {
-            if nurbs
-                .edit_control_points(|points| {
-                    for control_point in points {
-                        *control_point = scale_point(*control_point);
-                    }
-                })
-                .is_err()
-            {
-                return false;
-            }
-        }
-        PcurveGeometry::Trimmed { basis, .. } => {
-            if !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-        }
-        PcurveGeometry::Offset { distance, basis } => {
-            if !isotropic || !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-            *distance *= u_scale;
-        }
-        PcurveGeometry::Transformed { basis, transform } => {
-            if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
-                return false;
-            }
-            // The basis is converted below. Conjugate the replica map so
-            // `S * T * x` remains `S * T * S^-1 * (S * x)`.
-            let mut rows = transform.rows();
-            rows[0][1] *= u_scale / v_scale;
-            rows[0][2] *= u_scale;
-            rows[1][0] *= v_scale / u_scale;
-            rows[1][2] *= v_scale;
-            let Some(scaled_transform) = Transform2::from_rows(rows) else {
-                return false;
-            };
-            if !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-            *transform = scaled_transform;
-        }
-        PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => return isotropic && u_scale == 1.0,
+fn polyline_pcurve(
+    id: u64,
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point2>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut control_points = Vec::new();
+    for value in values {
+        let point = geometry_or_none!(value.reference().and_then(|id| points.get(&id).copied()));
+        ctx.push_vec(&mut control_points, point, "step_polyline_pcurve_points")?;
     }
-    true
-}
-
-fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
-    let control_points = record
-        .parameter(1)?
-        .list()?
-        .iter()
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
-        .collect::<Option<Vec<_>>>()?;
     if control_points.len() < 2 {
-        return None;
+        return Ok(None);
     }
-    let last = (control_points.len() - 1) as f64;
-    let mut knots = Vec::with_capacity(control_points.len() + 2);
-    knots.push(0.0);
-    knots.extend((0..control_points.len()).map(|index| index as f64));
-    knots.push(last);
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(1, knots, control_points, None, false).ok()?,
-    })
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
+    let mut knots = Vec::new();
+    ctx.push_vec(&mut knots, 0.0, "step_polyline_pcurve_knots")?;
+    for index in 0..control_points.len() {
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        ctx.push_vec(&mut knots, knot, "step_polyline_pcurve_knots")?;
+    }
+    ctx.push_vec(&mut knots, last, "step_polyline_pcurve_knots")?;
+    match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+        Err(error) => {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
+                )),
+                "step_geometry_losses",
+            )?;
+            Ok(None)
+        }
+    }
 }
 
-fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
-    let control_points = record
-        .parameter(1)?
-        .list()?
-        .iter()
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
-        .collect::<Option<Vec<_>>>()?;
-    if control_points.len() < 2 {
-        return None;
+fn polyline(
+    id: u64,
+    record: &RawRecord,
+    points: &BTreeMap<u64, FinitePoint3>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut control_points = Vec::new();
+    for value in values {
+        let point = geometry_or_none!(value
+            .reference()
+            .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+        ctx.push_vec(&mut control_points, point, "step_polyline_points")?;
     }
-    let last = (control_points.len() - 1) as f64;
-    let mut knots = Vec::with_capacity(control_points.len() + 2);
-    knots.push(0.0);
-    knots.extend((0..control_points.len()).map(|index| index as f64));
-    knots.push(last);
-    NurbsCurve::new(1, knots, control_points, None, false).ok()
+    if control_points.len() < 2 {
+        return Ok(None);
+    }
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
+    let mut knots = Vec::new();
+    ctx.push_vec(&mut knots, 0.0, "step_polyline_knots")?;
+    for index in 0..control_points.len() {
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
+    }
+    ctx.push_vec(&mut knots, last, "step_polyline_knots")?;
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx,
+        1,
+        knots,
+        control_points,
+        None,
+        false,
+    )? {
+        Ok(curve) => Ok(Some(curve)),
+        Err(error) => {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
+                "step_geometry_losses",
+            )?;
+            Ok(None)
+        }
+    }
 }
 
 fn nurbs_surface(
     id: u64,
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
-    warnings: &mut Vec<String>,
-) -> Option<NurbsSurface> {
+    points: &BTreeMap<u64, FinitePoint3>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsSurface>, CodecError> {
     let (base, offset) = if record.partials.len() > 1 {
-        (record.partial("B_SPLINE_SURFACE")?, 0)
+        (geometry_or_none!(record.partial("B_SPLINE_SURFACE")), 0)
     } else {
-        let base_name = [
+        let base = geometry_or_none!([
             "B_SPLINE_SURFACE_WITH_KNOTS",
             "UNIFORM_SURFACE",
             "QUASI_UNIFORM_SURFACE",
             "BEZIER_SURFACE",
         ]
         .into_iter()
-        .find(|name| record.partial(name).is_some())?;
-        (record.partial(base_name)?, 1)
+        .find_map(|name| record.partial(name)));
+        (base, 1)
     };
-    let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let v_degree = u32::try_from(base.parameters.get(offset + 1)?.integer()?).ok()?;
-    let rows = base.parameters.get(offset + 2)?.list()?;
-    let u_count = u32::try_from(rows.len()).ok()?;
-    let v_count = u32::try_from(rows.first()?.list()?.len()).ok()?;
-    if u_count == 0
-        || v_count == 0
+    let u_degree = geometry_or_none!(base
+        .parameters
+        .get(offset)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let v_degree = geometry_or_none!(base
+        .parameters
+        .get(offset + 1)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let rows = geometry_or_none!(base.parameters.get(offset + 2).and_then(Value::list));
+    if !rows.iter().all(|row| row.list().is_some()) {
+        return Ok(None);
+    }
+    let u_count = geometry_or_none!(u32::try_from(rows.len()).ok());
+    let v_count = geometry_or_none!(rows
+        .first()
+        .and_then(Value::list)
+        .and_then(|row| u32::try_from(row.len()).ok()));
+    if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
         || rows.iter().any(|row| {
             row.list()
-                .is_none_or(|values| values.len() != v_count as usize)
+                .is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count))
         })
     {
-        return None;
+        return Ok(None);
     }
-    let control_points = rows
-        .iter()
-        .flat_map(|row| row.list().expect("row shape was validated"))
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
-        .collect::<Option<Vec<_>>>()?;
+    let mut control_points = Vec::new();
+    for row in rows {
+        let mut decoded_row = Vec::new();
+        for value in geometry_or_none!(row.list()) {
+            let point = geometry_or_none!(value
+                .reference()
+                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+            ctx.push_vec(&mut decoded_row, point, "step_nurbs_surface_control_points")?;
+        }
+        ctx.push_vec(&mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+    }
     let surface_name = [
         "B_SPLINE_SURFACE_WITH_KNOTS",
         "UNIFORM_SURFACE",
@@ -5130,40 +6289,48 @@ fn nurbs_surface(
     .into_iter()
     .find(|name| record.partial(name).is_some())
     .unwrap_or("B_SPLINE_SURFACE");
-    let u_periodic = periodic_value(
+    let u_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 4),
         &format!("{surface_name} U direction"),
         id,
-        warnings,
-    )?;
-    let v_periodic = periodic_value(
+        losses,
+        ctx,
+    )?);
+    let v_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 5),
         &format!("{surface_name} V direction"),
         id,
-        warnings,
-    )?;
-    let expected_u = usize::try_from(u_count)
-        .ok()?
-        .checked_add(usize::try_from(u_degree).ok()?)?
-        .checked_add(1)?;
-    let expected_v = usize::try_from(v_count)
-        .ok()?
-        .checked_add(usize::try_from(v_degree).ok()?)?
-        .checked_add(1)?;
+        losses,
+        ctx,
+    )?);
+    let expected_u = geometry_or_none!(usize::try_from(u_count)
+        .ok()
+        .and_then(|count| usize::try_from(u_degree)
+            .ok()
+            .and_then(|degree| count.checked_add(degree)))
+        .and_then(|count| count.checked_add(1)));
+    let expected_v = geometry_or_none!(usize::try_from(v_count)
+        .ok()
+        .and_then(|count| usize::try_from(v_degree)
+            .ok()
+            .and_then(|degree| count.checked_add(degree)))
+        .and_then(|count| count.checked_add(1)));
     let (u_knots, v_knots) = if let Some(knot_leaf) = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")
     {
-        let tail = knot_leaf.parameters.len().checked_sub(5)?;
+        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(5));
         (
-            expand_knots(
-                knot_leaf.parameters.get(tail)?,
-                knot_leaf.parameters.get(tail + 2)?,
+            geometry_or_none!(expand_knots(
+                geometry_or_none!(knot_leaf.parameters.get(tail)),
+                geometry_or_none!(knot_leaf.parameters.get(tail + 2)),
                 expected_u,
-            )?,
-            expand_knots(
-                knot_leaf.parameters.get(tail + 1)?,
-                knot_leaf.parameters.get(tail + 3)?,
+                ctx,
+            )?),
+            geometry_or_none!(expand_knots(
+                geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
+                geometry_or_none!(knot_leaf.parameters.get(tail + 3)),
                 expected_v,
-            )?,
+                ctx,
+            )?),
         )
     } else {
         let kind = if record.partial("UNIFORM_SURFACE").is_some() {
@@ -5173,82 +6340,106 @@ fn nurbs_surface(
         } else if record.partial("BEZIER_SURFACE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return None;
+            return Ok(None);
         };
         (
-            default_nurbs_knots(usize::try_from(u_count).ok()?, u_degree, kind)?,
-            default_nurbs_knots(usize::try_from(v_count).ok()?, v_degree, kind)?,
+            geometry_or_none!(default_nurbs_knots(
+                geometry_or_none!(usize::try_from(u_count).ok()),
+                u_degree,
+                kind,
+                ctx
+            )?),
+            geometry_or_none!(default_nurbs_knots(
+                geometry_or_none!(usize::try_from(v_count).ok()),
+                v_degree,
+                kind,
+                ctx
+            )?),
         )
     };
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
-        return None;
+        return Ok(None);
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
-        let rows = leaf.parameters.first()?.list()?;
-        if rows.len() != usize::try_from(u_count).ok()? {
-            return None;
-        }
+        let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
         let mut values = Vec::new();
         for row in rows {
-            let row = row.list()?;
-            if row.len() != usize::try_from(v_count).ok()? {
-                return None;
+            let mut decoded_row = Vec::new();
+            for value in geometry_or_none!(row.list()) {
+                let number = geometry_or_none!(value.number());
+                ctx.push_vec(&mut decoded_row, number, "step_nurbs_surface_weight_values")?;
             }
-            values.extend(row.iter().map(Value::number).collect::<Option<Vec<_>>>()?);
+            ctx.push_vec(&mut values, decoded_row, "step_nurbs_surface_weight_rows")?;
         }
-        (values.len() == control_points.len())
-            .then_some(values)
-            .map(Some)?
+        Some(values)
     } else {
         None
     };
-    NurbsSurface::new(
-        u_degree,
-        v_degree,
-        u_knots,
-        v_knots,
-        u_count,
-        v_count,
-        control_points,
-        weights,
+    let surface = NurbsSurface::from_lanes(
+        ctx,
+        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
         false,
-        u_periodic,
-        v_periodic,
-    )
-    .ok()
+    )?;
+    match surface {
+        Ok(surface) => Ok(Some(surface)),
+        Err(error) => {
+            ctx.push_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
+                )),
+                "step_geometry_losses",
+            )?;
+            Ok(None)
+        }
+    }
 }
 
-fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {
-    let multiplicities = multiplicities.list()?;
-    let distinct = distinct.list()?;
+fn expand_knots(
+    multiplicities: &Value,
+    distinct: &Value,
+    expected: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<KnotVector>, CodecError> {
+    let multiplicities = geometry_or_none!(multiplicities.list());
+    let distinct = geometry_or_none!(distinct.list());
     if multiplicities.len() != distinct.len() {
-        return None;
+        return Ok(None);
     }
     let mut knots = Vec::new();
-    knots.try_reserve_exact(expected).ok()?;
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
-        let count = usize::try_from(multiplicity.integer()?).ok()?;
-        let knot = knot.number()?;
-        if count == 0 || !knot.is_finite() {
-            return None;
+        let count = geometry_or_none!(multiplicity
+            .integer()
+            .and_then(|count| usize::try_from(count).ok()));
+        let knot = geometry_or_none!(knot.number().and_then(FiniteReal::new));
+        if count == 0
+            || knots
+                .len()
+                .checked_add(count)
+                .is_none_or(|len| len > expected)
+        {
+            return Ok(None);
         }
-        if knots.len().checked_add(count)? > expected {
-            return None;
-        }
-        knots.extend(std::iter::repeat_n(knot, count));
+        ctx.reserve_vec(&mut knots, count, "step_expanded_nurbs_knots")?;
+        knots.extend(std::iter::repeat_with(|| knot).take(count));
     }
-    knots
-        .windows(2)
-        .all(|pair| pair[0] <= pair[1])
-        .then_some(knots)
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
-fn references(value: &Value) -> Option<Vec<u64>> {
-    value.list()?.iter().map(Value::reference).collect()
+fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {
+    let values = geometry_or_none!(value.list());
+    let mut references = Vec::new();
+    for value in values {
+        let id = geometry_or_none!(value.reference());
+        ctx.push_vec(&mut references, id, "step_nurbs_control_point_ids")?;
+    }
+    Ok(Some(references))
 }
 
-fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
-    let record = exchange.records.get(&id)?;
+pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
+    let record = exchange.records().get(&id)?;
     if record.partials.iter().any(|partial| {
         matches!(
             partial.name.as_str(),
@@ -5261,48 +6452,67 @@ fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     }
 }
 
-fn numbers(value: &Value) -> Option<Vec<f64>> {
-    value.list()?.iter().map(Value::number).collect()
+fn numbers(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<f64>>, CodecError> {
+    let values = geometry_or_none!(value.list());
+    let mut numbers = Vec::new();
+    for value in values {
+        let number = geometry_or_none!(value.number());
+        ctx.push_vec(&mut numbers, number, "step_nurbs_weight_values")?;
+    }
+    Ok(Some(numbers))
 }
 
-fn normalize(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+pub(super) fn normalize(vector: Vector3) -> Option<UnitVector3> {
+    if !vector.is_finite() {
+        return None;
+    }
+    let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+    if scale == 0.0 {
+        return None;
+    }
+    let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+    UnitVector3::normalized_by_reciprocal(scaled)
 }
 
-fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let normal = normalize(normal)?;
+fn project_axis(vector: UnitVector3, normal: UnitVector3) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let normal = *normal.recharted_by_reciprocal().as_raw();
     normalize(vector - normal.scale(vector.dot(normal)))
 }
 
-fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let z_axis = normalize(z_axis)?;
-    let x_axis = normalize(x_axis)?;
+fn second_project_axis(
+    z_axis: UnitVector3,
+    x_axis: UnitVector3,
+    vector: UnitVector3,
+) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let z_axis = *z_axis.recharted_by_reciprocal().as_raw();
+    let x_axis = *x_axis.recharted_by_reciprocal().as_raw();
     let projected = (vector - z_axis.scale(vector.dot(z_axis))) - x_axis.scale(vector.dot(x_axis));
     normalize(projected)
 }
 
 fn base_axis_3d(
-    axis1: Option<Vector3>,
-    axis2: Option<Vector3>,
-    axis3: Option<Vector3>,
-) -> Option<[Vector3; 3]> {
-    let z_axis = normalize(axis3.unwrap_or(Vector3::new(0.0, 0.0, 1.0)))?;
+    axis1: Option<UnitVector3>,
+    axis2: Option<UnitVector3>,
+    axis3: Option<UnitVector3>,
+) -> Option<[UnitVector3; 3]> {
+    let z_axis = axis3
+        .unwrap_or(UnitVector3::Z_AXIS)
+        .recharted_by_reciprocal();
     let default_x = default_reference_axis(z_axis);
     let x_axis = project_axis(axis1.unwrap_or(default_x), z_axis)?;
-    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(Vector3::new(0.0, 1.0, 0.0)))?;
+    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(UnitVector3::Y_AXIS))?;
     Some([x_axis, y_axis, z_axis])
 }
 
 const AXIS_PARALLEL_TOLERANCE: f64 = EPS_GEOMETRY_READ_EXACT_GEOMETRY;
 
-fn default_reference_axis(axis: Vector3) -> Vector3 {
-    if axis.x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
-        Vector3::new(0.0, 1.0, 0.0)
+fn default_reference_axis(axis: UnitVector3) -> UnitVector3 {
+    if axis.as_raw().x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
+        UnitVector3::Y_AXIS
     } else {
-        Vector3::new(1.0, 0.0, 0.0)
+        UnitVector3::X_AXIS
     }
 }
 
@@ -5321,8 +6531,8 @@ fn transformation_direction<T: Copy>(
 
 fn cartesian_transformation_operator(
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
-    directions: &BTreeMap<u64, Vector3>,
+    points: &BTreeMap<u64, FinitePoint3>,
+    directions: &BTreeMap<u64, UnitVector3>,
 ) -> Option<Transform> {
     let axis1 = transformation_direction(
         record,
@@ -5340,14 +6550,12 @@ fn cartesian_transformation_operator(
     .ok()?;
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
         .reference()
-        .and_then(|id| points.get(&id).copied())?;
+        .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))?;
     let scale = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 3) {
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
+    let scale = PositiveReal::new(scale)?;
     let axis3 = transformation_direction(
         record,
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
@@ -5356,36 +6564,35 @@ fn cartesian_transformation_operator(
     )
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
-    Some(
-        Transform::from_rows([
-            [
-                axis_x.x * scale,
-                axis_y.x * scale,
-                axis_z.x * scale,
-                origin.x,
-            ],
-            [
-                axis_x.y * scale,
-                axis_y.y * scale,
-                axis_z.y * scale,
-                origin.y,
-            ],
-            [
-                axis_x.z * scale,
-                axis_y.z * scale,
-                axis_z.z * scale,
-                origin.z,
-            ],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-    )
+    let axis_x = axis_x.as_raw();
+    let axis_y = axis_y.as_raw();
+    let axis_z = axis_z.as_raw();
+    Transform::affine([
+        [
+            axis_x.x * scale.get(),
+            axis_y.x * scale.get(),
+            axis_z.x * scale.get(),
+            origin.x,
+        ],
+        [
+            axis_x.y * scale.get(),
+            axis_y.y * scale.get(),
+            axis_z.y * scale.get(),
+            origin.y,
+        ],
+        [
+            axis_x.z * scale.get(),
+            axis_y.z * scale.get(),
+            axis_z.z * scale.get(),
+            origin.z,
+        ],
+    ])
 }
 
 fn cartesian_transformation_operator_2d(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
-    directions: &BTreeMap<u64, Point2>,
+    directions: &BTreeMap<u64, HypotDirection2>,
 ) -> Option<Transform2> {
     let axis1 = transformation_direction(
         record,
@@ -5401,7 +6608,7 @@ fn cartesian_transformation_operator_2d(
         directions,
     )
     .ok()?;
-    let (axis1, axis2) = base_axis_2d(axis1, axis2)?;
+    let (axis1, axis2) = base_axis_2d(axis1, axis2);
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
@@ -5409,116 +6616,48 @@ fn cartesian_transformation_operator_2d(
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
-    Some(
-        Transform2::from_rows([
-            [axis1.u * scale, axis2.u * scale, origin.u],
-            [axis1.v * scale, axis2.v * scale, origin.v],
-            [0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-    )
+    let scale = PositiveReal::new(scale)?;
+    let [axis1_u, axis1_v] = axis1.get();
+    let [axis2_u, axis2_v] = axis2.get();
+    Transform2::affine([
+        [axis1_u * scale.get(), axis2_u * scale.get(), origin.u],
+        [axis1_v * scale.get(), axis2_v * scale.get(), origin.v],
+    ])
 }
 
-fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {
+fn base_axis_2d(
+    axis1: Option<HypotDirection2>,
+    axis2: Option<HypotDirection2>,
+) -> (HypotDirection2, HypotDirection2) {
     match (axis1, axis2) {
         (Some(axis1), axis2) => {
-            let axis1 = normalize2(axis1)?;
-            let mut perpendicular = Point2::new(-axis1.v, axis1.u);
+            let axis1 = axis1.recharted_by_hypot();
+            let mut perpendicular = axis1.quarter_turn();
             if let Some(axis2) = axis2 {
-                let axis2 = normalize2(axis2)?;
-                if axis2.u * perpendicular.u + axis2.v * perpendicular.v < 0.0 {
-                    perpendicular = Point2::new(-perpendicular.u, -perpendicular.v);
+                let [axis2_u, axis2_v] = axis2.recharted_by_hypot().get();
+                let [perpendicular_u, perpendicular_v] = perpendicular.get();
+                if axis2_u * perpendicular_u + axis2_v * perpendicular_v < 0.0 {
+                    perpendicular = axis1.reverse_quarter_turn();
                 }
             }
-            Some((axis1, perpendicular))
+            (axis1, perpendicular)
         }
         (None, Some(axis2)) => {
-            let axis2 = normalize2(axis2)?;
-            Some((Point2::new(axis2.v, -axis2.u), axis2))
+            let axis2 = axis2.recharted_by_hypot();
+            (axis2.reverse_quarter_turn(), axis2)
         }
-        (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
+        (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
 }
 
 fn optional_direction(
     value: Option<&Value>,
-    directions: &BTreeMap<u64, Vector3>,
-) -> Option<Vector3> {
+    directions: &BTreeMap<u64, UnitVector3>,
+) -> Option<UnitVector3> {
     match value? {
         Value::Omitted => None,
         Value::Reference(id) => directions.get(id).copied(),
         _ => None,
-    }
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first().parameters.get(index)
-    }
-}
-
-trait ValueExt {
-    fn number(&self) -> Option<f64>;
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn enumeration(&self) -> Option<&str>;
-    fn integer(&self) -> Option<i64>;
-    fn logical(&self) -> Option<bool>;
-}
-
-impl ValueExt for Value {
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Real(v) => Some(*v),
-            Value::Integer(v) => Some(*v as f64),
-            _ => None,
-        }
-    }
-    fn reference(&self) -> Option<u64> {
-        match self {
-            Value::Reference(id) => Some(*id),
-            _ => None,
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        match self {
-            Value::List(values) => Some(values),
-            _ => None,
-        }
-    }
-    fn enumeration(&self) -> Option<&str> {
-        match self {
-            Value::Enumeration(value) => Some(value),
-            _ => None,
-        }
-    }
-    fn integer(&self) -> Option<i64> {
-        match self {
-            Value::Integer(value) => Some(*value),
-            _ => None,
-        }
-    }
-    fn logical(&self) -> Option<bool> {
-        match self {
-            Value::Enumeration(value) if value == "T" => Some(true),
-            Value::Enumeration(value) if value == "F" => Some(false),
-            _ => None,
-        }
     }
 }
 

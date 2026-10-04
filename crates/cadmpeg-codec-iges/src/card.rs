@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub(crate) const CARD_WIDTH: usize = 80;
 
@@ -57,15 +58,6 @@ enum LineEnding {
 }
 
 impl LineEnding {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Lf => "lf",
-            Self::CrLf => "crlf",
-            Self::Cr => "cr",
-            Self::None => "none",
-        }
-    }
-
     fn bytes(self) -> &'static [u8] {
         match self {
             Self::Lf => b"\n",
@@ -116,7 +108,7 @@ struct UnframedLine {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CardScan<'a> {
-    pub(crate) source: &'a [u8],
+    source: &'a [u8],
     pub(crate) lines: Vec<ScannedLine>,
     pub(crate) recoveries: FramingRecoveries,
 }
@@ -153,6 +145,47 @@ impl FramingDefect {
     }
 }
 
+struct DeclaredSequence(Option<u32>);
+
+impl fmt::Display for DeclaredSequence {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(sequence) => write!(formatter, "{sequence}"),
+            None => formatter.write_str("no valid sequence"),
+        }
+    }
+}
+
+struct TrimmedLossyField<'a>(&'a [u8]);
+
+impl fmt::Display for TrimmedLossyField<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut output = [0_u8; 24];
+        let mut used = 0_usize;
+        let mut remaining = self.0;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    output[used..used + valid.len()].copy_from_slice(valid.as_bytes());
+                    used += valid.len();
+                    break;
+                }
+                Err(error) => {
+                    let prefix = &remaining[..error.valid_up_to()];
+                    output[used..used + prefix.len()].copy_from_slice(prefix);
+                    used += prefix.len();
+                    output[used..used + 3].copy_from_slice("�".as_bytes());
+                    used += 3;
+                    let invalid = error.error_len().unwrap_or(remaining.len() - prefix.len());
+                    remaining = &remaining[prefix.len() + invalid..];
+                }
+            }
+        }
+        let text = std::str::from_utf8(&output[..used]).map_err(|_| fmt::Error)?;
+        formatter.write_str(text.trim())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FramingRecovery {
     position: usize,
@@ -169,30 +202,44 @@ pub(crate) struct FramingRecoveries(BTreeMap<(Section, FramingDefect), FramingRe
 impl FramingRecoveries {
     pub(crate) fn record(
         &mut self,
-        section: Section,
-        defect: FramingDefect,
+        ctx: &DecodeContext<'_>,
+        key: (Section, FramingDefect),
         position: usize,
         offset: u64,
-        declared: impl Into<String>,
-        used: impl Into<String>,
-    ) {
-        self.0
-            .entry((section, defect))
-            .and_modify(|recovery| recovery.count = recovery.count.saturating_add(1))
-            .or_insert_with(|| FramingRecovery {
+        declared: fmt::Arguments<'_>,
+        used: fmt::Arguments<'_>,
+    ) -> Result<(), CodecError> {
+        if let Some(recovery) = self.0.get_mut(&key) {
+            recovery.count = recovery
+                .count
+                .checked_add(1)
+                .ok_or_else(|| refuse_local_limit("iges framing recovery count", u64::MAX, 1))?;
+            return Ok(());
+        }
+        let declared = ctx.format_retained(declared, "iges framing declared text")?;
+        let used = ctx.format_retained(used, "iges framing used text")?;
+        ctx.insert_btree_map(
+            &mut self.0,
+            key,
+            FramingRecovery {
                 position,
                 offset,
-                declared: declared.into(),
-                used: used.into(),
+                declared,
+                used,
                 count: 1,
-            });
+            },
+            "iges framing recovery nodes",
+        )?;
+        Ok(())
     }
 
-    pub(crate) fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         for (key, recovery) in other.0 {
             match self.0.get_mut(&key) {
                 Some(held) => {
-                    held.count = held.count.saturating_add(recovery.count);
+                    held.count = held.count.checked_add(recovery.count).ok_or_else(|| {
+                        refuse_local_limit("iges framing recovery count", u64::MAX, 1)
+                    })?;
                     if recovery.position < held.position {
                         held.position = recovery.position;
                         held.offset = recovery.offset;
@@ -201,18 +248,23 @@ impl FramingRecoveries {
                     }
                 }
                 None => {
-                    self.0.insert(key, recovery);
+                    ctx.insert_btree_map(
+                        &mut self.0,
+                        key,
+                        recovery,
+                        "iges merged framing recovery nodes",
+                    )?;
                 }
             }
         }
+        Ok(())
     }
 
-    pub(crate) fn notes(&self) -> Vec<LossNote> {
-        self.0
-            .iter()
-            .map(|((section, defect), recovery)| {
-                IgesLossCode::CardFramingRecovered
-                    .note(format!(
+    pub(crate) fn notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
+        let mut notes = Vec::new();
+        for ((section, defect), recovery) in &self.0 {
+            ctx.reserve_vec(&mut notes, 1, "iges framing recovery loss slots")?;
+            let message = ctx.format_retained(format_args!(
                         "IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
                         section.name(),
                         defect.description(),
@@ -222,13 +274,29 @@ impl FramingRecoveries {
                         recovery.used,
                         recovery.count,
                         defect.unit(),
-                    ))
-                .with_provenance(
-                    SourceProvenance::in_stream("iges", "iges", recovery.offset)
-                        .with_tag(format!("{}:framing", section.name())),
-                )
-            })
-            .collect()
+                ), "iges framing recovery loss message")?;
+            let tag = ctx.format_retained(
+                format_args!("{}:framing", section.name()),
+                "iges framing recovery loss tag",
+            )?;
+            let code = IgesLossCode::CardFramingRecovered;
+            ctx.charge_retained(
+                4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+                "iges framing recovery loss kind",
+            )?;
+            ctx.charge_retained(4, "iges framing recovery loss source format")?;
+            notes.push(
+                code.note(message).with_provenance(
+                    SourceProvenance::in_stream(
+                        "iges",
+                        cadmpeg_ir::stream_name!("iges"),
+                        recovery.offset,
+                    )
+                    .with_tag(tag),
+                ),
+            );
+        }
+        Ok(notes)
     }
 }
 
@@ -326,10 +394,7 @@ fn fused_card_count(payload: &[u8]) -> Option<usize> {
         .then_some(count)
 }
 
-fn physical_lines(
-    source: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<UnframedLine>, CodecError> {
+fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<UnframedLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
@@ -350,7 +415,9 @@ fn physical_lines(
             }
             None => (source.len(), LineEnding::None, source.len()),
         };
-        let payload_width = payload_end.saturating_sub(start);
+        let payload_width = payload_end
+            .checked_sub(start)
+            .ok_or_else(|| CodecError::Malformed("IGES line offset exceeds payload".into()))?;
         let cards = if payload_width > CARD_WIDTH && !terminated {
             let fixed_end = start
                 .checked_add(CARD_WIDTH)
@@ -372,8 +439,13 @@ fn physical_lines(
         };
         let mut card_start = start;
         for index in 0..cards {
-            let card_end = card_start.saturating_add(CARD_WIDTH).min(payload_end);
-            let payload = source[card_start..card_end].to_vec();
+            let card_end = card_start
+                .checked_add(CARD_WIDTH)
+                .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
+                .min(payload_end);
+
+            let payload =
+                ctx.copy_retained(&source[card_start..card_end], "iges physical card payload")?;
             let marked = !terminated && payload.len() == CARD_WIDTH;
             let section = marked.then(|| marker(&payload)).flatten();
             let sequence = marked.then(|| sequence(&payload)).flatten();
@@ -382,12 +454,11 @@ fn physical_lines(
             } else {
                 LineEnding::None
             };
-            charge_line(ctx)?;
+
+            ctx.reserve_vec(&mut lines, 1, "iges_cards")?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
-                    offset: u64::try_from(card_start).map_err(|_| {
-                        CodecError::Malformed("IGES source offset exceeds u64".into())
-                    })?,
+                    offset: cadmpeg_core::decode::u64_from_index(card_start),
                     payload,
                     ending: card_ending,
                 },
@@ -399,13 +470,16 @@ fn physical_lines(
             card_start = card_end;
         }
         if card_start != payload_end {
-            charge_line(ctx)?;
+            let payload = ctx.copy_retained(
+                &source[card_start..payload_end],
+                "iges physical card payload",
+            )?;
+
+            ctx.reserve_vec(&mut lines, 1, "iges_cards")?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
-                    offset: u64::try_from(card_start).map_err(|_| {
-                        CodecError::Malformed("IGES source offset exceeds u64".into())
-                    })?,
-                    payload: source[card_start..payload_end].to_vec(),
+                    offset: cadmpeg_core::decode::u64_from_index(card_start),
+                    payload,
                     ending,
                 },
                 section: None,
@@ -423,8 +497,10 @@ fn physical_lines(
 fn frame_sections(
     lines: Vec<UnframedLine>,
     recoveries: &mut FramingRecoveries,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ScannedLine>, CodecError> {
-    let mut scanned = Vec::with_capacity(lines.len());
+    let mut scanned = ctx.collection_vec(lines.len(), "iges framed cards")?;
+
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
@@ -453,28 +529,27 @@ fn frame_sections(
         let recovered = u32::try_from(position)
             .map_err(|_| CodecError::Malformed("IGES section sequence overflow".into()))?;
         if let Some(count) = raw.fused_cards {
+            let bytes = count
+                .checked_mul(CARD_WIDTH)
+                .ok_or_else(|| refuse_local_limit("iges fused card byte count", u64::MAX, 1))?;
             recoveries.record(
-                current,
-                FramingDefect::CardBoundary,
+                ctx,
+                (current, FramingDefect::CardBoundary),
                 position,
                 line.offset,
-                format!(
-                    "one physical line of {} bytes",
-                    count.saturating_mul(CARD_WIDTH)
-                ),
-                format!("{count} 80-column cards"),
-            );
+                format_args!("one physical line of {bytes} bytes"),
+                format_args!("{count} 80-column cards"),
+            )?;
         }
         if raw.sequence != Some(recovered) {
             recoveries.record(
-                current,
-                FramingDefect::Sequence,
+                ctx,
+                (current, FramingDefect::Sequence),
                 position,
                 line.offset,
-                raw.sequence
-                    .map_or_else(|| "no valid sequence".to_owned(), |value| value.to_string()),
-                recovered.to_string(),
-            );
+                format_args!("{}", DeclaredSequence(raw.sequence)),
+                format_args!("{recovered}"),
+            )?;
         }
         position = position
             .checked_add(1)
@@ -502,7 +577,11 @@ fn frame_sections(
 }
 
 /// Replace each Terminate count that disagrees with the card census.
-fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
+fn terminate_counts(
+    lines: &[ScannedLine],
+    recoveries: &mut FramingRecoveries,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let Some(terminate) = lines.iter().find_map(|line| match line {
         ScannedLine::Card {
             section: Section::Terminate,
@@ -511,10 +590,10 @@ fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
         } => Some(line),
         _ => None,
     }) else {
-        return;
+        return Ok(());
     };
     let Some(data) = terminate.payload.get(..32) else {
-        return;
+        return Ok(());
     };
     let expected = [
         (b'S', Section::Start),
@@ -534,37 +613,29 @@ fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
             .count();
         if declared != Some(census) {
             recoveries.record(
-                Section::Terminate,
-                FramingDefect::TerminateCount,
+                ctx,
+                (Section::Terminate, FramingDefect::TerminateCount),
                 1,
                 terminate.offset,
-                format!(
-                    "{} count {}",
-                    section.name(),
-                    String::from_utf8_lossy(field).trim()
-                ),
-                format!("{} count {census}", section.name()),
-            );
+                format_args!("{} count {}", section.name(), TrimmedLossyField(field)),
+                format_args!("{} count {census}", section.name()),
+            )?;
         }
     }
-}
-
-#[cfg(test)]
-pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
-    scan_with_context(source, None)
+    Ok(())
 }
 
 pub(crate) fn scan_with_context<'a>(
     source: &'a [u8],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<CardScan<'a>, CodecError> {
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
     let lines = physical_lines(source, ctx)?;
     let mut recoveries = FramingRecoveries::default();
-    let lines = frame_sections(lines, &mut recoveries)?;
-    terminate_counts(&lines, &mut recoveries);
+    let lines = frame_sections(lines, &mut recoveries, ctx)?;
+    terminate_counts(&lines, &mut recoveries, ctx)?;
     Ok(CardScan {
         source,
         lines,
@@ -572,14 +643,45 @@ pub(crate) fn scan_with_context<'a>(
     })
 }
 
-fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
+struct EndingSummary([usize; 4]);
+
+impl fmt::Display for EndingSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (name, count) in ["cr", "crlf", "lf", "none"].into_iter().zip(self.0) {
+            if count == 0 {
+                continue;
+            }
+            if !first {
+                formatter.write_str(",")?;
+            }
+            write!(formatter, "{name}:{count}")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+fn summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    let key = ctx.format_retained(format_args!("{key}"), "iges card summary attribute key")?;
+    ctx.insert_btree_map(attributes, key, value, "iges card summary attributes")?;
+    Ok(())
 }
 
 pub(crate) fn summarize(
     scan: &CardScan<'_>,
     primary: cadmpeg_core::dialect::DialectMatch,
-) -> ContainerSummary {
+    ctx: &DecodeContext<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let section_scan_work = u64_from_index(scan.lines.len())
+        .checked_mul(5)
+        .ok_or_else(|| refuse_local_limit("iges card summary section scans", u64::MAX, 1))?;
+    ctx.charge_work(section_scan_work, "iges card summary section scans")?;
     let sections = [
         Section::Start,
         Section::Global,
@@ -587,46 +689,60 @@ pub(crate) fn summarize(
         Section::Parameter,
         Section::Terminate,
     ];
-    let mut entries = sections
-        .into_iter()
-        .filter_map(|section| {
-            let lines = scan
-                .section(section)
-                .map(|(_, line)| line)
-                .collect::<Vec<_>>();
-            if lines.is_empty() {
-                return None;
-            }
-            let mut endings = BTreeMap::<&str, usize>::new();
-            for line in &lines {
-                *endings.entry(line.ending.name()).or_default() += 1;
-            }
-            let mut attributes = BTreeMap::new();
-            attributes.insert("cards".into(), lines.len().to_string());
-            attributes.insert(
-                "line_endings".into(),
-                endings
-                    .into_iter()
-                    .map(|(name, count)| format!("{name}:{count}"))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            let size = lines.iter().fold(0_u64, |size, line| {
-                size.saturating_add(
-                    u64::try_from(line.payload.len() + line.ending.bytes().len())
-                        .unwrap_or(u64::MAX),
-                )
-            });
-            Some(ContainerEntry {
-                name: section.name().into(),
-                role: ContainerRole::Section,
-                compression: EntryCompression::None,
-                compressed_size: size,
-                uncompressed_size: size,
-                attributes,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut entries = Vec::new();
+    for section in sections {
+        let mut line_count = 0_usize;
+        let mut size = 0_u64;
+        let mut endings = [0_usize; 4];
+        for (_, line) in scan.section(section) {
+            line_count += 1;
+            size = size
+                .checked_add(u64_from_index(
+                    line.payload.len() + line.ending.bytes().len(),
+                ))
+                .ok_or_else(|| refuse_local_limit("iges card summary section size", u64::MAX, 1))?;
+            let index = match line.ending {
+                LineEnding::Cr => 0,
+                LineEnding::CrLf => 1,
+                LineEnding::Lf => 2,
+                LineEnding::None => 3,
+            };
+            endings[index] += 1;
+        }
+        if line_count == 0 {
+            continue;
+        }
+        ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;
+        let mut attributes = BTreeMap::new();
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "cards",
+            ctx.format_retained(format_args!("{line_count}"), "iges card summary card count")?,
+        )?;
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "line_endings",
+            ctx.format_retained(
+                format_args!("{}", EndingSummary(endings)),
+                "iges card summary line endings",
+            )?,
+        )?;
+        entries.push(ContainerEntry {
+            name: ctx.format_retained(
+                format_args!("{}", section.name()),
+                "iges card summary section name",
+            )?,
+            role: ContainerRole::Section,
+            storage: EntryStorage::verbatim(VerbatimLabel::None, size),
+            attributes,
+        });
+    }
+    ctx.charge_work(
+        u64_from_index(scan.lines.len()),
+        "iges card summary terminate scan",
+    )?;
     let terminate_index = scan.lines.iter().position(|line| {
         matches!(
             line,
@@ -640,28 +756,56 @@ pub(crate) fn summarize(
         .and_then(|index| scan.lines.get(index + 1..))
         .unwrap_or_default();
     if !post_terminate.is_empty() {
-        let size = post_terminate.iter().fold(0_u64, |size, line| {
+        ctx.charge_work(
+            u64_from_index(post_terminate.len()),
+            "iges card summary trailing scan",
+        )?;
+        let mut size = 0_u64;
+        for line in post_terminate {
             let line = line.physical();
-            size.saturating_add(
-                u64::try_from(line.payload.len() + line.ending.bytes().len()).unwrap_or(u64::MAX),
-            )
-        });
+            size = size
+                .checked_add(u64_from_index(
+                    line.payload.len() + line.ending.bytes().len(),
+                ))
+                .ok_or_else(|| {
+                    refuse_local_limit("iges card summary trailing size", u64::MAX, 1)
+                })?;
+        }
+        ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;
+        let mut attributes = BTreeMap::new();
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "records",
+            ctx.format_retained(
+                format_args!("{}", post_terminate.len()),
+                "iges card summary trailing count",
+            )?,
+        )?;
         entries.push(ContainerEntry {
-            name: "post-terminate".into(),
+            name: ctx.format_retained(
+                format_args!("post-terminate"),
+                "iges card summary section name",
+            )?,
             role: ContainerRole::RetainedTrailingRecords,
-            compression: EntryCompression::None,
-            compressed_size: size,
-            uncompressed_size: size,
-            attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
+            storage: EntryStorage::verbatim(VerbatimLabel::None, size),
+            attributes,
         });
     }
-    ContainerSummary::classified(
+    let mut notes = Vec::new();
+    ctx.push_formatted_retained(
+        &mut notes,
+        format_args!("source_bytes={}", scan.source.len()),
+        "iges card summary notes",
+        "iges card summary note text",
+    )?;
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         cadmpeg_ir::ContainerKind::FixedAscii,
         entries,
         Vec::new(),
-        vec![format!("source_bytes={}", scan.source.len())],
-    )
+        notes,
+    ))
 }
 
 impl CardScan<'_> {
@@ -688,7 +832,7 @@ impl CardScan<'_> {
                     }
                 )
             })
-            .map_or(0, |index| self.lines.len().saturating_sub(index + 1))
+            .map_or(0, |index| self.lines.len() - (index + 1))
     }
 }
 

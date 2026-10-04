@@ -15,12 +15,66 @@ use cadmpeg_core::container::ContainerRole;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::LossKind;
+use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::assembly_test::{
+    f3d_with_text_brep, f3d_with_text_brep_stream, f3d_without_brep,
+    synthetic_ambiguous_multi_brep_f3d,
+};
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+fn with_docstruct_scan(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>),
+) {
+    let bytes = f3d_without_brep("part-design", "part.f3d", &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    f(&arena, &scan);
+}
+
+#[test]
+fn docstruct_type_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|_arena, scan| {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "record F3D docstruct type",
+            0,
+            |ctx| {
+                super::super::annotate_docstruct(ctx, &mut std::collections::BTreeMap::new(), scan)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct type")
+        );
+    });
+}
+
+#[test]
+fn docstruct_subtype_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|_arena, scan| {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "record F3D docstruct subtype",
+            0,
+            |ctx| {
+                super::super::annotate_docstruct(ctx, &mut std::collections::BTreeMap::new(), scan)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct subtype")
+        );
+    });
+}
 
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
@@ -175,9 +229,10 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.surfaces.len(), 1);
     let surface = &decoded.ir().model.surfaces[0];
-    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
+    let radius = sphere_surface.radius().get();
     // 25 stream units at scale 1 (millimetres per unit) are 25 mm.
     assert!((radius - 25.0).abs() < 1.0e-9);
 }
@@ -286,7 +341,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::KernelCarrierUnparseable.kind())
         .expect("the corrupt carrier is visible as a loss");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss.message.contains(corrupt_path), "{}", loss.message);
 }
 
@@ -315,4 +370,206 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
         crate::container::classify("a/b.smbh"),
         ContainerRole::BrepSmbh
     );
+}
+
+#[test]
+fn docstruct_metadata_distinguishes_absent_and_empty_subtype() {
+    for (properties, expected_subtype) in [
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","attributes":{}}}"#,
+            None,
+        ),
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","subtype":"","attributes":{}}}"#,
+            Some(""),
+        ),
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","subtype":"part-standard","attributes":{}}}"#,
+            Some("part-standard"),
+        ),
+    ] {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("Properties.dat", stored).unwrap();
+        zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())
+            .unwrap();
+        zip.write_all(properties.as_bytes()).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        for container_only in [false, true] {
+            let decoded = F3dCodec
+                .decode(
+                    &mut Cursor::new(&archive),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap();
+            let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
+            assert_eq!(
+                attributes.get("docstruct_type").map(String::as_str),
+                Some("part-design")
+            );
+            assert_eq!(
+                attributes.get("docstruct_subtype").map(String::as_str),
+                expected_subtype
+            );
+        }
+    }
+}
+
+#[test]
+fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let prefix = concat!(
+        "21800 0 2 3\n",
+        "16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic\n",
+        "1 0.000001 0.0000000001\n",
+        "asmheader $-1 -1 @11 218.0.1.400 #\n",
+        "body $-1 -1 $-1 $2 $-1 $-1 #\n",
+        "lump $-1 -1 $-1 $-1 $3 $1 #\n",
+        "shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n",
+        "face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n",
+        "sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n",
+    );
+    for (terminator, expected) in [
+        ("End-of-ASM-data", "acis:text-asm"),
+        ("End-of-ACIS-data", "acis:text-acis"),
+    ] {
+        let text = format!("{prefix}{terminator}\n");
+        let bytes = f3d_with_text_brep_stream(
+            &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+            text.as_bytes(),
+        );
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut scan = crate::container::scan(&ctx, root).unwrap();
+        assert_eq!(scan.text_breps.len(), 1);
+        let expected_terminator = if terminator == "End-of-ASM-data" {
+            cadmpeg_asm::sat::Terminator::Asm
+        } else {
+            cadmpeg_asm::sat::Terminator::Acis
+        };
+        assert!(matches!(
+            scan.text_breps.get("FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"),
+            Some(crate::container::TextBrepFraming::Parsed(stream))
+                if stream.terminator == expected_terminator
+        ));
+        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan)
+            .unwrap()
+            .expect("text sphere supplies model geometry");
+        assert_eq!(brep.asm.faces.len(), 1);
+        let framing = facts.kernel.as_ref().unwrap();
+        let crate::container::KernelFraming::Text { header, .. } = framing else {
+            panic!("text model facts must not fabricate binary framing")
+        };
+        assert!(header.has_history_partition());
+        let matched = cadmpeg_asm::dialect::classify(framing.as_header_ref());
+        assert_eq!(matched.dialect().as_str(), expected);
+        assert!(!matched
+            .declared()
+            .contains_key(cadmpeg_asm::dialect::DECLARED_REFERENCE_WIDTH));
+        assert!(crate::decode::try_decode_brep(&ctx, &scan, &facts)
+            .unwrap()
+            .is_none());
+        scan.breps.push(facts);
+        assert_eq!(crate::container::history_breps(&scan).count(), 0);
+    }
+}
+
+#[test]
+fn text_brep_parts_refuse_the_last_collection_item() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let stream = concat!(
+        "21800 0 2 3\n",
+        "16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic\n",
+        "1 0.000001 0.0000000001\n",
+        "asmheader $-1 -1 @11 218.0.1.400 #\n",
+        "body $-1 -1 $-1 $2 $-1 $-1 #\n",
+        "lump $-1 -1 $-1 $-1 $3 $1 #\n",
+        "shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n",
+        "face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n",
+        "sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n",
+        "End-of-ASM-data\n",
+    );
+    let bytes = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        stream.as_bytes(),
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let decode_with_limit = |limit| {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        crate::decode::try_decode_text_model(&limited, &scan)
+    };
+    let mut admitted = 10_000;
+    assert!(decode_with_limit(admitted).unwrap().is_some());
+    let mut refused = 0;
+    while admitted - refused > 1 {
+        let candidate = refused + (admitted - refused) / 2;
+        match decode_with_limit(candidate) {
+            Ok(Some(_)) => admitted = candidate,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => refused = candidate,
+            _ => panic!("unexpected text B-rep limit result"),
+        }
+    }
+    let Err(error) = decode_with_limit(refused) else {
+        panic!("the item below the admission boundary must be refused");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D text B-rep parts")
+    );
+}
+
+#[test]
+fn text_brep_framing_propagates_sat_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
+    let archive = f3d_with_text_brep(&[entry]);
+    let error = cadmpeg_ir::DecodeFailure::Codec(cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "frame SAT primitive",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            cadmpeg_test_support::decode::full(&F3dCodec, &archive, &policy).map_err(|error| {
+                match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected framing failure: {error}"),
+                }
+            })
+        },
+    ));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "frame SAT primitive"
+    ));
+}
+
+#[test]
+fn malformed_text_brep_returns_an_entry_named_error() {
+    let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
+    let archive = f3d_with_text_brep_stream(&[entry], b"invalid SAT stream");
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
+    assert!(error
+        .to_string()
+        .contains(&format!("text BREP entry {entry} failed to parse:")));
 }

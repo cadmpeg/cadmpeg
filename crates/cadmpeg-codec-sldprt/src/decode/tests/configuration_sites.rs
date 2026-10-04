@@ -2,12 +2,20 @@
 //! Configuration site selection and partition-synthesis decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -24,7 +32,7 @@ fn decode_preserves_unresolved_active_configuration() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
     ));
     assert_eq!(
-        container::active_configuration_index(&container::scan_bytes(&source)),
+        container::active_configuration_index(&crate::test_support::container::scan(&source)),
         None
     );
 
@@ -42,7 +50,9 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -70,20 +80,25 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Default" SourceIndex="0"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(decoded.ir().model.configurations.len(), 1);
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(
-        decoded.ir().model.configurations[0].bodies,
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        decoded.ir().model.configurations[0].bodies.as_deref(),
+        Some(
+            decoded
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -96,14 +111,17 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.configurations[0].bodies,
-        round_trip
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        round_trip.ir().model.configurations[0].bodies.as_deref(),
+        Some(
+            round_trip
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 }
 
@@ -116,7 +134,9 @@ fn decode_synthesizes_sparse_partition_configuration() {
         &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
     ));
     assert_eq!(
-        container::scan_bytes(&source).blocks[0].section.as_deref(),
+        crate::test_support::container::scan(&source).blocks[0]
+            .section
+            .name(),
         Some("Contents/Config-3-Partition")
     );
     let decoded = SldprtCodec
@@ -127,31 +147,42 @@ fn decode_synthesizes_sparse_partition_configuration() {
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
     assert!(configuration.active);
-    assert_eq!(configuration.name, "Config-3");
+    assert_eq!(configuration.name.as_deref(), Some("Config-3"));
     assert_eq!(
-        configuration.bodies,
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        configuration.bodies.as_deref(),
+        Some(
+            decoded
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/Config-3-Partition")));
+        .any(|block| block.section.name() == Some("Contents/Config-3-Partition")));
     assert!(!scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/Config-0-Partition")));
+        .any(|block| block.section.name() == Some("Contents/Config-0-Partition")));
 }
 
 #[test]
@@ -166,13 +197,13 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 0.0));
+        .any(|point| point.position().get().x == 0.0));
     assert!(result
         .ir()
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 10_000.0));
+        .any(|point| point.position().get().x == 10_000.0));
     let ids: std::collections::HashSet<_> = result
         .ir()
         .model
@@ -187,7 +218,8 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .points
         .iter()
         .all(|point| point.id.as_str().contains("@block@")));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -260,12 +292,16 @@ fn decode_uses_the_active_configuration_source_site() {
     assert_eq!(active_points.len(), 3);
     assert!(active_points
         .iter()
-        .all(|point| point.position.x >= 10_000.0));
+        .all(|point| point.position().get().x >= 10_000.0));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -290,18 +326,21 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.name.resolved() == Some("Second"))
+        .find(|configuration| configuration.name.as_deref() == Some("Second"))
         .expect("manifest configuration is projected");
 
     assert!(second.active);
     assert_eq!(second.source_index, Some(1));
-    assert!(!second.bodies.is_empty());
+    assert!(second
+        .bodies
+        .as_deref()
+        .is_some_and(|bodies| !bodies.is_empty()));
     assert!(result
         .ir()
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.name.resolved() == Some("First"))
+        .filter(|configuration| configuration.name.as_deref() == Some("First"))
         .all(|configuration| !configuration.active));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],

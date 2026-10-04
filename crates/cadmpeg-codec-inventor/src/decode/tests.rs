@@ -1,16 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use super::*;
+mod native_admission;
+mod presentation_admission;
+mod property_admission;
+
+use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
 use crate::loss::InventorLossCode;
-use crate::test_support::{
+use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
+use crate::property_set::PropertyValue;
+use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
     primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
+
+fn validation_findings(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    crate::validate::validate_native(&ctx, ir).expect("validation fits service policy")
+}
 
 #[test]
 fn built_in_properties_are_selected_by_embedded_set_identity() {
@@ -28,16 +43,111 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
 
 #[test]
 fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
     let mut projection = MetadataProjection::default();
-    projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-1"), "first");
-    projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-2"), "second");
-    projection.consider(&[0; 16], 29, Some("Description"), Some("Bracket"), "desc");
+    projection
+        .consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first")
+        .expect("first property");
+    projection
+        .consider(
+            &ctx,
+            &[0; 16],
+            5,
+            Some("Part Number"),
+            Some("P-2"),
+            "second",
+        )
+        .expect("second property");
+    projection
+        .consider(
+            &ctx,
+            &[0; 16],
+            29,
+            Some("Description"),
+            Some("Bracket"),
+            "desc",
+        )
+        .expect("description property");
     assert_eq!(projection.part_number.as_deref(), Some("P-1"));
     assert_eq!(projection.description.as_deref(), Some("Bracket"));
     assert_eq!(
         projection.bom_properties.get("second").map(String::as_str),
         Some("P-2")
     );
+}
+
+#[test]
+fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value() {
+    let arena = DecodeArena::new();
+    for (cap, operation) in [
+        (9, "retain Inventor normalized property name"),
+        (12, "retain Inventor metadata value"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        let mut projection = MetadataProjection::default();
+        assert!(matches!(
+            projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn metadata_bom_property_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut projection = MetadataProjection::default();
+    assert!(matches!(
+        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor BOM property"
+    ));
+    assert!(projection.bom_properties.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .expect("admitted property");
+    assert_eq!(
+        projection.bom_properties.get("Custom").map(String::as_str),
+        Some("value")
+    );
+}
+
+#[test]
+fn metadata_attribute_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let projection = MetadataProjection {
+        title: Some("Drawing".into()),
+        ..MetadataProjection::default()
+    };
+    let mut attributes = std::collections::BTreeMap::new();
+    assert!(matches!(
+        projection.apply_attributes(&ctx, &mut attributes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor metadata attribute"
+    ));
+    assert!(attributes.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .apply_attributes(&ctx, &mut attributes)
+        .expect("admitted attribute");
+    assert_eq!(attributes.get("title").map(String::as_str), Some("Drawing"));
 }
 
 #[test]
@@ -92,7 +202,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
-    let native_findings = crate::validate::validate_native(decoded.ir());
+    let native_findings = validation_findings(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
     // grammar is applied to it regardless of what the `RSeDb` streams declared,
@@ -105,9 +215,11 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let container_only = InventorCodec
-        .decode(&mut std::io::Cursor::new(source), &options)
-        .expect("container-only Inventor decode succeeds");
+    let container_only = EditableDecodeResult::from(
+        InventorCodec
+            .decode(&mut std::io::Cursor::new(source), &options)
+            .expect("container-only Inventor decode succeeds"),
+    );
     assert_eq!(
         container_only
             .report()
@@ -134,24 +246,109 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only.source_fidelity().retained_records.is_empty());
+    assert!(container_only
+        .source_fidelity()
+        .retained_records()
+        .is_empty());
+}
+
+#[test]
+fn database_record_projects_schema_and_creation_and_save_versions() {
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(primary_envelope_fixture()),
+            &DecodeOptions::default(),
+        )
+        .expect("primary envelope decodes");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
+    let records = native
+        .arena_as::<DatabaseRecord>("databases")
+        .expect("database arena");
+    let [record] = records.as_slice() else {
+        panic!("one DatabaseRecord")
+    };
+    assert_eq!(record.schema, 31);
+    assert_eq!(
+        record.created_by,
+        VersionTupleRecord {
+            revision: 1,
+            minor: 2,
+            major: 24,
+            state: "0405060708".into(),
+        }
+    );
+    assert_eq!(
+        record.saved_by,
+        VersionTupleRecord {
+            revision: 1,
+            minor: 2,
+            major: 25,
+            state: "0405060708".into(),
+        }
+    );
+    assert_eq!(record.created_filetime, 17);
+    assert_eq!(record.saved_filetime, 18);
+    assert_eq!(record.note, "synthetic primary document");
+    assert!(native
+        .arena_as::<DatabaseIssueRecord>("database_issues")
+        .expect("database native arena")
+        .is_empty());
+}
+
+#[test]
+fn database_issues_preserve_the_unframed_database_instead_of_a_database_record() {
+    let source =
+        crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .expect("broken database does not prevent envelope decode");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
+    assert!(native
+        .arena_as::<DatabaseRecord>("databases")
+        .expect("database native arena")
+        .is_empty());
+    let issues = native
+        .arena_as::<DatabaseIssueRecord>("database_issues")
+        .expect("database native arena");
+    let [issue] = issues.as_slice() else {
+        panic!("one database issue")
+    };
+    assert_eq!(issue.id, "inventor:rse:database-issue#v1");
+    assert_eq!(issue.band, 1);
+    assert!(issue.detail.contains("RSe database schema 31"));
+    assert!(issue.detail.contains("did not frame it"));
+    assert!(issue.detail.contains("creation version"));
 }
 
 #[test]
 fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
     let source = primary_envelope_fixture();
-    assert_eq!(InventorCodec.detect(&source), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, &source),
+        Confidence::High
+    );
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");
     assert_eq!(decoded.report().format(), "inventor");
-    assert_eq!(decoded.report().coverage()["rse_storage_bands"], 1);
-    assert_eq!(decoded.report().coverage()["rse_databases"], 1);
-    assert_eq!(decoded.report().coverage()["rse_registry_entries"], 1);
-    assert_eq!(decoded.report().coverage()["rse_segment_pairs"], 1);
-    assert_eq!(decoded.report().coverage()["rse_segment_meta"], 1);
-    assert_eq!(decoded.report().coverage()["rse_records"], 1);
-    assert_eq!(decoded.report().coverage()["active_kernel_carriers"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_storage_bands"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_databases"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_registry_entries"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_segment_pairs"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_segment_meta"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_records"], 1);
+    assert_eq!(
+        wire::coverage(decoded.report())["active_kernel_carriers"],
+        1
+    );
     assert!(decoded
         .report()
         .losses
@@ -171,7 +368,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         active[0],
         crate::native::ActiveCarrierRecord::Selected { .. }
     ));
-    assert!(crate::validate::validate_native(decoded.ir()).is_empty());
+    assert!(validation_findings(decoded.ir()).is_empty());
 }
 
 /// The `acis:` kernel layer one decode reported, with the losses beside it.
@@ -219,6 +416,22 @@ fn a_verified_acis_carrier_reports_its_band_admitted() {
 }
 
 #[test]
+fn binary_kernel_resabs_is_converted_from_centimetres() {
+    let bytes = primary_envelope_fixture_with_kernel(
+        EnvelopeDeclarations::default(),
+        &acis_sphere_kernel_stream(21_800),
+    );
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("binary ACIS sphere decodes");
+    let expected_resabs_mm = 0.000_01;
+    assert!(
+        (decoded.ir().tolerances.linear.get() - expected_resabs_mm).abs()
+            <= f64::EPSILON * expected_resabs_mm
+    );
+}
+
+#[test]
 fn an_unverified_acis_carrier_is_read_and_marked() {
     // The band is not a gate: the carrier is framed and decoded, the kernel
     // layer says which grammar was substituted, and the recovery is charged.
@@ -235,9 +448,7 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     ));
     assert_eq!(
         layer.using(),
-        Some(cadmpeg_core::dialect::DialectId::pinned(
-            "acis:save-format-218"
-        ))
+        Some(cadmpeg_core::dialect_id!("acis:save-format-218"))
     );
     assert_eq!(layer.declared()[DECLARED_SAVE_FORMAT_MAJOR], "700");
     assert!(

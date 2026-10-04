@@ -1,0 +1,1950 @@
+// SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
+use super::analytic_surface_residual;
+use super::assign_persistent_owners;
+use super::circle_overlaps_polygon;
+use super::circular_interval;
+use super::circular_interval_contains;
+use super::persistent_surface_references;
+use super::planar_boundary_samples;
+use super::plane_frame;
+use super::shortest_arc_span;
+use super::ByteRange;
+use super::CircularHole;
+use super::DisplayFace;
+use super::Mesh;
+use super::PersistentFaceBinding;
+use super::PersistentSurfaceReference;
+use super::PlanarHole;
+use super::PlanarOuter;
+use super::PlanarTrim;
+use super::PlaneFrame;
+use super::CLASS_MARKER;
+use super::EPS_DISPLAY_QUANTIZATION;
+use super::SCENE_SOURCE_MARKER;
+use crate::brep::feature_source::FeatureSourceId;
+use crate::brep::PersistentFaceIdentity;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Sense;
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::loss::LossTaxonomy;
+
+use crate::SldprtCodec;
+
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::tessellation::descriptor;
+use crate::test_support::tessellation::display_list_payload;
+use crate::test_support::tessellation::extended_display_list_payload;
+use crate::test_support::tessellation::sldprt_with_body_and_display_list;
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, Curve, Surface};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+    VertexId,
+};
+use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex,
+};
+
+mod display_references;
+mod display_tables;
+mod surface_admission;
+
+macro_rules! assign_unique_surface_owners {
+    ($model:expr) => {{
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        crate::tessellation::assign_unique_surface_owners(&ctx, $model)
+    }};
+}
+
+macro_rules! planar_contains_mesh {
+    ($trim:expr, $mesh:expr, $tolerance:expr) => {{
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        $trim
+            .contains_mesh(
+                &ctx,
+                $mesh,
+                cadmpeg_ir::transform::Transform::identity(),
+                $tolerance,
+            )
+            .expect("service profile admits planar trim")
+    }};
+}
+
+fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurfaceReference> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    persistent_surface_references(&ctx, payload, range).expect("service profile admits references")
+}
+
+fn table() -> Vec<u8> {
+    let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
+    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    out.extend(descriptor(12, 100, 3, &positions));
+    out.extend(descriptor(12, 100, 3, &[0; 36]));
+    out.extend(descriptor(4, 8, 4, &[0; 16]));
+    out.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+    out.extend(descriptor(1, 8, 4, &[0; 4]));
+    out
+}
+
+fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&(u16::try_from(name.len()).expect("length fits u16")).to_le_bytes());
+    payload.extend_from_slice(name.as_bytes());
+    for source in sources {
+        payload.extend_from_slice(SCENE_SOURCE_MARKER);
+        payload.extend_from_slice(&source.to_le_bytes());
+    }
+}
+
+#[test]
+fn analytic_surface_residuals_measure_normal_distance() {
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+        )
+        .unwrap(),
+    ));
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+        )
+        .unwrap(),
+    ));
+    let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            2.0,
+        )
+        .unwrap(),
+    ));
+    let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    ));
+
+    for (surface, point, displaced) in [
+        (
+            &plane,
+            Point3::new(3.0, 4.0, 2.0),
+            Point3::new(3.0, 4.0, 2.5),
+        ),
+        (
+            &cylinder,
+            Point3::new(3.0, 0.0, 7.0),
+            Point3::new(3.5, 0.0, 7.0),
+        ),
+        (
+            &sphere,
+            Point3::new(5.0, 2.0, 3.0),
+            Point3::new(5.5, 2.0, 3.0),
+        ),
+        (
+            &torus,
+            Point3::new(7.0, 0.0, 0.0),
+            Point3::new(7.5, 0.0, 0.0),
+        ),
+    ] {
+        assert_eq!(
+            analytic_surface_residual(surface.solved().expect("solved carrier"), point),
+            Some(0.0)
+        );
+        assert!(
+            analytic_surface_residual(surface.solved().expect("solved carrier"), displaced)
+                .is_some_and(|residual| residual > 0.0)
+        );
+    }
+
+    let local_radius = 3.0 + 2.0 * std::f64::consts::FRAC_PI_4.tan();
+    let cone_point = Point3::new(local_radius, 0.0, 2.0);
+    assert!(
+        analytic_surface_residual(cone.solved().expect("solved carrier"), cone_point)
+            .is_some_and(|residual| residual <= f64::EPSILON * 128.0)
+    );
+    assert!(analytic_surface_residual(
+        cone.solved().expect("solved carrier"),
+        Point3::new(local_radius + 0.5, 0.0, 2.0)
+    )
+    .is_some_and(|residual| residual > 0.0));
+}
+
+fn add_face(
+    model: &mut cadmpeg_ir::document::Model,
+    name: &str,
+    geometry: SurfaceGeometry,
+    corners: [Point3; 4],
+) -> FaceId {
+    let face_id =
+        FaceId::mint(format!("synthetic:test:face#face-{name}")).expect("identity grammar");
+    let loop_id =
+        LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
+        .expect("identity grammar");
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry,
+        source_object: None,
+    });
+
+    let coedge_ids = (0..4)
+        .map(|index| {
+            CoedgeId::mint(format!("synthetic:test:coedge#coedge-{name}-{index}"))
+                .expect("identity grammar")
+        })
+        .collect::<Vec<_>>();
+    for (index, corner) in corners.iter().copied().enumerate() {
+        let point_id = PointId::mint(format!("synthetic:test:point#point-{name}-{index}"))
+            .expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+            .expect("identity grammar");
+        model.points.push(Point::new(
+            point_id.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(corner).expect("a finite position is a point"),
+            None,
+        ));
+        model.vertices.push(Vertex {
+            id: vertex_id,
+            point: point_id,
+            tolerance: None,
+        });
+    }
+    for (index, origin) in corners.iter().copied().enumerate() {
+        let next = (index + 1) % 4;
+        let curve_id = CurveId::mint(format!("synthetic:test:curve#curve-{name}-{index}"))
+            .expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
+            .expect("identity grammar");
+        let direction = corners[next].vector_from(origin).unit().unwrap();
+        model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
+            )),
+            source_object: None,
+        });
+        model.edges.push(Edge {
+            id: edge_id.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
+                .expect("identity grammar"),
+            tolerance: None,
+        });
+        model.coedges.push(Coedge {
+            id: coedge_ids[index].clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            radial_next: coedge_ids[index].clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+    }
+    model.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face_id.clone(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids,
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
+        ),
+    });
+    model.faces.push(Face {
+        id: face_id.clone(),
+        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    face_id
+}
+
+fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
+    add_face(
+        model,
+        name,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        [
+            Point3::new(x, -1.0, 0.0),
+            Point3::new(x + 2.0, -1.0, 0.0),
+            Point3::new(x + 2.0, 1.0, 0.0),
+            Point3::new(x, 1.0, 0.0),
+        ],
+    )
+}
+
+#[test]
+fn face_tolerance_below_display_resolution_is_refused() {
+    let mut model = cadmpeg_ir::document::Model::default();
+    let face_id = add_square_face(&mut model, "below-display-floor", 0.0);
+    let stated = EPS_DISPLAY_QUANTIZATION / 2.0;
+    model
+        .faces
+        .iter_mut()
+        .find(|face| face.id == face_id)
+        .expect("test face exists")
+        .tolerance = Some(
+        cadmpeg_ir::scalar::PositiveReal::new(stated)
+            .expect("the test tolerance is positive and finite"),
+    );
+
+    let error = assign_unique_surface_owners!(&mut model)
+        .expect_err("a display lane cannot evaluate a finer stated tolerance");
+    let text = error.to_string();
+    assert!(text.contains(face_id.as_str()), "{text}");
+    assert!(text.contains(&stated.to_string()), "{text}");
+    assert!(
+        text.contains(&EPS_DISPLAY_QUANTIZATION.to_string()),
+        "{text}"
+    );
+}
+
+fn test_nurbs_surface() -> NurbsSurface {
+    let heights = [0.0, 0.25, 0.0, 0.25, 0.9, 0.25, 0.0, 0.25, 0.0];
+    let control_points = (0..3)
+        .map(|u| {
+            (0..3)
+                .map(|v| {
+                    Point3::new(
+                        cadmpeg_core::convert::f64_from_index(u).expect("grid index is exact"),
+                        cadmpeg_core::convert::f64_from_index(v).expect("grid index is exact"),
+                        heights[u * 3 + v],
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, None),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid test NURBS surface")
+}
+
+fn flat_test_nurbs_surface() -> NurbsSurface {
+    let mut surface = test_nurbs_surface();
+    surface
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
+                point.z = 0.0;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
+        .unwrap();
+    surface
+}
+
+fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
+    [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| {
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            u,
+            v,
+        )
+        .unwrap()
+        .get()
+    })
+}
+
+fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, Vector3) {
+    let partials = cadmpeg_ir::eval::nurbs_surface_partials(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        surface,
+        u,
+        v,
+    )
+    .unwrap();
+    (
+        partials.point.get(),
+        partials.du.cross(partials.dv.get()).unit().unwrap(),
+    )
+}
+
+fn add_cylindrical_patch_face(
+    model: &mut cadmpeg_ir::document::Model,
+    name: &str,
+    min_z: f64,
+    max_z: f64,
+) -> FaceId {
+    let radius = 5.0;
+    let angles = [0.0, std::f64::consts::FRAC_PI_2];
+    let point_at = |angle: f64, z: f64| Point3::new(radius * angle.cos(), radius * angle.sin(), z);
+    let corners = [
+        point_at(angles[0], min_z),
+        point_at(angles[1], min_z),
+        point_at(angles[1], max_z),
+        point_at(angles[0], max_z),
+    ];
+    let face_id =
+        FaceId::mint(format!("synthetic:test:face#face-{name}")).expect("identity grammar");
+    let loop_id =
+        LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
+        .expect("identity grammar");
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+
+    let vertex_ids = corners
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let point_id = PointId::mint(format!("synthetic:test:point#point-{name}-{index}"))
+                .expect("identity grammar");
+            let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                .expect("identity grammar");
+            model.points.push(Point::new(
+                point_id.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(*point)
+                    .expect("a finite position is a point"),
+                None,
+            ));
+            model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            vertex_id
+        })
+        .collect::<Vec<_>>();
+    let coedge_ids = (0..4)
+        .map(|index| {
+            CoedgeId::mint(format!("synthetic:test:coedge#coedge-{name}-{index}"))
+                .expect("identity grammar")
+        })
+        .collect::<Vec<_>>();
+    let curve_geometries = [
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, min_z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                corners[1],
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        )),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, max_z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                corners[3],
+                Vector3::new(0.0, 0.0, -1.0),
+            )
+            .unwrap(),
+        )),
+    ];
+    for (index, geometry) in curve_geometries.into_iter().enumerate() {
+        let next = (index + 1) % 4;
+        let curve_id = CurveId::mint(format!("synthetic:test:curve#curve-{name}-{index}"))
+            .expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
+            .expect("identity grammar");
+        model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry,
+            source_object: None,
+        });
+        model.edges.push(Edge {
+            id: edge_id.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            start: vertex_ids[index].clone(),
+            end: vertex_ids[next].clone(),
+            tolerance: None,
+        });
+        model.coedges.push(Coedge {
+            id: coedge_ids[index].clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            radial_next: coedge_ids[index].clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+    }
+    model.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face_id.clone(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids,
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
+        ),
+    });
+    model.faces.push(Face {
+        id: face_id.clone(),
+        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    face_id
+}
+
+fn model_with_body() -> cadmpeg_ir::document::Model {
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.bodies = vec![Body {
+        id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    model.regions = vec![Region {
+        id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
+        body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+    }];
+
+    model
+}
+
+fn set_shell_faces(model: &mut cadmpeg_ir::document::Model, faces: Vec<FaceId>) {
+    model.shells = vec![Shell::new(
+        model.regions[0].shells[0].clone(),
+        model.regions[0].id.clone(),
+        faces,
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap()];
+}
+
+fn persistent_mesh(id: &str) -> Tessellation {
+    mesh_from(
+        id,
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    )
+}
+
+fn mesh_from(
+    id: impl Into<String>,
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
+) -> Tessellation {
+    Tessellation::new(
+        cadmpeg_ir::tessellation::TessellationId::mint(id.into()).expect("valid identity"),
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices,
+            triangles,
+        },
+        Vec::new(),
+    )
+    .expect("valid tessellation")
+}
+
+fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
+    PersistentFaceIdentity {
+        feature_source_id: source.try_into().unwrap(),
+        local_id: local,
+        trailing_fields: trailing_fields.to_vec(),
+    }
+}
+
+fn framed_surface_reference(text: &str) -> Vec<u8> {
+    let units = text.encode_utf16().collect::<Vec<_>>();
+    let mut payload = vec![0xff, 0xfe, 0xff, units.len().try_into().unwrap()];
+    payload.extend(units.into_iter().flat_map(u16::to_le_bytes));
+    payload
+}
+
+#[test]
+fn persistent_surface_identity_requires_agreeing_duplicates() {
+    let face = DisplayFace {
+        mesh: Mesh::default(),
+        table: ByteRange::new(0, 1).expect("ordered range"),
+        metadata: ByteRange::new(1, 2).expect("ordered range"),
+        surface_references: vec![
+            PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+            PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+        ],
+    };
+    assert_eq!(
+        face.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
+    let expected = persistent_identity(7, 3, &[]);
+    assert_eq!(face.persistent_surface_identity(), Some(&expected));
+
+    let mut conflicting = face;
+    if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
+        identity.local_id = 4;
+    }
+    assert_eq!(
+        conflicting.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
+    assert_eq!(conflicting.persistent_surface_identity(), None);
+}
+
+#[test]
+fn persistent_surface_identity_binds_one_face_and_body() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "persistent", 0.0);
+    set_shell_faces(&mut model, vec![face.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+
+    let face_identities = vec![(face.clone(), persistent_identity(7, 3, &[]))];
+    let bindings = vec![PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(7, 3, &[]),
+    }];
+
+    assert_eq!(
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings).unwrap(),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+}
+
+#[test]
+fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-persistent", 0.0);
+    let second = add_square_face(&mut model, "second-persistent", 3.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(7, 3, &[])),
+    ];
+    let binding = PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(7, 3, &[]),
+    };
+    assert!(
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(model.tessellations[0].faces.is_empty());
+
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-mesh", 0.0);
+    let second = add_square_face(&mut model, "second-mesh", 3.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(8, 4, &[])),
+    ];
+    let bindings = vec![
+        PersistentFaceBinding {
+            tessellation: "synthetic:test:tessellation#mesh".into(),
+            identity: persistent_identity(7, 3, &[]),
+        },
+        PersistentFaceBinding {
+            tessellation: "synthetic:test:tessellation#mesh".into(),
+            identity: persistent_identity(8, 4, &[]),
+        },
+    ];
+    assert!(
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn persistent_surface_identity_distinguishes_trailing_path_fields() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-tail", 0.0);
+    let second = add_square_face(&mut model, "second-tail", 3.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![
+        (first.clone(), persistent_identity(266, 2, &[0])),
+        (second.clone(), persistent_identity(266, 2, &[1])),
+    ];
+    let binding = PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(266, 2, &[1]),
+    };
+
+    assert_eq!(
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding]).unwrap(),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![second]);
+}
+
+fn persistent_assignment_limit_error(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "limited-persistent", 0.0);
+    set_shell_faces(&mut model, vec![face.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![(face, persistent_identity(7, 3, &[]))];
+    let bindings = vec![PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(7, 3, &[]),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings)
+        .expect_err("selected limit refuses the persistent assignment")
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_collection_limit() {
+    let error = persistent_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT persistent face identities")
+    );
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT tessellation face ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(persistent_assignment_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain SLDPRT tessellation face ID")
+    );
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_work_limit() {
+    let error = persistent_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT persistent face identities")
+    );
+}
+
+fn geometric_assignment_limit_error(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "limited-geometric", 0.0);
+    set_shell_faces(&mut model, vec![face]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    super::assign_unique_surface_owners(&ctx, &mut model)
+        .expect_err("selected limit refuses the geometric assignment")
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_collection_limit() {
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT tessellation surfaces")
+    );
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT tessellation face ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(geometric_assignment_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain SLDPRT tessellation face ID")
+    );
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_work_limit() {
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT tessellation surfaces")
+    );
+}
+
+#[test]
+fn cylindrical_trim_angle_collection_refuses_caller_limit() {
+    let mut model = model_with_body();
+    let face_id = add_cylindrical_patch_face(&mut model, "limited-cylinder", 0.0, 2.0);
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id == face_id)
+        .expect("face");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("surface");
+    let loops = model.loops.iter().map(|loop_| (&loop_.id, loop_)).collect();
+    let coedges = model
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    let edges = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let vertices = model
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect();
+    let points = model
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect();
+    let curves = model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let error = super::cylindrical_trim(
+        &ctx,
+        face,
+        &surface.geometry,
+        &super::TrimTopology {
+            loops: &loops,
+            coedges: &coedges,
+            edges: &edges,
+            vertices: &vertices,
+            points: &points,
+            curves: &curves,
+        },
+    )
+    .expect_err("angle collection exceeds the caller limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect SLDPRT cylindrical trim angles")
+    );
+}
+
+#[test]
+fn conical_trim_angle_collection_refuses_caller_limit() {
+    let mut model = model_with_body();
+    let face_id = add_cylindrical_patch_face(&mut model, "limited-cone", 0.0, 2.0);
+    let surface_id = model
+        .faces
+        .iter()
+        .find(|face| face.id == face_id)
+        .expect("face")
+        .surface
+        .clone();
+    let surface = model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .expect("surface");
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            1.0,
+            0.0,
+        )
+        .unwrap(),
+    ));
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id == face_id)
+        .expect("face");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("surface");
+    let loops = model.loops.iter().map(|loop_| (&loop_.id, loop_)).collect();
+    let coedges = model
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    let edges = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let vertices = model
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect();
+    let points = model
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect();
+    let curves = model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let error = super::conical_trim(
+        &ctx,
+        face,
+        &surface.geometry,
+        &super::TrimTopology {
+            loops: &loops,
+            coedges: &coedges,
+            edges: &edges,
+            vertices: &vertices,
+            points: &points,
+            curves: &curves,
+        },
+    )
+    .expect_err("angle collection exceeds the caller limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect SLDPRT conical trim angles")
+    );
+}
+
+#[test]
+fn bounded_planar_trim_selects_between_coincident_supports() {
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first", -4.0);
+    let second = add_square_face(&mut model, "second", 2.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(2.25, -0.75, 0.0),
+                    Point3::new(3.75, -0.75, 0.0),
+                    Point3::new(3.0, 0.75, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert_eq!(
+        assign_unique_surface_owners!(&mut model).unwrap(),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![second]);
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+
+    model
+        .faces
+        .iter_mut()
+        .find(|face| face.id == first)
+        .unwrap()
+        .loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    model.tessellations[0].body = None;
+    model.tessellations[0].faces.clear();
+    assert!(assign_unique_surface_owners!(&mut model)
+        .unwrap()
+        .is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn bounded_cylindrical_trim_selects_between_coincident_supports() {
+    let mut model = model_with_body();
+    let lower = add_cylindrical_patch_face(&mut model, "lower", 0.0, 1.0);
+    let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
+    set_shell_faces(&mut model, vec![lower.clone(), upper.clone()]);
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#lower-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(5.0, 0.0, 0.25),
+                    Point3::new(0.0, 5.0, 0.25),
+                    Point3::new(5.0, 0.0, 0.75),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert_eq!(
+        assign_unique_surface_owners!(&mut model).unwrap(),
+        vec!["synthetic:test:tessellation#lower-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![lower]);
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+}
+
+#[test]
+fn chordal_cylindrical_mesh_records_measured_support_deflection() {
+    let mut model = model_with_body();
+    let face = add_cylindrical_patch_face(&mut model, "chordal", 0.0, 1.0);
+    set_shell_faces(&mut model, vec![face.clone()]);
+    let deflection = 0.1;
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#chordal-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(5.0 - deflection, 0.0, 0.25),
+                    Point3::new(0.0, 5.0 - deflection, 0.25),
+                    Point3::new(5.0 - deflection, 0.0, 0.75),
+                ],
+                vec![[0, 1, 2]],
+                Some(vec![
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ]),
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert_eq!(
+        assign_unique_surface_owners!(&mut model).unwrap(),
+        vec!["synthetic:test:tessellation#chordal-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert!(model.tessellations[0]
+        .chordal_deflection()
+        .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
+}
+
+#[test]
+fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
+    let mut model = model_with_body();
+    let face = add_cylindrical_patch_face(&mut model, "inconsistent-normals", 0.0, 1.0);
+    set_shell_faces(&mut model, vec![face.clone()]);
+    let deflection = 0.1;
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#inconsistent-normals-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(5.0 - deflection, 0.0, 0.25),
+                    Point3::new(0.0, 5.0 - deflection, 0.25),
+                    Point3::new(5.0 - deflection, 0.0, 0.75),
+                ],
+                vec![[0, 1, 2]],
+                Some(vec![
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                ]),
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert_eq!(
+        assign_unique_surface_owners!(&mut model).unwrap(),
+        vec!["synthetic:test:tessellation#inconsistent-normals-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert!(model.tessellations[0]
+        .chordal_deflection()
+        .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
+}
+
+#[test]
+fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "off-surface", 0.0);
+    set_shell_faces(&mut model, vec![face]);
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#off-surface-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(0.25, -0.75, 0.1),
+                    Point3::new(1.75, -0.75, 0.1),
+                    Point3::new(1.0, 0.75, 0.1),
+                ],
+                vec![[0, 1, 2]],
+                Some(vec![
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                ]),
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert!(assign_unique_surface_owners!(&mut model)
+        .unwrap()
+        .is_empty());
+    assert!(model.tessellations[0].body.is_none());
+    assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn cylindrical_trim_uses_the_short_boundary_arc() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut angles = vec![0.0, std::f64::consts::FRAC_PI_2];
+    let (start, span) = circular_interval(&ctx, &mut angles).unwrap().unwrap();
+    assert_eq!(start, 0.0);
+    assert_eq!(span, std::f64::consts::FRAC_PI_2);
+    assert!(circular_interval_contains(
+        start,
+        span,
+        std::f64::consts::FRAC_PI_4,
+        0.0
+    ));
+    assert!(!circular_interval_contains(
+        start,
+        span,
+        std::f64::consts::PI,
+        0.0
+    ));
+}
+
+#[test]
+fn cylindrical_trim_accepts_quantized_points_within_boundary_tolerance() {
+    let start = 1.0;
+    let span = 0.5;
+    let tolerance = f64::EPSILON * 4096.0;
+
+    assert!(circular_interval_contains(
+        start,
+        span,
+        start - tolerance * 0.5,
+        tolerance,
+    ));
+    assert!(circular_interval_contains(
+        start,
+        span,
+        start + span + tolerance * 0.5,
+        tolerance,
+    ));
+    assert!(!circular_interval_contains(
+        start,
+        span,
+        start - tolerance * 2.0,
+        tolerance,
+    ));
+}
+
+#[test]
+fn unique_nurbs_support_binds_exact_display_list_face() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let face = add_face(
+        &mut model,
+        "nurbs-exact",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        test_nurbs_corners(&surface),
+    );
+    set_shell_faces(&mut model, vec![face.clone()]);
+    let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+        .map(|(u, v)| {
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                u,
+                v,
+            )
+            .unwrap()
+            .get()
+        })
+        .to_vec();
+    model.tessellations.push(mesh_from(
+        "synthetic:test:tessellation#nurbs-exact-mesh",
+        vertices,
+        vec![[0, 1, 2]],
+    ));
+
+    assert_eq!(
+        assign_unique_surface_owners!(&mut model).unwrap(),
+        vec!["synthetic:test:tessellation#nurbs-exact-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+    assert!(model.tessellations[0].chordal_deflection().is_none());
+}
+
+#[test]
+fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let face = add_face(
+        &mut model,
+        "nurbs-cache",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        test_nurbs_corners(&surface),
+    );
+    set_shell_faces(&mut model, vec![face]);
+    let samples =
+        [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
+    let deflection = 0.02;
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-cache-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                samples
+                    .iter()
+                    .map(|(point, normal)| point.translated(*normal, deflection))
+                    .collect(),
+                vec![[0, 1, 2]],
+                Some(samples.iter().map(|(_, normal)| *normal).collect()),
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert!(assign_unique_surface_owners!(&mut model)
+        .unwrap()
+        .is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+    assert!(model.tessellations[0].chordal_deflection().is_none());
+}
+
+#[test]
+fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let corners = test_nurbs_corners(&surface);
+    let first = add_face(
+        &mut model,
+        "nurbs-coincident-first",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        corners,
+    );
+    let second = add_face(
+        &mut model,
+        "nurbs-coincident-second",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        corners,
+    );
+    {
+        for face in [first, second] {
+            set_shell_faces(&mut model, vec![face]);
+        }
+    };
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-ambiguous-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+                    .map(|(u, v)| {
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &surface,
+                            u,
+                            v,
+                        )
+                        .unwrap()
+                        .get()
+                    })
+                    .to_vec(),
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert!(assign_unique_surface_owners!(&mut model)
+        .unwrap()
+        .is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+}
+
+#[test]
+fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() {
+    let mut model = model_with_body();
+    let surface = flat_test_nurbs_surface();
+    let corners = test_nurbs_corners(&surface);
+    let nurbs_face = add_face(
+        &mut model,
+        "nurbs-plane-coincident",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        corners,
+    );
+    let plane_face = add_face(
+        &mut model,
+        "plane-coincident",
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        corners,
+    );
+    {
+        for face in [nurbs_face, plane_face] {
+            set_shell_faces(&mut model, vec![face]);
+        }
+    };
+    model.tessellations.push(
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
+            )
+            .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+                    .map(|(u, v)| {
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &surface,
+                            u,
+                            v,
+                        )
+                        .unwrap()
+                        .get()
+                    })
+                    .to_vec(),
+                vec![[0, 1, 2]],
+                Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
+
+    assert!(assign_unique_surface_owners!(&mut model)
+        .unwrap()
+        .is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+}
+
+#[test]
+fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
+    let trim = PlanarTrim {
+        frame: PlaneFrame::new(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        outer: Some(PlanarOuter::Polygon(vec![
+            Point2::new(-3.0, -3.0),
+            Point2::new(3.0, -3.0),
+            Point2::new(3.0, 3.0),
+            Point2::new(-3.0, 3.0),
+        ])),
+        holes: vec![PlanarHole::Circle(CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 1.0,
+        })],
+        boundary_tolerance: 0.0,
+    };
+    let mesh = |vertices, triangle| {
+        mesh_from("synthetic:test:tessellation#mesh", vertices, vec![triangle])
+    };
+    let boundary_chord = mesh(
+        vec![
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+        ],
+        [0, 1, 2],
+    );
+    let crossing = mesh(
+        vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ],
+        [0, 1, 2],
+    );
+
+    assert!(planar_contains_mesh!(trim, &boundary_chord, 1.0e-9));
+    assert!(!planar_contains_mesh!(trim, &crossing, 1.0e-9));
+}
+
+#[test]
+fn polygonal_planar_hole_excludes_inner_face_mesh() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let trim = PlanarTrim {
+        frame: PlaneFrame::new(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        outer: Some(PlanarOuter::Polygon(vec![
+            Point2::new(-4.0, -4.0),
+            Point2::new(4.0, -4.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(-4.0, 4.0),
+        ])),
+        holes: vec![PlanarHole::polygon(
+            &ctx,
+            vec![
+                Point2::new(-2.0, -2.0),
+                Point2::new(2.0, -2.0),
+                Point2::new(2.0, 2.0),
+                Point2::new(-2.0, 2.0),
+            ],
+            EPS_DISPLAY_QUANTIZATION,
+        )
+        .unwrap()
+        .unwrap()],
+        boundary_tolerance: 0.0,
+    };
+    let mesh =
+        |vertices, triangles| mesh_from("synthetic:test:tessellation#mesh", vertices, triangles);
+    let inner_face = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(-2.0, 2.0, 0.0),
+        ],
+        vec![[0, 1, 2], [0, 2, 3]],
+    );
+    let outer_face = mesh(
+        vec![
+            Point3::new(-4.0, -4.0, 0.0),
+            Point3::new(-3.0, -4.0, 0.0),
+            Point3::new(-4.0, -3.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+    let exterior_boundary_chord = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(0.0, -4.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+    let interior_boundary_chord = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(4.0, 4.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+
+    assert!(!planar_contains_mesh!(
+        trim,
+        &inner_face,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(planar_contains_mesh!(
+        trim,
+        &outer_face,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(planar_contains_mesh!(
+        trim,
+        &exterior_boundary_chord,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(!planar_contains_mesh!(
+        trim,
+        &interior_boundary_chord,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+}
+
+#[test]
+fn mixed_planar_holes_reject_overlap() {
+    let polygon = vec![
+        Point2::new(-2.0, -2.0),
+        Point2::new(2.0, -2.0),
+        Point2::new(2.0, 2.0),
+        Point2::new(-2.0, 2.0),
+    ];
+    assert!(circle_overlaps_polygon(
+        CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 1.0,
+        },
+        &polygon,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(!circle_overlaps_polygon(
+        CircularHole {
+            center: Point2::new(4.0, 0.0),
+            radius: 1.0,
+        },
+        &polygon,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+}
+
+#[test]
+fn decode_reports_display_list_geometry() {
+    let f = sldprt_with_body_and_display_list(&triangle_body());
+    let mut cur = Cursor::new(f);
+
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
+    let source = result.ir().source.as_ref().expect("source metadata");
+
+    assert_eq!(
+        source
+            .attributes
+            .get("displaylist_vertices")
+            .map(String::as_str),
+        Some("3")
+    );
+    assert_eq!(
+        source
+            .attributes
+            .get("displaylist_triangles")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].vertices().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].vertices()[1].x, 1000.0);
+    assert_eq!(
+        result.ir().model.tessellations[0].triangles(),
+        vec![[0, 1, 2]]
+    );
+    assert_eq!(result.ir().model.tessellations[0].strip_lengths(), vec![3]);
+    assert_eq!(result.ir().model.tessellations[0].vertex_normals().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
+    assert_eq!(
+        result.ir().model.tessellations[0].faces,
+        [result.ir().model.faces[0].id.clone()]
+    );
+    assert_eq!(
+        result.ir().model.tessellations[0].body.as_ref(),
+        Some(&result.ir().model.bodies[0].id)
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed
+            && loss.message.contains("DisplayLists tessellation")
+    }));
+    assert!(result
+        .ir()
+        .native_unknowns("sldprt")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            result
+                .source_fidelity()
+                .annotations
+                .provenance
+                .get(record.id.as_str())
+                .and_then(|note| note.tag.as_deref())
+                == Some("displaylist_tessellation")
+                && result
+                    .source_fidelity()
+                    .retained_record(record.id.as_str())
+                    .is_some_and(|source| source.data().is_some())
+        }));
+}
+
+#[test]
+fn decode_reports_extended_header_display_list_geometry() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x41,
+        "Contents/DisplayLists",
+        &extended_display_list_payload(),
+    ));
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
+}
+
+#[test]
+fn decode_rejects_incoherent_display_list_header_counts() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let header = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .expect("face tessellation class")
+        + marker.len();
+    payload[header..header + 4].copy_from_slice(&2_u32.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("an incoherent display-face header must refuse the decode");
+    let text = error.to_string();
+    assert!(
+        text.contains("display-face table")
+            && text.contains("header states 2 triangle(s) and 1 strip(s)")
+            && text.contains("parsed mesh has 1 triangle(s) and 1 strip(s)"),
+        "{text}"
+    );
+}
+
+#[test]
+fn decode_rejects_inconsistent_display_list_table() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let at = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .unwrap()
+        + marker.len()
+        + 8
+        + 16;
+    payload[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.tessellations.is_empty());
+    assert!(!result
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("displaylist_vertices"));
+}
+
+#[test]
+fn decode_rejects_nonfinite_display_list_values() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let position_data = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .unwrap()
+        + marker.len()
+        + 8
+        + 16
+        + 4
+        + 16;
+    payload[position_data..position_data + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.tessellations.is_empty());
+}
+
+#[test]
+fn planar_boundary_accepts_bounded_ellipse_arcs() {
+    const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let frame = plane_frame(surface.solved().expect("solved carrier")).unwrap();
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+        )
+        .unwrap(),
+    ));
+    let (samples, boundary_tolerance) = planar_boundary_samples(
+        &ctx,
+        &curve,
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        &surface,
+        frame,
+        crate::tessellation::BoundaryTolerance {
+            tolerance: EPS_DISPLAY_QUANTIZATION,
+            sampling_tolerance: SAMPLE_TOLERANCE,
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    assert!(samples.len() > 1);
+    assert!(boundary_tolerance <= SAMPLE_TOLERANCE);
+    assert_eq!(samples.first(), Some(&Point2::new(2.0, 0.0)));
+    assert!(shortest_arc_span(0.0, std::f64::consts::PI).is_none());
+}
+
+#[test]
+fn planar_boundary_accepts_bounded_circle_arcs() {
+    const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let frame = plane_frame(surface.solved().expect("solved carrier")).unwrap();
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    ));
+    let (samples, boundary_tolerance) = planar_boundary_samples(
+        &ctx,
+        &curve,
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+        &surface,
+        frame,
+        crate::tessellation::BoundaryTolerance {
+            tolerance: EPS_DISPLAY_QUANTIZATION,
+            sampling_tolerance: SAMPLE_TOLERANCE,
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    assert!(samples.len() > 1);
+    assert!(boundary_tolerance <= SAMPLE_TOLERANCE);
+    assert_eq!(samples.first(), Some(&Point2::new(2.0, 0.0)));
+}
+
+mod geometry_predicates;
+
+mod cone_supports;
+
+mod resource_admission;
+
+mod arc_trims;

@@ -2,7 +2,8 @@
 //! Historical edge-operand binding tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::history::bind_edge_operand_history_candidates;
+use std::collections::HashMap;
 
 #[test]
 fn sole_transition_deletion_does_not_supply_operand_identity() {
@@ -12,14 +13,19 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     };
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         10,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    let mut operand: crate::records::topology::DesignEdgeOperand =
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
         serde_json::from_value(serde_json::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
@@ -27,12 +33,12 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "record_index": 20,
             "byte_offset": 0,
             "class_tag": "297",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "259",
             "recipe_record_index": 23,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": format!("{stream}:construction-recipe#23"),
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_program_offset": 0,
@@ -40,7 +46,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "changed_boundary_edge_slots": [],
             "deleted_boundary_edge_slots": [],
             "next_record_index": 24,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("edge operand");
     let state = |state_id, topology, transition| AsmDeltaState {
@@ -92,18 +98,21 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![previous, current],
     };
     let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);
 
-    bind_edge_operand_history_candidates(
-        std::slice::from_mut(&mut operand),
-        std::slice::from_ref(&scope),
-        &[],
-        std::slice::from_ref(&history),
-        &scope_histories,
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_edge_operand_history_candidates(
+            decode_ctx,
+            std::slice::from_mut(&mut operand),
+            std::slice::from_ref(&scope),
+            &[],
+            std::slice::from_ref(&history),
+            &scope_histories,
+        )
+    })
+    .unwrap();
 
     assert_eq!(operand.recipe_state_id, Some(1));
     assert_eq!(operand.resolved_edge_slot, None);

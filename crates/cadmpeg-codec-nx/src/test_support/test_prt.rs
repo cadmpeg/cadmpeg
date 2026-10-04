@@ -5,7 +5,18 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_bytes::zlib_compress;
+use super::test_bytes::MAGIC;
+use super::test_om::composed_feature_history_inputs;
+use super::test_om::composed_feature_history_payload;
+use super::test_om::indexed_om_section;
+use super::test_om::size_framed_om_section;
+use super::test_streams::partition_stream;
+use super::test_streams::topology_partition_stream;
 
 /// A `.prt` image whose single feature-history section and companion offset
 /// store drive the feature-history arena families that no other golden reaches:
@@ -20,6 +31,19 @@ pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
         composed_feature_history_inputs();
     let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5, &block6];
     let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
+/// [`composed_feature_history_prt`] with one more feature-history link than the
+/// stable sort sorts without scratch.
+pub(crate) fn composed_feature_history_prt_over_sort_scratch() -> Vec<u8> {
+    let (operations, block1, block2, block3, block4, block5, block6) =
+        composed_feature_history_inputs();
+    let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5, &block6];
+    let payload = super::test_om::composed_feature_history_payload_over_sort_scratch(
+        &operations,
+        &store_records,
+    );
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
@@ -91,7 +115,9 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     );
     let mut spans = Vec::new();
     for (name, _) in entries {
-        file.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        file.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         file.extend_from_slice(name.as_bytes());
         spans.push(file.len());
         file.extend_from_slice(&[0; 16]);
@@ -99,10 +125,12 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     for ((_, payload), span) in entries.iter().zip(spans) {
         let offset = file.len();
         file.extend_from_slice(payload);
-        file[span..span + 8].copy_from_slice(&(offset as u64).to_le_bytes());
-        file[span + 8..span + 16].copy_from_slice(&(payload.len() as u64).to_le_bytes());
+        file[span..span + 8]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(offset)).to_le_bytes());
+        file[span + 8..span + 16]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(payload.len())).to_le_bytes());
     }
-    let footer_offset = file.len() as u64;
+    let footer_offset = cadmpeg_core::decode::u64_from_index(file.len());
     file[0x11..0x17].copy_from_slice(&footer_offset.to_le_bytes()[..6]);
     file.extend_from_slice(b"FOOTER");
     file.extend_from_slice(&0_u32.to_le_bytes());
@@ -297,14 +325,14 @@ pub(crate) fn prt_with_two_terminal_bodies() -> Vec<u8> {
         0,
         1,
         1,
-        index_byte_len as u32,
-        first_wrapper_offset as u32,
+        u32::try_from(index_byte_len).expect("fixture value fits u32"),
+        u32::try_from(first_wrapper_offset).expect("fixture value fits u32"),
         0,
         0x1000_0001,
         0x1000_0002,
         19,
         0,
-        second_wrapper_offset as u32,
+        u32::try_from(second_wrapper_offset).expect("fixture value fits u32"),
         0,
         0x2000_0001,
         0x2000_0002,
@@ -385,7 +413,7 @@ pub(crate) fn prt_with_weak_rmfastload_overlap() -> Vec<u8> {
         } else {
             10_000 + index
         };
-        let at = payload + index as usize * 4;
+        let at = payload + usize::try_from(index).expect("fixture value fits usize") * 4;
         file[at..at + 4].copy_from_slice(&id.to_le_bytes());
     }
     file

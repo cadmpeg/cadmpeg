@@ -25,16 +25,17 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap242-e3"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
@@ -43,15 +44,21 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
         }
       ],
       "notes": [],
-      "target": "step:ap242-e3",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "explicit_default": {
@@ -80,16 +87,17 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap214"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
@@ -98,15 +106,21 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
         }
       ],
       "notes": [],
-      "target": "step:ap214",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "inherit": {
@@ -135,24 +149,29 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "fidelity": {
-        "status": "not_provided"
+      "identity": {
+        "payload": "native",
+        "target": "step:ap242-e2"
       },
-      "format": "step",
       "losses": [
         {
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
         }
       ],
       "notes": [],
-      "target": "step:ap242-e2",
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   }
 }

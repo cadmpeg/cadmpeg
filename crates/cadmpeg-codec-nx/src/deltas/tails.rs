@@ -3,6 +3,7 @@
 
 use crate::intersection::TermUseForm;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NullTailForm {
@@ -37,7 +38,7 @@ pub(crate) struct TerminalNullReferences {
     form: NullTailForm,
 }
 impl TerminalNullReferences {
-    pub(crate) fn at_end(stream: &[u8]) -> Option<Self> {
+    pub(super) fn at_end(stream: &[u8]) -> Option<Self> {
         [NullTailForm::Four, NullTailForm::Two]
             .into_iter()
             .find_map(|form| {
@@ -50,7 +51,7 @@ impl TerminalNullReferences {
     pub(crate) fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end(self) -> usize {
+    pub(super) fn end(self) -> usize {
         self.offset + self.form.raw().len()
     }
     pub(crate) fn form(self) -> NullTailForm {
@@ -60,17 +61,19 @@ impl TerminalNullReferences {
 
 #[derive(Debug, Clone, PartialEq)]
 enum NumericValues {
-    One([f64; 8]),
-    Two([f64; 19]),
+    One([FiniteReal; 8]),
+    Two([FiniteReal; 19]),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NumericTailValues(NumericValues);
 impl NumericTailValues {
     pub(crate) fn new(term_use_count: u32, values: Vec<f64>) -> Result<Self, &'static str> {
-        if !values.iter().all(|value| value.is_finite()) {
-            return Err("values: numeric tail scalars must be finite");
-        }
+        let values = values
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .ok_or("values: numeric tail scalars must be finite")?;
         Ok(Self(match term_use_count {
             1 => NumericValues::One(
                 values
@@ -91,7 +94,7 @@ impl NumericTailValues {
             NumericValues::Two(_) => 2,
         }
     }
-    pub(crate) fn values(&self) -> &[f64] {
+    pub(crate) fn values(&self) -> &[FiniteReal] {
         match &self.0 {
             NumericValues::One(values) => values,
             NumericValues::Two(values) => values,
@@ -100,16 +103,26 @@ impl NumericTailValues {
     pub(crate) fn byte_len(&self) -> usize {
         self.values().len() * 8
     }
-    pub(crate) fn bytes(&self) -> Vec<u8> {
-        self.values()
-            .iter()
-            .flat_map(|value| value.to_be_bytes())
-            .collect()
+    pub(crate) fn encoded_bytes(&self) -> ([u8; 152], usize) {
+        let mut bytes = [0u8; 152];
+        for (slot, value) in self.values().iter().enumerate() {
+            let start = slot * 8;
+            bytes[start..start + 8].copy_from_slice(&value.get().to_be_bytes());
+        }
+        (bytes, self.byte_len())
     }
+
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> Vec<u8> {
+        let (bytes, len) = self.encoded_bytes();
+        bytes[..len].to_vec()
+    }
+
+    #[cfg(test)]
     pub(crate) fn into_values(self) -> Vec<f64> {
         match self.0 {
-            NumericValues::One(values) => values.to_vec(),
-            NumericValues::Two(values) => values.to_vec(),
+            NumericValues::One(values) => values.map(FiniteReal::get).to_vec(),
+            NumericValues::Two(values) => values.map(FiniteReal::get).to_vec(),
         }
     }
 }
@@ -121,19 +134,29 @@ pub(crate) struct TermUseNumericTail {
     values: NumericTailValues,
 }
 impl TermUseNumericTail {
-    pub(crate) fn read(
+    pub(super) fn read(
         stream: &[u8],
         offset: usize,
         term_use_xmt: u32,
         form: TermUseForm,
     ) -> Option<Self> {
-        let count = match form {
-            TermUseForm::LQuestion => 8,
-            TermUseForm::Tf | TermUseForm::Ts => 19,
-        };
         let mut view = View::over_retained(stream).child(offset, stream.len())?;
-        let values = view.read_counted(count, 8, View::f64_be)?;
-        let values = NumericTailValues::new(form.count(), values).ok()?;
+        let values = NumericTailValues(match form {
+            TermUseForm::LQuestion => {
+                let mut values = [FiniteReal::ZERO; 8];
+                for value in &mut values {
+                    *value = FiniteReal::new(view.f64_be()?)?;
+                }
+                NumericValues::One(values)
+            }
+            TermUseForm::Tf | TermUseForm::Ts => {
+                let mut values = [FiniteReal::ZERO; 19];
+                for value in &mut values {
+                    *value = FiniteReal::new(view.f64_be()?)?;
+                }
+                NumericValues::Two(values)
+            }
+        });
         offset.checked_add(values.byte_len())?;
         Some(Self {
             term_use_xmt,
@@ -144,10 +167,10 @@ impl TermUseNumericTail {
     pub(crate) fn offset(&self) -> usize {
         self.offset
     }
-    pub(crate) fn end(&self) -> usize {
-        self.offset + self.values.byte_len()
+    pub(super) fn end(&self) -> usize {
+        self.offset + self.values().byte_len()
     }
-    pub(crate) fn values(&self) -> &NumericTailValues {
+    pub(super) fn values(&self) -> &NumericTailValues {
         &self.values
     }
     pub(crate) fn into_values(self) -> NumericTailValues {
@@ -157,7 +180,30 @@ impl TermUseNumericTail {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::NumericTailValues;
+
+    #[test]
+    fn fixed_numeric_tail_reads_count_selected_finite_values() {
+        for (form, count) in [
+            (crate::intersection::TermUseForm::LQuestion, 8),
+            (crate::intersection::TermUseForm::Tf, 19),
+            (crate::intersection::TermUseForm::Ts, 19),
+        ] {
+            let mut bytes = vec![0; 2];
+            for _ in 0..count {
+                bytes.extend_from_slice(&0_f64.to_be_bytes());
+            }
+            let tail = super::TermUseNumericTail::read(&bytes, 2, 42, form).expect("finite roster");
+            assert_eq!(tail.values().values().len(), count);
+            assert_eq!(tail.end(), bytes.len());
+            assert_eq!(tail.term_use_xmt, 42);
+            assert!(
+                super::TermUseNumericTail::read(&bytes[..bytes.len() - 1], 2, 42, form).is_none()
+            );
+            bytes[2..10].copy_from_slice(&f64::INFINITY.to_be_bytes());
+            assert!(super::TermUseNumericTail::read(&bytes, 2, 42, form).is_none());
+        }
+    }
 
     #[test]
     fn tail_values_require_the_selected_finite_cardinality() {

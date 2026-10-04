@@ -117,23 +117,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 2,
             "kind": "nurbs",
             "knots": [
@@ -145,11 +128,35 @@
               1.0
             ],
             "periodic": false,
-            "weights": [
-              1.0,
-              0.5,
-              1.0
-            ]
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 0.5
+                },
+                {
+                  "point": {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
           },
           "id": "step:data:curve#20",
           "source_object": {
@@ -251,23 +258,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -277,7 +267,27 @@
               2.0,
               2.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 2.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "step:data:curve#48",
           "source_object": {
@@ -375,9 +385,11 @@
           "id": "step:construction:offset_curve#26"
         },
         {
-          "cache_fit_tolerance": 0.0,
           "curve": "step:data:curve#22",
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0
+            },
             "kind": "subset",
             "parameter_range": [
               0.0,
@@ -389,9 +401,11 @@
           "id": "step:construction:trimmed_curve#22"
         },
         {
-          "cache_fit_tolerance": 0.0,
           "curve": "step:data:curve#29",
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0
+            },
             "kind": "subset",
             "parameter_range": [
               0.0,
@@ -596,30 +610,48 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "kind": "nurbs",
-            "u_count": 2,
+            "poles": {
+              "form": "rational",
+              "rows": [
+                [
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ],
+                [
+                  {
+                    "point": {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 2.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 0.75
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               0.0,
@@ -628,7 +660,6 @@
               1.0
             ],
             "u_periodic": false,
-            "v_count": 2,
             "v_degree": 1,
             "v_knots": [
               0.0,
@@ -636,13 +667,7 @@
               1.0,
               1.0
             ],
-            "v_periodic": false,
-            "weights": [
-              1.0,
-              1.0,
-              1.0,
-              0.75
-            ]
+            "v_periodic": false
           },
           "id": "step:data:surface#21",
           "source_object": {
@@ -738,19 +763,20 @@
         "entity_instances": "52",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -761,45 +787,58 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
-        "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
+        "message": "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; set dropped",
         "severity": "warning"
       },
       {
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       },
       {
         "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
         "severity": "warning"
@@ -808,7 +847,8 @@
         "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
         "severity": "warning"
@@ -816,27 +856,31 @@
     ],
     "notes": [
       "byte accounting: 314 structural, 2563 typed, 85 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 56,
-        "data": "IzQyPVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKChOVUxMX1NUWUxFKC5OVUxMLikpKTs=",
-        "id": "step:data:presentation_style_assignment#42",
+    "retained_records": {
+      "step:data:presentation_style_assignment#42": {
+        "bytes": {
+          "data": "IzQyPVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKChOVUxMX1NUWUxFKC5OVUxMLikpKTs=",
+          "retention": "inline"
+        },
         "offset": 2448,
-        "sha256": "7ece4aa47b7248f7b08bd521dedf23f9c07a793e0d8320637cd9b0555a7a98ea",
-        "stream": "source"
+        "stream": ""
       },
-      {
-        "byte_len": 29,
-        "data": "IzQzPVNUWUxFRF9JVEVNKCcnLCgjNDIpLCM3KTs=",
-        "id": "step:data:styled_item#43",
+      "step:data:styled_item#43": {
+        "bytes": {
+          "data": "IzQzPVNUWUxFRF9JVEVNKCcnLCgjNDIpLCM3KTs=",
+          "retention": "inline"
+        },
         "offset": 2505,
-        "sha256": "993aa7fb41284a84bc9e8c65099d76a2763b98d04b38cba7d48c74fa631b82ba",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }

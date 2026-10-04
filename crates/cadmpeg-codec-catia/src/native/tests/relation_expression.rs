@@ -3,11 +3,18 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_opened_parser_version_relation_expression,
+    standard_catpart_with_parser_version_relation_expression,
+    standard_catpart_with_relation_expression, standard_catpart_with_relation_expression_signature,
+    standard_catpart_with_unprefixed_parser_version_relation_expression,
+};
 use crate::CatiaCodec;
 
 #[test]
@@ -57,6 +64,33 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_relation_signature_wire_refuses_nested_input_limit() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("param"));
+    let record = &native.entity_records[0];
+    let mut found = false;
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_signature_inputs" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(
+        found,
+        "collection sweep must reach the relation signature inputs"
+    );
 }
 
 #[test]
@@ -162,45 +196,53 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT)
+                .as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }
@@ -258,45 +300,52 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }
@@ -331,21 +380,24 @@ fn decode_retains_a_parser_version_expression_without_fabricating_formula_incide
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }

@@ -6,8 +6,256 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_cards::{
+    card, card_with_ending, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
+};
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
+
+#[test]
+fn framing_recovery_record_refuses_text_and_node_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut recoveries = super::FramingRecoveries::default();
+    assert!(matches!(
+        recoveries.record(&ctx, (super::Section::Start, super::FramingDefect::Sequence),
+            1, 0, format_args!("bad"), format_args!("1")),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges framing declared text"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        recoveries.record(&ctx, (super::Section::Start, super::FramingDefect::Sequence),
+            1, 0, format_args!("bad"), format_args!("1")),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges framing recovery nodes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    recoveries
+        .record(
+            &ctx,
+            (super::Section::Start, super::FramingDefect::Sequence),
+            1,
+            0,
+            format_args!("bad"),
+            format_args!("1"),
+        )
+        .unwrap();
+    assert_eq!(recoveries.notes(&ctx).unwrap().len(), 1);
+}
+
+#[test]
+fn merging_framing_recoveries_refuses_new_node_limit() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut incoming = super::FramingRecoveries::default();
+        incoming
+            .record(
+                decode_ctx,
+                (
+                    super::Section::Parameter,
+                    super::FramingDefect::ParameterOwner,
+                ),
+                1,
+                80,
+                format_args!("D1"),
+                format_args!("D3"),
+            )
+            .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut merged = super::FramingRecoveries::default();
+        assert!(matches!(
+            merged.merge(incoming.clone(), &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "iges merged framing recovery nodes"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        merged.merge(incoming, &ctx).unwrap();
+        assert_eq!(merged.notes(&ctx).unwrap().len(), 1);
+    });
+}
+
+#[test]
+fn terminate_count_field_lossy_rendering_matches_source_text() {
+    let field = b"S\xff  12 ";
+    assert_eq!(
+        super::TrimmedLossyField(field).to_string(),
+        String::from_utf8_lossy(field).trim(),
+    );
+}
+
+#[test]
+fn framing_recovery_losses_refuse_slot_and_retained_limits() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut recoveries = super::FramingRecoveries::default();
+        recoveries
+            .record(
+                decode_ctx,
+                (
+                    super::Section::Parameter,
+                    super::FramingDefect::ParameterOwner,
+                ),
+                2,
+                160,
+                format_args!("D1"),
+                format_args!("D3"),
+            )
+            .unwrap();
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            recoveries.notes(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "iges framing recovery loss slots"
+        ));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+        );
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            recoveries.notes(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "iges framing recovery loss message"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let notes = recoveries.notes(&ctx).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].provenance.as_ref().unwrap().tag.as_deref(),
+            Some("parameter-data:framing")
+        );
+        assert!(notes[0]
+            .message
+            .contains("which declared D1, and the decoder used D3"));
+    });
+}
+
+#[test]
+fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let primary =
+        || crate::dialect::classify(crate::representation::Representation::FixedAscii, &global);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summarize(&scan, primary(), &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == cadmpeg_core::decode::u64_from_index(scan.lines.len()) * 5
+                && limit.operation == "iges card summary section scans"
+    ));
+
+    for (cap, operation) in [
+        (0, "iges card summary entries"),
+        (1, "iges card summary attributes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::summarize(&scan, primary(), &ctx);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_core::container::ContainerEntry>(),
+    );
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summarize(&scan, primary(), &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<cadmpeg_core::container::ContainerEntry>())
+                && limit.additional == 1
+                && limit.operation == "iges card summary card count"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let summary = super::summarize(&scan, primary(), &ctx).unwrap();
+    assert_eq!(summary.entries[0].name, "start");
+    assert_eq!(summary.entries[0].attributes["cards"], "1");
+    assert_eq!(summary.notes, [format!("source_bytes={}", bytes.len())]);
+}
+
+#[test]
+fn physical_card_payload_refuses_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = point_file();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 79;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = super::scan_with_context(&bytes, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 80
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::scan_with_context(&bytes, &ctx).is_ok());
+}
 
 #[test]
 fn overlong_preterminate_physical_line_is_malformed() {
@@ -57,7 +305,10 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
     bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"     1 ");
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::No
+    );
     assert_eq!(
         IgesCodec
             .inspect(
@@ -233,7 +484,10 @@ fn decode_accepts_carriage_return_only_line_endings() {
         .map(|byte| if byte == b'\n' { b'\r' } else { byte })
         .collect::<Vec<_>>();
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::High
+    );
 
     let result = IgesCodec
         .decode(

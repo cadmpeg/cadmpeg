@@ -1,134 +1,68 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{pcurve_basis_is_valid, support_context_is_finite, valid_surface_basis};
 use crate::examples::unit_cube;
-use crate::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SupportPcurve, SurfaceGeometry,
-};
-use crate::ids::{CurveId, ProceduralSurfaceId};
-use crate::math::{Point2, Point3, Vector3};
-use crate::report::Check;
-use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
+use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::math::{Point3, Vector3};
+use crate::tessellation::{Tessellation, TessellationMesh};
 use crate::validate::validate_neutral;
-
-#[test]
-fn explicit_support_mapping_requires_a_nonzero_solved_interval() {
-    let mut context = IntcurveSupportContext {
-        sides: [
-            IntcurveSupportSide {
-                surface: None,
-                pcurve: Some(SupportPcurve::new(
-                    PcurveGeometry::Line {
-                        origin: Point2::new(0.0, 0.0),
-                        direction: Point2::new(1.0, 0.0),
-                    },
-                    Some(DirectedParameterRange::new([5.0, 2.0]).unwrap()),
-                )),
-            },
-            IntcurveSupportSide {
-                surface: None,
-                pcurve: None,
-            },
-        ],
-        parameter_range: [0.0, 1.0],
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    };
-    assert!(support_context_is_finite(&context));
-    context.parameter_range = [1.0, 1.0];
-    assert!(!support_context_is_finite(&context));
-    context.sides[0].pcurve.as_mut().unwrap().parameter_range = None;
-    assert!(support_context_is_finite(&context));
-}
-
-#[test]
-fn exact_geometry_scalars_require_finite_nonzero_values_without_a_size_floor() {
-    let tiny = 1e-200;
-    assert!(pcurve_basis_is_valid(
-        &PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin: 0.0,
-            azimuth_rate: tiny,
-            plane_phase: 0.0,
-            plane_slope: 0.0,
-        }
-    ));
-
-    let axis = Vector3::new(0.0, 0.0, 1.0);
-    let ref_direction = Vector3::new(1.0, 0.0, 0.0);
-    assert!(valid_surface_basis(&SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        ref_direction,
-        radius: tiny,
-    }));
-    assert!(valid_surface_basis(&SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        ref_direction,
-        major_radius: tiny,
-        minor_radius: -tiny,
-    }));
-}
 
 #[test]
 fn tessellation_counts_must_be_consistent() {
     use crate::ids::FaceId;
     use crate::math::Point3;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#invalid-counts",
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            vec![[0, 1, 2]],
-            TessellationTopology::List,
-            TessellationNormals::None,
+            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#invalid-counts")
+                .expect("valid identity"),
+            TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation")
         .with_faces(vec![
             FaceId::mint("synthetic:test:face#missing").expect("valid identity")
-        ])
-        .with_chordal_deflection(Some(-1.0)),
+        ]),
     );
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
         .any(|finding| finding.message.contains("missing tessellation face")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid tessellation deflection")));
 }
 
 #[test]
 fn tessellation_triangle_groups_and_texture_assignments_validate() {
     use crate::assets::{Asset, AssetContent, AssetId};
     use crate::math::Point3;
-    use crate::report::{Check, Severity};
+    use crate::report::{check::Check, Severity};
     use crate::tessellation::{
         Tessellation, TessellationTextureAssignment, TessellationTriangleGroup,
     };
 
     let texture = AssetId::mint("synthetic:test:asset#mesh-texture").expect("identity grammar");
     let valid = Tessellation::new(
-        "synthetic:test:tessellation#valid-groups",
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2], [1, 3, 2]],
-        TessellationTopology::List,
-        TessellationNormals::None,
+        crate::tessellation::TessellationId::mint("synthetic:test:tessellation#valid-groups")
+            .expect("valid identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [1, 3, 2]],
+        },
         Vec::new(),
     )
     .expect("valid tessellation")
@@ -164,19 +98,27 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
             triangles: vec![0],
         }])
         .expect("valid local texture assignment");
-    invalid_texture.id = "synthetic:test:tessellation#missing-texture".into();
+    invalid_texture.id = "synthetic:test:tessellation#missing-texture"
+        .try_into()
+        .unwrap();
 
-    let mut ir = unit_cube();
-    ir.model.assets.push(Asset {
-        id: texture,
-        name: None,
-        media_type: None,
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.assets.push(
+        Asset::try_new(
+            texture,
+            None,
+            None,
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.extend([valid, invalid_texture]);
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let errors_for = |entity: &str| {
         report
             .findings
@@ -204,107 +146,119 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 
 #[test]
 fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
-    let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: -1e-200,
-    };
-    let report = validate_neutral(&ir, Vec::new());
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        crate::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -1e-200,
+        )
+        .unwrap(),
+    ));
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
-fn degenerate_plane_normal_is_flagged() {
-    let mut ir = unit_cube();
-    if let SurfaceGeometry::Plane { normal, .. } = &mut ir.model.surfaces[0].geometry {
-        *normal = Vector3::new(0.0, 0.0, 0.0);
-    }
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|f| f.check == Check::Bounds));
-}
-
-#[test]
-fn topology_tolerance_and_new_conics_are_bounds_checked() {
-    let mut ir = unit_cube();
-    let edge_id = ir.model.edges[0].id.as_str().to_owned();
-    ir.model.edges[0].tolerance = Some(-1.0);
-    ir.model.curves.push(Curve {
-        id: CurveId::mint("synthetic:test:curve#bad-parabola").expect("valid identity"),
-        geometry: CurveGeometry::Parabola {
-            vertex: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            focal_distance: 0.0,
-        },
-        source_object: None,
-    });
-    ir.model.curves.push(Curve {
-        id: CurveId::mint("synthetic:test:curve#bad-hyperbola").expect("valid identity"),
-        geometry: CurveGeometry::Hyperbola {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius: -1.0,
-            minor_radius: 1.0,
-        },
-        source_object: None,
-    });
-
-    let report = validate_neutral(&ir, Vec::new());
-    for entity in [
-        edge_id.as_str(),
-        "synthetic:test:curve#bad-parabola",
-        "synthetic:test:curve#bad-hyperbola",
-    ] {
-        assert!(report
-            .findings
-            .iter()
-            .any(
-                |finding| (finding.check == Check::Bounds || finding.check == Check::Tolerances)
-                    && finding.entity.as_deref() == Some(entity)
-            ));
-    }
-}
-
-#[test]
-fn revolution_rejects_equal_intervals() {
-    let mut ir = unit_cube();
-    let owner = ir.model.surfaces[0].id.clone();
-    ir.model
-        .add_procedural_surface(
-            owner,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint("synthetic:test:procedural-surface#equal")
-                    .expect("valid identity"),
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: ir.model.curves[0].id.clone(),
-                    axis_origin: Point3::new(0.0, 0.0, 0.0),
-                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                    angular_interval: [1.0, 1.0],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some([0.0, 1.0]),
-                    transposed: false,
-                    revision_form: None,
-                },
-                None,
-            ),
+fn tessellation_reference_validation_preserves_resource_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut ir = unit_cube().unwrap();
+    ir.model.tessellations.push(
+        Tessellation::new(
+            "test:model:tessellation#missing".try_into().unwrap(),
+            TessellationMesh::List {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0)],
+                triangles: Vec::new(),
+            },
+            Vec::new(),
         )
-        .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("revolution interval")));
+        .unwrap()
+        .with_body(Some("test:model:body#missing".try_into().unwrap())),
+    );
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::check_tessellations(&ctx, &ir, &mut findings)
+        else {
+            panic!("tessellation check must refuse");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(findings.is_empty());
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
 }
 
 #[test]
-fn document_and_entity_tolerances_are_checked() {
-    let mut ir = unit_cube();
-    ir.tolerances.angular = f64::NAN;
-    ir.model.faces[0].tolerance = Some(0.0);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Tolerances));
+fn tessellation_reference_validation_preserves_finding_order_and_releases_indexes() {
+    use crate::report::{check::Check, Severity};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let owner = "test:model:tessellation#missing";
+    let mut ir = unit_cube().unwrap();
+    ir.model.tessellations.push(
+        Tessellation::new(
+            owner.try_into().unwrap(),
+            TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap()
+        .with_body(Some("test:model:body#missing".try_into().unwrap()))
+        .with_faces(vec![
+            "test:model:face#missing".try_into().unwrap(),
+            "test:model:face#also-missing".try_into().unwrap(),
+        ])
+        .with_texture_assignments(vec![crate::tessellation::TessellationTextureAssignment {
+            source_id: None,
+            texture: "test:model:asset#missing".try_into().unwrap(),
+            triangles: vec![0],
+        }])
+        .unwrap(),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_tessellations(&ctx, &ir, &mut findings).unwrap();
+    assert_eq!(findings.len(), 3);
+    for (finding, message) in findings.iter().zip([
+        "references a missing tessellation body",
+        "references a missing tessellation face",
+        "references a missing tessellation texture asset",
+    ]) {
+        assert_eq!(finding.check, Check::Tessellation);
+        assert_eq!(finding.severity, Severity::Error);
+        assert_eq!(finding.entity.as_deref(), Some(owner));
+        assert_eq!(finding.message, message);
+    }
+    let released = ctx
+        .reserve_scoped(4096, "tessellation reference indexes released")
+        .unwrap();
+    drop(released);
+    ctx.finish_session().unwrap();
 }

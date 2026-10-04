@@ -10,6 +10,16 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
+use cadmpeg_test_support::EditableDecodeResult;
+
+const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
+const EPS_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-12;
+const HEADER_NORMAL_TOLERANCE_RADIANS: f64 = 1.0e-10;
+const ABOVE_FLOOR_RESABS_CM: f64 = 2.0e-8;
+const BELOW_FLOOR_RESABS_CM: f64 = 5.0e-9;
+const ABOVE_FLOOR_RESABS_MM: f64 = 2.0e-7;
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::{Cursor, Write};
@@ -19,69 +29,82 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::container::{self};
+use crate::container;
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::smbh_bf4_test::{
+    synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
+    synthetic_geometry_bf4_smbh_with_arc_sense,
+};
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
+};
+use crate::test_support::smbh_header_test::{
+    bf4_header_prefix, smbh_header_prefix, synthetic_smbh,
+};
+use crate::test_support::tokens_test::{push_u8_string, t_end, t_ident};
+use crate::test_support::zip_test::{
+    f3d_with_smbh, synthetic_f3d, synthetic_multi_asset_f3d, with_scan,
+};
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+#[test]
+fn kernel_tolerance_floor_uses_millimetres() {
+    let admitted = super::super::admit_kernel_tolerances(
+        ABOVE_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .expect("the centimetre value is above the millimetre floor");
+    assert_eq!(admitted.linear.get(), ABOVE_FLOOR_RESABS_MM);
+    assert!(super::super::admit_kernel_tolerances(
+        BELOW_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .is_err());
+}
+
+const HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
-    let h = asm_header::parse(&bytes).expect("magic present");
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .expect("service policy admits header")
+        .expect("magic present");
     assert_eq!(h.width.bytes(), 8);
-    assert_eq!(h.save_format_version, Some(23100));
-    assert_eq!(h.entity_count, Some(7));
-    assert_eq!(h.flags, Some(3));
-    assert_eq!(h.save_format_major(), Some(231));
-    assert_eq!(h.save_format_minor(), Some(0));
-    assert!(h.has_history_partition());
-    // Flags `3` is the history bit plus revision `1` in bits 1 to 7. Nothing is
-    // left over, so no bit reaches the uninterpreted set.
-    assert_eq!(h.format_revision(), Some(1));
-    assert_eq!(h.unassigned_flags(), Some(0));
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
-    assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
-    assert_eq!(h.scale, Some(60.0));
-    assert_eq!(h.linear, Some(1.0e-6));
-    assert_eq!(h.angular, Some(1.0e-10));
-}
-
-/// Flag bits 1 to 7 hold the save format's revision number
-/// ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)):
-/// save format 22300 carries revision 2 and 22500 carries revision 3. Those
-/// bits are assigned, so they leave the uninterpreted set; bits 8 and above
-/// stay in it.
-#[test]
-fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
-    let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
-        width: cadmpeg_asm::kernel_header::RefWidth::Eight,
-        save_format_version: Some(22500),
-        entity_count: None,
-        flags: Some(flags),
-        product_family: None,
-        product_version: None,
-        save_date: None,
-        scale: None,
-        linear: None,
-        angular: None,
-    };
-
-    assert_eq!(header(0b0000_0101).format_revision(), Some(2));
-    assert_eq!(header(0b0000_0111).format_revision(), Some(3));
-    assert_eq!(header(0b1111_1110).format_revision(), Some(0x7f));
-    assert_eq!(header(0b0000_0001).format_revision(), Some(0));
-
-    assert_eq!(header(0b0000_0111).unassigned_flags(), Some(0));
-    assert_eq!(header(0b1111_1111).unassigned_flags(), Some(0));
-    assert_eq!(header(0x1_00).unassigned_flags(), Some(0x1_00));
-    assert!(header(0b0000_0101).has_history_partition());
-    assert!(!header(0b0000_0100).has_history_partition());
+    assert_eq!(h.metadata.save_format_version, Some(23100));
+    assert_eq!(h.metadata.entity_count, Some(7));
+    assert_eq!(h.metadata.flags, Some(3));
+    assert_eq!(h.metadata.save_format_major(), Some(231));
+    assert_eq!(h.metadata.save_format_minor(), Some(0));
+    assert!(h.metadata.has_history_partition());
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(
+        h.metadata.product_version.as_deref(),
+        Some("ASM 231.6.3.65535 OSX")
+    );
+    assert_eq!(
+        h.metadata.save_date.as_deref(),
+        Some("Tue Mar 31 16:16:19 2026")
+    );
+    assert_eq!(h.metadata.scale, Some(60.0));
+    assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
 }
 
 #[test]
 fn asm_header_absent_on_non_asm_bytes() {
-    assert!(asm_header::parse(b"not an asm stream at all").is_none());
+    assert!(asm_header::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        b"not an asm stream at all"
+    )
+    .expect("service policy admits absence")
+    .is_none());
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
@@ -89,18 +112,29 @@ fn asm_header_absent_on_non_asm_bytes() {
 fn asm_header_parses_binaryfile4_fields() {
     let bytes = bf4_header_prefix(5);
     assert!(asm_header::has_asm_magic(&bytes));
-    let h = asm_header::parse(&bytes).expect("magic present");
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .expect("service policy admits header")
+        .expect("magic present");
     assert_eq!(h.width.bytes(), 4);
-    assert_eq!(h.save_format_version, Some(22700));
+    assert_eq!(h.metadata.save_format_version, Some(22700));
     assert_eq!(asm_header::record_count(&bytes), Some(0));
-    assert_eq!(h.entity_count, Some(2));
-    assert_eq!(h.flags, Some(5));
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.product_version.as_deref(), Some("ASM 227.5.0.65535 NT"));
-    assert_eq!(h.save_date.as_deref(), Some("Mon Aug  8 02:39:24 2022"));
-    assert_eq!(h.scale, Some(50.0));
-    assert_eq!(h.linear, Some(1.0e-6));
-    assert_eq!(h.angular, Some(1.0e-10));
+    assert_eq!(h.metadata.entity_count, Some(2));
+    assert_eq!(h.metadata.flags, Some(5));
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(
+        h.metadata.product_version.as_deref(),
+        Some("ASM 227.5.0.65535 NT")
+    );
+    assert_eq!(
+        h.metadata.save_date.as_deref(),
+        Some("Mon Aug  8 02:39:24 2022")
+    );
+    assert_eq!(h.metadata.scale, Some(50.0));
+    assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     // The record stream begins directly after the tolerance doubles.
     assert_eq!(asm_header::record_stream_start(&bytes), Some(bytes.len()));
 }
@@ -128,9 +162,9 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range.expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range").get();
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 }
@@ -142,18 +176,28 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated BinaryFile4 decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.points[0].position.x += 2.5;
-    let expected = edited.model.points[0].position;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 2.5,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let expected = edited.model.points[0].position().get();
     let edge = edited
         .model
         .edges
         .iter_mut()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("generated BinaryFile4 arc edge");
-    let range = edge.param_range.as_mut().expect("generated arc range");
+    let mut range = edge.param_range().expect("generated arc range").get();
     range[0] += 0.125;
     range[1] -= 0.125;
-    let expected_range = *range;
+    let expected_range = range;
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range)).unwrap();
     edited.model.faces[0].sense = match edited.model.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
@@ -166,15 +210,16 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
-    assert_eq!(round_trip.ir().model.points[0].position, expected);
+    assert_eq!(round_trip.ir().model.points[0].position().get(), expected);
     assert_eq!(
         round_trip
             .ir()
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.is_some())
-            .and_then(|edge| edge.param_range),
+            .find(|edge| edge.curve().is_some())
+            .and_then(cadmpeg_ir::topology::Edge::param_range)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some(expected_range)
     );
     assert_eq!(round_trip.ir().model.faces[0].sense, expected_face_sense);
@@ -194,7 +239,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .find(|curve| {
             matches!(
                 curve.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(_))
+                Some(SolvedCurveGeometry::Nurbs(_))
             )
         })
         .expect("generated BinaryFile4 NURBS curve");
@@ -204,23 +249,22 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
+    let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].z = 4.5;
-    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.pole_rows().weights(),
         true,
     )
+    .expect("fixture constructor admission")
     .unwrap();
-    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
-    )
-    .unwrap();
+    *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();
@@ -230,7 +274,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 NURBS decode");
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        matches!(curve.geometry.solved_cache(), Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
+        matches!(curve.geometry.solved_cache(), Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
     }));
 }
 
@@ -250,13 +294,13 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.is_some())
+        .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range.expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range").get();
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 
-    let curve_id = arc.curve.as_ref().expect("curve link");
+    let curve_id = arc.curve().expect("curve link");
     let carrier = result
         .ir()
         .model
@@ -264,16 +308,19 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("conic carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { axis, .. } = &carrier.geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = carrier.geometry.solved() else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
+    let axis = circle_curve.frame().axis().as_raw();
     assert!((axis.z - -1.0).abs() < 1.0e-12, "axis must be negated");
 }
 
 #[test]
 fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
+    let off = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .expect("has a delta_state");
     assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
     assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
 
@@ -282,22 +329,31 @@ fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let mut smb = bytes;
     smb[39..47].copy_from_slice(&2u64.to_le_bytes());
     smb.truncate(off);
-    assert!(asm_header::solved_record_limit(&smb).is_none());
+    assert!(
+        asm_header::solved_record_limit(&service_decode_context(), &smb)
+            .expect("history scan")
+            .is_none()
+    );
 }
 
 #[test]
 fn history_preamble_record_is_the_modern_partition_boundary() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
+        .expect("history scan")
+        .unwrap();
     let mut bytes = direct[..delta].to_vec();
     let expected = bytes.len();
     t_ident(&mut bytes, "Begin-of-ASM-History-Data");
     t_end(&mut bytes);
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(
+        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
+        Some(expected)
+    );
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = cadmpeg_asm::sab::frame(
+    let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         expected,
@@ -313,7 +369,9 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 #[test]
 fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
+        .expect("history scan")
+        .unwrap();
     let start = asm_header::record_stream_start(&direct).unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
@@ -322,7 +380,10 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let expected = bytes.len();
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(
+        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
+        Some(expected)
+    );
 }
 
 #[test]
@@ -459,7 +520,10 @@ use crate::container::classify;
 fn detect_high_on_f3d_zip_low_on_bare_zip() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
-    assert_eq!(codec.detect(&f3d), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &f3d),
+        Confidence::High
+    );
 
     // A ZIP whose visible prefix has no f3d markers.
     let mut bare = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -470,9 +534,15 @@ fn detect_high_on_f3d_zip_low_on_bare_zip() {
     .unwrap();
     bare.write_all(b"hello").unwrap();
     let bare = bare.finish().unwrap().into_inner();
-    assert_eq!(codec.detect(&bare), Confidence::Low);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bare),
+        Confidence::Low
+    );
 
-    assert_eq!(codec.detect(b"\x00\x01\x02\x03 not a zip"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, b"\x00\x01\x02\x03 not a zip"),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -490,7 +560,13 @@ fn inspect_enumerates_and_reads_headers() {
         .iter()
         .find(|e| e.role == ContainerRole::BrepSmbh)
         .expect("smbh entry present");
-    assert_eq!(smbh.compression.as_str(), "deflate");
+    assert!(matches!(
+        smbh.storage,
+        cadmpeg_core::container::EntryStorage::Compressed {
+            method: cadmpeg_core::container::CompressionMethod::Deflate,
+            ..
+        }
+    ));
     assert_eq!(
         smbh.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")
@@ -507,6 +583,56 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
+fn f3d_brep_scan_propagates_header_string_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = synthetic_f3d(true);
+    let mut cap = 0;
+    let mut needed = None;
+    for _ in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (limited, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        match container::scan(&limited, root) {
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes =>
+            {
+                let next = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("fixture charge fits u64");
+                if limit.operation == "retain kernel header product string" {
+                    needed = Some(next);
+                    break;
+                }
+                assert!(next > cap, "fixture advances to its next retained charge");
+                cap = next;
+            }
+            Ok(_) => panic!("BREP scan did not reach the header limit"),
+            Err(error) => panic!("BREP scan failed elsewhere: {error}"),
+        }
+    }
+    let needed = needed.expect("header string reached within fixture charges");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = needed - 1;
+    let (limited, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+    assert!(matches!(
+        container::scan(&limited, root),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain kernel header product string"
+    ));
+    let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(container::scan(&service, root).is_ok());
+}
+
+#[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -520,7 +646,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit F3D archive entries"
+                    && limit.operation == "admit F3D archive entries"
         ),
         "{error:?}"
     );
@@ -550,23 +676,32 @@ fn decode_yields_metadata_and_honest_report() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
     let mut cur = Cursor::new(f3d);
-    let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result =
+        EditableDecodeResult::from(codec.decode(&mut cur, &DecodeOptions::default()).unwrap());
 
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());
-    assert!(result.report().error_count() >= 1);
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.severity >= cadmpeg_ir::report::Severity::Error)
+            .count()
+            >= 1
+    );
     assert!(result.report().losses.iter().any(|l| matches!(
         l.code.category(),
-        cadmpeg_ir::report::LossCategory::Geometry
+        cadmpeg_ir::report::loss::LossCategory::Geometry
     )));
 
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity().retained_records.len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 2);
     assert!(result
         .source_fidelity()
-        .retained_records
-        .iter()
+        .retained_records()
+        .values()
         .all(|record| record.sha256().len() == 64));
     assert!(result
         .source_fidelity()
@@ -579,7 +714,10 @@ fn decode_yields_metadata_and_honest_report() {
         Some("Autodesk Neutron")
     );
     // resabs/resnor were carried into tolerances.
-    assert_eq!(result.ir().tolerances.linear, 1.0e-6);
+    assert!(
+        (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+            <= f64::EPSILON * EXPECTED_HEADER_LINEAR_TOLERANCE
+    );
     assert!(result
         .source_fidelity()
         .annotations
@@ -597,7 +735,12 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
         );
         assert!(container::select_history_brep(scan).is_none());
-        let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let notes =
+            container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
@@ -696,10 +839,15 @@ fn smbh_header_string_region_starts_at_byte_47() {
     assert_eq!(prefix[47], 0x07, "first string tag at offset 47");
     // The header parses all three strings and both tolerances despite the
     // overlap, and the record stream begins immediately after the last double.
-    let h = asm_header::parse(&prefix).expect("magic present");
-    assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
-    assert_eq!(h.flags, Some(3));
-    assert_eq!(h.angular, Some(1.0e-10));
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &prefix)
+        .expect("service policy admits header")
+        .expect("magic present");
+    assert_eq!(
+        h.metadata.product_family.as_deref(),
+        Some("Autodesk Neutron")
+    );
+    assert_eq!(h.metadata.flags, Some(3));
+    assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
     assert_eq!(
         asm_header::record_stream_start(&prefix),
         Some(prefix.len()),
@@ -711,8 +859,10 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap_or(bytes.len());
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -730,4 +880,67 @@ fn sab_framer_indexes_records_from_asmheader() {
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
     assert!(records.iter().all(|r| r.head() != "delta_state"));
+}
+
+#[test]
+fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
+    for skipped in [vec![0], synthetic_smbh()] {
+        let contributing_name = "FusionAssetName[Active]/Breps.BlobParts/BREP.second.smbh";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.first.smbh",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&skipped).unwrap();
+        zip.start_file(contributing_name, stored).unwrap();
+        zip.write_all(&synthetic_geometry_smbh()).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let expected_digest = with_scan(&bytes, |scan| {
+            scan.breps
+                .iter()
+                .find(|facts| facts.name == contributing_name)
+                .unwrap()
+                .sha256
+                .to_string()
+        });
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(!result.ir().model.faces.is_empty());
+        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(
+            attributes.get("active_brep").map(String::as_str),
+            Some(contributing_name)
+        );
+        assert_eq!(attributes.get("active_brep_sha256"), Some(&expected_digest));
+        assert!(
+            (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+                <= EPS_HEADER_LINEAR_TOLERANCE
+        );
+    }
+}
+
+#[test]
+fn kernel_tolerance_below_precision_floor_is_unsupported() {
+    let error = super::super::admit_kernel_tolerances(
+        BELOW_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("tolerance floor"))
+    );
+}
+
+#[test]
+fn kernel_tolerance_invalid_values_remain_malformed() {
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+        assert!(matches!(
+            super::super::admit_kernel_tolerances(value, HEADER_NORMAL_TOLERANCE_RADIANS),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }

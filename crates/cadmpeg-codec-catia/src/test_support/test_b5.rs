@@ -2,10 +2,125 @@
 //! b5-family synthetic topology stream builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{a8_surface_stream, a8_surface_tail, le_f32, le_f64};
+use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
+use crate::test_support::test_bytes::{le_f32, le_f64};
+
+/// Admit a finite fixture point.
+pub(crate) fn point(coordinates: [f64; 3]) -> cadmpeg_ir::features::FinitePoint3 {
+    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::from(coordinates))
+        .expect("finite fixture point")
+}
+
+/// Admit a fixture unit direction.
+pub(crate) fn unit(direction: [f64; 3]) -> cadmpeg_ir::units::UnitVector3 {
+    cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(direction))
+        .expect("unit fixture direction")
+}
+
+/// Admit a fixture frame of two perpendicular unit directions.
+pub(crate) fn frame(axis: [f64; 3], reference: [f64; 3]) -> cadmpeg_ir::units::OrthonormalFrame3 {
+    cadmpeg_ir::units::OrthonormalFrame3::from_units(unit(axis), unit(reference))
+        .expect("perpendicular fixture directions")
+}
+
+/// Admit a fixture plane frame the way the `b5 03 27` record admits it: the
+/// normal of `direction_u × direction_v` and the first direction.
+pub(crate) fn plane_frame(
+    direction_u: [f64; 3],
+    direction_v: [f64; 3],
+) -> cadmpeg_ir::units::OrthonormalFrame3 {
+    cadmpeg_ir::units::OrthonormalFrame3::completing_by_largest_component(
+        unit(direction_u),
+        unit(direction_v),
+    )
+    .expect("perpendicular fixture plane directions")
+}
+
+/// Admit a positive fixture length.
+pub(crate) fn positive_length(value: f64) -> cadmpeg_ir::scalar::PositiveLength {
+    cadmpeg_ir::scalar::PositiveLength::new(value).expect("positive fixture length")
+}
+
+/// Admit a positive fixture scalar.
+pub(crate) fn positive(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
+    cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive fixture scalar")
+}
+
+/// Admit a finite fixture scalar.
+pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")
+}
+
+/// Admit a pair of finite fixture points.
+pub(crate) fn points(coordinates: [[f64; 3]; 2]) -> [cadmpeg_ir::features::FinitePoint3; 2] {
+    coordinates.map(point)
+}
+
+/// The coordinates of an admitted fixture point.
+pub(crate) fn coordinates(point: cadmpeg_ir::features::FinitePoint3) -> [f64; 3] {
+    point.get().into()
+}
+
+/// Admit a positive fixture lane.
+pub(crate) fn positive_lane(values: &[f64]) -> Vec<cadmpeg_ir::scalar::PositiveReal> {
+    values.iter().copied().map(positive).collect()
+}
+
+/// Admit a finite fixture pair.
+pub(crate) fn finite_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2] {
+    values.map(finite)
+}
+
+/// Admit a finite fixture lane.
+pub(crate) fn finite_lane(values: &[f64]) -> Vec<cadmpeg_ir::scalar::FiniteReal> {
+    values.iter().copied().map(finite).collect()
+}
+
+/// Admit a finite fixture array.
+pub(crate) fn finite_array<const N: usize>(
+    values: [f64; N],
+) -> [cadmpeg_ir::scalar::FiniteReal; N] {
+    values.map(finite)
+}
+
+/// Admit finite fixture coordinates.
+pub(crate) fn finite_vector<const N: usize>(
+    values: [f64; N],
+) -> cadmpeg_ir::units::FiniteVector<N> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite fixture coordinates")
+}
+
+/// Admit a fixture direction whose squared length is one to `1e-12`.
+pub(crate) fn exact_unit(direction: [f64; 3]) -> crate::checked::ExactUnitVector3 {
+    crate::checked::ExactUnitVector3::new(direction).expect("exact unit fixture direction")
+}
+
+/// Admit a positive fixture angle.
+pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
+    cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")
+}
+
+/// Admit a nonnegative fixture length.
+pub(crate) fn nonnegative_length(value: f64) -> cadmpeg_ir::scalar::NonNegativeLength {
+    cadmpeg_ir::scalar::NonNegativeLength::new(value).expect("nonnegative fixture length")
+}
+
+/// Admit an increasing fixture interval.
+pub(crate) fn increasing(endpoints: [f64; 2]) -> cadmpeg_ir::topology::IncreasingParameterInterval {
+    cadmpeg_ir::topology::IncreasingParameterInterval::new(endpoints)
+        .expect("increasing fixture interval")
+}
+
+/// Admit increasing fixture parameter bounds.
+pub(crate) fn increasing_bounds(
+    bounds: [[f64; 2]; 2],
+) -> [cadmpeg_ir::topology::IncreasingParameterInterval; 2] {
+    bounds.map(increasing)
+}
 
 pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
-    bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
+    let length = u8::try_from(payload.len()).expect("B5 test payload fits its one-byte length");
+    bytes.extend_from_slice(&[0xb5, 0x03, class, length]);
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(payload);
 }
@@ -116,7 +231,7 @@ pub(crate) fn b5_plane_payload(origin: [f64; 3]) -> Vec<u8> {
 }
 
 /// Encode one `0x18` object reference: the lead byte, then the id as a
-/// little-endian `u16`. See `wire::object_ref`.
+/// little-endian `u16`. See `wire::tokens::object_ref`.
 pub(crate) fn b5_object_ref(id: u32) -> [u8; 3] {
     let [low, high] = u16::try_from(id)
         .expect("object id fits a `0x18` reference")
@@ -395,4 +510,18 @@ pub(crate) fn a8_elided_surface_stream_with_native_vertex_chain() -> Vec<u8> {
     );
     append_b5_closed_triangle_native_vertex_chain(&mut bytes, SURFACE, [200, 201, 202]);
     bytes
+}
+
+#[test]
+fn b5_record_builder_checks_one_byte_payload_length_before_writing() {
+    let mut bytes = vec![0xaa];
+    append_b5_record(&mut bytes, 0x05, 1, &[0; 255]);
+    assert_eq!(bytes[4], 255);
+
+    let before = bytes.clone();
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        append_b5_record(&mut bytes, 0x05, 2, &[0; 256]);
+    }));
+    assert!(refused.is_err());
+    assert_eq!(bytes, before);
 }

@@ -1,13 +1,107 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::conic_arc_file;
+use crate::test_support::test_owned::{
+    owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+};
 use crate::IgesCodec;
+
+fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                let dimension = if retained {
+                    ResourceDimension::RetainedBytes
+                } else {
+                    ResourceDimension::CollectionItems
+                };
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn conic_identity_copies_refuse_retained_byte_limit() {
+    let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_conic_refusal(&bytes, "iges conics identity copy", true);
+}
+
+#[test]
+fn conic_generated_identity_refuses_before_minting() {
+    let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_conic_refusal(&bytes, "iges generated identity", true);
+}
+
+#[test]
+fn conic_indexes_neutral_records_and_wire_edges_refuse_limits() {
+    let valid = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
+    for operation in [
+        "iges conic parameter index",
+        "iges conic directory index",
+        "iges source point sequences",
+        "iges source curve sequences",
+        "iges conic neutral points",
+        "iges conic neutral vertices",
+        "iges conic neutral curves",
+        "iges conic neutral edges",
+        "iges conic wire edges",
+        "iges conic decoded sequences",
+    ] {
+        assert_conic_refusal(&valid, operation, false);
+    }
+
+    let invalid = owned_test_file_with_global_and_line_fonts(
+        &[OwnedTestEntity {
+            entity_type: 104,
+            form: 0,
+            label: "CONIC".into(),
+            status: "00000000",
+            parameters: "104,0;".into(),
+        }],
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;",
+        &[(1, 1)],
+    );
+    assert_conic_refusal(&invalid, "iges entity loss slots", false);
+    assert_conic_refusal(&invalid, "iges entity loss message", true);
+}
 
 #[test]
 fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
@@ -51,9 +145,22 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
             assert!(
                 matches!(
                     (&result.ir().model.curves[0].geometry, family_number),
-                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 1)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 2)
+                    (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                            _
+                        )),
+                        0
+                    ) | (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(
+                            SolvedCurveGeometry::Hyperbola(_)
+                        ),
+                        1
+                    ) | (
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                            _
+                        )),
+                        2
+                    )
                 ),
                 "{version} {family}: {:?}",
                 result.ir().model.curves[0].geometry
@@ -102,21 +209,33 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
 
         assert_eq!(result.ir().model.curves.len(), 1, "form {form}");
         assert_eq!(result.ir().model.edges.len(), 1, "form {form}");
-        assert_eq!(result.ir().model.edges[0].tolerance, Some(0.001));
+        assert_eq!(
+            result.ir().model.edges[0]
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveReal::get),
+            Some(0.001)
+        );
         assert!(result
             .ir()
             .model
             .vertices
             .iter()
-            .all(|vertex| vertex.tolerance == Some(0.001)));
+            .all(
+                |vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)
+            ));
         match (&result.ir().model.curves[0].geometry, form) {
-            (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0 | 1)
-            | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 2)
-            | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 3) => {}
+            (
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
+                0 | 1,
+            ) => {}
+            (cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)), 2) => {
+            }
+            (cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)), 3) => {}
             (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
         }
         assert!(result.report().losses.is_empty(), "form {form}");
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "form {form}: {:#?}",
@@ -217,29 +336,37 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .model
         .points
         .iter()
-        .find(|point| point.position.x > 2.0)
+        .find(|point| point.position().get().x > 2.0)
         .expect("decoded start endpoint");
     let end = result
         .ir()
         .model
         .points
         .iter()
-        .find(|point| point.position.y > 1.0)
+        .find(|point| point.position().get().y > 1.0)
         .expect("decoded terminate endpoint");
-    assert!((start.position.x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
-    assert!((end.position.y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
+    assert!((start.position().get().x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
+    assert!((end.position().get().y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
     let range = result.ir().model.edges[0]
-        .param_range
+        .param_range()
         .expect("fixture has a bounded conic range");
     let geometry = &result.ir().model.curves[0].geometry;
-    let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])
-        .expect("coefficient-defined carrier evaluates at its start");
-    let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])
-        .expect("coefficient-defined carrier evaluates at its end");
-    assert!(start.position.distance(evaluated_start) > 0.0);
-    assert!(end.position.distance(evaluated_end) > 0.0);
-    assert!(start.position.distance(evaluated_start) < 0.001);
-    assert!(end.position.distance(evaluated_end) < 0.001);
+    let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        geometry,
+        range[0],
+    )
+    .expect("coefficient-defined carrier evaluates at its start");
+    let evaluated_end = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        geometry,
+        range[1],
+    )
+    .expect("coefficient-defined carrier evaluates at its end");
+    assert!(start.position().get().distance(evaluated_start.get()) > 0.0);
+    assert!(end.position().get().distance(evaluated_end.get()) > 0.0);
+    assert!(start.position().get().distance(evaluated_start.get()) < 0.001);
+    assert!(end.position().get().distance(evaluated_end.get()) < 0.001);
 }
 
 #[test]
@@ -288,10 +415,70 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         .unwrap();
 
     assert_eq!(
-        result.ir().model.edges[0].param_range.map(|range| range[0]),
+        result.ir().model.edges[0]
+            .param_range()
+            .map(|range| range[0]),
         Some(0.0)
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn conic_classification_preserves_common_coefficient_scale() {
+    for coefficient in ["1D-200", "1", "1D200"] {
+        let parameters = format!("104,{coefficient},0,{coefficient},0,0,-{coefficient},0,1,0,0,1;");
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(1, parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir().model.curves.len(),
+            1,
+            "{coefficient}: {:?}",
+            decoded.report().losses
+        );
+        let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) =
+            &decoded.ir().model.curves[0].geometry
+        else {
+            panic!("ellipse");
+        };
+        assert!((ellipse.major_radius().get() - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!((ellipse.minor_radius().get() - 1.0).abs() <= 8.0 * f64::EPSILON);
+    }
+}
+
+#[test]
+fn parabola_projection_preserves_common_large_coefficient_scale() {
+    for parameters in [
+        b"104,1D308,0,0,0,-1D308,0,0,1,1,-1,1;".as_slice(),
+        b"104,0,0,1D308,-1D308,0,0,0,1,1,1,-1;".as_slice(),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(3, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().model.curves.len(),
+            1,
+            "{:?}",
+            result.report().losses
+        );
+        let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola)) =
+            &result.ir().model.curves[0].geometry
+        else {
+            panic!("expected parabola")
+        };
+        assert_eq!(parabola.focal_distance().get(), 0.25);
+        assert!(result.report().losses.is_empty());
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+    }
 }

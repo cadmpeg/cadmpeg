@@ -10,9 +10,9 @@ pub(crate) enum SketchPairForm {
 }
 
 impl SketchPairForm {
-    pub(crate) const ALL: [Self; 4] =
+    pub(super) const ALL: [Self; 4] =
         [Self::Legacy, Self::Short, Self::Extended, Self::ThreeMember];
-    pub(crate) fn discriminator(self) -> &'static [u8] {
+    pub(super) fn discriminator(self) -> &'static [u8] {
         const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
         const SHORT: [u8; 15] = [
             0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
@@ -33,7 +33,7 @@ impl SketchPairForm {
             Self::ThreeMember => &THREE_MEMBER,
         }
     }
-    pub(crate) fn separator_width(self) -> usize {
+    pub(super) fn separator_width(self) -> usize {
         match self {
             Self::Legacy | Self::ThreeMember => 1,
             Self::Short | Self::Extended => 0,
@@ -48,8 +48,8 @@ pub(crate) enum DatumPairForm {
 }
 
 impl DatumPairForm {
-    pub(crate) const ALL: [Self; 2] = [Self::Initial, Self::Continuation];
-    pub(crate) fn discriminator(self) -> &'static [u8] {
+    pub(super) const ALL: [Self; 2] = [Self::Initial, Self::Continuation];
+    pub(super) fn discriminator(self) -> &'static [u8] {
         const DISCRIMINATORS: [&[u8]; 2] = [
             &[
                 0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
@@ -80,7 +80,7 @@ impl PairForm for SketchPairForm {
         self.discriminator()
     }
     fn second_delta(self) -> u64 {
-        8 + self.separator_width() as u64
+        8 + cadmpeg_core::decode::u64_from_index(self.separator_width())
     }
 }
 impl PairForm for DatumPairForm {
@@ -113,7 +113,7 @@ pub(crate) struct PairPosition<F> {
 impl<F: PairForm> PairPosition<F> {
     pub(crate) fn new(form: F, offset: u64) -> Option<Self> {
         offset
-            .checked_add(form.prefix().len() as u64)?
+            .checked_add(cadmpeg_core::decode::u64_from_index(form.prefix().len()))?
             .checked_add(form.second_delta())?;
         Some(Self { form, offset })
     }
@@ -144,7 +144,7 @@ impl<F: PairForm> PairPosition<F> {
         self.offset
     }
     pub(crate) fn value_offsets(self) -> [u64; 2] {
-        let first = self.offset + self.form.prefix().len() as u64;
+        let first = self.offset + cadmpeg_core::decode::u64_from_index(self.form.prefix().len());
         [first, first + self.form.second_delta()]
     }
 }

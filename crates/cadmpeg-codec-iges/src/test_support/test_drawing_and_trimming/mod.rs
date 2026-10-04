@@ -2,10 +2,14 @@
 //! Drawing, annotation, and trimming byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
-use super::test_owned::*;
-mod test_surface_domains;
-pub(crate) use test_surface_domains::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_display, owned_test_file_with_global,
+    owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+};
+pub(crate) mod test_surface_domains;
 
 pub(crate) fn dimension_forms_file() -> Vec<u8> {
     owned_test_file(&[
@@ -1472,10 +1476,7 @@ pub(crate) fn explicit_multi_pcurve_loop_file_with_first_edge(first_edge: &str) 
     )
 }
 
-pub(crate) fn explicit_multi_pcurve_loop_file_with_carriers(
-    first_pcurve: &str,
-    first_edge: &str,
-) -> Vec<u8> {
+fn explicit_multi_pcurve_loop_file_with_carriers(first_pcurve: &str, first_edge: &str) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {
             entity_type: 116,
@@ -1819,17 +1820,38 @@ pub(crate) fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: 
 }
 
 pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
-    subrange_nurbs_surface_boundary_file_with_global(
+    subrange_nurbs_surface_boundary_file_with_pcurve(
         preference,
         "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
+    )
+}
+
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_pcurve(
+    preference: i64,
+    pcurve_parameters: &str,
+) -> Vec<u8> {
+    subrange_nurbs_surface_boundary_file_with_global(
+        preference,
+        pcurve_parameters,
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     )
 }
 
 pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision() -> Vec<u8> {
+    subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999999")
+}
+
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal() -> Vec<u8>
+{
+    subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999993")
+}
+
+fn subrange_nurbs_surface_boundary_file_with_source_precision_at(
+    source_coordinate: &str,
+) -> Vec<u8> {
     subrange_nurbs_surface_boundary_file_with_global(
         3,
-        "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.1999999,0.1999999,0,0.5,0.5,0,0.1999999,0.1999999,0,0,1,0,0,1;",
+        &format!("126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,{source_coordinate},{source_coordinate},0,0.5,0.5,0,{source_coordinate},{source_coordinate},0,0,1,0,0,1;"),
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,6,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     )
 }

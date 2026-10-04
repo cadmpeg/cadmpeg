@@ -5,7 +5,13 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::encoded_xmt;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_streams::offset_surface_topology_partition_stream;
+use super::test_streams::topology_partition_stream;
 
 /// Shared `PS`-signatured deltas-stream transmit preamble used by the deltas
 /// fixture builders.
@@ -14,7 +20,7 @@ pub(crate) const DELTAS_PREAMBLE: &[u8] =
 
 /// Append `count` deltas topology references, each the placeholder index `1`
 /// followed by a set status byte, matching the deltas record framing.
-pub(crate) fn push_reference_run(record: &mut Vec<u8>, count: usize) {
+fn push_reference_run(record: &mut Vec<u8>, count: usize) {
     for _ in 0..count {
         record.extend_from_slice(&1u16.to_be_bytes());
         record.push(1);
@@ -183,7 +189,7 @@ pub(crate) fn deltas_fin_partition_stream() -> Vec<u8> {
 /// Build a deltas analytic-surface partition record: the shared transmit
 /// preamble, a `type`/`xmt`/`node_id` header, a five-reference run, the `+`
 /// status marker, and the shape's big-endian `f64` payload values.
-pub(crate) fn deltas_analytic_partition_stream(
+fn deltas_analytic_partition_stream(
     type_code: u16,
     xmt: u16,
     node_id: u32,
@@ -230,17 +236,14 @@ pub(crate) fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream
 }
 
-pub(crate) fn status_frame_compact_references(
-    mut record: Vec<u8>,
-    reference_offsets: &[usize],
-) -> Vec<u8> {
+fn status_frame_compact_references(mut record: Vec<u8>, reference_offsets: &[usize]) -> Vec<u8> {
     for &offset in reference_offsets.iter().rev() {
         record.insert(offset + 2, 1);
     }
     record
 }
 
-pub(crate) fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
+fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend(record);
     stream
@@ -307,7 +310,7 @@ pub(crate) fn deltas_surface_curve_partition_stream() -> Vec<u8> {
 }
 
 /// Point the single partition face record at geometry reference `reference`.
-pub(crate) fn link_partition_face(stream: &mut [u8], reference: u16) {
+pub(super) fn link_partition_face(stream: &mut [u8], reference: u16) {
     let face = stream
         .windows(4)
         .position(|window| window == [0, 14, 0, 4])
@@ -317,7 +320,7 @@ pub(crate) fn link_partition_face(stream: &mut [u8], reference: u16) {
 
 /// Point both the edge and fin topology records at geometry reference
 /// `reference`.
-pub(crate) fn link_partition_edge_and_fin(stream: &mut [u8], reference: u16) {
+fn link_partition_edge_and_fin(stream: &mut [u8], reference: u16) {
     for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
         let record = stream
             .windows(4)
@@ -530,7 +533,9 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
 
     for (tag, reference, values) in [(127, 30, vec![2u16, 2]), (127, 31, vec![2, 2])] {
         let mut array = record(tag, 8 + values.len() * 2);
-        array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
+        array[4..6].copy_from_slice(
+            &(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut array, 6, reference);
         for (index, value) in values.into_iter().enumerate() {
             put_ref(&mut array, 8 + index * 2, value);
@@ -655,7 +660,9 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
     ] {
         let reference = encoded_xmt(reference);
         let mut array = record(tag, 6 + reference.len() + values.len() * 2);
-        array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
+        array[4..6].copy_from_slice(
+            &(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes(),
+        );
         array[6..6 + reference.len()].copy_from_slice(&reference);
         for (index, value) in values.into_iter().enumerate() {
             put_ref(&mut array, 6 + reference.len() + index * 2, value);
@@ -973,4 +980,23 @@ pub(crate) fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) 
         let at = record + 8 + index * 4;
         stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
     }
+}
+
+/// Append an XMT-encoded schema reference, wide references split into a
+/// negated remainder and a quotient.
+pub(crate) fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
+    if i16::try_from(reference).is_ok() {
+        bytes.extend_from_slice(
+            &(u16::try_from(reference).expect("fixture value fits u16")).to_be_bytes(),
+        );
+        return;
+    }
+    let quotient = reference / 32_767;
+    let remainder = reference % 32_767;
+    bytes.extend_from_slice(
+        &(-(i16::try_from(remainder).expect("fixture value fits i16"))).to_be_bytes(),
+    );
+    bytes.extend_from_slice(
+        &(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes(),
+    );
 }

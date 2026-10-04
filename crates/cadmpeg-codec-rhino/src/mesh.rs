@@ -7,12 +7,17 @@
 //! [`CHANNEL_CURVATURE`] is two `f64`, and [`CHANNEL_NGON_GROUP`] is the
 //! retained native grouping record. Channel data is never unit-scaled.
 
+use crate::loss::Diagnostics;
 use std::borrow::Cow;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View,
+};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use sha1::{Digest, Sha1};
 
@@ -20,9 +25,11 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
+use crate::decode::session_ceiling;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
+use crate::settings::MillimeterScale;
 use crate::subd::MeshProxyFingerprint;
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const EPS_MESH_SYNCHRONIZATION_OK_E6: f64 = 1.0e-6;
 
@@ -52,8 +59,11 @@ impl<'a> MeshExpand<'a> {
 }
 
 /// Maps an expansion refusal to the mesh decoder error type.
-fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
-    error(offset, &format!("mesh buffer expansion refused: {refusal}"))
+fn expansion_refused(offset: usize, refusal: CodecError) -> GeometryError {
+    match refusal {
+        resource @ CodecError::ResourceLimit(_) => GeometryError::Codec(resource),
+        other => error(offset, format!("mesh buffer expansion refused: {other}")),
+    }
 }
 
 /// `ON_Mesh` class UUID.
@@ -83,13 +93,13 @@ const OPENNURBS4: Uuid = Uuid::from_canonical([
     0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe, 0x52, 0x0d,
 ]);
 /// Codec-owned UV channel kind.
-pub(crate) const CHANNEL_UV: u32 = 0x5248_0001;
+const CHANNEL_UV: u32 = 0x5248_0001;
 /// Codec-owned color channel kind.
-pub(crate) const CHANNEL_COLOR: u32 = 0x5248_0002;
+const CHANNEL_COLOR: u32 = 0x5248_0002;
 /// Codec-owned surface-parameter channel kind.
-pub(crate) const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
+const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
-pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
+const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 /// Maximum vertex count declared by one mesh.
 const MAX_MESH_VERTICES: usize = 1 << 24;
 /// Maximum face count declared by one mesh.
@@ -123,10 +133,12 @@ impl MeshBudget {
 
     /// Caps retained mesh-buffer bytes with the session retained-byte ceiling.
     pub(crate) fn from_session(ctx: &DecodeContext<'_>) -> Self {
-        let policy = usize::try_from(ctx.policy().limits.max_retained_bytes).unwrap_or(usize::MAX);
         Self {
             used: 0,
-            limit: policy.min(MAX_DOCUMENT_BUFFER_OUTPUT),
+            limit: session_ceiling(
+                ctx.policy().limits.max_retained_bytes,
+                MAX_DOCUMENT_BUFFER_OUTPUT,
+            ),
         }
     }
 
@@ -141,40 +153,27 @@ impl MeshBudget {
         self.used
     }
 
-    /// Returns whether `bytes` more fit within the cap.
-    fn has_room(&self, bytes: usize) -> bool {
-        self.used
-            .checked_add(bytes)
-            .is_some_and(|total| total <= self.limit)
-    }
-
-    /// Records retained bytes after admission.
-    fn commit(&mut self, bytes: usize) {
-        self.used = self.used.saturating_add(bytes);
+    /// Proves the document-local retained-byte ceiling before allocation.
+    fn admit(&self, ctx: &DecodeContext<'_>, bytes: usize) -> Result<usize, CodecError> {
+        let total = self.used.checked_add(bytes).ok_or_else(|| {
+            ctx.refuse_codec_limit("Rhino document mesh buffer bytes", u64::MAX, u64::MAX)
+        })?;
+        if total > self.limit {
+            return Err(ctx.refuse_codec_limit(
+                "Rhino document mesh buffer bytes",
+                u64_from_index(self.limit),
+                u64_from_index(total),
+            ));
+        }
+        Ok(total)
     }
 }
 
 fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
-    usize::try_from(expand.ctx.policy().limits.max_decompressed_bytes_per_expand)
-        .unwrap_or(usize::MAX)
-        .min(MAX_BUFFER_OUTPUT)
-}
-
-fn commit_mesh_buffer(
-    expand: MeshExpand<'_>,
-    document_budget: &mut MeshBudget,
-    declared: usize,
-    position: usize,
-) -> Result<(), GeometryError> {
-    document_budget.commit(declared);
-    expand
-        .ctx
-        .charge_retained(
-            u64::try_from(declared).unwrap_or(u64::MAX),
-            "rhino_mesh_buffer",
-            None,
-        )
-        .map_err(|refusal| expansion_refused(position, &refusal))
+    session_ceiling(
+        expand.ctx.policy().limits.max_decompressed_bytes_per_expand,
+        MAX_BUFFER_OUTPUT,
+    )
 }
 
 /// A decoded mesh and non-fatal channel warnings.
@@ -183,9 +182,9 @@ pub(crate) struct DecodedMesh {
     /// Typed IR tessellation.
     pub(crate) tessellation: Tessellation,
     /// Per-object warnings.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
     /// Typed losses raised while selecting writer-version-dependent fields.
-    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
     /// Number of stored n-gon group records not represented in the IR.
@@ -193,7 +192,7 @@ pub(crate) struct DecodedMesh {
     /// Number of stored quadrilateral faces converted to neutral triangles.
     pub(crate) quad_count: usize,
     /// Native mesh arrays used to validate an attached `SubD` proxy.
-    pub(crate) proxy_fingerprint: MeshProxyFingerprint,
+    pub(crate) proxy_fingerprint: Option<MeshProxyFingerprint>,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -203,20 +202,52 @@ pub(crate) struct MeshDecodeOptions<'a> {
     /// Source-object association assigned to the tessellation.
     pub(crate) association: Option<cadmpeg_ir::SourceObjectAssociation>,
     /// Deterministic tessellation ID.
-    pub(crate) id: String,
+    pub(crate) id: MeshId,
     /// Native-unit to millimeter scale.
-    pub(crate) scale: f64,
+    pub(crate) scale: MillimeterScale,
     /// Class userdata attached to the owning mesh object.
     pub(crate) userdata: &'a [UserdataDescriptor],
 }
 
+pub(crate) enum MeshId {
+    Ready(cadmpeg_ir::tessellation::TessellationId),
+    ExtrusionCache(usize),
+    V5ExtrusionCache(usize),
+}
+
+impl MeshId {
+    fn into_tessellation_id(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
+        match self {
+            Self::Ready(id) => Ok(id),
+            Self::ExtrusionCache(index) => {
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
+                    format_args!("rhino:extrusion:mesh-cache#{index}"),
+                    "Rhino extrusion mesh-cache ID",
+                )?)
+                .map_err(|error| CodecError::Malformed(error.to_string()))
+            }
+            Self::V5ExtrusionCache(index) => {
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
+                    format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
+                    "Rhino V5 extrusion mesh-cache ID",
+                )?)
+                .map_err(|error| CodecError::Malformed(error.to_string()))
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct MeshChannels {
-    vertices: Vec<[f32; 3]>,
-    normals: Vec<Vector3>,
+    vertices: Vec<[FiniteBinary32; 3]>,
+    /// The normal lane, absent when the archive carries no normal channel.
+    normals: Option<Vec<FiniteVector3>>,
     channels: Vec<TessellationChannel>,
-    warnings: Vec<String>,
-    losses: Vec<cadmpeg_ir::report::LossNote>,
+    warnings: Diagnostics,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Returns whether a UUID is `ON_Mesh`.
@@ -300,11 +331,11 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let faces = read_faces(&mut reader, vertex_count, face_count)?;
-    let mut decompressed_bytes = 0;
+    let faces = read_faces(expand.ctx(), &mut reader, vertex_count, face_count)?;
     let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
+            expand.ctx(),
             &mut reader,
             vertex_count,
             &mut decoded.vertices,
@@ -318,7 +349,6 @@ pub(crate) fn decode(
             &mut reader,
             vertex_count,
             &mut decoded,
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -331,26 +361,24 @@ pub(crate) fn decode(
         let surface = read_buffer(
             expand,
             &mut reader,
-            vertex_count * 16,
+            MeshBufferSpec {
+                expected: vertex_count * 16,
+                name: "surface parameters",
+            },
             &mut decoded.warnings,
-            "surface parameters",
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded.channels.push(channel(
-                CHANNEL_SURFACE_PARAMETERS,
-                16,
-                vertex_count,
-                bytes.into_owned(),
-            ));
+            decoded
+                .channels
+                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
         }
     }
     let post_2006_fields =
         major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010);
     if post_2006_fields {
-        read_mapping_tag(&mut reader, archive, &mut decoded.warnings)?;
+        read_mapping_tag(expand.ctx(), &mut reader, archive, &mut decoded.warnings)?;
         if minor >= 5 {
             for _ in 0..3 {
                 let value = reader.u8()?;
@@ -363,6 +391,7 @@ pub(crate) fn decode(
         }
         if minor >= 6 && reader.bool_with_writer_version(writer_version)? {
             ngon_count = read_ngons(
+                expand.ctx(),
                 &mut reader,
                 archive,
                 vertex_count,
@@ -380,28 +409,46 @@ pub(crate) fn decode(
                 archive,
                 &mut decoded.warnings,
                 vertex_count,
-                &mut decompressed_bytes,
                 document_budget,
             )?;
             if count == vertex_count {
                 if let Some(bytes) = bytes {
-                    let values = parse_f64_points(&bytes)?;
-                    if values
-                        .iter()
-                        .all(|point| point.iter().all(|v| v.is_finite()))
-                        && synchronization_ok(&values, &decoded.vertices)
+                    let values = parse_f64_points(expand.ctx(), &bytes)?;
+                    let mut finite = expand
+                        .ctx()
+                        .collection_vec(values.len(), "Rhino mesh admitted double vertices")
+                        .map_err(crate::curves::GeometryError::from)?;
+                    let mut valid = true;
+                    for point in &values {
+                        if let Some(point) =
+                            FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
+                        {
+                            finite.push(point);
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if let Some(finite) = valid
+                        .then_some(finite)
+                        .filter(|_| synchronization_ok(&values, &decoded.vertices))
                     {
-                        double_vertices = Some(values);
+                        double_vertices = Some(finite);
                     } else {
-                        decoded
-                            .warnings
-                            .push("double vertices rejected; using float vertices".to_string());
+                        decoded.warnings.push_admitted(
+                            expand.ctx(),
+                            format_args!("double vertices rejected; using float vertices"),
+                        )?;
                     }
                 }
             } else {
-                decoded.warnings.push(
-                    "redundant mesh double vertex count mismatch; using float vertices".to_string(),
-                );
+                decoded.warnings.push_coded_admitted(
+                    expand.ctx(),
+                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                    format_args!(
+                        "redundant mesh double vertex count mismatch; using float vertices"
+                    ),
+                )?;
             }
         }
         if minor >= 8 {
@@ -421,32 +468,53 @@ pub(crate) fn decode(
                         || value.application_uuid == Some(OPENNURBS4))
             })
         {
-            match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
+            match read_v4v5_ngon_userdata(
+                expand.ctx(),
+                data,
+                extra,
+                archive,
+                vertex_count,
+                face_count,
+            ) {
                 Ok(Some(count)) => ngon_count = count,
-                Ok(None) => decoded.warnings.push(format!(
-                    "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
-                    extra.range.start
-                )),
-                Err(error) => decoded.warnings.push(format!(
-                    "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
-                    extra.range.start
-                )),
+                Ok(None) => decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
+                        extra.range.start
+                    ),
+                )?,
+                Err(error @ GeometryError::Codec(_)) => return Err(error),
+                Err(error) => decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
+                        extra.range.start
+                    ),
+                )?,
             }
         }
     }
     if major == 3 && minor >= 4 && !post_2006_fields {
         let dropped = reader.skip_remaining()?;
         if dropped != 0 && writer_version.is_none() {
-            decoded.losses.push(crate::loss::writer_stamp_unverified(format!(
-                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"
-            )));
+            expand
+                .ctx()
+                .reserve_vec(&mut decoded.losses, 1, "Rhino mesh losses")?;
+            decoded.losses.push(crate::wire::admitted_loss(
+                expand.ctx(),
+                crate::loss::RhinoLossCode::SourceWriterStampUnverified,
+                format_args!("ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"),
+                "Rhino mesh loss text",
+            )?);
         }
     }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
-        decoded
-            .warnings
-            .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
+        decoded.warnings.push_admitted(
+            expand.ctx(),
+            format_args!("ON_Mesh skipped {skipped} trailing bytes"),
+        )?;
     }
     if double_vertices.is_none() {
         if let Some(extra) = userdata
@@ -457,16 +525,17 @@ pub(crate) fn decode(
                     && value.item_uuid == V5_MESH_DOUBLE_VERTICES
             })
         {
-            match read_v5_double_vertices(data, extra, archive, &decoded.vertices) {
+            match read_v5_double_vertices(expand.ctx(), data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
-                Ok(None) => decoded.warnings.push(format!(
+                Ok(None) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
                     "redundant V5 mesh double-precision userdata at offset {} was rejected; using float vertices",
                     extra.range.start
-                )),
-                Err(error) => decoded.warnings.push(format!(
+                ))?,
+                Err(error @ GeometryError::Codec(_)) => return Err(error),
+                Err(error) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
                     "redundant V5 mesh double-precision userdata at offset {} was dropped: {error}",
                     extra.range.start
-                )),
+                ))?,
             }
         }
     }
@@ -490,60 +559,79 @@ pub(crate) fn decode(
             if let Err(error) =
                 parse_mesh_correspondence_userdata(data, extra.payload_range.clone(), mapping)
             {
-                decoded.warnings.push(format!(
-                    "{label} userdata at offset {} could not be transferred: {error}",
-                    extra.range.start
-                ));
+                decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "{label} userdata at offset {} could not be transferred: {error}",
+                        extra.range.start
+                    ),
+                )?;
             }
         }
     }
-    let proxy_fingerprint = MeshProxyFingerprint {
-        face_count: faces.len(),
-        vertex_count: decoded.vertices.len(),
-        face_sha1: native_face_sha1(&faces),
-        vertex_sha1: native_vertex_sha1(&decoded.vertices),
+    expand.ctx().charge_work(
+        u64_from_index(userdata.len()),
+        "Rhino mesh proxy userdata scan",
+    )?;
+    let proxy_fingerprint = if userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .any(|extra| {
+            extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+        }) {
+        Some(native_proxy_fingerprint(
+            &faces,
+            &decoded.vertices,
+            expand.ctx(),
+        )?)
+    } else {
+        None
     };
-    let source_vertices = double_vertices.unwrap_or_else(|| {
-        decoded
-            .vertices
-            .into_iter()
-            .map(|point| {
-                [
-                    f64::from(point[0]),
-                    f64::from(point[1]),
-                    f64::from(point[2]),
-                ]
-            })
-            .collect()
-    });
-    let vertices = source_vertices
-        .into_iter()
-        .map(|point| {
-            Some(Point3::new(
-                crate::wire::scaled_coordinate(point[0], scale)?,
-                crate::wire::scaled_coordinate(point[1], scale)?,
-                crate::wire::scaled_coordinate(point[2], scale)?,
-            ))
-        })
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?;
+    let mut vertices = expand
+        .ctx()
+        .collection_vec(decoded.vertices.len(), "Rhino mesh scaled vertices")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut append = |point: [f64; 3]| -> Result<(), GeometryError> {
+        vertices.push(FinitePoint3::from_coordinates(
+            crate::wire::scaled_coordinate(point[0], scale)
+                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
+            crate::wire::scaled_coordinate(point[1], scale)
+                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
+            crate::wire::scaled_coordinate(point[2], scale)
+                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
+        ));
+        Ok(())
+    };
+    if let Some(double_vertices) = double_vertices {
+        for point in double_vertices {
+            let point = point.get();
+            append([point.x, point.y, point.z])?;
+        }
+    } else {
+        for point in decoded.vertices {
+            append(point.map(|value| f64::from(value.get())))?;
+        }
+    }
     let quad_count = quad_face_count(&faces);
-    let triangles = triangulate_faces(&faces, &vertices);
+    let triangles = triangulate_faces(expand.ctx(), &faces, &vertices, FinitePoint3::get)?;
+    let id = id.into_tessellation_id(expand.ctx())?;
     Ok(DecodedMesh {
-        tessellation: Tessellation::from_decoded(
+        tessellation: Tessellation::from_parts(
             id,
-            vertices,
-            triangles,
-            Vec::new(),
-            decoded.normals,
-            Vec::new(),
+            cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+                vertices,
+                triangles,
+                decoded.normals,
+            )
+            .map_err(|lanes| error(reader.position(), lanes.to_string()))?,
             decoded.channels,
         )
-        .map_err(|err| error(reader.position(), &err.to_string()))?
+        .map_err(|err| error(reader.position(), err.to_string()))?
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
-        scaled: scale != 1.0,
+        scaled: scale != MillimeterScale::IDENTITY,
         ngon_count,
         quad_count,
         proxy_fingerprint,
@@ -598,53 +686,97 @@ fn parse_mesh_correspondence_userdata(
     Ok(())
 }
 
-fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+fn native_proxy_fingerprint(
+    faces: &[[u32; 4]],
+    vertices: &[[FiniteBinary32; 3]],
+    ctx: &DecodeContext<'_>,
+) -> Result<MeshProxyFingerprint, CodecError> {
+    let bytes = u64_from_index(faces.len())
+        .checked_mul(16)
+        .and_then(|face_bytes| {
+            u64_from_index(vertices.len())
+                .checked_mul(12)
+                .and_then(|vertex_bytes| face_bytes.checked_add(vertex_bytes))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
+    ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
+    let mut face_digest = Sha1::new();
     for face in faces {
         for index in face {
-            digest.update(index.to_ne_bytes());
+            face_digest.update(index.to_ne_bytes());
         }
     }
-    digest.finalize().into()
-}
-
-fn native_vertex_sha1(vertices: &[[f32; 3]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+    let mut vertex_digest = Sha1::new();
     for vertex in vertices {
         for coordinate in vertex {
-            digest.update(coordinate.to_ne_bytes());
+            vertex_digest.update(coordinate.get().to_ne_bytes());
         }
     }
-    digest.finalize().into()
+    Ok(MeshProxyFingerprint {
+        face_count: faces.len(),
+        vertex_count: vertices.len(),
+        face_sha1: face_digest.finalize().into(),
+        vertex_sha1: vertex_digest.finalize().into(),
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaceIndexWidth {
+    One,
+    Two,
+    Four,
+}
+
+impl FaceIndexWidth {
+    pub(crate) fn bytes(self) -> usize {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Four => 4,
+        }
+    }
+
+    fn from_value(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Self::One),
+            2 => Some(Self::Two),
+            4 => Some(Self::Four),
+            _ => None,
+        }
+    }
 }
 
 fn read_faces(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
 ) -> Result<Vec<[u32; 4]>, GeometryError> {
-    let width = reader.i32()?;
-    if !matches!(width, 1 | 2 | 4) {
-        return Err(error(
-            reader.position() - 4,
-            "invalid mesh face index width",
-        ));
-    }
+    let width = FaceIndexWidth::from_value(reader.i32()?)
+        .ok_or_else(|| error(reader.position() - 4, "invalid mesh face index width"))?;
     let bytes = faces
         .checked_mul(4)
-        .and_then(|value| value.checked_mul(width as usize))
+        .and_then(|value| value.checked_mul(width.bytes()))
         .ok_or_else(|| error(reader.position(), "mesh face byte count overflow"))?;
     let raw = reader.take(bytes)?;
-    let mut result = Vec::new();
-    result
-        .try_reserve_exact(faces)
-        .map_err(|_| error(reader.position(), "mesh triangle allocation failed"))?;
+    let mut result = ctx
+        .collection_vec(faces, "Rhino mesh faces")
+        .map_err(crate::curves::GeometryError::from)?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
-            let offset = (face * 4 + slot) * width as usize;
-            *index = face_index(raw, offset, width);
-            if (*index as usize) >= vertices {
+            let offset = (face * 4 + slot) * width.bytes();
+            let Some(value) = face_index(raw, offset, width) else {
+                return Err(error(
+                    reader.position(),
+                    format!("mesh face index payload is truncated at offset {offset}"),
+                ));
+            };
+            *index = value;
+            if (usize::try_from(*index).map_err(|_| {
+                GeometryError::unpositioned("mesh count or index exceeds address space")
+            })?) >= vertices
+            {
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
         }
@@ -653,22 +785,56 @@ fn read_faces(
     Ok(result)
 }
 
-pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> {
-    let mut triangles = Vec::with_capacity(faces.len().saturating_mul(2));
+pub(crate) fn triangulate_faces<P: Copy>(
+    ctx: &DecodeContext<'_>,
+    faces: &[[u32; 4]],
+    vertices: &[P],
+    point: impl Fn(P) -> Point3,
+) -> Result<Vec<[u32; 3]>, GeometryError> {
+    let triangle_count = faces.iter().try_fold(0_usize, |count, face| {
+        count.checked_add(match unique_face_vertices(face) {
+            3 => 1,
+            4 => 2,
+            _ => 0,
+        })
+    });
+    let triangle_count = triangle_count
+        .ok_or_else(|| GeometryError::unpositioned("mesh triangle count overflow"))?;
+    let mut triangles = ctx
+        .collection_vec(triangle_count, "Rhino mesh triangles")
+        .map_err(crate::curves::GeometryError::from)?;
     for face in faces {
         if unique_face_vertices(face) == 3 {
-            let mut unique = Vec::with_capacity(3);
+            let mut unique = [0_u32; 3];
+            let mut count = 0;
             for index in face {
-                if !unique.contains(index) {
-                    unique.push(*index);
+                if !unique[..count].contains(index) {
+                    unique[count] = *index;
+                    count += 1;
                 }
             }
             triangles.push([unique[0], unique[1], unique[2]]);
         } else if unique_face_vertices(face) == 4 {
-            let diagonal_02 =
-                distance_squared(vertices[face[0] as usize], vertices[face[2] as usize]);
-            let diagonal_13 =
-                distance_squared(vertices[face[1] as usize], vertices[face[3] as usize]);
+            let diagonal_02 = point(
+                vertices[usize::try_from(face[0]).map_err(|_| {
+                    GeometryError::unpositioned("mesh count or index exceeds address space")
+                })?],
+            )
+            .distance(point(
+                vertices[usize::try_from(face[2]).map_err(|_| {
+                    GeometryError::unpositioned("mesh count or index exceeds address space")
+                })?],
+            ));
+            let diagonal_13 = point(
+                vertices[usize::try_from(face[1]).map_err(|_| {
+                    GeometryError::unpositioned("mesh count or index exceeds address space")
+                })?],
+            )
+            .distance(point(
+                vertices[usize::try_from(face[3]).map_err(|_| {
+                    GeometryError::unpositioned("mesh count or index exceeds address space")
+                })?],
+            ));
             if diagonal_02 <= diagonal_13 {
                 triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
             } else {
@@ -676,7 +842,7 @@ pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<
             }
         }
     }
-    triangles
+    Ok(triangles)
 }
 
 fn quad_face_count(faces: &[[u32; 4]]) -> usize {
@@ -687,58 +853,72 @@ fn quad_face_count(faces: &[[u32; 4]]) -> usize {
 }
 
 fn unique_face_vertices(face: &[u32; 4]) -> usize {
-    let mut unique = Vec::with_capacity(4);
+    let mut unique = [0_u32; 4];
+    let mut count = 0;
     for index in face {
-        if !unique.contains(index) {
-            unique.push(*index);
+        if !unique[..count].contains(index) {
+            unique[count] = *index;
+            count += 1;
         }
     }
-    unique.len()
+    count
 }
 
-fn distance_squared(a: Point3, b: Point3) -> f64 {
-    (a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)
-}
-
-fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
+fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> Option<u32> {
     match width {
-        1 => u32::from(raw[offset]),
-        2 => u32::from(View::u16_le_at(raw, offset).expect("face width")),
-        4 => View::u32_le_at(raw, offset).expect("face width"),
-        _ => unreachable!(),
+        FaceIndexWidth::One => raw.get(offset).copied().map(u32::from),
+        FaceIndexWidth::Two => View::u16_le_at(raw, offset).map(u32::from),
+        FaceIndexWidth::Four => View::u32_le_at(raw, offset),
     }
 }
 
 fn read_raw_channels(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
-    points: &mut Vec<[f32; 3]>,
-    normals: &mut Vec<Vector3>,
+    points: &mut Vec<[FiniteBinary32; 3]>,
+    normals: &mut Option<Vec<FiniteVector3>>,
     channels: &mut Vec<TessellationChannel>,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
-    let vertex_bytes = read_counted_raw(reader, vertices, 12, "vertices", warnings)?;
+    let vertex_bytes = read_counted_raw(ctx, reader, vertices, 12, "vertices", warnings)?;
     if let Some(bytes) = vertex_bytes {
-        *points = parse_f32_points(&bytes)?;
+        *points = parse_f32_points(ctx, bytes)?;
     }
-    let normal_bytes = read_counted_raw(reader, vertices, 12, "normals", warnings)?;
+    let normal_bytes = read_counted_raw(ctx, reader, vertices, 12, "normals", warnings)?;
     if let Some(bytes) = normal_bytes {
-        match parse_f32_vectors(&bytes) {
-            Ok(value) => *normals = value,
-            Err(_) => warnings.push("normals channel contains nonfinite values".to_string()),
+        match parse_f32_vectors(ctx, bytes) {
+            Ok(value) => *normals = Some(value),
+            Err(error @ GeometryError::Codec(_)) => return Err(error),
+            Err(_) => warnings.push_admitted(
+                ctx,
+                format_args!("normals channel contains nonfinite values"),
+            )?,
         }
     }
-    let uv = read_counted_raw(reader, vertices, 8, "UV", warnings)?;
+    let uv = read_counted_raw(ctx, reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
-        channels.push(channel(CHANNEL_UV, 8, vertices, bytes));
+        channels.push(channel(
+            CHANNEL_UV,
+            8,
+            ctx.copy_retained(bytes, "Rhino mesh raw UV channel")?,
+        )?);
     }
-    let curvature = read_counted_raw(reader, vertices, 16, "curvature", warnings)?;
+    let curvature = read_counted_raw(ctx, reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
-        channels.push(channel(CHANNEL_CURVATURE, 16, vertices, bytes));
+        channels.push(channel(
+            CHANNEL_CURVATURE,
+            16,
+            ctx.copy_retained(bytes, "Rhino mesh raw curvature channel")?,
+        )?);
     }
-    let colors = read_counted_raw(reader, vertices, 4, "colors", warnings)?;
+    let colors = read_counted_raw(ctx, reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
-        channels.push(channel(CHANNEL_COLOR, 4, vertices, bytes));
+        channels.push(channel(
+            CHANNEL_COLOR,
+            4,
+            ctx.copy_retained(bytes, "Rhino mesh raw color channel")?,
+        )?);
     }
     if points.len() != vertices {
         return Err(error(reader.position(), "mesh vertex channel is required"));
@@ -746,53 +926,91 @@ fn read_raw_channels(
     Ok(())
 }
 
+/// What one compressed mesh vertex channel decodes into.
+#[derive(Clone, Copy)]
+enum MeshChannelAction {
+    Vertices,
+    Normals,
+    Raw(u32),
+}
+
+/// One compressed mesh vertex channel: its name, per-vertex size and decode action.
+#[derive(Clone, Copy)]
+struct MeshChannelSpec {
+    name: &'static str,
+    item_size: u32,
+    action: MeshChannelAction,
+}
+
+impl MeshChannelSpec {
+    const ALL: [Self; 5] = [
+        Self {
+            name: "vertices",
+            item_size: 12,
+            action: MeshChannelAction::Vertices,
+        },
+        Self {
+            name: "normals",
+            item_size: 12,
+            action: MeshChannelAction::Normals,
+        },
+        Self {
+            name: "UV",
+            item_size: 8,
+            action: MeshChannelAction::Raw(CHANNEL_UV),
+        },
+        Self {
+            name: "curvature",
+            item_size: 16,
+            action: MeshChannelAction::Raw(CHANNEL_CURVATURE),
+        },
+        Self {
+            name: "colors",
+            item_size: 4,
+            action: MeshChannelAction::Raw(CHANNEL_COLOR),
+        },
+    ];
+}
+
 fn read_compressed_channels(
     expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     decoded: &mut MeshChannels,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
-    let expected = [
-        vertices * 12,
-        vertices * 12,
-        vertices * 8,
-        vertices * 16,
-        vertices * 4,
-    ];
-    let names = ["vertices", "normals", "UV", "curvature", "colors"];
-    for (index, expected_size) in expected.into_iter().enumerate() {
+    for spec in MeshChannelSpec::ALL {
         let bytes = read_buffer(
             expand,
             reader,
-            expected_size,
+            MeshBufferSpec {
+                expected: vertices
+                    * usize::try_from(spec.item_size).map_err(|_| {
+                        GeometryError::unpositioned("mesh count or index exceeds address space")
+                    })?,
+                name: spec.name,
+            },
             &mut decoded.warnings,
-            names[index],
-            decompressed_bytes,
             document_budget,
             archive,
         )?;
         let Some(bytes) = bytes else { continue };
-        match index {
-            0 => decoded.vertices = parse_f32_points(&bytes)?,
-            1 => match parse_f32_vectors(&bytes) {
-                Ok(value) => decoded.normals = value,
+        match spec.action {
+            MeshChannelAction::Vertices => {
+                decoded.vertices = parse_f32_points(expand.ctx(), &bytes)?;
+            }
+            MeshChannelAction::Normals => match parse_f32_vectors(expand.ctx(), &bytes) {
+                Ok(value) => decoded.normals = Some(value),
+                Err(error @ GeometryError::Codec(_)) => return Err(error),
                 Err(_) => decoded
                     .warnings
                     .push("normals channel contains nonfinite values".to_string()),
             },
-            _ => {
-                let (kind, item_size) = match index {
-                    2 => (CHANNEL_UV, 8),
-                    3 => (CHANNEL_CURVATURE, 16),
-                    4 => (CHANNEL_COLOR, 4),
-                    _ => unreachable!(),
-                };
+            MeshChannelAction::Raw(kind) => {
                 decoded
                     .channels
-                    .push(channel(kind, item_size, vertices, bytes.into_owned()));
+                    .push(channel(kind, spec.item_size, bytes.into_owned())?);
             }
         }
     }
@@ -802,81 +1020,86 @@ fn read_compressed_channels(
     Ok(())
 }
 
-fn read_counted_raw(
-    reader: &mut BoundedReader<'_>,
+fn read_counted_raw<'a>(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'a>,
     vertices: usize,
     item_size: usize,
     name: &str,
-    warnings: &mut Vec<String>,
-) -> Result<Option<Vec<u8>>, GeometryError> {
+    warnings: &mut Diagnostics,
+) -> Result<Option<&'a [u8]>, GeometryError> {
     let count = reader.i32()?;
     if count < 0 {
-        warnings.push(format!(
-            "redundant mesh {name} channel has a negative count; channel dropped"
-        ));
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format_args!("redundant mesh {name} channel has a negative count; channel dropped"),
+        )?;
         return Ok(None);
     }
     if count == 0 {
         return Ok(None);
     }
-    let bytes = (count as usize)
-        .checked_mul(item_size)
-        .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
-    let data = reader.take(bytes)?.to_vec();
-    if count as usize != vertices {
-        warnings.push(format!(
-            "redundant mesh {name} channel count mismatch; channel dropped"
-        ));
+    let bytes = (usize::try_from(count)
+        .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?)
+    .checked_mul(item_size)
+    .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
+    let data = reader.take(bytes)?;
+    if usize::try_from(count)
+        .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?
+        != vertices
+    {
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format_args!("redundant mesh {name} channel count mismatch; channel dropped"),
+        )?;
         return Ok(None);
     }
     Ok(Some(data))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct MeshBufferSpec<'a> {
+    expected: usize,
+    name: &'a str,
+}
+
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
-    expected: usize,
-    warnings: &mut Vec<String>,
-    name: &str,
-    decompressed_bytes: &mut usize,
+    spec: MeshBufferSpec<'_>,
+    warnings: &mut Diagnostics,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
-    let declared = reader.u32()? as usize;
+    let MeshBufferSpec { expected, name } = spec;
+    let declared = usize::try_from(reader.u32()?)
+        .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
     if declared == 0 {
         return Ok(None);
     }
     let buffer_limit = buffer_output_limit(expand);
     if declared > buffer_limit {
-        return Err(error(
-            reader.position() - 4,
-            &format!("invalid {name} size"),
-        ));
-    }
-    *decompressed_bytes = decompressed_bytes
-        .checked_add(declared)
-        .filter(|total| *total <= buffer_limit)
-        .ok_or_else(|| {
-            error(
-                reader.position() - 4,
-                "mesh cumulative buffer budget exceeded",
+        return Err(expand
+            .ctx()
+            .refuse_codec_limit(
+                "Rhino mesh buffer output bytes",
+                u64_from_index(buffer_limit),
+                u64_from_index(declared),
             )
-        })?;
-    // Admit before allocation; commit only after the bytes become resident.
-    if !document_budget.has_room(declared) {
-        return Err(error(
-            reader.position() - 4,
-            "document mesh buffer budget exceeded",
-        ));
+            .into());
     }
+    let admitted_document_bytes = document_budget.admit(expand.ctx(), declared)?;
     let crc = reader.u32()?;
     let method = reader.u8()?;
     let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
         0 => {
             let mut input = reader.unread()?;
-            let stored = input.take(declared)?.to_vec();
-            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
+            let stored = expand
+                .ctx()
+                .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
+            document_budget.used = admitted_document_bytes;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -902,13 +1125,31 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the root view",
                     )
                 })?;
-            debug_assert_eq!(
-                source.window(),
-                &reader.backing_bytes()[chunk.body().start..chunk.body().end],
-                "expansion source must alias the compressed chunk body"
-            );
+            let body = reader
+                .backing_bytes()
+                .get(chunk.body().start..chunk.body().end)
+                .ok_or_else(|| {
+                    error(
+                        chunk.body().start,
+                        "compressed buffer body escapes the archive bytes",
+                    )
+                })?;
+            if source.window() != body {
+                return Err(error(
+                    chunk.body().start,
+                    format!(
+                        "expansion source window of {} bytes does not alias \
+                         the {} byte compressed chunk body",
+                        source.window().len(),
+                        body.len()
+                    ),
+                ));
+            }
+            expand
+                .ctx()
+                .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
+            document_budget.used = admitted_document_bytes;
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -916,10 +1157,14 @@ fn read_buffer<'a>(
                 ));
             }
             if matches!(
-                verify_checksum(reader.backing_bytes(), &chunk)?,
+                verify_checksum(expand.ctx(), reader.backing_bytes(), &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
-                warnings.push(format!("{name} compressed chunk CRC mismatch"));
+                warnings.push_coded_admitted(
+                    expand.ctx(),
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{name} compressed chunk CRC mismatch"),
+                )?;
             }
             (
                 Cow::Borrowed(view.window()),
@@ -935,13 +1180,23 @@ fn read_buffer<'a>(
     };
     reader.skip(consumed)?;
     if bytes.len() != expected {
-        warnings.push(format!(
-            "redundant mesh {name} compressed-buffer size mismatch; channel dropped"
-        ));
+        warnings.push_coded_admitted(
+            expand.ctx(),
+            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+            format_args!("redundant mesh {name} compressed-buffer size mismatch; channel dropped"),
+        )?;
         return Ok(None);
     }
+    expand.ctx().charge_work(
+        u64_from_index(bytes.len()),
+        "Rhino mesh buffer checksum bytes",
+    )?;
     if crc32fast::hash(&bytes) != crc {
-        warnings.push(format!("{name} compressed-buffer CRC mismatch"));
+        warnings.push_coded_admitted(
+            expand.ctx(),
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{name} compressed-buffer CRC mismatch"),
+        )?;
         return Ok(None);
     }
     Ok(Some(bytes))
@@ -960,16 +1215,16 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
         return;
     };
     let expand = MeshExpand::new(&ctx, root);
-    let mut warnings = Vec::new();
-    let mut decompressed_bytes = 0;
+    let mut warnings = Diagnostics::new();
     let mut document_budget = MeshBudget::new();
-    let _ = read_buffer(
+    let _probe = read_buffer(
         expand,
         &mut reader,
-        expected,
+        MeshBufferSpec {
+            expected,
+            name: "fuzz",
+        },
         &mut warnings,
-        "fuzz",
-        &mut decompressed_bytes,
         &mut document_budget,
         ArchiveVersion::V8,
     );
@@ -985,17 +1240,18 @@ fn inflate<'a>(
     cadmpeg_container::compression::inflate_zlib_member(
         expand.ctx(),
         source,
-        ExpandSpec::Exact(expected as u64),
+        ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(expected)),
     )
-    .map_err(|refusal| expansion_refused(base, &refusal))
+    .map_err(|refusal| expansion_refused(base, refusal))
 }
 
 fn read_ngons(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     vertices: usize,
     faces: usize,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<usize, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
@@ -1004,7 +1260,7 @@ fn read_ngons(
         archive,
         false,
     )?;
-    push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh ngon")?;
+    crate::chunks::warn_checksum(ctx, reader.backing_bytes(), &chunk, "mesh ngon", warnings)?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -1016,12 +1272,17 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
+    ctx.charge_work(u64_from_index(count), "Rhino current mesh ngon records")?;
     for _ in 0..count {
         let boundary = checked_u32(&mut child, vertices)?;
         if boundary == 0 {
             continue;
         }
         let face_count = checked_u32(&mut child, faces)?;
+        let indices = boundary.checked_add(face_count).ok_or_else(|| {
+            ctx.refuse_codec_limit("Rhino current mesh ngon indices", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_work(u64_from_index(indices), "Rhino current mesh ngon indices")?;
         for _ in 0..boundary {
             checked_u32(&mut child, vertices)?;
         }
@@ -1035,9 +1296,10 @@ fn read_ngons(
 }
 
 fn read_mapping_tag(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
@@ -1046,7 +1308,13 @@ fn read_mapping_tag(
         archive,
         false,
     )?;
-    push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh mapping tag")?;
+    crate::chunks::warn_checksum(
+        ctx,
+        reader.backing_bytes(),
+        &chunk,
+        "mesh mapping tag",
+        warnings,
+    )?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -1087,9 +1355,8 @@ fn read_double_chunk<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    warnings: &mut Diagnostics,
     vertex_count: usize,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
 ) -> Result<DoubleVertexChunk<'a>, GeometryError> {
     let chunk = chunk_at(
@@ -1129,23 +1396,37 @@ fn read_double_chunk<'a>(
     let bytes = read_buffer(
         expand,
         &mut child,
-        expected,
+        MeshBufferSpec {
+            expected,
+            name: "double vertices",
+        },
         warnings,
-        "double vertices",
-        decompressed_bytes,
         document_budget,
         archive,
     )?;
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
+    let direct = crate::chunks::direct_checksum_ranges(
+        expand.ctx(),
+        &chunk.body(),
+        nested_buffer.as_slice(),
+    )?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(
+            expand.ctx(),
+            reader.backing_bytes(),
+            &chunk,
+            &direct
+        )?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push(format!(
-            "mesh double vertices CRC mismatch at offset {}",
-            chunk.header_start
-        ));
+        warnings.push_coded_admitted(
+            expand.ctx(),
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!(
+                "mesh double vertices CRC mismatch at offset {}",
+                chunk.header_start
+            ),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     if count != vertex_count {
@@ -1161,11 +1442,12 @@ fn read_double_chunk<'a>(
 /// adopts the array when its actual count matches the owner mesh and its f64
 /// values cast exactly to the owner's f32 vertices.
 fn read_v5_double_vertices(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
-    float_vertices: &[[f32; 3]],
-) -> Result<Option<Vec<[f64; 3]>>, GeometryError> {
+    float_vertices: &[[FiniteBinary32; 3]],
+) -> Result<Option<Vec<FinitePoint3>>, GeometryError> {
     let chunk = chunk_at(
         data,
         extra.payload_range.start,
@@ -1193,23 +1475,36 @@ fn read_v5_double_vertices(
     let _float_crc = reader.u32()?;
     let _double_crc = reader.u32()?;
     let array_count = checked_u32(&mut reader, MAX_MESH_VERTICES)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(array_count)
-        .map_err(|_| error(reader.position(), "V5 mesh double-vertex allocation failed"))?;
+    let coordinate_bytes = array_count
+        .checked_mul(24)
+        .ok_or_else(|| error(reader.position(), "V5 double-vertex byte count overflow"))?;
+    if coordinate_bytes > reader.remaining() {
+        return Err(FramingError::Truncated {
+            offset: reader.position(),
+            needed: coordinate_bytes,
+        }
+        .into());
+    }
+    let mut values = ctx
+        .collection_vec(array_count, "Rhino V5 mesh double vertex values")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..array_count {
         values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
     }
     reader.skip_remaining()?;
-    if values.len() != float_vertices.len()
-        || values
-            .iter()
-            .any(|point| point.iter().any(|value| !value.is_finite()))
-        || !v5_synchronization_ok(&values, float_vertices)
-    {
+    if values.len() != float_vertices.len() {
         return Ok(None);
     }
-    Ok(Some(values))
+    let mut finite = ctx
+        .collection_vec(values.len(), "Rhino V5 mesh admitted double vertices")
+        .map_err(crate::curves::GeometryError::from)?;
+    for point in &values {
+        let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
+            return Ok(None);
+        };
+        finite.push(point);
+    }
+    Ok(v5_synchronization_ok(&values, float_vertices).then_some(finite))
 }
 
 /// Reads the V4/V5 legacy mesh n-gon userdata list.
@@ -1219,6 +1514,7 @@ fn read_v5_double_vertices(
 /// mesh counts without rechecking those arrays; the older zero-count form is
 /// checked for in-range vertices and face indices with a `-1` suffix.
 fn read_v4v5_ngon_userdata(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -1239,7 +1535,7 @@ fn read_v4v5_ngon_userdata(
         ));
     }
     if matches!(
-        verify_checksum(data, &chunk)?,
+        verify_checksum(ctx, data, &chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         return Ok(None);
@@ -1262,10 +1558,13 @@ fn read_v4v5_ngon_userdata(
         .ok()
         .filter(|count| *count <= MAX_MESH_NGONS)
         .ok_or_else(|| error(reader.position() - 4, "mesh n-gon count exceeds cap"))?;
-    let mut records = Vec::new();
-    records
-        .try_reserve_exact(count)
-        .map_err(|_| error(reader.position(), "mesh n-gon allocation failed"))?;
+    ctx.charge_work(u64_from_index(count), "Rhino V4V5 mesh ngon records")?;
+    let mesh_face_count = i32::try_from(face_count)
+        .map_err(|_| error(reader.position(), "mesh face count exceeds i32"))?;
+    let mesh_vertex_count = i32::try_from(vertex_count)
+        .map_err(|_| error(reader.position(), "mesh vertex count exceeds i32"))?;
+    let mut record_count = 0;
+    let mut valid_indices = true;
     for _ in 0..count {
         let raw_corner_count = reader.i32()?;
         if raw_corner_count <= 0 {
@@ -1280,72 +1579,46 @@ fn read_v4v5_ngon_userdata(
         else {
             return Ok(None);
         };
-        let mut vertices = Vec::new();
-        vertices.try_reserve_exact(corner_count).map_err(|_| {
-            error(
-                reader.position(),
-                "mesh n-gon vertex-index allocation failed",
-            )
-        })?;
+        ctx.charge_work(
+            u64_from_index(corner_count)
+                .checked_mul(2)
+                .ok_or_else(|| error(reader.position(), "mesh n-gon work count overflow"))?,
+            "Rhino V4V5 mesh ngon indices",
+        )?;
         for _ in 0..corner_count {
-            vertices.push(reader.i32()?);
+            let vertex = reader.i32()?;
+            valid_indices &= vertex >= 0 && vertex < mesh_vertex_count;
         }
-        let mut faces = Vec::new();
-        faces
-            .try_reserve_exact(corner_count)
-            .map_err(|_| error(reader.position(), "mesh n-gon face-index allocation failed"))?;
+        let mut unused_faces = false;
         for _ in 0..corner_count {
-            faces.push(reader.i32()?);
+            let face = reader.i32()?;
+            if face == -1 {
+                unused_faces = true;
+            } else if unused_faces || face < 0 || face >= mesh_face_count {
+                valid_indices = false;
+            }
         }
-        records.push((vertices, faces));
+        record_count += 1;
     }
     let stored_face_count = if minor >= 1 { reader.i32()? } else { 0 };
     let stored_vertex_count = if minor >= 1 { reader.i32()? } else { 0 };
     reader.skip_remaining()?;
 
-    let mesh_face_count = i32::try_from(face_count).expect("mesh face cap fits i32");
-    let mesh_vertex_count = i32::try_from(vertex_count).expect("mesh vertex cap fits i32");
     let valid = if stored_face_count == 0 && stored_vertex_count == 0 {
-        records.iter().all(|(vertices, faces)| {
-            legacy_ngon_indices_valid(vertices, faces, mesh_vertex_count, mesh_face_count)
-        })
+        valid_indices
     } else {
         stored_face_count == mesh_face_count && stored_vertex_count == mesh_vertex_count
     };
     if !valid {
         return Ok(None);
     }
-    Ok(Some(records.len()))
-}
-
-fn legacy_ngon_indices_valid(
-    vertices: &[i32],
-    faces: &[i32],
-    vertex_count: i32,
-    face_count: i32,
-) -> bool {
-    if vertices.len() != faces.len()
-        || vertices
-            .iter()
-            .any(|index| *index < 0 || *index >= vertex_count)
-    {
-        return false;
-    }
-    let mut unused_faces = false;
-    for index in faces {
-        if *index == -1 {
-            unused_faces = true;
-        } else if unused_faces || *index < 0 || *index >= face_count {
-            return false;
-        }
-    }
-    true
+    Ok(Some(record_count))
 }
 
 fn consume_optional_chunk(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    _warnings: &mut Vec<String>,
+    _warnings: &mut Diagnostics,
     _label: &str,
 ) -> Result<(), GeometryError> {
     let bytes = reader.backing_bytes();
@@ -1354,88 +1627,107 @@ fn consume_optional_chunk(
     Ok(())
 }
 
-fn push_chunk_checksum_warning(
+fn parse_f32_points(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    chunk: &crate::chunks::Chunk,
-    warnings: &mut Vec<String>,
-    label: &str,
-) -> Result<(), GeometryError> {
-    if matches!(
-        verify_checksum(bytes, chunk)?,
-        ChecksumStatus::Mismatch { .. }
-    ) {
-        warnings.push(format!(
-            "{label} CRC mismatch at offset {}",
-            chunk.header_start
+) -> Result<Vec<[FiniteBinary32; 3]>, GeometryError> {
+    if !bytes.len().is_multiple_of(12) {
+        return Err(GeometryError::unpositioned(
+            "invalid f32 point channel length",
         ));
     }
-    Ok(())
-}
-
-fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
-    if !bytes.len().is_multiple_of(12) {
-        return Err(error(0, "invalid f32 point channel length"));
-    }
     let mut view = View::over_retained(bytes);
-    let points = view
-        .read_counted((bytes.len() / 12) as u64, 12, |view| {
-            Some([view.f32_le()?, view.f32_le()?, view.f32_le()?])
-        })
-        .ok_or_else(|| error(0, "invalid f32 point channel length"))?;
-    if points
-        .iter()
-        .any(|point| point.iter().any(|value| !value.is_finite()))
-    {
-        return Err(error(0, "f32 point channel contains nonfinite values"));
+    let count = bytes.len() / 12;
+    let mut points = ctx
+        .collection_vec(count, "Rhino mesh f32 points")
+        .map_err(crate::curves::GeometryError::from)?;
+    for _ in 0..count {
+        let point = [view.f32_le(), view.f32_le(), view.f32_le()];
+        let [Some(x), Some(y), Some(z)] = point else {
+            return Err(GeometryError::unpositioned(
+                "invalid f32 point channel length",
+            ));
+        };
+        let [x, y, z] = [x, y, z].map(FiniteBinary32::new);
+        let (Some(x), Some(y), Some(z)) = (x, y, z) else {
+            return Err(GeometryError::unpositioned(
+                "f32 point channel contains nonfinite values",
+            ));
+        };
+        points.push([x, y, z]);
     }
     Ok(points)
 }
 
-fn parse_f32_vectors(bytes: &[u8]) -> Result<Vec<Vector3>, GeometryError> {
-    Ok(parse_f32_points(bytes)?
-        .into_iter()
-        .map(|p| Vector3::new(p[0] as f64, p[1] as f64, p[2] as f64))
-        .collect())
+fn parse_f32_vectors(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<FiniteVector3>, GeometryError> {
+    let points = parse_f32_points(ctx, bytes)?;
+    let mut vectors = ctx
+        .collection_vec(points.len(), "Rhino mesh f32 normals")
+        .map_err(crate::curves::GeometryError::from)?;
+    vectors.extend(
+        points
+            .into_iter()
+            .map(|p| FiniteVector3::from_components(p[0].into(), p[1].into(), p[2].into())),
+    );
+    Ok(vectors)
 }
 
-fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
+fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(24) {
-        return Err(error(0, "invalid f64 point channel length"));
+        return Err(GeometryError::unpositioned(
+            "invalid f64 point channel length",
+        ));
     }
     let mut view = View::over_retained(bytes);
-    view.read_counted((bytes.len() / 24) as u64, 24, |view| {
-        Some([view.f64_le()?, view.f64_le()?, view.f64_le()?])
-    })
-    .ok_or_else(|| error(0, "invalid f64 point channel length"))
+    let count = bytes.len() / 24;
+    let mut points = ctx
+        .collection_vec(count, "Rhino mesh f64 points")
+        .map_err(crate::curves::GeometryError::from)?;
+    for _ in 0..count {
+        let point = [view.f64_le(), view.f64_le(), view.f64_le()];
+        let [Some(x), Some(y), Some(z)] = point else {
+            return Err(GeometryError::unpositioned(
+                "invalid f64 point channel length",
+            ));
+        };
+        points.push([x, y, z]);
+    }
+    Ok(points)
 }
 
-fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
+fn synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(a, b)| {
-        let scale = b.iter().copied().map(f32::abs).fold(0.0_f32, f32::max) as f64;
+        let scale = f64::from(
+            b.iter()
+                .map(|value| value.get().abs())
+                .fold(0.0_f32, f32::max),
+        );
         a.iter().zip(b).all(|(left, right)| {
-            (*left - f64::from(*right)).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
+            (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
         })
     })
 }
 
-fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
+fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(double, float)| {
-        double
-            .iter()
-            .zip(float)
-            .all(|(double, float)| *double as f32 == *float)
+        double.iter().zip(float).all(|(double, float)| {
+            cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
+        })
     })
 }
 
-fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
+fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
-        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
         item_size,
         kind,
         0,
         data,
     )
-    .unwrap_or_else(|_| panic!("channel payload length {count} * {item_size} is inconsistent"))
+    .map_err(|error| GeometryError::unpositioned(format!("invalid mesh channel: {error}")))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -1450,12 +1742,6 @@ fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
     Ok(())
 }
 
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("UUID width"),
-    ))
-}
-
 /// Reads a mesh element count bounded by the codec-local `cap`.
 ///
 /// Omits the `checked_count_bytes` remaining-bytes floor: `vertex_count` may
@@ -1463,17 +1749,23 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 /// consumption by `reader.take(bytes)` in `read_faces`.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
-    if value < 0 || value as usize > cap {
+    if value < 0
+        || usize::try_from(value)
+            .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?
+            > cap
+    {
         return Err(error(reader.position() - 4, "mesh count exceeds cap"));
     }
-    Ok(value as usize)
+    usize::try_from(value)
+        .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))
 }
 
 /// Reads an unsigned mesh count bounded by `cap`, without a remaining-bytes
 /// floor (see [`count`]). Callers must consume it through a budget-charged
 /// allocator.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
-    let value = reader.u32()? as usize;
+    let value = usize::try_from(reader.u32()?)
+        .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
     if value > cap {
         return Err(error(reader.position() - 4, "mesh count exceeds cap"));
     }
@@ -1482,19 +1774,211 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 
 #[cfg(test)]
 mod tests {
+    mod resource_limits;
+    mod work_admission;
+    #[test]
+    fn document_mesh_budget_admission_refuses_overflow() {
+        let budget = super::MeshBudget {
+            used: usize::MAX,
+            limit: usize::MAX,
+        };
+        assert!(format!(
+            "{:?}",
+            budget.admit(&cadmpeg_test_support::service_decode_context(), 1)
+        )
+        .contains("ResourceLimit"));
+    }
+
+    #[test]
+    fn numerical_audit_quad_uses_shorter_large_diagonal() {
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0e200, 0.0, 0.0),
+            Point3::new(2.0e200, 2.0e200, 0.0),
+            Point3::new(0.0, 1.0e200, 0.0),
+        ];
+        assert_eq!(
+            with_expand(&[], |expand| {
+                super::triangulate_faces(expand.ctx(), &[[0, 1, 2, 3]], &vertices, |point| point)
+            })
+            .expect("one quad fits the service limit"),
+            vec![[0, 1, 3], [1, 2, 3]]
+        );
+    }
+
     use std::io::Write;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_ir::scalar::FiniteBinary32;
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use super::*;
+    use super::{
+        consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
+        quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons, read_raw_channels,
+        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
+        MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
+        V5_MESH_DOUBLE_VERTICES,
+    };
+    use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+    use crate::curves::GeometryError;
+    use crate::loss::Diagnostics;
+    use crate::objects::{ClassUserdata, UserdataDescriptor};
+    use crate::settings::MillimeterScale;
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use std::ops::Range;
 
     fn with_expand<R>(data: &[u8], f: impl FnOnce(MeshExpand<'_>) -> R) -> R {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
         f(MeshExpand::new(&ctx, root))
+    }
+
+    /// A vertex channel's length is a fact of the detached payload, not of any
+    /// byte of the file, so its refusal names no offset instead of byte 0.
+    #[test]
+    fn a_point_channel_refusal_names_no_byte() {
+        let error = with_expand(&[0_u8; 5], |expand| {
+            parse_f32_points(expand.ctx(), &[0_u8; 5]).expect_err("channel length")
+        });
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Unpositioned { ref message })
+                if message == "invalid f32 point channel length"
+        ));
+        assert_eq!(
+            error.to_string(),
+            "framing error: invalid f32 point channel length"
+        );
+    }
+
+    #[test]
+    fn mesh_float_point_lanes_refuse_before_allocating_their_counts() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let f32_refusal = with_expand_policy(&[0_u8; 12], policy, |expand| {
+            parse_f32_points(expand.ctx(), &[0_u8; 12]).expect_err("one f32 point exceeds zero")
+        });
+        assert!(matches!(
+            f32_refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino mesh f32 points"
+        ));
+        let f64_refusal = with_expand_policy(&[0_u8; 24], policy, |expand| {
+            super::parse_f64_points(expand.ctx(), &[0_u8; 24])
+                .expect_err("one f64 point exceeds zero")
+        });
+        assert!(matches!(
+            f64_refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino mesh f64 points"
+        ));
+    }
+
+    fn raw_channels_with_one_vertex([normal, uv, curvature, color]: [bool; 4]) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend(1_i32.to_le_bytes());
+        raw.extend([0_u8; 12]);
+        for (present, bytes) in [(normal, 12), (uv, 8), (curvature, 16), (color, 4)] {
+            raw.extend(i32::from(present).to_le_bytes());
+            if present {
+                raw.extend(std::iter::repeat_n(0_u8, bytes));
+            }
+        }
+        raw
+    }
+
+    #[test]
+    fn raw_mesh_channels_refuse_retained_copies_before_allocation() {
+        for (uv, curvature, color, _byte_limit, operation) in [
+            (true, false, false, 7, "Rhino mesh raw UV channel"),
+            (false, true, false, 15, "Rhino mesh raw curvature channel"),
+            (false, false, true, 3, "Rhino mesh raw color channel"),
+        ] {
+            let raw = raw_channels_with_one_vertex([false, uv, curvature, color]);
+            let run = |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let refused = with_expand_policy(&raw, policy, |expand| {
+                    let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+                    read_raw_channels(
+                        expand.ctx(),
+                        &mut reader,
+                        1,
+                        &mut Vec::new(),
+                        &mut None,
+                        &mut Vec::new(),
+                        &mut Diagnostics::new(),
+                    )
+                    .expect_err("raw channel bytes exceed the retention limit")
+                });
+                refused
+            };
+            let refused = run(crate::test_support::retained_limit_at(
+                operation,
+                0,
+                |cap| match run(cap) {
+                    GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                },
+            ));
+            assert!(matches!(
+                refused,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == operation
+            ));
+        }
+    }
+
+    #[test]
+    fn raw_mesh_normal_collection_refusal_is_not_a_warning() {
+        let raw = raw_channels_with_one_vertex([true, false, false, false]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let refused = with_expand_policy(&raw, policy, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            read_raw_channels(
+                expand.ctx(),
+                &mut reader,
+                1,
+                &mut Vec::new(),
+                &mut None,
+                &mut Vec::new(),
+                &mut Diagnostics::new(),
+            )
+            .expect_err("normal output exceeds two collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino mesh f32 normals"
+        ));
+    }
+
+    #[test]
+    fn negative_raw_channel_diagnostic_refuses_collection_limit() {
+        let raw = (-1_i32).to_le_bytes();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let refused = with_expand_policy(&raw, policy, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            super::read_counted_raw(
+                expand.ctx(),
+                &mut reader,
+                1,
+                12,
+                "normals",
+                &mut Diagnostics::new(),
+            )
+            .expect_err("diagnostic exceeds zero collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
     }
 
     /// Like [`with_expand`], but under a caller-supplied policy.
@@ -1510,14 +1994,17 @@ mod tests {
 
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
-        result.extend(((body.len() + 4) as i64).to_le_bytes());
+        result
+            .extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
         result.extend(body);
         result.extend(crc32fast::hash(body).to_le_bytes());
         result
     }
 
     fn buffer(value: &[u8], method: u8) -> Vec<u8> {
-        let mut result = (value.len() as u32).to_le_bytes().to_vec();
+        let mut result = (u32::try_from(value.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(crc32fast::hash(value).to_le_bytes());
         result.push(method);
         if method == 0 {
@@ -1538,7 +2025,7 @@ mod tests {
         body.extend(3_i32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
-        body.extend((points.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             for coordinate in point {
                 body.extend(coordinate.to_le_bytes());
@@ -1573,7 +2060,7 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(minor.to_le_bytes());
         body.extend(1_i32.to_le_bytes());
-        body.extend((vertices.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(vertices.len()).expect("fixture value fits i32")).to_le_bytes());
         body.extend(vertices.iter().flat_map(|value| value.to_le_bytes()));
         body.extend(faces.iter().flat_map(|value| value.to_le_bytes()));
         if minor >= 1 {
@@ -1602,7 +2089,7 @@ mod tests {
         let mut body = version.to_le_bytes().to_vec();
         body.extend(7_i32.to_le_bytes());
         for value in 0..30 {
-            body.extend((value as f64).to_le_bytes());
+            body.extend((f64::from(value)).to_le_bytes());
         }
         if mapping {
             body.extend(2_i32.to_le_bytes());
@@ -1655,6 +2142,84 @@ mod tests {
     }
 
     #[test]
+    fn compressed_mesh_retains_admitted_positions_and_normals() {
+        let mut bytes = compressed_mesh();
+        bytes.truncate(bytes.len() - 16);
+        let mut normals = Vec::new();
+        for value in [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] {
+            normals.extend(value.to_le_bytes());
+        }
+        bytes.extend(buffer(&normals, 0));
+        for _ in 0..3 {
+            bytes.extend(0_u32.to_le_bytes());
+        }
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#admitted-lanes",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
+                    userdata: &[],
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("finite mesh lanes");
+        assert_eq!(
+            decoded.tessellation.vertices()[1].get(),
+            Point3::new(1.0, 0.0, 0.0)
+        );
+        let normals = decoded.tessellation.vertex_normals();
+        assert_eq!(normals.len(), 3);
+        assert_eq!(normals[2].get(), Vector3::new(0.0, 0.0, 1.0));
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+    }
+
+    #[test]
+    fn mesh_scaled_vertices_refuse_before_the_output_array() {
+        let bytes = compressed_mesh();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 4;
+        let refused = with_expand_policy(&bytes, policy, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#scaled-limit",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
+                    userdata: &[],
+                },
+                &mut MeshBudget::new(),
+            )
+            .expect_err("three scaled vertices exceed four cumulative items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino mesh scaled vertices"
+        ));
+    }
+
+    #[test]
     fn later_mesh_fields_require_the_post_2006_writer_gate() {
         let mut bytes = compressed_mesh();
         bytes[0] = 0x35;
@@ -1671,8 +2236,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "legacy-minor-five".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#legacy-minor-five",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut MeshBudget::new(),
@@ -1701,8 +2271,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v5-double".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v5-double",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1711,6 +2286,49 @@ mod tests {
         .expect("V5 double userdata mesh");
         assert_eq!(decoded.tessellation.vertices()[1].x, 1.0 + delta);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+    }
+
+    #[test]
+    fn v5_double_userdata_collections_refuse_before_allocation() {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v5_double_userdata_payload(&points));
+        let descriptor = v5_double_userdata_descriptor(payload_start..bytes.len());
+        for (limit, operation) in [
+            (6, "Rhino V5 mesh double vertex values"),
+            (9, "Rhino V5 mesh admitted double vertices"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let refused = with_expand_policy(&bytes, policy, |expand| {
+                decode(
+                    expand,
+                    &bytes,
+                    0..payload_start,
+                    ArchiveVersion::V5,
+                    MeshDecodeOptions {
+                        writer_version: None,
+                        association: None,
+                        id: crate::mesh::MeshId::Ready(
+                            cadmpeg_ir::tessellation::TessellationId::mint(
+                                "synthetic:test:tessellation#v5-double-limit",
+                            )
+                            .expect("valid identity"),
+                        ),
+                        scale: MillimeterScale::IDENTITY,
+                        userdata: std::slice::from_ref(&descriptor),
+                    },
+                    &mut MeshBudget::new(),
+                )
+                .expect_err("double vertex collection exceeds its item limit")
+            });
+            assert!(matches!(
+                refused,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation
+            ));
+        }
     }
 
     #[test]
@@ -1730,8 +2348,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v5-double-mismatch".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v5-double-mismatch",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1767,8 +2390,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1777,6 +2405,41 @@ mod tests {
         .expect("legacy n-gon userdata mesh");
         assert_eq!(decoded.ngon_count, 1);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_refuses_record_and_index_work_limits() {
+        let bytes = v4v5_ngon_userdata_payload(1, &[0, 1, 2], &[0, -1, -1], 1, 3, &[]);
+        let descriptor = v4v5_ngon_userdata_descriptor(0..bytes.len());
+        let extra = descriptor.known().expect("known n-gon userdata");
+        assert_eq!(
+            with_expand(&bytes, |expand| {
+                read_v4v5_ngon_userdata(expand.ctx(), &bytes, extra, ArchiveVersion::V5, 3, 1)
+            })
+            .expect("one n-gon fits service limits"),
+            Some(1)
+        );
+        let checksum_body = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
+            .expect("bounded userdata chunk")
+            .body();
+        // One range validation and every direct checksum byte precede records.
+        let checksum_work = 1 + u64::try_from(checksum_body.len()).expect("fixture length fits");
+        for (work_limit, operation) in [
+            (checksum_work, "Rhino V4V5 mesh ngon records"),
+            (checksum_work + 6, "Rhino V4V5 mesh ngon indices"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work_limit;
+            let refused = with_expand_policy(&bytes, policy, |expand| {
+                read_v4v5_ngon_userdata(expand.ctx(), &bytes, extra, ArchiveVersion::V5, 3, 1)
+                    .expect_err("n-gon work exceeds the configured limit")
+            });
+            assert!(matches!(
+                refused,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation
+            ));
+        }
     }
 
     #[test]
@@ -1801,8 +2464,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-later".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon-later",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1834,8 +2502,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-old".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon-old",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1867,8 +2540,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-invalid".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon-invalid",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1904,8 +2582,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-bad-index".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon-bad-index",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1943,8 +2626,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-crc".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#v4v5-ngon-crc",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1964,17 +2652,17 @@ mod tests {
         bytes.push(0xaa);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
-            let mut budget = 0;
+            let mut warnings = Diagnostics::new();
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
                     expand,
                     &mut reader,
-                    3,
+                    MeshBufferSpec {
+                        expected: 3,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -1993,17 +2681,17 @@ mod tests {
         bytes.extend(buffer(&[8], 0));
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
-            let mut budget = 0;
+            let mut warnings = Diagnostics::new();
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
                     expand,
                     &mut reader,
-                    4,
+                    MeshBufferSpec {
+                        expected: 4,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2015,10 +2703,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    1,
+                    MeshBufferSpec {
+                        expected: 1,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2035,17 +2724,17 @@ mod tests {
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut warnings = Vec::new();
-            let mut budget = 0;
+            let mut warnings = Diagnostics::new();
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
                     expand,
                     &mut reader,
-                    2,
+                    MeshBufferSpec {
+                        expected: 2,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2066,16 +2755,17 @@ mod tests {
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         let mut document_budget = MeshBudget::with_limit(4);
         with_expand(&bytes, |expand| {
-            let mut warnings = Vec::new();
+            let mut warnings = Diagnostics::new();
             let mut first = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             assert_eq!(
                 read_buffer(
                     expand,
                     &mut first,
-                    4,
+                    MeshBufferSpec {
+                        expected: 4,
+                        name: "first"
+                    },
                     &mut warnings,
-                    "first",
-                    &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2088,10 +2778,11 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut second,
-                4,
+                MeshBufferSpec {
+                    expected: 4,
+                    name: "second",
+                },
                 &mut warnings,
-                "second",
-                &mut 0,
                 &mut document_budget,
                 ArchiveVersion::V8,
             );
@@ -2112,10 +2803,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
-                &mut Vec::new(),
-                "bad",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "bad"
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2128,10 +2820,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                3,
-                &mut Vec::new(),
-                "short",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "short"
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2150,10 +2843,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
-                &mut Vec::new(),
-                "bomb",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "bomb"
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2162,22 +2856,19 @@ mod tests {
     }
 
     #[test]
-    fn cumulative_buffer_budget_rejects_another_channel() {
+    fn document_buffer_ceiling_refuses_before_another_channel() {
         let bytes = buffer(&[1], 0);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut budget = MAX_BUFFER_OUTPUT;
-            assert!(read_buffer(
-                expand,
-                &mut reader,
-                1,
-                &mut Vec::new(),
-                "budget",
-                &mut budget,
-                &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
-            .is_err());
+            let mut document_budget = MeshBudget {
+                used: MAX_BUFFER_OUTPUT,
+                limit: MAX_BUFFER_OUTPUT,
+            };
+            assert!(matches!(read_buffer(expand, &mut reader,
+                MeshBufferSpec { expected: 1, name: "budget" }, &mut Diagnostics::new(),
+                &mut document_budget, ArchiveVersion::V8),
+                Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -2191,10 +2882,11 @@ mod tests {
                 let result = read_buffer(
                     expand,
                     &mut reader,
-                    1,
-                    &mut Vec::new(),
-                    "aggregate",
-                    &mut 0,
+                    MeshBufferSpec {
+                        expected: 1,
+                        name: "aggregate",
+                    },
+                    &mut Diagnostics::new(),
                     &mut document_budget,
                     ArchiveVersion::V8,
                 );
@@ -2216,8 +2908,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "first".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#first",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut budget,
@@ -2231,16 +2928,21 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "second".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#second",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut budget,
             )
             .expect_err("second mesh exceeds aggregate budget");
-            assert!(error
-                .to_string()
-                .contains("document mesh buffer budget exceeded"));
+            assert!(matches!(error,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -2250,8 +2952,13 @@ mod tests {
         bytes.extend(chunk(&[1, 2, 3]));
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 11, end).expect("reader");
-        consume_optional_chunk(&mut reader, ArchiveVersion::V5, &mut Vec::new(), "optional")
-            .expect("chunk");
+        consume_optional_chunk(
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+            "optional",
+        )
+        .expect("chunk");
         assert_eq!(reader.position(), end);
     }
 
@@ -2261,16 +2968,18 @@ mod tests {
             let mut bytes = width.to_le_bytes().to_vec();
             for index in [0_u32, 1, 2, 2] {
                 match width {
-                    1 => bytes.push(index as u8),
-                    2 => bytes.extend((index as u16).to_le_bytes()),
+                    1 => bytes.push(u8::try_from(index).expect("fixture value fits u8")),
+                    2 => bytes.extend(
+                        (u16::try_from(index).expect("fixture value fits u16")).to_le_bytes(),
+                    ),
                     4 => bytes.extend(index.to_le_bytes()),
                     _ => unreachable!(),
                 }
             }
-            with_expand(&bytes, |_expand| {
+            with_expand(&bytes, |expand| {
                 let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
                 assert_eq!(
-                    read_faces(&mut reader, vertices, 1).expect("face"),
+                    read_faces(expand.ctx(), &mut reader, vertices, 1).expect("face"),
                     vec![[0, 1, 2, 2]]
                 );
             });
@@ -2279,14 +2988,17 @@ mod tests {
 
     #[test]
     fn synchronization_uses_relative_max_coordinate_tolerance() {
-        assert!(synchronization_ok(&[[0.0, 0.0, 0.0]], &[[0.0, 0.0, 0.0]]));
+        assert!(synchronization_ok(
+            &[[0.0, 0.0, 0.0]],
+            &[([0.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
+        ));
         assert!(synchronization_ok(
             &[[1_000_000.0, 0.0, 0.0]],
-            &[[1_000_000.5, 0.0, 0.0]]
+            &[([1_000_000.5, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
         ));
         assert!(!synchronization_ok(
             &[[1_000_000.0, 0.0, 0.0]],
-            &[[1_002.0, 0.0, 0.0]]
+            &[([1_002.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
         ));
     }
 
@@ -2303,7 +3015,13 @@ mod tests {
         bytes.extend(mapping);
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 3, end).expect("reader");
-        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut Vec::new()).expect("mapping");
+        read_mapping_tag(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+        )
+        .expect("mapping");
 
         let mut ngon = 1_i32.to_le_bytes().to_vec();
         ngon.extend(0_i32.to_le_bytes());
@@ -2316,7 +3034,15 @@ mod tests {
         bytes.extend(ngon);
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 5, end).expect("reader");
-        read_ngons(&mut reader, ArchiveVersion::V5, 3, 1, &mut Vec::new()).expect("ngon");
+        read_ngons(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut reader,
+            ArchiveVersion::V5,
+            3,
+            1,
+            &mut Diagnostics::new(),
+        )
+        .expect("ngon");
     }
 
     #[test]
@@ -2332,11 +3058,47 @@ mod tests {
         bytes[crc] ^= 1;
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 0, end).expect("reader");
-        let mut warnings = Vec::new();
-        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut warnings).expect("mapping");
+        let mut warnings = Diagnostics::new();
+        read_mapping_tag(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut warnings,
+        )
+        .expect("mapping");
         assert_eq!(reader.position(), end);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("mapping tag CRC mismatch"));
+    }
+
+    #[test]
+    fn mapping_crc_diagnostic_refuses_collection_limit() {
+        let mut mapping = 1_i32.to_le_bytes().to_vec();
+        mapping.extend(1_i32.to_le_bytes());
+        mapping.extend([0; 16]);
+        mapping.extend(7_i32.to_le_bytes());
+        mapping.extend((0..16).flat_map(|_| 1.0_f64.to_le_bytes()));
+        mapping.extend(3_u32.to_le_bytes());
+        let mut bytes = chunk(&mapping);
+        let crc = bytes.len() - 1;
+        bytes[crc] ^= 1;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let refused = with_expand_policy(&bytes, policy, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            read_mapping_tag(
+                expand.ctx(),
+                &mut reader,
+                ArchiveVersion::V5,
+                &mut Diagnostics::new(),
+            )
+            .expect_err("checksum diagnostic exceeds zero collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
     }
 
     #[test]
@@ -2351,8 +3113,13 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "test".to_string(),
-                    scale: 1.0,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#future-v5-minor",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut MeshBudget::new(),
@@ -2383,10 +3150,11 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut child,
-                4,
-                &mut Vec::new(),
-                "nested",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 4,
+                    name: "nested",
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2409,10 +3177,11 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut reader,
-                3,
-                &mut Vec::new(),
-                "first",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "first",
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2421,10 +3190,11 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut reader,
-                3,
-                &mut Vec::new(),
-                "second",
-                &mut 0,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "second",
+                },
+                &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             );
@@ -2433,15 +3203,106 @@ mod tests {
     }
 
     #[test]
+    fn compressed_buffer_expansion_limit_is_a_codec_resource_refusal() {
+        let data = buffer(&[1, 2, 3], 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_total = 2;
+        let refused = with_expand_policy(&data, policy, |expand| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            read_buffer(
+                expand,
+                &mut reader,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "vertices",
+                },
+                &mut Diagnostics::new(),
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect_err("three expanded bytes exceed the two-byte limit")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn stored_buffer_retention_limit_refuses_before_copy() {
+        let data = buffer(&[1, 2, 3], 0);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let refused = with_expand_policy(&data, policy, |expand| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            read_buffer(
+                expand,
+                &mut reader,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "vertices",
+                },
+                &mut Diagnostics::new(),
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect_err("three stored bytes exceed the two-byte limit")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
     fn read_faces_preserves_quad_indices_until_vertices_are_available() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
         raw.extend([0, 1, 2, 0]); // quad -> two triangles
-        with_expand(&raw, |_expand| {
+        with_expand(&raw, |expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            let faces = read_faces(&mut reader, 3, 2).expect("faces");
+            let faces = read_faces(expand.ctx(), &mut reader, 3, 2).expect("faces");
             assert_eq!(faces, vec![[0, 1, 2, 2], [0, 1, 2, 0]]);
         });
+    }
+
+    #[test]
+    fn mesh_faces_refuse_a_collection_limit_below_the_face_count() {
+        let mut raw = 1_i32.to_le_bytes().to_vec();
+        raw.extend([0, 1, 2, 2]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let refused = with_expand_policy(&raw, policy, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            read_faces(expand.ctx(), &mut reader, 3, 1)
+                .expect_err("one face exceeds zero collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino mesh faces"
+        ));
+    }
+
+    #[test]
+    fn mesh_triangles_refuse_a_collection_limit_below_the_quad_output() {
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let refused = with_expand_policy(&[], policy, |expand| {
+            triangulate_faces(expand.ctx(), &[[0, 1, 2, 3]], &vertices, |point| point)
+                .expect_err("two triangles exceed one collection item")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino mesh triangles"
+        ));
     }
 
     #[test]
@@ -2453,7 +3314,15 @@ mod tests {
             Point3::new(1.0, 1.0, 0.0),
         ];
         assert_eq!(
-            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices),
+            with_expand(&[], |expand| {
+                triangulate_faces(
+                    expand.ctx(),
+                    &[[0, 1, 2, 3], [0, 1, 2, 2]],
+                    &vertices,
+                    |point| point,
+                )
+            })
+            .expect("quad and triangle fit the service limit"),
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
         assert_eq!(quad_face_count(&[[0, 1, 2, 3], [0, 1, 2, 2]]), 1);
@@ -2463,9 +3332,9 @@ mod tests {
     fn read_faces_truncated_at_record_boundary() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // only one of the two declared faces
-        with_expand(&raw, |_expand| {
+        with_expand(&raw, |expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            assert!(read_faces(&mut reader, 3, 2).is_err());
+            assert!(read_faces(expand.ctx(), &mut reader, 3, 2).is_err());
         });
     }
 }

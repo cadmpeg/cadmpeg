@@ -1,10 +1,196 @@
+use cadmpeg_test_support::wire;
+
+mod association;
+mod local_frame;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::{build_prt, push_named_analytic_prototype};
 use crate::CreoCodec;
+
+const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
+
+#[test]
+fn prototype_loss_refuses_text_and_row_below_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let records = ["first".to_owned(), "second".to_owned()];
+    for (bytes, items, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::RetainedBytes,
+            "creo prototype loss text",
+        ),
+        (
+            u64::MAX,
+            0,
+            ResourceDimension::CollectionItems,
+            "creo prototype losses",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::push_prototype_loss(
+            &ctx,
+            &mut Vec::new(),
+            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+            format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
+        )
+        .expect_err("below-need loss cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    super::push_prototype_loss(
+        &ctx,
+        &mut losses,
+        crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+        format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
+    )
+    .expect("service loss");
+    assert_eq!(losses[0].message, "Prototype rejected: first; second");
+}
+
+#[test]
+fn legacy_carrier_count_node_refuses_before_first_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error =
+        super::legacy_carrier_counts(&ctx, [42, 42]).expect_err("first count node exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy carrier count nodes"));
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let counts = super::legacy_carrier_counts(&ctx, [42, 42]).expect("service counts");
+    assert_eq!(counts.get(&42), Some(&2));
+    assert_eq!(counts.len(), 1);
+}
+
+#[test]
+fn positional_replay_section_rows_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = [0u8];
+    let section = crate::container::Section::scan("VisibGeom".to_string(), 0, 1, None, &data)
+        .expect("bounded section");
+    let row = crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Spline,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code01,
+        next_surface: 0,
+        offset: 0,
+    };
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("root section is admitted");
+        super::relative_surface_rows(&ctx, std::slice::from_ref(&row), &section.section)
+    };
+    assert_eq!(run(1).expect("one relative row admitted").len(), 1);
+    let error = run(0).expect_err("relative row needs a Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo positional replay section rows"));
+}
+
+#[test]
+fn prototype_vector_triples_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut array =
+        crate::surface::arrays::DimensionedScalars::empty(1, 3).expect("one test triple");
+    array
+        .fill_values(vec![Some(1.0), Some(2.0), Some(3.0)])
+        .expect("complete triple");
+    let record = crate::surface::SurfacePrototypeRecord {
+        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        parameters: vec![crate::surface::SurfaceNamedParameter {
+            name: "i_points".into(),
+            value: crate::surface::SurfaceNamedValue::ScalarArray(array),
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        offset: 0,
+    };
+    let data = [0u8];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
+        super::prototype_vector_array(&ctx, &record, "i_points")
+    };
+    assert_eq!(
+        run(1).expect("one triple admitted"),
+        Some(vec![[1.0, 2.0, 3.0]])
+    );
+    let error = run(0).expect_err("triple needs one Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype vector triples"));
+}
+
+#[test]
+fn prototype_parameter_values_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut array = crate::surface::arrays::CountedScalars::empty(2).expect("two test values");
+    array
+        .fill_values(vec![Some(0.0), Some(1.0)])
+        .expect("complete parameters");
+    let record = crate::surface::SurfacePrototypeRecord {
+        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        parameters: vec![crate::surface::SurfaceNamedParameter {
+            name: "u_params".into(),
+            value: crate::surface::SurfaceNamedValue::CountedScalarArray(array),
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        offset: 0,
+    };
+    let data = [0u8];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
+        super::prototype_parameter_array(&ctx, &record, "u_params")
+    };
+    assert_eq!(run(2).expect("two values admitted"), Some(vec![0.0, 1.0]));
+    let error = run(1).expect_err("second value exceeds one-item limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype parameter values"));
+}
 
 #[test]
 fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
@@ -29,7 +215,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
-    let scan = crate::container::scan_bytes(data.clone());
+    let scan = crate::container::scan_bytes_ok(data.clone());
     let [prototype] = scan.surfaces.prototype_records.as_slice() else {
         panic!("complete cone prototype");
     };
@@ -38,7 +224,14 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         crate::surface::SurfacePrototypeFamily::Cone
     );
     assert!(crate::surface::prototype_cone_frame(prototype).is_some());
-    assert_eq!(super::unique_surface_prototype_associations(&scan).len(), 1);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::unique_surface_prototype_associations(ctx, &scan)
+        })
+        .expect("prototype associations")
+        .len(),
+        1
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -50,22 +243,23 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .iter()
         .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
-    assert!(matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle,
-        } if (origin.x - 37.01).abs() < EPS_CONE_FRAME
-            && origin.y.abs() < EPS_CONE_FRAME
-            && origin.z.abs() < EPS_CONE_FRAME
-            && axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
-            && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-            && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME
-    ));
+    assert!(
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    let origin = cone_surface.origin();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
+        let half_angle = cone_surface.half_angle().get();
+                    (cone_surface.radius().get() == 0.0)
+                        && (cone_surface.ratio().get() == 1.0)
+                        && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
+                            && origin.y.abs() < EPS_CONE_FRAME
+                            && origin.z.abs() < EPS_CONE_FRAME
+                            && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+                            && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+                            && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
+                })
+    );
 }
 
 #[test]
@@ -131,7 +325,10 @@ fn later_positional_spline_replay_transfers_as_a_nurbs_surface() {
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{surface_id}"))
             .expect("spline surface");
-        assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        assert!(matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+        ));
     }
 }
 
@@ -157,16 +354,14 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("first instance surface");
-    let SurfaceGeometry::Torus {
-        center,
-        axis,
-        ref_direction,
-        major_radius,
-        minor_radius,
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = surface.geometry.solved() else {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
+    let center = torus_surface.center().get();
+    let axis = *torus_surface.frame().axis().as_raw();
+    let ref_direction = *torus_surface.frame().reference().as_raw();
+    let major_radius = torus_surface.major_radius().get();
+    let minor_radius = torus_surface.minor_radius().get();
     assert_eq!(center, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(ref_direction, [0.0, 1.0, 0.0].into());
@@ -175,33 +370,84 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
 }
 
 #[test]
+fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
+    ]);
+    payload.push(0xe3);
+    push_named_analytic_prototype(&mut payload, "torus", &[("radius1", 1.0), ("radius2", 2.0)]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut scan = crate::container::scan_bytes_ok(build_prt(
+        "prototype-override",
+        &[("ND:0:VisibGeom:0", payload)],
+    ));
+    scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut losses = Vec::new();
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(Some(scale));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_first_instance_prototype_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut losses,
+            &mut source_carriers,
+        )
+        .expect("torus prototype transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("torus carrier");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &surface.geometry else {
+        panic!("torus carrier changed family");
+    };
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(source_torus)) =
+        source_carriers.surface_geometry(surface)
+    else {
+        panic!("source torus carrier changed family");
+    };
+    assert!((source_torus.major_radius().get() - 0.5).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((source_torus.minor_radius().get() - 0.25).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((torus.major_radius().get() - 12.7).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((torus.minor_radius().get() - 6.35).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+}
+
+#[test]
 fn prototype_local_frame_rejects_nonfinite_origin() {
     let record = crate::surface::SurfacePrototypeRecord {
         family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: crate::surface::SurfaceNamedValue::ScalarArray {
-                dimensions: 4,
-                count: 3,
-                values: [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    f64::NAN,
-                    0.0,
-                    0.0,
-                ]
-                .into_iter()
-                .map(Some)
-                .collect(),
-                tokens: None,
-            },
+            value: crate::surface::SurfaceNamedValue::ScalarArray({
+                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                    .expect("valid scalar array");
+                assert_eq!(
+                    array.fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            f64::NAN,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    ),
+                    None
+                );
+                array
+            }),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
@@ -218,28 +464,33 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
         family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: crate::surface::SurfaceNamedValue::ScalarArray {
-                dimensions: 4,
-                count: 3,
-                values: [
-                    1.0,
-                    0.0,
-                    0.0,
-                    f64::NAN,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                ]
-                .into_iter()
-                .map(Some)
-                .collect(),
-                tokens: None,
-            },
+            value: crate::surface::SurfaceNamedValue::ScalarArray({
+                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                    .expect("valid scalar array");
+                assert_eq!(
+                    array.fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            f64::NAN,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    ),
+                    None
+                );
+                array
+            }),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
@@ -303,25 +554,23 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cylinder surface");
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let origin = cylinder_surface.origin().get();
+    let axis = *cylinder_surface.frame().axis().as_raw();
+    let ref_direction = *cylinder_surface.frame().reference().as_raw();
+    let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [0.0, 0.0, 1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 50.8);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["untransferred_visible_surface_row_count"],
+        wire::coverage(result.report())["untransferred_visible_surface_row_count"],
         0
     );
 
@@ -338,10 +587,13 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
         .expect("non-visible legacy cylinder surface");
-    assert!(matches!(
-        nonvisible_surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if radius == 50.8
-    ));
+    assert!(
+        matches!(nonvisible_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        if {
+            let radius = cylinder_surface.radius().get();
+            radius == 50.8
+        })
+    );
     assert_eq!(
         nonvisible_surface
             .source_object
@@ -401,17 +653,15 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cone surface");
-    let SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-        ratio,
-        half_angle,
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let origin = cone_surface.origin().get();
+    let axis = *cone_surface.frame().axis().as_raw();
+    let ref_direction = *cone_surface.frame().reference().as_raw();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio().get();
+    let half_angle = cone_surface.half_angle().get();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(axis, [0.0, 0.0, -1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -419,7 +669,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     assert_eq!(ratio, 1.0);
     assert_eq!(half_angle, std::f64::consts::FRAC_PI_4);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -472,19 +722,17 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy plane surface");
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let origin = plane_surface.origin().get();
+    let normal = *plane_surface.frame().axis().as_raw();
+    let u_axis = *plane_surface.frame().reference().as_raw();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -569,18 +817,87 @@ ${}
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy spline surface");
-    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("legacy spline geometry: {:?}", surface.geometry);
     };
-    assert_eq!(surface.control_points().len(), 16);
+    assert_eq!(surface.poles().len(), 16);
     assert_eq!(surface.u_count(), 4);
     assert_eq!(surface.v_count(), 4);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["transferred_visible_spline_surface_row_count"],
+        wire::coverage(result.report())["transferred_visible_spline_surface_row_count"],
         1
     );
+}
+
+#[test]
+fn in_range_section_extent_states_its_declared_end() {
+    let section =
+        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section;
+
+    assert_eq!(section.end(), 48);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert_eq!(super::frame_bound(ctx, &section, 8)?, 40);
+        let error =
+            super::frame_bound(ctx, &section, usize::MAX).expect_err("overrun bound is refused");
+        assert!(error.to_string().contains("VisibGeom"));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
+    .expect("service frame-bound text admitted");
+}
+
+#[test]
+fn surface_prototype_frame_address_error_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let section =
+        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error = super::frame_bound(&ctx, &section, usize::MAX)
+        .expect_err("error text exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo surface prototype frame address error")
+    );
+}
+
+#[test]
+fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let section =
+        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section;
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.framing.data = vec![0u8; 16].into();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error = super::surface_prototype_frame_bounds(&ctx, &scan, &section, 32)
+        .expect_err("bounds error text exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo surface prototype frame bounds error")
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::surface_prototype_frame_bounds(ctx, &scan, &section, 32)
+            .expect_err("declared section exceeds scanned bytes");
+        assert!(error.to_string().contains("VisibGeom"));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
+    .expect("service error text admitted");
 }

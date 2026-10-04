@@ -2,9 +2,11 @@
 //! Formula and relation-program CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{
-    be32, catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
-    object_graph_from_records, object_graph_record, standard_catpart,
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::standard_catpart;
+use crate::test_support::test_object_graph::{
+    catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
+    object_graph_from_records, object_graph_record,
 };
 
 pub(crate) fn standard_catpart_with_relation_expression(parameter_role: &str) -> Vec<u8> {
@@ -74,7 +76,7 @@ pub(crate) fn standard_catpart_with_opened_parser_version_relation_expression(
     )
 }
 
-pub(crate) fn standard_catpart_with_parser_version_relation_expression_roles(
+fn standard_catpart_with_parser_version_relation_expression_roles(
     prefix_role: &str,
     parser_version_role: &str,
     state_role: Option<&str>,
@@ -261,7 +263,7 @@ pub(crate) fn standard_catpart_with_lead54_relation_program_instance_class(
     )
 }
 
-pub(crate) fn standard_catpart_with_relation_program_payload(
+fn standard_catpart_with_relation_program_payload(
     head: &[u8],
     instance_payload: &[u8],
     context_class: &str,

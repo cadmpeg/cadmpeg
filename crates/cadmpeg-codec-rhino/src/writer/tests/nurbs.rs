@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::add_polygon_hole;
+use super::adjacent_quad_sheet;
+use super::make_planar_nurbs_trimmed_face;
+use super::mixed_plane_nurbs_sheet;
+use super::polygon_sheet;
+use super::rectangular_nurbs_patch;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -9,28 +15,74 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::math::Point3;
 
-use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+#[test]
+fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
+    let mut ir = adjacent_quad_sheet();
+    let edge = &mut ir.model.edges[1];
+    edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([1.0, 3.0]))
+        .expect("edge range");
+    let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0],
+            vec![
+                Point3::new(9.0, 0.0, 0.0),
+                Point3::new(-7.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid nonclamped NURBS"),
+    ));
+    let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        1.0,
+    )
+    .expect("start point");
+    assert_eq!(evaluated_start.get(), Point3::new(1.0, 0.0, 0.0));
+    ir.model.curves[1].geometry = geometry;
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("evaluated edge endpoints are writable");
+    assert!(!output.is_empty());
+}
 
 #[test]
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
-    edge.param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            vec![
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.25, 0.5, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.75, 1.0]),
-            false,
-        )
-        .expect("valid shared edge"),
-    );
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([2.0, 5.0])).unwrap();
+    ir.model.curves[1].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                2,
+                vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("valid shared edge"),
+        ));
     let expected = ir.model.curves[1].geometry.clone();
     for version in [
         RhinoArchiveVersion::V5,
@@ -54,14 +106,16 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.param_range == Some([2.0, 5.0]))
+            .find(|edge| {
+                edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([2.0, 5.0])
+            })
             .expect("NURBS edge domain");
         let curve = decoded
             .ir()
             .model
             .curves
             .iter()
-            .find(|curve| shared.curve.as_ref() == Some(&curve.id))
+            .find(|curve| shared.curve() == Some(&curve.id))
             .expect("NURBS C3");
         assert_eq!(curve.geometry, expected, "{version:?}");
         let uses = decoded
@@ -83,31 +137,40 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
                 .expect("projected NURBS C2");
             assert!(matches!(
                 pcurve.geometry,
-                cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
             ));
         }
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
 #[test]
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
-    ir.model.edges[1].param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            vec![
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.25, 0.5, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.75, 1.0]),
-            false,
-        )
-        .expect("valid explicit edge"),
-    );
+    ir.model.edges[1].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges[1].curve().cloned(),
+        Some([2.0, 5.0]),
+    )
+    .unwrap();
+    ir.model.curves[1].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                2,
+                vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                vec![
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.25, 0.5, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("valid explicit edge"),
+        ));
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}")
             .try_into()
@@ -120,22 +183,29 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         if reversed {
             control_points.reverse();
         }
-        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
             id: id.clone(),
-            geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                     control_points,
                     Some(vec![1.0, 0.75, 1.0]),
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .expect("valid explicit pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(false),
-                Some([2.0, 5.0]),
-                Some(0.001),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([2.0, 5.0]).expect("finite fixture range"),
+                ),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
             ),
         });
         ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -166,18 +236,28 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             .model
             .pcurves
             .iter()
-            .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
+            .filter(|pcurve| {
+                pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.001)
+            })
             .collect::<Vec<_>>();
         assert_eq!(explicit.len(), 2, "{version:?}");
         assert!(explicit.iter().all(|pcurve| {
             pcurve.wrapper_reversed() == Some(false)
-                && pcurve.parameter_range() == Some([2.0, 5.0])
+                && pcurve
+                    .parameter_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    == Some([2.0, 5.0])
                 && matches!(
                     pcurve.geometry,
-                    cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                    cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
                 )
         }));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -191,15 +271,18 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch"
         .try_into()
         .expect("valid identity");
-    ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            ir.model.edges[0].param_range,
+            ir.model.edges[0].param_range(),
             None,
         ),
     });
@@ -237,13 +320,22 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
     ] {
-        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
             id,
-            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-                origin,
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 2.0]), None),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    origin,
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                None,
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range"),
+                ),
+                None,
+            ),
         });
     }
     ir.model.coedges[0].pcurves = vec![
@@ -281,16 +373,22 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line"
         .try_into()
         .expect("valid identity");
-    ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            Some([0.0, 2.0]),
-            Some(0.002),
+            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
         ),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -320,10 +418,20 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .model
             .pcurves
             .iter()
-            .find(|pcurve| pcurve.fit_tolerance() == Some(0.002))
+            .find(|pcurve| {
+                pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.002)
+            })
             .expect("explicit line C2");
-        assert_eq!(pcurve.parameter_range(), Some([0.0, 2.0]));
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+        assert_eq!(
+            pcurve
+                .parameter_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 2.0])
+        );
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
             panic!("line C2 must decode as NURBS");
         };
         assert_eq!(nurbs.degree(), 1);
@@ -376,13 +484,13 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
             "{version:?}"
         );
         assert_eq!(decoded.ir().model.pcurves.len(), 4, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .pcurves
-            .iter()
-            .all(|pcurve| pcurve.fit_tolerance() == Some(0.001)));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            == Some(0.001)));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -415,7 +523,12 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         );
         assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
-        assert_eq!(decoded.ir().model.edges[1].param_range, Some([30.0, 32.0]));
+        assert_eq!(
+            decoded.ir().model.edges[1]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([30.0, 32.0])
+        );
         let shared_uses = decoded
             .ir()
             .model
@@ -440,7 +553,10 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
                 .model
                 .pcurves
                 .iter()
-                .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
+                .filter(|pcurve| pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.001))
                 .count(),
             4,
             "{version:?}"
@@ -451,15 +567,23 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             .pcurves
             .iter()
             .find(|pcurve| {
-                pcurve.parameter_range() == Some([30.0, 32.0])
-                    && pcurve.fit_tolerance() != Some(0.001)
+                pcurve
+                    .parameter_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    == Some([30.0, 32.0])
+                    && pcurve
+                        .fit_tolerance()
+                        .map(cadmpeg_ir::geometry::FitTolerance::get)
+                        != Some(0.001)
             })
             .expect("generated planar shared-edge pcurve");
         assert!(matches!(
             planar_shared_pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -480,26 +604,30 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         ],
     );
     make_planar_nurbs_trimmed_face(&mut ir);
-    let domain = ir.model.edges[0].param_range.expect("fixture domain");
+    let domain = ir.model.edges[0].param_range().expect("fixture domain");
     let poles = [
         Point3::new(0.25, 0.25, 0.0),
         Point3::new(2.0, 0.25, 0.0),
         Point3::new(3.5, 0.75, 0.0),
     ];
-    ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
-            2,
-            vec![
-                domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
-            ],
-            poles.to_vec(),
-            Some(vec![1.0, 0.8, 1.0]),
-            false,
-        )
-        .expect("valid trimmed edge"),
-    );
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+    ir.model.curves[0].geometry =
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                2,
+                vec![
+                    domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
+                ],
+                poles.to_vec(),
+                Some(vec![1.0, 0.8, 1.0]),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("valid trimmed edge"),
+        ));
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -511,6 +639,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             Some(vec![1.0, 0.8, 1.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("valid trimmed pcurve"),
     };
     let expected_surface = ir.model.surfaces[0].geometry.clone();
@@ -536,13 +665,13 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         assert_eq!(decoded.ir().model.curves[0].geometry, expected_curve);
         assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.pcurves.len(), 7, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .pcurves
-            .iter()
-            .all(|pcurve| pcurve.fit_tolerance() == Some(0.0001)));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            == Some(0.0001)));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -554,12 +683,18 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         Point3::new(2.0, 3.0, 0.0),
     ]);
     make_planar_nurbs_trimmed_face(&mut ir);
-    let cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. } =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
         &mut ir.model.pcurves[0].geometry
     else {
         unreachable!()
     };
-    direction.v += 0.25;
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+        *origin,
+        cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
+    )
+    .unwrap();
     let mut output = vec![0xaa];
     let error = RhinoCodec
         .plan(
@@ -589,4 +724,274 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
         .expect_err("expected error");
     assert!(error.to_string().contains("explicit pcurve"));
     assert_eq!(output, [0xaa]);
+}
+
+/// The archive's pole lane states the figure `check_nurbs_surface` proved
+/// when the surface was admitted. The in-memory grid is never narrowed a
+/// second time at the write site.
+#[test]
+fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(3.0, 0.0, 0.0),
+        Point3::new(3.0, 2.0, 1.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ];
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+        NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
+        NurbsSurfaceLanes::new(
+            vec![vec![points[0], points[3]], vec![points[1], points[2]]],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid patch surface");
+
+    let pole_count =
+        super::super::check_nurbs_surface("surface-1", &surface).expect("admissible NURBS surface");
+    assert_eq!(pole_count, 4);
+    assert_eq!(surface.poles().len(), 4);
+
+    let payload = super::super::nurbs_surface_payload(&surface, pole_count)
+        .expect("finite homogeneous poles");
+    // 0x10 version byte, eight i32 header lanes, six f64 bounding-box
+    // coordinates, then each of the two knot lanes as one i32 count and two
+    // interior f64 knots.
+    let lane = 1 + 8 * 4 + 6 * 8 + 2 * (4 + 2 * 8);
+    assert_eq!(
+        cadmpeg_core::decode::View::i32_le_at(&payload, lane),
+        Some(pole_count)
+    );
+}
+
+#[test]
+fn admitted_degree_zero_nurbs_are_writer_limits() {
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        0,
+        vec![0.0, 1.0],
+        vec![point],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("degree-zero curves are admitted by the IR");
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceLanes::new(vec![vec![point]], None),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("degree-zero surfaces are admitted by the IR");
+
+    let curve_error = super::super::check_nurbs_curve("curve-1", &curve)
+        .expect_err("Rhino requires positive NURBS degree");
+    let surface_error = super::super::check_nurbs_surface("surface-1", &surface)
+        .expect_err("Rhino requires positive NURBS degree");
+    assert!(matches!(
+        curve_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+    assert!(matches!(
+        surface_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
+fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
+    use crate::writer::{
+        model::{WritableEdge, WritableEdgeCurve, WritablePcurve},
+        validate_nurbs_trim,
+    };
+    use cadmpeg_ir::geometry::{
+        nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+        pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs},
+    };
+    use cadmpeg_ir::math::Point2;
+    let domain = [1e308, 1.4e308];
+    let knots = vec![domain[0], domain[0], 1.2e308, domain[1], domain[1]];
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.5, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let uv = vec![
+        Point2::new(1.0, 0.0),
+        Point2::new(0.5, 0.0),
+        Point2::new(0.0, 0.0),
+    ];
+    let pcurve = Pcurve {
+        id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                uv.clone(),
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::general(
+            None,
+            Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
+        ),
+    };
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let source = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = WritableEdge {
+        source: &source.model.edges[0],
+        start: 0,
+        end: 1,
+        domain: domain.map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
+        curve_id: "large-domain",
+        curve: WritableEdgeCurve::Nurbs(&curve),
+        uses: vec![],
+    };
+    let explicit = WritablePcurve {
+        source: &pcurve,
+        payload: ([0; 16], vec![]),
+        domain_extent_points: uv,
+    };
+    validate_nurbs_trim(
+        &surface,
+        0.001,
+        &edge,
+        cadmpeg_ir::topology::Sense::Reversed,
+        &explicit,
+    )
+    .unwrap();
+}
+
+#[test]
+fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
+    use crate::writer::{
+        model::{WritableEdge, WritableEdgeCurve, WritablePcurve},
+        validate_nurbs_trim,
+    };
+    use cadmpeg_ir::geometry::{
+        nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+        pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs},
+    };
+    use cadmpeg_ir::math::Point2;
+    let domain = [-1e308, 1e308];
+    let knots = vec![domain[0], domain[0], domain[1], domain[1]];
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let uv = vec![Point2::new(1.0, 0.0), Point2::new(0.0, 0.0)];
+    let pcurve = Pcurve {
+        id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                uv.clone(),
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::general(
+            None,
+            Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
+        ),
+    };
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let source = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = WritableEdge {
+        source: &source.model.edges[0],
+        start: 0,
+        end: 1,
+        domain: domain.map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
+        curve_id: "large-domain",
+        curve: WritableEdgeCurve::Nurbs(&curve),
+        uses: vec![],
+    };
+    let explicit = WritablePcurve {
+        source: &pcurve,
+        payload: ([0; 16], vec![]),
+        domain_extent_points: uv,
+    };
+    validate_nurbs_trim(
+        &surface,
+        0.001,
+        &edge,
+        cadmpeg_ir::topology::Sense::Reversed,
+        &explicit,
+    )
+    .unwrap();
 }

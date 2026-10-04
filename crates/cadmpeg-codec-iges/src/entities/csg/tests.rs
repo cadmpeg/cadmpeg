@@ -1,21 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_solids_and_structure::{
+    explicit_tetrahedron_solid_with_boolean_file, nested_brep_boolean_file, primitive_solids_file,
+    procedural_and_boolean_solids_file,
+};
 use crate::IgesCodec;
 
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
+
+fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("unsupported test dimension"),
+        }
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
+    let primitive = primitive_solids_file();
+    assert_csg_refusal(
+        &primitive,
+        "iges csg decoded sequences",
+        ResourceDimension::CollectionItems,
+    );
+    let boolean = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges Boolean postfix terms",
+        "iges Boolean definition nodes",
+        "iges boolean validation path",
+        "iges boolean validity memo",
+    ] {
+        assert_csg_refusal(&boolean, operation, ResourceDimension::CollectionItems);
+    }
+    assert_csg_refusal(
+        &boolean,
+        "iges boolean tree validation",
+        ResourceDimension::RecursionDepth,
+    );
+    assert_csg_refusal(
+        &boolean,
+        "iges boolean term validation",
+        ResourceDimension::WorkUnits,
+    );
+}
 
 #[test]
 fn profile_closure_rejects_conflicting_edge_occurrences() {
@@ -23,23 +90,28 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#open-point").expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#closed-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("test:model:point#open-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -66,18 +138,21 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 1.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+                .unwrap(),
             start: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         },
     ]);
@@ -487,7 +562,10 @@ fn decode_validates_selected_component_parameter_pointer() {
         })
         .unwrap();
     let provenance = even_loss.provenance.as_ref().unwrap();
-    assert_eq!(provenance.offset, even_pointer_offset as u64);
+    assert_eq!(
+        provenance.offset,
+        cadmpeg_core::decode::u64_from_index(even_pointer_offset)
+    );
     assert_eq!(provenance.tag.as_deref(), Some("D7:parameter[1]"));
 }
 
