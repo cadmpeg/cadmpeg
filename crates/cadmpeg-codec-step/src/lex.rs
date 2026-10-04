@@ -531,8 +531,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let (raw, _temporary) =
-                    self.normalized(digits, self.at, LiteralStorage::Transient)?;
+                let (_temporary, raw) = self.normalized(digits, self.at, LiteralStorage::Transient)
+                    .map(|(raw, reservation)| (reservation, raw))?;
                 let value = self.budget.parse_text::<u64>(raw.as_str(), "STEP occurrence number parse")?
                     .ok()
                     .map_or_else(|| Err(self.error(start, "instance name is out of range")?), Ok)?;
@@ -598,7 +598,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 _ => break,
             }
         }
-        let (mut raw, _temporary) = self.normalized(start, self.at, LiteralStorage::Transient)?;
+        let (_temporary, mut raw) = self.normalized(start, self.at, LiteralStorage::Transient)
+            .map(|(raw, reservation)| (reservation, raw))?;
         if exponent && raw.ends_with('.') {
             raw.pop();
         }
@@ -887,28 +888,27 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             LiteralStorage::Retained => "step_lex_normalized_retained",
             LiteralStorage::Transient => "step_lex_normalized_temp",
         };
-        let (mut output, reservation) = match storage {
-            LiteralStorage::Retained => (
-                self.budget
-                    .retained_string(byte_count, operation)
-                    .map_err(|error| Self::resource_error(start, error))?,
-                None,
-            ),
-            LiteralStorage::Transient => {
-                let mut reservation = self
-                    .budget
-                    .reserve_scoped(0, operation)
-                    .map_err(|error| Self::resource_error(start, error))?;
+        let mut reservation = match storage {
+            LiteralStorage::Retained => None,
+            LiteralStorage::Transient => Some(self.budget.reserve_scoped(0, operation)
+                .map_err(|error| Self::resource_error(start, error))?),
+        };
+        let mut output = match reservation.as_mut() {
+            None => self.budget.retained_string(byte_count, operation)
+                .map_err(|error| Self::resource_error(start, error))?,
+            Some(reservation) => {
                 let mut output = String::new();
-                self.budget
-                    .reserve_scoped_string(&mut reservation, &mut output, byte_count, operation)
+                self.budget.reserve_scoped_string(reservation, &mut output, byte_count, operation)
                     .map_err(|error| Self::resource_error(start, error))?;
-                (output, Some(reservation))
+                output
             }
         };
         for &byte in self.budget.admit_iter(&(self.input[start..end])[..], "STEP normalized traversal").map_err(cadmpeg_core::CodecError::from)? {
             if !byte.is_ascii_control() {
-                output.push(char::from(byte));
+                match reservation.as_mut() {
+                    Some(reservation) => reservation.with_storage(|| self.budget.push_retained_char(&mut output, char::from(byte), operation))?,
+                    None => self.budget.push_retained_char(&mut output, char::from(byte), operation)?,
+                }
             }
         }
         Ok((output, reservation))

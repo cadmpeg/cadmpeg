@@ -409,11 +409,11 @@ pub(crate) fn hex(
     let byte_len = bytes
         .len()
         .checked_mul(2)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("hex digest length overflow"))?;
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut value = ctx.retained_string(byte_len, operation)?;
     for byte in ctx.admit_iter(bytes, "Rhino hex traversal").map_err(cadmpeg_core::CodecError::from)? {
-        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+        ctx.push_retained_char(&mut value, char::from(DIGITS[usize::from(byte >> 4)]), operation)?;
+        ctx.push_retained_char(&mut value, char::from(DIGITS[usize::from(byte & 0x0f)]), operation)?;
     }
     Ok(value)
 }

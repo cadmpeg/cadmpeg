@@ -42,28 +42,31 @@ pub(crate) fn decode_with_context(
         .retained_string(len, operation)
         .map_err(StringDecodeFailure::Resource)?;
 
-    decode_chars(ctx, input, level, |character| output.push(character))?;
+    decode_chars(ctx, input, level, |character| ctx.push_retained_char(&mut output, character, "STEP decoded string character").map_err(StringDecodeFailure::Resource))?;
     Ok(output)
 }
 
 fn decoded_len(ctx: &DecodeContext<'_>, input: &[u8], level: ImplementationLevel) -> Result<usize, StringDecodeFailure> {
     // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
     let mut len = 0usize;
-    decode_chars(ctx, input, level, |character| len += character.len_utf8())?;
+    decode_chars(ctx, input, level, |character| {
+        len = len.checked_add(character.len_utf8()).ok_or_else(|| ctx.refuse_codec_limit("STEP decoded string byte count", 0, u64::MAX))?;
+        Ok(())
+    })?;
     Ok(len)
 }
 
 fn decode_chars(ctx: &DecodeContext<'_>, 
     input: &[u8],
     level: ImplementationLevel,
-    mut emit: impl FnMut(char),
+    mut emit: impl FnMut(char) -> Result<(), StringDecodeFailure>,
 ) -> Result<(), StringDecodeFailure> {
     let mut at = 0;
     let mut page = b'A';
     while at < input.len() {
         match input[at] {
             b'\'' if input.get(at + 1) == Some(&b'\'') => {
-                emit('\'');
+                emit('\'')?;
                 at += 2;
             }
             b'\\'
@@ -73,7 +76,7 @@ fn decode_chars(ctx: &DecodeContext<'_>,
                 at += 3;
             }
             b'\\' if input.get(at + 1) == Some(&b'\\') => {
-                emit('\\');
+                emit('\\')?;
                 at += 2;
             }
             b'\\' if input.get(at + 1) == Some(&b'P') => {
@@ -92,13 +95,13 @@ fn decode_chars(ctx: &DecodeContext<'_>,
                 let Some(&code) = input.get(at + 3) else {
                     return error(ctx, at, "truncated S escape");
                 };
-                emit(decode_page_byte(ctx, page, code | 0x80, at)?);
+                emit(decode_page_byte(ctx, page, code | 0x80, at)?)?;
                 at += 4;
             }
             b'\\' if input.get(at + 1) == Some(&b'X') => match input.get(at + 2) {
                 Some(b'\\') => {
                     let byte = hex_byte(ctx, input, at + 3)?;
-                    emit(char::from(byte));
+                    emit(char::from(byte))?;
                     at += 5;
                 }
                 Some(b'2') if input.get(at + 3) == Some(&b'\\') => {
@@ -124,11 +127,11 @@ fn decode_chars(ctx: &DecodeContext<'_>,
                         message: "invalid UTF-8 direct string bytes".into(),
                     })?;
                     for character in ctx.admit_iter(text, "STEP decode chars traversal").map_err(CodecError::from)? {
-                        emit(character);
+                        emit(character)?;
                     }
                 } else {
                     for byte in ctx.admit_iter(direct, "STEP decode chars view traversal").map_err(cadmpeg_core::CodecError::from)? {
-                        emit(char::from(*byte));
+                        emit(char::from(*byte))?;
                     }
                 }
             }
@@ -208,7 +211,7 @@ fn decode_wide(ctx: &DecodeContext<'_>,
     input: &[u8],
     start: usize,
     width: usize,
-    emit: &mut impl FnMut(char),
+    emit: &mut impl FnMut(char) -> Result<(), StringDecodeFailure>,
 ) -> Result<usize, StringDecodeFailure> {
     let Some(relative_end) = input[start..]
         .windows(4)
@@ -248,7 +251,7 @@ fn decode_wide(ctx: &DecodeContext<'_>,
                     let Some(character) = char::from_u32(scalar) else {
                         return error(ctx, start, "wide escape contains an isolated surrogate");
                     };
-                    emit(character);
+                    emit(character)?;
                 }
                 _ => {
                     if high_surrogate.is_some() {
@@ -257,7 +260,7 @@ fn decode_wide(ctx: &DecodeContext<'_>,
                     let Some(character) = char::from_u32(u32::from(unit)) else {
                         return error(ctx, start, "wide escape contains an isolated surrogate");
                     };
-                    emit(character);
+                    emit(character)?;
                 }
             }
         } else {
@@ -265,7 +268,7 @@ fn decode_wide(ctx: &DecodeContext<'_>,
                 offset: start,
                 message: "wide escape contains an invalid Unicode scalar".into(),
             })?;
-            emit(character);
+            emit(character)?;
         }
     }
     if high_surrogate.is_some() {

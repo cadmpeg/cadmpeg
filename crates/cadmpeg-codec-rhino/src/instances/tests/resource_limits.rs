@@ -421,3 +421,17 @@ fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
         result
     });
 }
+
+#[test]
+fn hex_character_growth_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "hex character output", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = crate::instances::hex(&ctx, &[0xab], "hex character output").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+    assert_eq!(crate::instances::hex(&cadmpeg_test_support::service_decode_context(), &[0xab], "hex character output").unwrap(), "ab");
+}

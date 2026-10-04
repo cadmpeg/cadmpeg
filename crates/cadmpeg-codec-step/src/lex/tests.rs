@@ -530,3 +530,31 @@ fn token_tag_cost_is_exact_and_excludes_payloads() {
     assert_eq!(first, second);
     assert_ne!(first, super::TokenKind::Comma.tag());
 }
+
+#[test]
+fn normalized_retained_character_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_lex_normalized_retained", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
+        let lexer = super::Lexer::new(b"AB", &ctx);
+        let result = lexer.normalized(0, 2, super::LiteralStorage::Retained).map(|_| ()).map_err(super::LexError::into_codec_error);
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn normalized_temp_character_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_lex_normalized_temp", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
+        let lexer = super::Lexer::new(b"AB", &ctx);
+        let result = lexer.normalized(0, 2, super::LiteralStorage::Transient).map(|_| ()).map_err(super::LexError::into_codec_error);
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

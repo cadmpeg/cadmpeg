@@ -170,7 +170,7 @@ fn resolve_uri<'a>(
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
     for (index, component) in ctx.admit_iter(&(components)[..], "STEP resolve uri traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         if index != 0 {
-            member.push('/');
+            member_bytes.with_storage(|| ctx.push_retained_char(&mut member, '/', "STEP ZIP member separator character"))?;
         }
         member.push_str(component);
     }
@@ -259,7 +259,7 @@ fn push_reference_note(
     let mut note = ctx.retained_string(len, "step_zip_reference_note")?;
 
     note.push_str(prefix);
-    note.push(marker);
+    ctx.push_retained_char(&mut note, marker, "STEP ZIP reference marker character")?;
     let id = match name {
         crate::parse::ReferenceName::Entity(id) | crate::parse::ReferenceName::Value(id) => id,
     };
@@ -268,11 +268,11 @@ fn push_reference_note(
     note.push_str(" -> ");
     note.push_str(target);
     if let Some(query) = query {
-        note.push('?');
+        ctx.push_retained_char(&mut note, '?', "STEP ZIP reference query character")?;
         note.push_str(query);
     }
     if let Some(fragment) = fragment {
-        note.push('#');
+        ctx.push_retained_char(&mut note, '#', "STEP ZIP reference fragment character")?;
         note.push_str(fragment);
     }
     notes.push(note);

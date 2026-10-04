@@ -1140,10 +1140,10 @@ fn opaque_record_id(
 
     for (index, partial) in ctx.admit_iter(&(record.partials)[..], "STEP opaque record id traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         if index > 0 {
-            kind.push('_');
+            ctx.push_retained_char(&mut kind, '_', "STEP opaque kind separator character")?;
         }
         for byte in ctx.admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal").map_err(CodecError::from)?.copied() {
-            kind.push(char::from(byte.to_ascii_lowercase()));
+            ctx.push_retained_char(&mut kind, char::from(byte.to_ascii_lowercase()), "STEP opaque kind letter character")?;
         }
     }
     let derived = crate::ids::IdentityKind::try_new(kind).ok();
