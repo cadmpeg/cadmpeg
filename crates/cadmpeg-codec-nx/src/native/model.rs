@@ -643,7 +643,7 @@ pub(crate) fn terminal_feature_body_ids(
 ) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
     let mut statuses_by_binding = BTreeMap::new();
-    for status in statuses {
+    for status in ctx.admit_iter(statuses, "nx terminal body statuses")? {
         if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
             return Ok(None);
         }
