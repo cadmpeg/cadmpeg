@@ -1974,9 +1974,12 @@ TYPE_HEAD = re.compile(r"(?:\w+\s*::\s*)*(\w+)")
 
 def field_type_name(body, field):
     """The named field's declared type, unwrapped from one ``Option``."""
-    for match in FIELD_TYPE.finditer(body):
-        if match.group(1) != field:
+    for declaration in FIELD_DECLARATION.finditer(body):
+        if declaration.group(1) != field:
             continue
+        match = FIELD_TYPE.match(body, declaration.start(1))
+        if match is None:
+            return None
         text = match.group(2).strip()
         option = OPTION_TYPE.match(text)
         if option is not None:
