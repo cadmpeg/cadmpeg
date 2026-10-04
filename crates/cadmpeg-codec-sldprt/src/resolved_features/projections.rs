@@ -755,10 +755,7 @@ pub(crate) fn type_display_relation_parameters(
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         ctx.charge_work(1, OPERATION)?;
         if let Some(Some(parameter)) = ownership.get(&relation.id) {
-            if !families.contains_key(parameter) {
-                ctx.reserve_map(&mut families, 1, OPERATION)?;
-            }
-            let family_set = families.entry(parameter).or_default();
+            let family_set = ctx.entry_hash_map(&mut families, parameter, OPERATION)?.or_default();
             ctx.insert_hash_set(family_set, relation.family, OPERATION)?;
         }
     }
@@ -940,11 +937,7 @@ pub(crate) fn project_compact_edge_selections(
     let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.edge_selections) {
         ctx.charge_work(1, INDEX_OPERATION)?;
-        if !selections.contains_key(selection.feature_ref.as_str()) {
-            ctx.reserve_map(&mut selections, 1, INDEX_OPERATION)?;
-        }
-        let group = selections
-            .entry(selection.feature_ref.as_str())
+        let group = ctx.entry_hash_map(&mut selections, selection.feature_ref.as_str(), INDEX_OPERATION)?
             .or_default();
         ctx.reserve_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
@@ -1530,11 +1523,7 @@ pub(crate) fn project_compact_surface_selections(
     let mut selections = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.surface_selections) {
         ctx.charge_work(1, INDEX_OPERATION)?;
-        if !selections.contains_key(selection.feature_ref.as_str()) {
-            ctx.reserve_map(&mut selections, 1, INDEX_OPERATION)?;
-        }
-        let group = selections
-            .entry(selection.feature_ref.as_str())
+        let group = ctx.entry_hash_map(&mut selections, selection.feature_ref.as_str(), INDEX_OPERATION)?
             .or_default();
         ctx.reserve_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
@@ -2244,10 +2233,7 @@ fn surface_selections_by_lane<'a>(
     let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
     for selection in selections {
         ctx.charge_work(1, operation)?;
-        if !by_lane.contains_key(selection.parent.as_str()) {
-            ctx.reserve_map(&mut by_lane, 1, operation)?;
-        }
-        let group = by_lane.entry(selection.parent.as_str()).or_default();
+        let group = ctx.entry_hash_map(&mut by_lane, selection.parent.as_str(), operation)?.or_default();
         ctx.reserve_vec(group, 1, operation)?;
         group.push(*selection);
     }
@@ -2286,10 +2272,7 @@ pub(crate) fn project_draft_operands(
     for lane in lanes {
         for (feature, operands) in draft_operand_candidates(ctx, histories, lane)? {
             const OPERATION: &str = "group SLDPRT draft operand candidates";
-            if !candidates.contains_key(&feature) {
-                ctx.reserve_map(&mut candidates, 1, OPERATION)?;
-            }
-            let by_feature = candidates.entry(feature).or_default();
+            let by_feature = ctx.entry_hash_map(&mut candidates, feature, OPERATION)?.or_default();
             ctx.reserve_vec(by_feature, 1, OPERATION)?;
             by_feature.push(operands);
         }

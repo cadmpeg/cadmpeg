@@ -5503,15 +5503,7 @@ pub(super) fn profile_loci_by_marker(
         let points = sketch_entity_locus_points(entity);
         let count = points.iter().flatten().count();
         if count != 0 {
-            reserve_profile_locus_map_slot(
-                ctx,
-                &mut profile_loci,
-                &&entity.sketch,
-                sketch_key_bytes,
-                cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len()),
-                BUILD_OPERATION,
-            )?;
-            let loci = profile_loci.entry(&entity.sketch).or_default();
+            let loci = ctx.entry_hash_map(&mut profile_loci, &entity.sketch, BUILD_OPERATION)?.or_default();
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(loci.len())
                     .checked_add(cadmpeg_core::decode::u64_from_index(count))
@@ -5531,15 +5523,7 @@ pub(super) fn profile_loci_by_marker(
             }
         }
         if let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() {
-            reserve_profile_locus_map_slot(
-                ctx,
-                &mut line_midpoints,
-                &&entity.sketch,
-                sketch_key_bytes,
-                cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len()),
-                BUILD_OPERATION,
-            )?;
-            let midpoints = line_midpoints.entry(&entity.sketch).or_default();
+            let midpoints = ctx.entry_hash_map(&mut line_midpoints, &entity.sketch, BUILD_OPERATION)?.or_default();
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(midpoints.len())
                     .checked_add(1)
@@ -5768,17 +5752,9 @@ pub(super) fn profile_loci_by_marker(
                 )?;
                 endpoint_marker_keys
                     .insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
-                reserve_profile_locus_map_slot(
-                    ctx,
-                    &mut result,
-                    &key,
-                    result_key_byte_bound,
-                    cadmpeg_core::decode::u64_from_index(key.len()),
-                    ENDPOINT_OPERATION,
-                )?;
                 append_profile_endpoint_locus(
                     ctx,
-                    result.entry(key).or_default(),
+                    ctx.entry_hash_map(&mut result, key, ENDPOINT_OPERATION)?.or_default(),
                     entity.id(),
                     role,
                     source_entity_bytes,
@@ -5838,15 +5814,7 @@ pub(super) fn profile_loci_by_marker(
                 GROUP_OPERATION,
             )?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                reserve_profile_locus_map_slot(
-                    ctx,
-                    &mut markers_by_feature,
-                    &feature,
-                    feature_key_bytes,
-                    cadmpeg_core::decode::u64_from_index(feature.len()),
-                    GROUP_OPERATION,
-                )?;
-                let group = markers_by_feature.entry(feature).or_default();
+                let group = ctx.entry_hash_map(&mut markers_by_feature, feature, GROUP_OPERATION)?.or_default();
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(group.len())
                         .checked_add(1)
@@ -6742,26 +6710,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                 OPERATION,
             )?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                if !markers_by_feature.contains_key(feature) {
-                    ctx.charge_collection_items(1, OPERATION)?;
-                    if markers_by_feature.len() == markers_by_feature.capacity() {
-                        for key in markers_by_feature.keys() {
-                            ctx.charge_work(
-                                u64::try_from(key.len())
-                                    .ok()
-                                    .and_then(|len| len.checked_add(1))
-                                    .ok_or_else(|| {
-                                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                                    })?,
-                                OPERATION,
-                            )?;
-                        }
-                    }
-                    markers_by_feature
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                }
-                let markers = markers_by_feature.entry(feature).or_default();
+                let markers = ctx.entry_hash_map(&mut markers_by_feature, feature, OPERATION)?.or_default();
                 ctx.reserve_vec(markers, 1, OPERATION)?;
                 markers.push(marker);
             }

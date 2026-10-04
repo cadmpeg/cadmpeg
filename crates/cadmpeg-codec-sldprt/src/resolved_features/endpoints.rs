@@ -2578,9 +2578,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             continue;
         }
         for (endpoint, coordinates) in [(*first, coordinates[0]), (*second, coordinates[1])] {
-            reserve_endpoint_identity_map(ctx, &mut degrees, endpoint.id(), OPERATION)?;
-            let entry = degrees
-                .entry(endpoint.id())
+            let entry = ctx.entry_hash_map(&mut degrees, endpoint.id(), OPERATION)?
                 .or_insert((0, coordinates, endpoint.offset()));
             if entry.1 != coordinates {
                 return Ok(None);
