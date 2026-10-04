@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Construct input-derived identities under the caller decode budget.
 
+use crate::design::admission::DesignAdmission;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::fmt::{self, Write};
@@ -45,14 +46,14 @@ impl fmt::Write for Length {
     }
 }
 
-fn encoded_length(
-    ctx: &DecodeContext<'_>,
+fn encoded_length<A: DesignAdmission>(
+    ctx: &A,
     value: &str,
     operation: &'static str,
 ) -> Result<usize, CodecError> {
     let mut length = Length(0);
     write!(&mut length, "{}", Encoded(value, false))
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| ctx.identifier_extent_error(operation))?;
     Ok(length.0)
 }
 
@@ -76,7 +77,7 @@ pub(super) fn neutral_configuration_id(
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
-fn mint<T: TryFrom<String>>(ctx: &DecodeContext<'_>, text: String) -> Result<T, CodecError>
+fn mint<T: TryFrom<String>, A: DesignAdmission>(ctx: &A, text: String) -> Result<T, CodecError>
 where
     T::Error: fmt::Display,
 {
@@ -84,8 +85,8 @@ where
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
-pub(super) fn neutral_feature_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn neutral_feature_id<A: DesignAdmission>(
+    ctx: &A,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
     let operation = "f3d feature identifier";
@@ -104,7 +105,7 @@ pub(super) fn neutral_feature_id(
                 scope.record_index
             ),
             operation,
-        )?,
+        ).map_err(A::into_error)?,
     )
 }
 
@@ -349,8 +350,8 @@ pub(super) fn neutral_component_insert_occurrence_id(
     )
 }
 
-pub(super) fn neutral_assembly_joint_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn neutral_assembly_joint_id<A: DesignAdmission>(
+    ctx: &A,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::products::JointId, CodecError> {
     let operation = "f3d assembly joint identifier";
@@ -365,7 +366,7 @@ pub(super) fn neutral_assembly_joint_id(
                 scope.record_index
             ),
             operation,
-        )?,
+        ).map_err(A::into_error)?,
     )
 }
 
@@ -452,8 +453,8 @@ pub(super) fn history_input_vertex_id(
     )
 }
 
-pub(super) fn neutral_assembly_axial_object_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn neutral_assembly_axial_object_id<A: DesignAdmission>(
+    ctx: &A,
     identity: &crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity,
 ) -> Result<String, CodecError> {
     let operation = "f3d assembly axial connector identifier";
@@ -476,11 +477,11 @@ pub(super) fn neutral_assembly_axial_object_id(
     let property_len = encoded_length(ctx, property, operation)?;
     let version_len = encoded_length(ctx, version, operation)?;
     let present = u8::from(identity.external_version.is_some());
-    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-axial:{asset_len}:{}:{context_len}:{}:{}:{}:{external_len}:{}:{link_len}:{}:{present}:{property_len}:{}:{present}:{version_len}:{}", Encoded(asset, true), Encoded(context, true), identity.external_object_reference, identity.external_segment, Encoded(external, true), Encoded(link, false), Encoded(property, true), Encoded(version, false)), operation)
+    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-axial:{asset_len}:{}:{context_len}:{}:{}:{}:{external_len}:{}:{link_len}:{}:{present}:{property_len}:{}:{present}:{version_len}:{}", Encoded(asset, true), Encoded(context, true), identity.external_object_reference, identity.external_segment, Encoded(external, true), Encoded(link, false), Encoded(property, true), Encoded(version, false)), operation).map_err(A::into_error)
 }
 
-pub(super) fn neutral_assembly_legacy_object_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn neutral_assembly_legacy_object_id<A: DesignAdmission>(
+    ctx: &A,
     selection: &crate::records::feature::assembly::DesignAssemblyLegacySelection,
 ) -> Result<String, CodecError> {
     let operation = "f3d assembly legacy connector identifier";
@@ -490,7 +491,7 @@ pub(super) fn neutral_assembly_legacy_object_id(
     let asset_len = encoded_length(ctx, asset, operation)?;
     let context_len = encoded_length(ctx, context, operation)?;
     let recipe_len = encoded_length(ctx, recipe, operation)?;
-    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-legacy:{asset_len}:{}:{context_len}:{}:{recipe_len}:{}:{}:{}", Encoded(asset, true), Encoded(context, true), Encoded(recipe, true), selection.record_index, selection.recipe_record_index), operation)
+    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-legacy:{asset_len}:{}:{context_len}:{}:{recipe_len}:{}:{}:{}", Encoded(asset, true), Encoded(context, true), Encoded(recipe, true), selection.record_index, selection.recipe_record_index), operation).map_err(A::into_error)
 }
 
 #[cfg(test)]
