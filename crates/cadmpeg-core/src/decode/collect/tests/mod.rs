@@ -132,3 +132,4 @@ mod key_work;
 mod operations;
 mod storage;
 mod text;
+mod vector_shapes;

@@ -8,6 +8,7 @@ use std::hash::Hash;
 use crate::CodecError;
 
 use super::cost::DecodeCost;
+use super::extend_source::ExtendSource;
 use super::text::TextSource;
 
 use super::{
@@ -548,6 +549,16 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    fn admit_vector_extension<T>(
+        &self,
+        target: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.admit_inline_moves::<T>(count, 1, operation)?;
+        self.reserve_vec(target, count, operation)
+    }
+
     /// Moves all source items into a vector after charging their slots.
     pub fn append_vec<T>(
         &self,
@@ -555,20 +566,29 @@ impl DecodeContext<'_> {
         source: &mut Vec<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_moves(source, 1, operation)?;
-        self.reserve_vec(target, source.len(), operation)?;
+        self.admit_vector_extension(target, source.len(), operation)?;
         target.append(source);
         Ok(())
     }
 
-    /// Moves owned items into a vector after charging their slots.
+    /// Moves owned items or copies borrowed inline values after admitting growth.
     pub fn extend_vec<T>(
         &self,
         target: &mut Vec<T>,
-        mut source: Vec<T>,
+        source: impl ExtendSource<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.append_vec(target, &mut source, operation)
+        if let Some(count) = source.known_len() {
+            self.admit_vector_extension(target, count, operation)?;
+            target.extend(source.into_values());
+        } else {
+            let mut input = source.into_values();
+            while let Some(value) = self.next_charged(&mut input, operation)? {
+                self.admit_vector_extension(target, 1, operation)?;
+                target.push(value);
+            }
+        }
+        Ok(())
     }
 
     /// Collects iterator values with a charged slot for each value.
@@ -611,11 +631,35 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = Result<T, E>>,
         operation: &'static str,
     ) -> Result<Vec<T>, E> {
+        self.try_collect_vec_with(values, operation, |out, value| {
+            self.push_vec(out, value, operation).map_err(E::from)
+        })
+    }
+
+    /// Collects temporary slots while producer allocations remain retained.
+    /// Keep the returned reservation alive with the vector.
+    pub fn try_collect_scoped_vec<'ctx, T, E: From<CodecError>>(
+        &'ctx self,
+        values: impl IntoIterator<Item = Result<T, E>>,
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'ctx>), E> {
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        let output = self.try_collect_vec_with(values, operation, |out, value| {
+            self.push_scoped_vec(&mut reservation, out, value, operation).map_err(E::from)
+        })?;
+        Ok((output, reservation))
+    }
+
+    fn try_collect_vec_with<T, E: From<CodecError>>(
+        &self,
+        values: impl IntoIterator<Item = Result<T, E>>,
+        operation: &'static str,
+        mut push: impl FnMut(&mut Vec<T>, T) -> Result<(), E>,
+    ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
         let mut input = values.into_iter();
         while let Some(value) = self.next_charged(&mut input, operation)? {
-            self.push_vec(&mut out, value?, operation)
-                .map_err(E::from)?;
+            push(&mut out, value?)?;
         }
         Ok(out)
     }
@@ -1174,7 +1218,7 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required > values.capacity() {
             self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(values, operation)? {
+            for key in self.admit_iter(&*values, operation)? {
                 self.charge_key(key, 1, operation)?;
             }
         }
@@ -1209,7 +1253,7 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required > values.capacity() {
             self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(values, operation)? {
+            for key in self.admit_iter(&*values, operation)? {
                 self.charge_key(key.0, 1, operation)?;
             }
         }

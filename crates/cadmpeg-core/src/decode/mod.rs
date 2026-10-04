@@ -12,6 +12,7 @@ mod context;
 pub mod cost;
 mod deflate;
 mod error;
+pub mod extend_source;
 mod heap;
 mod input;
 pub mod iter_source;
