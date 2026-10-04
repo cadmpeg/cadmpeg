@@ -202,6 +202,8 @@ pub(crate) fn summary(
                         )
                 }) => (Allocation::None, Work::Fixed),
             ("serde_json", "index" | "index_mut") => (Allocation::None, Work::Argument(1)),
+            // Constructing a map iterator visits nothing; its steps are admitted.
+            ("serde_json", "iter" | "into_iter") => (Allocation::None, Work::Fixed),
             ("roxmltree", "eq" | "ne") => (Allocation::None, Work::Fixed),
             ("serde_json", "fmt") => (Allocation::None, Work::Receiver),
             ("serde_json", "serialize" | "to_value" | "from_value" | "to_vec") => {
@@ -412,6 +414,7 @@ pub(crate) fn summary(
                     | "from_u32"
                     | "hypot"
                     | "ilog10"
+                    | "ilog"
                     | "ilog2"
                     | "is_alphabetic"
                     | "is_alphanumeric"
@@ -711,9 +714,9 @@ pub(crate) fn summary(
         | "binary_search_by_key"
         | "retain"
         | "drain"
-        | "clear"
-        | "truncate"
         | "remove" => (Allocation::None, Work::Receiver),
+        // Releasing values is paid by the charges that admitted them.
+        "clear" | "truncate" => (Allocation::None, Work::Fixed),
         "new"
             if ![
                 "vec::Vec",

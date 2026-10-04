@@ -156,7 +156,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if types::admitted_iter(self.tcx, value) {
             return StepCost::Prepaid;
         }
-        if types::physical_item_path(self.tcx, owner.did(), "roxmltree", &["Children"]) {
+        if ["Children", "Attributes"]
+            .iter()
+            .any(|name| types::physical_item_path(self.tcx, owner.did(), "roxmltree", &[name]))
+        {
             return StepCost::One;
         }
         if !types::standard(self.tcx, owner.did()) {
@@ -186,6 +189,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             "ToLowercase" | "ToUppercase" if path.contains("char::") => StepCost::Constant,
             "IntoIter" if path.contains("vec::") => StepCost::One,
+            // A collection passed as an `IntoIterator` source steps through its
+            // own iterator; slices and B-tree iterators advance in constant
+            // amortized work per item.
+            "Vec" | "VecDeque" | "BTreeMap" | "BTreeSet" if !path.contains("hash") => StepCost::One,
+            "Chunks" | "ChunksExact" | "RChunks" | "Windows" if path.contains("slice::") => {
+                StepCost::One
+            }
+            "Iter" | "IterMut" | "IntoIter" | "Keys" | "Values" | "ValuesMut"
+                if path.contains("btree::") =>
+            {
+                StepCost::One
+            }
             "Iter" | "IterMut"
                 if (path.contains("slice::")
                     || path.contains("vec::")

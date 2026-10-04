@@ -42,7 +42,8 @@ fn distinct<T: Eq + Hash, S: Admission>(admission: &S, values: &[T]) -> Result<b
         admission.work(1)?;
         // The key's Hash and PartialEq run inside std's insertion, where the
         // call graph cannot follow them; only derived callbacks are bounded.
-        if !index.insert(MemberKey { value, admission }) { // finding: unproven_decode_charge
+        // The concrete key is proven, and reported, at the decode caller.
+        if !index.insert(MemberKey { value, admission }) {
             return Ok(false);
         }
     }
@@ -50,5 +51,5 @@ fn distinct<T: Eq + Hash, S: Admission>(admission: &S, values: &[T]) -> Result<b
 }
 
 pub fn decode_distinct(ctx: &DecodeContext<'_>, values: &[String]) -> Result<bool, ResourceLimit> {
-    distinct(&DecodeAdmission { ctx }, values)
+    distinct(&DecodeAdmission { ctx }, values) // finding: unproven_decode_charge
 }

@@ -12,7 +12,7 @@
 //! must use the randomly keyed standard hasher.
 
 use crate::types;
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt};
 use rustc_span::def_id::DefId;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -154,6 +154,10 @@ pub(crate) fn bounded_raw_lookup<'tcx>(
     query: Ty<'tcx>,
 ) -> Option<bool> {
     let kind = raw_lookup_route(tcx, callee)?;
+    // A generic key is proven where a concrete instance supplies it.
+    if receiver.has_non_region_param() || query.has_non_region_param() {
+        return None;
+    }
     Some(bounded_lookup(tcx, kind, receiver, query))
 }
 
