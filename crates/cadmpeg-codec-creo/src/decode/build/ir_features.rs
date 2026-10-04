@@ -315,18 +315,26 @@ pub(super) fn emit_model_features(
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, operation.feature_id)?;
+        let (source_property_nodes, source_properties) =
+            feature_source_properties(ctx, scan, operation.feature_id)?;
+        let mut source_property_nodes = source_property_nodes;
+        let mut source_properties = source_properties;
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "mdl_stored_name_prefix",
                 char::from(prefix),
             )?;
         }
-        let mut parameters = feature_parameters(ctx, scan, operation.feature_id)?;
+        let (parameter_text_storage, parameter_node_storage, parameters) =
+            feature_parameters(ctx, scan, operation.feature_id)?;
+        let mut parameter_text_storage = Some(parameter_text_storage);
+        let mut parameter_node_storage = Some(parameter_node_storage);
+        let mut parameters = parameters;
         let schema_class = feature_schema_class(ctx, scan, operation.feature_id)?;
         let definition = schema_class.map_or_else(
             || {
@@ -369,20 +377,26 @@ pub(super) fn emit_model_features(
                         }
                     })
                     .unwrap_or_else(|| {
+                        let kind: cadmpeg_ir::features::NativeFeatureKind = ctx
+                            .copy_retained_text(
+                                current_operation.map_or("Native Feature", |operation| {
+                                    operation.kind.as_str()
+                                }),
+                                "creo native Feature kind",
+                            )?
+                            .into();
+                        if let Some(text_storage) = parameter_text_storage.take() {
+                            text_storage.commit()?;
+                        }
+                        let parameters = cadmpeg_core::text::named_entries_for_decode(
+                            ctx,
+                            format_args!("creo:model:feature#{}", operation.feature_id),
+                            std::mem::take(&mut parameters),
+                        )?;
+                        drop(parameter_node_storage.take());
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: ctx
-                                .copy_retained_text(
-                                    current_operation.map_or("Native Feature", |operation| {
-                                        operation.kind.as_str()
-                                    }),
-                                    "creo native Feature kind",
-                                )?
-                                .into(),
-                            parameters: cadmpeg_core::text::named_entries_for_decode(
-                                ctx,
-                                format_args!("creo:model:feature#{}", operation.feature_id),
-                                std::mem::take(&mut parameters),
-                            )?,
+                            kind,
+                            parameters,
                         }))
                     })
             },
@@ -398,7 +412,16 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        retain_native_feature_parameters(
+            ctx,
+            &mut source_property_nodes,
+            &mut source_properties,
+            &definition,
+            &parameters,
+        )?;
+        drop(parameters);
+        drop(parameter_node_storage.take());
+        drop(parameter_text_storage.take());
         let dependencies = feature_dependencies(
             ctx,
             scan,
@@ -475,15 +498,18 @@ pub(super) fn emit_model_features(
                 existing.name = name;
             }
             merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
-            merge_feature_source_properties(
-                ctx,
-                &mut existing.source_properties,
+            let mut incoming_nodes = ctx.reserve_scoped(0, "named entry map nodes")?;
+            let incoming = incoming_nodes.with_storage(|| {
                 cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
-                )?,
-            )?;
+                )
+                .map_err(cadmpeg_core::CodecError::from)
+            })?;
+            drop(source_property_nodes);
+            merge_feature_source_properties(ctx, &mut existing.source_properties, incoming)?;
+            drop(incoming_nodes);
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
@@ -533,11 +559,15 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{}", operation.feature_id),
-                source_properties,
-            )?,
+            source_properties: {
+                let source_properties = cadmpeg_core::text::named_entries_for_decode(
+                    ctx,
+                    format_args!("creo:model:feature#{}", operation.feature_id),
+                    source_properties,
+                )?;
+                drop(source_property_nodes);
+                source_properties
+            },
             source_tag,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -591,8 +621,15 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         )?;
-        let mut parameters = feature_parameters(ctx, scan, feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
+        let (parameter_text_storage, parameter_node_storage, parameters) =
+            feature_parameters(ctx, scan, feature_id)?;
+        let mut parameter_text_storage = Some(parameter_text_storage);
+        let mut parameter_node_storage = Some(parameter_node_storage);
+        let mut parameters = parameters;
+        let (source_property_nodes, source_properties) =
+            feature_source_properties(ctx, scan, feature_id)?;
+        let mut source_property_nodes = source_property_nodes;
+        let mut source_properties = source_properties;
         let definition = schema_class.map_or_else(
             || match match named_feature_definition(
                 ctx,
@@ -608,16 +645,24 @@ pub(super) fn emit_model_features(
                 }
             } {
                 Some(definition) => Ok(definition),
-                None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: ctx
+                None => {
+                    let kind: cadmpeg_ir::features::NativeFeatureKind = ctx
                         .copy_retained_text(kind, "creo native row Feature kind")?
-                        .into(),
-                    parameters: cadmpeg_core::text::named_entries_for_decode(
+                        .into();
+                    if let Some(text_storage) = parameter_text_storage.take() {
+                        text_storage.commit()?;
+                    }
+                    let parameters = cadmpeg_core::text::named_entries_for_decode(
                         ctx,
                         format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
-                    )?,
-                })),
+                    )?;
+                    drop(parameter_node_storage.take());
+                    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                        kind,
+                        parameters,
+                    }))
+                }
             },
             |schema_class| {
                 schema_feature_definition(
@@ -635,6 +680,7 @@ pub(super) fn emit_model_features(
         if schema_class.is_none() {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "featdefs_schema_state",
                 if row_schema_classes.is_empty() {
@@ -647,12 +693,22 @@ pub(super) fn emit_model_features(
         if !row_schema_classes.is_empty() {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "featdefs_row_schema_classes",
                 SchemaClassList(&row_schema_classes),
             )?;
         }
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        retain_native_feature_parameters(
+            ctx,
+            &mut source_property_nodes,
+            &mut source_properties,
+            &definition,
+            &parameters,
+        )?;
+        drop(parameters);
+        drop(parameter_node_storage.take());
+        drop(parameter_text_storage.take());
         id_bytes.commit()?;
         let feature = Feature {
             id,
@@ -670,11 +726,15 @@ pub(super) fn emit_model_features(
                 ctx,
             )
             .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{feature_id}"),
-                source_properties,
-            )?,
+            source_properties: {
+                let source_properties = cadmpeg_core::text::named_entries_for_decode(
+                    ctx,
+                    format_args!("creo:model:feature#{feature_id}"),
+                    source_properties,
+                )?;
+                drop(source_property_nodes);
+                source_properties
+            },
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),

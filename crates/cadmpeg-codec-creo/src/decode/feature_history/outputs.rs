@@ -622,11 +622,15 @@ fn feature_field_text(
 
 fn insert_feature_parameter(
     ctx: &DecodeContext<'_>,
+    text_storage: &mut ScopedReservation<'_>,
+    node_storage: &mut ScopedReservation<'_>,
     parameters: &mut BTreeMap<String, String>,
     base: impl std::fmt::Display,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
+    let value = text_storage.with_storage(|| {
+        ctx.format_retained(format_args!("{value}"), "creo feature parameter value")
+    })?;
     let (base, base_reservation) = ctx.format_scoped(
         format_args!("{base}"),
         "creo feature parameter key candidate",
@@ -640,6 +644,8 @@ fn insert_feature_parameter(
                 "creo feature parameter key candidate",
             )?;
             if !parameters.contains_key(&candidate.0) {
+                drop(base);
+                drop(base_reservation);
                 break candidate;
             }
             occurrence = occurrence.checked_add(1).ok_or_else(|| {
@@ -653,36 +659,56 @@ fn insert_feature_parameter(
     } else {
         (base, base_reservation)
     };
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(key.len()),
-        "creo feature parameter key",
-    )?;
-    ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
     drop(key_reservation);
+    text_storage.with_storage(|| {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(key.len()),
+            "creo feature parameter key",
+        )
+    })?;
+    node_storage.with_storage(|| {
+        ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")
+    })?;
     Ok(())
 }
 
 fn replace_feature_parameter(
     ctx: &DecodeContext<'_>,
+    text_storage: &mut ScopedReservation<'_>,
+    node_storage: &mut ScopedReservation<'_>,
     parameters: &mut BTreeMap<String, String>,
     key: &'static str,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
+    let value = text_storage.with_storage(|| {
+        ctx.format_retained(format_args!("{value}"), "creo feature parameter value")
+    })?;
     if let Some(existing) = parameters.get_mut(key) {
         *existing = value;
     } else {
-        let key = ctx.copy_retained_text(key, "creo feature parameter key")?;
-        ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
+        let key = text_storage
+            .with_storage(|| ctx.copy_retained_text(key, "creo feature parameter key"))?;
+        node_storage.with_storage(|| {
+            ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")
+        })?;
     }
     Ok(())
 }
 
-pub(in super::super) fn feature_parameters(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn feature_parameters<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<BTreeMap<String, String>, CodecError> {
+) -> Result<
+    (
+        ScopedReservation<'ctx>,
+        ScopedReservation<'ctx>,
+        BTreeMap<String, String>,
+    ),
+    CodecError,
+> {
+    let mut text_storage = ctx.reserve_scoped(0, "creo feature parameter text")?;
+    let mut node_storage = ctx.reserve_scoped(0, "creo feature parameter nodes")?;
     let mut parameters = BTreeMap::new();
     for field in ctx
         .admit_iter(&scan.features.choice_fields, "creo feature choice fields")?
@@ -693,6 +719,8 @@ pub(in super::super) fn feature_parameters(
         };
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             format_args!("choice.{}.{}", field.choice_label, field.name),
             value,
@@ -710,7 +738,14 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::AffectedIdKind::Contours => "contour_ids",
             crate::feature::rows::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
-        insert_feature_parameter(ctx, &mut parameters, name, CommaList(&affected.ids))?;
+        insert_feature_parameter(
+            ctx,
+            &mut text_storage,
+            &mut node_storage,
+            &mut parameters,
+            name,
+            CommaList(&affected.ids),
+        )?;
     }
     for affected in ctx
         .admit_iter(&scan.features.replay_affected_ids, "creo feature replay affected IDs")?
@@ -718,18 +753,24 @@ pub(in super::super) fn feature_parameters(
     {
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "replay_affected_geometry_ids",
             CommaList(&affected.geometry_ids),
         )?;
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "replay_affected_edge_ids",
             CommaList(&affected.edge_ids),
         )?;
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "replay_geometry_extent",
             match affected.geometry_extent {
@@ -739,6 +780,8 @@ pub(in super::super) fn feature_parameters(
         )?;
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "replay_edge_extent",
             match affected.edge_extent {
@@ -765,7 +808,14 @@ pub(in super::super) fn feature_parameters(
                 &affected.quilt_ids,
             ),
         ] {
-            insert_feature_parameter(ctx, &mut parameters, name, CommaList(ids))?;
+            insert_feature_parameter(
+                ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                name,
+                CommaList(ids),
+            )?;
         }
         for (name, extent) in [
             (
@@ -777,6 +827,8 @@ pub(in super::super) fn feature_parameters(
         ] {
             insert_feature_parameter(
                 ctx,
+                &mut text_storage,
+                &mut node_storage,
                 &mut parameters,
                 name,
                 match extent {
@@ -799,13 +851,22 @@ pub(in super::super) fn feature_parameters(
         };
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             format_args!("loop_restore.{name}"),
             direction.value,
         )?;
     }
     if unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?.is_some() {
-        replace_feature_parameter(ctx, &mut parameters, "revolution_extent", "full_turn")?;
+        replace_feature_parameter(
+            ctx,
+            &mut text_storage,
+            &mut node_storage,
+            &mut parameters,
+            "revolution_extent",
+            "full_turn",
+        )?;
     }
     for table in ctx
         .admit_iter(&scan.features.entity_tables, "creo feature parameter entity tables")?
@@ -817,6 +878,8 @@ pub(in super::super) fn feature_parameters(
             };
             insert_feature_parameter(
                 ctx,
+                &mut text_storage,
+                &mut node_storage,
                 &mut parameters,
                 format_args!(
                     "generated_entity.{}.source_section_entity_id",
@@ -826,6 +889,8 @@ pub(in super::super) fn feature_parameters(
             )?;
             insert_feature_parameter(
                 ctx,
+                &mut text_storage,
+                &mut node_storage,
                 &mut parameters,
                 format_args!("generated_entity.{}.entry_class", entry.entity_id),
                 entry.class_id(),
@@ -853,12 +918,16 @@ pub(in super::super) fn feature_parameters(
         };
         replace_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "sketch_segment_count",
             sketch_segment_count,
         )?;
         replace_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "dimension_count",
             definition
@@ -884,6 +953,8 @@ pub(in super::super) fn feature_parameters(
         };
         insert_feature_parameter(
             ctx,
+            &mut text_storage,
+            &mut node_storage,
             &mut parameters,
             "profile_sketch",
             profile_sketch.as_str(),
@@ -893,13 +964,15 @@ pub(in super::super) fn feature_parameters(
         {
             insert_feature_parameter(
                 ctx,
+                &mut text_storage,
+                &mut node_storage,
                 &mut parameters,
                 "sweep_direction",
                 CommaList(&transform.normal()),
             )?;
         }
     }
-    Ok(parameters)
+    Ok((text_storage, node_storage, parameters))
 }
 
 pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
@@ -990,19 +1063,21 @@ pub(super) fn section_definition_for_history_feature<'a>(
     Some(definition)
 }
 
-pub(in super::super) fn feature_source_properties(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn feature_source_properties<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<BTreeMap<String, String>, CodecError> {
+) -> Result<(ScopedReservation<'ctx>, BTreeMap<String, String>), CodecError> {
+    let mut node_storage = ctx.reserve_scoped(0, "creo feature source property nodes")?;
     let mut properties = BTreeMap::new();
     if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
-        insert_feature_source_property(ctx, &mut properties, "recipe", recipe.name())?;
+        insert_feature_source_property(ctx, &mut node_storage, &mut properties, "recipe", recipe.name())?;
     }
     let schema_class = feature_schema_class(ctx, scan, feature_id)?;
     if let Some(schema_class) = schema_class {
         insert_feature_source_property(
             ctx,
+            &mut node_storage,
             &mut properties,
             "featdefs_schema_class",
             schema_class,
@@ -1012,15 +1087,22 @@ pub(in super::super) fn feature_source_properties(
     if !row_schema_classes.is_empty() {
         insert_feature_source_property(
             ctx,
+            &mut node_storage,
             &mut properties,
             "featdefs_row_schema_classes",
             SchemaClassList(&row_schema_classes),
         )?;
     }
     if schema_class.is_none() && !row_schema_classes.is_empty() {
-        insert_feature_source_property(ctx, &mut properties, "featdefs_schema_state", "ambiguous")?;
+        insert_feature_source_property(
+            ctx,
+            &mut node_storage,
+            &mut properties,
+            "featdefs_schema_state",
+            "ambiguous",
+        )?;
     }
-    Ok(properties)
+    Ok((node_storage, properties))
 }
 
 pub(in super::super) struct SchemaClassList<'a>(pub &'a BTreeSet<SchemaClass>);
@@ -1039,6 +1121,7 @@ impl std::fmt::Display for SchemaClassList<'_> {
 
 pub(in super::super) fn insert_feature_source_property(
     ctx: &DecodeContext<'_>,
+    node_storage: &mut ScopedReservation<'_>,
     properties: &mut BTreeMap<String, String>,
     key: impl std::fmt::Display,
     value: impl std::fmt::Display,
@@ -1048,7 +1131,9 @@ pub(in super::super) fn insert_feature_source_property(
         format_args!("{value}"),
         "creo feature source property value",
     )?;
-    ctx.insert_btree_map(properties, key, value, "creo feature source property nodes")?;
+    node_storage.with_storage(|| {
+        ctx.insert_btree_map(properties, key, value, "creo feature source property nodes")
+    })?;
     Ok(())
 }
 

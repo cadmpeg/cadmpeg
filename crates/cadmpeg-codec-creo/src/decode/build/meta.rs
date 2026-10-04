@@ -17,13 +17,16 @@ use cadmpeg_ir::document::SourceMeta;
 
 fn insert_source_attribute(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     attributes: &mut BTreeMap<String, String>,
     key: impl std::fmt::Display,
     value: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(format_args!("{key}"), "Creo source attribute key")?;
     let value = ctx.format_retained(format_args!("{value}"), "Creo source attribute value")?;
-    ctx.insert_btree_map(attributes, key, value, "Creo source attribute map nodes")?;
+    node_storage.with_storage(|| {
+        ctx.insert_btree_map(attributes, key, value, "Creo source attribute map nodes")
+    })?;
     Ok(())
 }
 
@@ -32,22 +35,25 @@ pub(super) fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
+    let mut attribute_nodes = ctx.reserve_scoped(0, "Creo source attribute map nodes")?;
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     insert_source_attribute(
         ctx,
+        &mut attribute_nodes,
         &mut attributes,
         "version_line",
         &scan.framing.version_line,
     )?;
     if let Some(name) = &scan.framing.model_name {
-        insert_source_attribute(ctx, &mut attributes, "model_name", &name.name)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "model_name", &name.name)?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        insert_source_attribute(ctx, &mut attributes, "legacy_ascii_schema", &legacy.schema)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "legacy_ascii_schema", &legacy.schema)?;
         if let Some(release) = &legacy.product_release {
             insert_source_attribute(
                 ctx,
+                &mut attribute_nodes,
                 &mut attributes,
                 "legacy_ascii_product_release",
                 release,
@@ -55,44 +61,51 @@ pub(super) fn source_meta(
         }
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_declaration_count",
             legacy.persistence.declaration_count(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_scope_count",
             legacy.persistence.scopes.len(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_value_count",
             legacy.persistence.value_count(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_continuation_count",
             legacy.persistence.continuation_count(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_unresolved_value_count",
             legacy.persistence.unresolved_value_count(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_conflicting_declaration_count",
             legacy.persistence.conflicting_declaration_count(),
         )?;
     }
-    insert_source_attribute(ctx, &mut attributes, "file_size", scan.framing.data.len())?;
+    insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "file_size", scan.framing.data.len())?;
     insert_source_attribute(
         ctx,
+        &mut attribute_nodes,
         &mut attributes,
         "section_count",
         scan.framing.sections.len(),
@@ -100,45 +113,50 @@ pub(super) fn source_meta(
     for (index, section) in ctx.admit_iter(&scan.framing.sections, "creo source section attribute traversal")?.enumerate() {
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             format_args!("section.{index}.name"),
             section.name(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             format_args!("section.{index}.raw_name"),
             &section.raw_name,
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             format_args!("section.{index}.role"),
             cadmpeg_core::container::ContainerRole::from(section.role()),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             format_args!("section.{index}.offset"),
             section.offset(),
         )?;
         insert_source_attribute(
             ctx,
+            &mut attribute_nodes,
             &mut attributes,
             format_args!("section.{index}.length"),
             section.length(),
         )?;
     }
     if let Some(c) = scan.framing.census.srf_array_count {
-        insert_source_attribute(ctx, &mut attributes, "srf_array_count", c)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "srf_array_count", c)?;
     }
     if let Some(c) = scan.framing.census.crv_array_count {
-        insert_source_attribute(ctx, &mut attributes, "crv_array_count", c)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "crv_array_count", c)?;
     }
     if let Some(unit) = &scan.framing.principal_unit {
-        insert_source_attribute(ctx, &mut attributes, "principal_unit", unit)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "principal_unit", unit)?;
         if let Some(scale) = unit.length_scale_mm().filter(|scale| scale.get() != 1.0) {
-            insert_source_attribute(ctx, &mut attributes, "source_length_scale_mm", scale.get())?;
+            insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "source_length_scale_mm", scale.get())?;
         }
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
@@ -532,12 +550,14 @@ pub(super) fn source_meta(
     )?;
     insert_source_attribute(
         ctx,
+        &mut attribute_nodes,
         &mut attributes,
         "expanded_section_count",
         scan.framing.expanded_sections.len(),
     )?;
     insert_source_attribute(
         ctx,
+        &mut attribute_nodes,
         &mut attributes,
         "expanded_section_byte_count",
         ctx.admit_iter(&scan.framing.expanded_sections, "creo expanded_sections coverage traversal")?
@@ -547,18 +567,20 @@ pub(super) fn source_meta(
     if let Some(family_table) = scan.framing.family_table {
         match family_table.pointer {
             crate::container::FamilyTablePointer::Null => {
-                insert_source_attribute(ctx, &mut attributes, "family_table_pointer", "null")?;
-                insert_source_attribute(ctx, &mut attributes, "configuration_state", "none")?;
+                insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "family_table_pointer", "null")?;
+                insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "configuration_state", "none")?;
             }
             crate::container::FamilyTablePointer::Entity(id) => {
                 insert_source_attribute(
                     ctx,
+                    &mut attribute_nodes,
                     &mut attributes,
                     "family_table_pointer",
                     format_args!("entity:{id}"),
                 )?;
                 insert_source_attribute(
                     ctx,
+                    &mut attribute_nodes,
                     &mut attributes,
                     "configuration_state",
                     "driver_table_unresolved",
@@ -1158,10 +1180,10 @@ pub(super) fn source_meta(
         feature_surface_replay_association_count(ctx, scan)?,
     )?;
     if let Some(count) = scan.framing.declared_body_count {
-        insert_source_attribute(ctx, &mut attributes, "declared_body_count", count)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "declared_body_count", count)?;
     }
     if let Some(value) = scan.framing.first_quilt_ptr {
-        insert_source_attribute(ctx, &mut attributes, "first_quilt_ptr", value)?;
+        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "first_quilt_ptr", value)?;
     }
     Ok((
         SourceMeta::classified(
@@ -1170,7 +1192,12 @@ pub(super) fn source_meta(
                     .matched()
                     .try_clone_for_decode(ctx, "creo source dialect copy")?,
             ),
-            cadmpeg_core::text::named_entries_for_decode(ctx, "the creo container", attributes)?,
+            {
+                let attributes =
+                    cadmpeg_core::text::named_entries_for_decode(ctx, "the creo container", attributes)?;
+                drop(attribute_nodes);
+                attributes
+            },
         ),
         coverage,
     ))
@@ -1211,8 +1238,11 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        let error = insert_source_attribute(&ctx, &mut attributes, "file_size", 12)
+        let error = insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "file_size", 12)
             .expect_err("one source attribute needs one map node");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1228,11 +1258,15 @@ mod tests {
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        insert_source_attribute(&ctx, &mut attributes, "version_line", "Creo 10")
+        insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "version_line", "Creo 10")
             .expect("first attribute is admitted");
         insert_source_attribute(
             &ctx,
+            &mut node_storage,
             &mut attributes,
             format_args!("section.{}.name", 0),
             "MdlStatus",
@@ -1250,8 +1284,17 @@ mod tests {
             cadmpeg_core::decode::u64_from_index("principal_unit".len() + "unknown:7".len() - 1);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        let error = insert_source_attribute(&ctx, &mut attributes, "principal_unit", "unknown:7")
+        let error = insert_source_attribute(
+            &ctx,
+            &mut node_storage,
+            &mut attributes,
+            "principal_unit",
+            "unknown:7",
+        )
             .expect_err("token needs one more retained byte");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1259,6 +1302,81 @@ mod tests {
                 && limit.operation == "Creo source attribute value")
         );
         assert!(attributes.is_empty());
+    }
+
+    #[test]
+    fn source_attribute_staging_node_refuses_materialized_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
+        let mut attributes = BTreeMap::new();
+        let error = insert_source_attribute(
+            &ctx,
+            &mut node_storage,
+            &mut attributes,
+            "file_size",
+            12,
+        )
+        .expect_err("one staging node exceeds materialized storage");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "Creo source attribute map nodes")
+        );
+    }
+
+    #[test]
+    fn source_attribute_named_output_node_remains_retained() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("file_size".len() + "12".len());
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
+        let mut attributes = BTreeMap::new();
+        insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "file_size", 12)
+            .expect("staging node uses scoped storage");
+        let error = cadmpeg_core::text::named_entries_for_decode(&ctx, "source", attributes)
+            .expect_err("the decoded output node needs retained storage");
+        assert!(
+            matches!(error, cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "named entry map nodes")
+        );
+    }
+
+    #[test]
+    fn source_attribute_named_entry_service_preserves_order() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let mut node_storage = ctx
+            .reserve_scoped(0, "Creo source attribute map nodes")
+            .expect("source attribute lease");
+        let mut attributes = BTreeMap::new();
+        insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "z", 1)
+            .expect("first attribute fits");
+        insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "a", 2)
+            .expect("second attribute fits");
+        let entries = cadmpeg_core::text::named_entries_for_decode(&ctx, "source", attributes)
+            .expect("valid attribute keys are admitted");
+        drop(node_storage);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("a", "2"), ("z", "1")]
+        );
     }
     #[test]
     fn segment_coverage_counts_admit_each_original_mixed_row_source() {

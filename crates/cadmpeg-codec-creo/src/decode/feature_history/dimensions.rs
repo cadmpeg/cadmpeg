@@ -25,13 +25,16 @@ use super::super::sketch_ids::{
 
 fn insert_dimension_property(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     properties: &mut BTreeMap<String, String>,
     key: &'static str,
     value: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "creo dimension property key")?;
     let value = ctx.format_retained(format_args!("{value}"), "creo dimension property value")?;
-    ctx.insert_btree_map(properties, key, value, "creo dimension property nodes")?;
+    node_storage.with_storage(|| {
+        ctx.insert_btree_map(properties, key, value, "creo dimension property nodes")
+    })?;
     Ok(())
 }
 
@@ -478,32 +481,60 @@ pub(in super::super) fn transfer_feature_dimensions(
             "section_dimension",
             Exactness::Derived,
         )?;
+        let mut property_nodes = ctx.reserve_scoped(0, "creo dimension property nodes")?;
         let mut properties = BTreeMap::new();
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
             &mut properties,
             "definition_id",
             definition.identity.id(),
         )?;
-        insert_dimension_property(ctx, &mut properties, "source_ordinal", source_ordinal)?;
-        insert_dimension_property(ctx, &mut properties, "external_id", dimension.external_id)?;
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
+            &mut properties,
+            "source_ordinal",
+            source_ordinal,
+        )?;
+        insert_dimension_property(
+            ctx,
+            &mut property_nodes,
+            &mut properties,
+            "external_id",
+            dimension.external_id,
+        )?;
+        insert_dimension_property(
+            ctx,
+            &mut property_nodes,
             &mut properties,
             "dimension_type",
             dimension.dimension_type,
         )?;
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
             &mut properties,
             "direction_byte",
             dimension.direction_byte,
         )?;
         if let Some(auxiliary) = dimension.auxiliary_value {
-            insert_dimension_property(ctx, &mut properties, "auxiliary_value", auxiliary)?;
+            insert_dimension_property(
+                ctx,
+                &mut property_nodes,
+                &mut properties,
+                "auxiliary_value",
+                auxiliary,
+            )?;
         }
         if dimension.value.resolved().is_none() {
-            insert_dimension_property(ctx, &mut properties, "value_state", "unresolved")?;
+            insert_dimension_property(
+                ctx,
+                &mut property_nodes,
+                &mut properties,
+                "value_state",
+                "unresolved",
+            )?;
         }
         if let Some(token) = dimension.value.unresolved_token() {
             let encoding = match token {
@@ -512,8 +543,20 @@ pub(in super::super) fn transfer_feature_dimensions(
                 _ => None,
             };
             if let Some(encoding) = encoding {
-                insert_dimension_property(ctx, &mut properties, "value_encoding", encoding)?;
-                insert_dimension_property(ctx, &mut properties, "value_token", HexToken(token))?;
+                insert_dimension_property(
+                    ctx,
+                    &mut property_nodes,
+                    &mut properties,
+                    "value_encoding",
+                    encoding,
+                )?;
+                insert_dimension_property(
+                    ctx,
+                    &mut property_nodes,
+                    &mut properties,
+                    "value_token",
+                    HexToken(token),
+                )?;
             }
         }
         let expression = dimension_expression(ctx, dimension.value.resolved())?;
@@ -546,11 +589,15 @@ pub(in super::super) fn transfer_feature_dimensions(
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: cadmpeg_core::text::named_entries_for_decode(
-                    ctx,
-                    id.as_str(),
-                    properties,
-                )?,
+                properties: {
+                    let properties = cadmpeg_core::text::named_entries_for_decode(
+                        ctx,
+                        id.as_str(),
+                        properties,
+                    )?;
+                    drop(property_nodes);
+                    properties
+                },
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },
