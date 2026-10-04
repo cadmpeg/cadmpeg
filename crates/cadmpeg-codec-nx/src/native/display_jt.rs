@@ -2416,6 +2416,7 @@ fn jt9_topology_high_degree_lane_count_inner(
     let mut cursor = prefix_end;
     let mut lane_count = 1usize;
     while cursor < representation.len() {
+        ctx.charge_work(1, "scan JT topology high-degree lanes")?;
         let Some(bytes) = representation.get(cursor..) else {
             break;
         };
@@ -4841,6 +4842,7 @@ pub(super) fn display_jt_shape_lod_bindings(
             };
             let mut pair_ordinal = 0u32;
             loop {
+                ctx.charge_work(1, "scan DisplayJT shape LOD property pairs")?;
                 let Some(key_object_id) = table_view.u32_le() else {
                     return Ok(Vec::new());
                 };

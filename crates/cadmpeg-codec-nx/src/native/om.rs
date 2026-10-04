@@ -1057,20 +1057,37 @@ impl TryFrom<ExpressionWire> for ParameterFormula {
 }
 
 /// Iterate exact `p<decimal>[_qualifier]` references in formula occurrence order.
-pub(crate) fn expression_parameter_names(expression: &str) -> impl Iterator<Item = &str> + '_ {
+pub(crate) fn expression_parameter_names<'ctx, 'decode, 'expression>(
+    ctx: &'ctx DecodeContext<'decode>,
+    expression: &'expression str,
+) -> impl Iterator<Item = Result<&'expression str, CodecError>> + use<'ctx, 'decode, 'expression> {
     let bytes = expression.as_bytes();
     let mut at = 0usize;
+    let mut finished = false;
     std::iter::from_fn(move || {
-        while at < bytes.len() {
-            let Some(end) = expression_parameter_reference_end(bytes, at) else {
-                at += 1;
-                continue;
-            };
-            let name = &expression[at..end];
-            at = end;
-            return Some(name);
+        if finished {
+            return None;
         }
-        None
+        let next = (|| -> Result<Option<&'expression str>, CodecError> {
+            while at < bytes.len() {
+                ctx.charge_work(1, "NX expression parameter scan")?;
+                let Some(end) = expression_parameter_reference_end(ctx, bytes, at)? else {
+                    at += 1;
+                    continue;
+                };
+                let name = &expression[at..end];
+                at = end;
+                return Ok(Some(name));
+            }
+            Ok(None)
+        })();
+        match next {
+            Ok(name) => name.map(Ok),
+            Err(error) => {
+                finished = true;
+                Some(Err(error))
+            }
+        }
     })
 }
 
@@ -1095,15 +1112,12 @@ pub(crate) fn evaluate_parameterized_expression(
     }
 
     let bytes = expression.as_bytes();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "NX expression substitution",
-    )?;
     let mut reservation = ctx.reserve_scoped(0, "NX expression substitution")?;
     let mut substituted = String::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        if let Some(end) = expression_parameter_reference_end(bytes, at) {
+        ctx.charge_work(1, "NX expression substitution")?;
+        if let Some(end) = expression_parameter_reference_end(ctx, bytes, at)? {
             let Some(value) = parameter_value(&expression[at..end]) else {
                 return Ok(None);
             };
@@ -1148,24 +1162,38 @@ pub(crate) fn evaluate_parameterized_expression(
     crate::om::evaluate_constant_expression(ctx, &substituted)
 }
 
-fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
+fn expression_parameter_reference_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<usize>, CodecError> {
     if bytes.get(at) != Some(&b'p')
         || at
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
             .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
     {
-        return None;
+        return Ok(None);
     }
     let mut end = at + 1;
-    while bytes
-        .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-    {
-        end += 1;
+    loop {
+        ctx.charge_work(1, "NX expression parameter token scan")?;
+        let Some(byte) = bytes.get(end) else {
+            break;
+        };
+        if byte.is_ascii_alphanumeric() || *byte == b'_' {
+            end += 1;
+        } else {
+            break;
+        }
     }
-    let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
-    ParameterName::<_, u32>::parse(name).map(|_| end)
+    let Some(token) = bytes.get(at..end) else {
+        return Ok(None);
+    };
+    let Ok(name) = std::str::from_utf8(token) else {
+        return Ok(None);
+    };
+    Ok(ParameterName::<_, u32>::parse(name).map(|_| end))
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -1823,6 +1851,7 @@ fn stable_object_record_graph_identity(
     });
 
     while let Some(frame_index) = stack.len().checked_sub(1) {
+        ctx.charge_work(1, "NX object record graph stack traversal")?;
         let (record, next_reference, raw_cursor) = {
             let Some(frame) = stack.get(frame_index) else {
                 return Ok(None);
@@ -3099,7 +3128,9 @@ fn parse_material_texture_catalog(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(None);
+    };
     if root.tag_name().name() != "folderContents" {
         return Ok(None);
     }
@@ -3121,10 +3152,12 @@ fn parse_material_texture_catalog(
         if node.tag_name().name() != "folderProperties" {
             return Ok(None);
         }
-        let Some(storage_path) = node.attribute("location") else {
+        let Some(storage_path) = xml_attribute(ctx, node, &["location"])? else {
             return Ok(None);
         };
-        let Some(material_path) = node.attribute("unmappedLocation") else {
+        let Some(material_path) =
+            xml_attribute(ctx, node, &["unmappedLocation"])?
+        else {
             return Ok(None);
         };
         let mut children = node.children().filter(roxmltree::Node::is_element);
@@ -3758,7 +3791,9 @@ pub(super) fn configurations(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(Vec::new());
+    };
     if root.tag_name().name() != "Arrangements" {
         return Ok(Vec::new());
     }
@@ -3771,7 +3806,7 @@ pub(super) fn configurations(
         if node.tag_name().name() != "Arrangement" {
             return Ok(Vec::new());
         }
-        let Some(name) = node.attribute("Name") else {
+        let Some(name) = xml_attribute(ctx, node, &["Name"])? else {
             return Ok(Vec::new());
         };
         if name.is_empty() || names.contains(name) {
@@ -3779,7 +3814,7 @@ pub(super) fn configurations(
         }
         names_reservation
             .with_storage(|| ctx.insert_btree_set(&mut names, name, "nx arrangement names"))?;
-        let is_default = match node.attribute("Default") {
+        let is_default = match xml_attribute(ctx, node, &["Default"])? {
             Some("YES") => true,
             Some("NO") => false,
             _ => return Ok(Vec::new()),
@@ -3795,10 +3830,10 @@ pub(super) fn configurations(
         .filter(roxmltree::Node::is_element)
         .enumerate()
     {
-        let Some(name) = node.attribute("Name") else {
+        let Some(name) = xml_attribute(ctx, node, &["Name"])? else {
             return Ok(Vec::new());
         };
-        let is_default = node.attribute("Default") == Some("YES");
+        let is_default = xml_attribute(ctx, node, &["Default"])? == Some("YES");
         let source_offset = offset
             .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
             .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement source offset", 0, 1))?;
@@ -3916,9 +3951,10 @@ fn parse_part_attributes(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
-    let Some(version) = root
-        .attribute("version")
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(None);
+    };
+    let Some(version) = xml_attribute(ctx, root, &["version"])?
         .and_then(|version| version.parse::<u32>().ok())
     else {
         return Ok(None);
@@ -3930,19 +3966,15 @@ fn parse_part_attributes(
     for node in root.children().filter(roxmltree::Node::is_element) {
         ctx.charge_work(1, "nx part attribute records")?;
         if node.tag_name().name() != "Attribute"
-            || node.attribute("owner").is_none()
-            || node
-                .attribute("utf8title")
-                .or_else(|| node.attribute("title"))
-                .is_none()
-            || node
-                .attribute("utf8value")
-                .or_else(|| node.attribute("value"))
-                .is_none()
-            || node.attribute("type").is_none()
-            || !matches!(node.attribute("pdmBased"), Some("true" | "false"))
-            || node
-                .attribute("version")
+            || xml_attribute(ctx, node, &["owner"])?.is_none()
+            || xml_attribute(ctx, node, &["utf8title", "title"])?.is_none()
+            || xml_attribute(ctx, node, &["utf8value", "value"])?.is_none()
+            || xml_attribute(ctx, node, &["type"])?.is_none()
+            || !matches!(
+                xml_attribute(ctx, node, &["pdmBased"])?,
+                Some("true" | "false")
+            )
+            || xml_attribute(ctx, node, &["version"])?
                 .and_then(|version| version.parse::<u32>().ok())
                 .is_none()
         {
@@ -3955,20 +3987,28 @@ fn parse_part_attributes(
         .filter(roxmltree::Node::is_element)
         .enumerate()
     {
-        let Some((owner, title, value, value_type, pdm_based, version)) = (|| {
-            Some((
-                node.attribute("owner")?,
-                node.attribute("utf8title")
-                    .or_else(|| node.attribute("title"))?,
-                node.attribute("utf8value")
-                    .or_else(|| node.attribute("value"))?,
-                node.attribute("type")?,
-                node.attribute("pdmBased")? == "true",
-                node.attribute("version")?.parse::<u32>().ok()?,
-            ))
-        })() else {
+        let Some(owner) = xml_attribute(ctx, node, &["owner"])? else {
             return Ok(None);
         };
+        let Some(title) = xml_attribute(ctx, node, &["utf8title", "title"])? else {
+            return Ok(None);
+        };
+        let Some(value) = xml_attribute(ctx, node, &["utf8value", "value"])? else {
+            return Ok(None);
+        };
+        let Some(value_type) = xml_attribute(ctx, node, &["type"])? else {
+            return Ok(None);
+        };
+        let Some(pdm_based) = xml_attribute(ctx, node, &["pdmBased"])? else {
+            return Ok(None);
+        };
+        let Some(version_text) = xml_attribute(ctx, node, &["version"])? else {
+            return Ok(None);
+        };
+        let Some(version) = version_text.parse::<u32>().ok() else {
+            return Ok(None);
+        };
+        let pdm_based = pdm_based == "true";
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
             .ok_or_else(|| ctx.refuse_codec_limit("nx part attribute source offset", 0, 1))?;
@@ -3992,6 +4032,42 @@ fn parse_part_attributes(
         });
     }
     Ok(Some(output))
+}
+
+fn xml_root_element<'document, 'input>(
+    ctx: &DecodeContext<'_>,
+    document: &'document roxmltree::Document<'input>,
+) -> Result<Option<roxmltree::Node<'document, 'input>>, CodecError> {
+    let mut children = document.root().children();
+    loop {
+        ctx.charge_work(1, "NX XML root element traversal")?;
+        let Some(node) = children.next() else {
+            return Ok(None);
+        };
+        if node.is_element() {
+            return Ok(Some(node));
+        }
+    }
+}
+
+fn xml_attribute<'document, 'input>(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'document, 'input>,
+    names: &[&str],
+) -> Result<Option<&'document str>, CodecError> {
+    for name in names {
+        let mut attributes = node.attributes();
+        loop {
+            ctx.charge_work(1, "NX XML attribute lookup")?;
+            let Some(attribute) = attributes.next() else {
+                break;
+            };
+            if ctx.equal(attribute.name(), *name, "NX XML attribute name comparison")? {
+                return Ok(Some(attribute.value()));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Return the exact XML document carried by an NX XML stream.
@@ -5232,16 +5308,22 @@ pub(super) fn data_block_control_handle_pairs(
         )?;
         let mut at = 0;
         while at < block_references.len() {
+            ctx.charge_work(1, "NX control handle pair outer run scan")?;
             let start = at;
-            while at
-                .checked_add(1)
-                .and_then(|next| block_references.get(next))
-                .is_some_and(|next| {
-                    block_references[at].0.source_offset.checked_add(5)
-                        == Some(next.0.source_offset)
-                })
-            {
-                at += 1;
+            loop {
+                ctx.charge_work(1, "NX control handle pair adjacent reference probe")?;
+                let Some(next_index) = at.checked_add(1) else {
+                    break;
+                };
+                let Some(next) = block_references.get(next_index) else {
+                    break;
+                };
+                if block_references[at].0.source_offset.checked_add(5)
+                    != Some(next.0.source_offset)
+                {
+                    break;
+                }
+                at = next_index;
             }
             let run = &block_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
@@ -5895,11 +5977,22 @@ pub(super) fn object_record_handle_pairs(
         )?;
         let mut at = 0;
         while at < record_references.len() {
+            ctx.charge_work(1, "NX object record handle pair outer run scan")?;
             let start = at;
-            while record_references.get(at + 1).is_some_and(|next| {
-                record_references[at].0.source_offset.checked_add(5) == Some(next.0.source_offset)
-            }) {
-                at += 1;
+            loop {
+                ctx.charge_work(1, "NX object record handle pair adjacent reference probe")?;
+                let Some(next_index) = at.checked_add(1) else {
+                    break;
+                };
+                let Some(next) = record_references.get(next_index) else {
+                    break;
+                };
+                if record_references[at].0.source_offset.checked_add(5)
+                    != Some(next.0.source_offset)
+                {
+                    break;
+                }
+                at = next_index;
             }
             let run = &record_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
@@ -6352,6 +6445,7 @@ fn evaluate_expression_graphs(
         }
     }
     loop {
+        ctx.charge_work(1, "NX expression graph pass")?;
         let mut changed = false;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(expressions.len()),

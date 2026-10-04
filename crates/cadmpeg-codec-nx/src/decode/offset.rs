@@ -641,18 +641,17 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
     same_basis: bool,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
         let support_net =
             match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
                 Ok(Some(net)) => net,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
         let candidate_net =
             match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
                 Ok(Some(net)) => net,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
         let residual_net = if same_basis {
             match HomogeneousSurfaceNet::from_homogeneous_residual(
@@ -661,8 +660,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 geometry_budget,
             ) {
                 Ok(Some(net)) => Some(net),
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             }
         } else {
             None
@@ -670,20 +669,20 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let support_derivatives =
             match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
                 Ok(Some(nets)) => nets,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
         let candidate_derivatives =
             match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
                 Ok(Some(nets)) => nets,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
         let residual_derivatives = match residual_net.as_ref() {
             Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
                 Ok(Some(nets)) => Some(nets),
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             },
             None => None,
         };
@@ -693,7 +692,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             "nx offset net knots",
         ) {
             Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
+            Err(limit) => return Err(limit),
         };
         let candidate_u_breaks =
             &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
@@ -703,7 +702,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             candidate_u_breaks.len(),
             "nx offset u breaks",
         ) {
-            return Some(Err(limit));
+            return Err(limit);
         }
         u_breaks.extend(candidate_u_breaks);
         if geometry_budget
@@ -716,7 +715,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             )
             .is_err()
         {
-            return geometry_budget.resource_refusal().map(Err);
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         u_breaks.dedup();
         let (mut v_breaks, mut v_storage) = match geometry_budget.charges.copy_temporary_slice(
@@ -724,7 +723,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             "nx offset net knots",
         ) {
             Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
+            Err(limit) => return Err(limit),
         };
         let candidate_v_breaks =
             &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
@@ -734,7 +733,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             candidate_v_breaks.len(),
             "nx offset v breaks",
         ) {
-            return Some(Err(limit));
+            return Err(limit);
         }
         v_breaks.extend(candidate_v_breaks);
         if geometry_budget
@@ -747,7 +746,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             )
             .is_err()
         {
-            return geometry_budget.resource_refusal().map(Err);
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         v_breaks.dedup();
         let mut rectangles = Vec::new();
@@ -758,45 +757,57 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                     1,
                     "nx offset rectangles",
                 ) {
-                    return Some(Err(limit));
+                    return Err(limit);
                 }
                 rectangles.push([u[0], u[1], v[0], v[1]]);
             }
         }
         if rectangles.is_empty() {
-            return None;
+            return Ok(None);
         }
         let mut certified_bound = 0.0_f64;
-        while let Some([u0, u1, v0, v1]) = rectangles.pop() {
+        loop {
+            geometry_budget
+                .charges
+                .charge_work_limit(1, "nx offset rectangle probe")?;
+            let Some([u0, u1, v0, v1]) = rectangles.pop() else {
+                break;
+            };
             if !geometry_budget.charge() {
-                return geometry_budget.resource_refusal().map(Err);
+                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
             }
             let u = u0 + (u1 - u0) * 0.5;
             let v = v0 + (v1 - v0) * 0.5;
-            let support_bounds = rational_surface_derivative_bounds_with_nets(
+            let Some(support_bounds) = rational_surface_derivative_bounds_with_nets(
                 &support_net,
                 &support_derivatives,
                 u,
                 v,
-            )?;
+            ) else {
+                return Ok(None);
+            };
             let (residual_u_bound, residual_v_bound) =
                 if let (Some(residual_net), Some(derivatives)) =
                     (&residual_net, &residual_derivatives)
                 {
-                    let bounds = rational_surface_derivative_bounds_with_nets(
+                    let Some(bounds) = rational_surface_derivative_bounds_with_nets(
                         residual_net,
                         derivatives,
                         u,
                         v,
-                    )?;
+                    ) else {
+                        return Ok(None);
+                    };
                     (bounds.u, bounds.v)
                 } else {
-                    let candidate_bounds = rational_surface_derivative_bounds_with_nets(
+                    let Some(candidate_bounds) = rational_surface_derivative_bounds_with_nets(
                         &candidate_net,
                         &candidate_derivatives,
                         u,
                         v,
-                    )?;
+                    ) else {
+                        return Ok(None);
+                    };
                     (
                         support_bounds.u + candidate_bounds.u,
                         support_bounds.v + candidate_bounds.v,
@@ -807,7 +818,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             let normal_v_numerator =
                 support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
             if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
-                return None;
+                return Ok(None);
             }
             let support_point = match finite_or_refusal(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
@@ -816,8 +827,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                     }),
             ) {
                 Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
             let candidate_point = match finite_or_refusal(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
@@ -826,8 +837,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                     }),
             ) {
                 Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
             let partials = match finite_or_refusal(nurbs_surface_partials(
                 geometry_budget.charges,
@@ -836,8 +847,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 v,
             )) {
                 Ok(Some(partials)) => partials,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(None) => return Ok(None),
+                Err(limit) => return Err(limit),
             };
             let normal_vector = partials.du.cross(partials.dv.get());
             let normal_size = normal_vector.norm();
@@ -855,12 +866,14 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                     geometry_budget,
                 ) {
                     Ok(true) => {}
-                    Ok(false) => return None,
-                    Err(limit) => return Some(Err(limit)),
+                    Ok(false) => return Ok(None),
+                    Err(limit) => return Err(limit),
                 }
                 continue;
             }
-            let normal = oriented_nurbs_normal(support, normal_vector)?;
+            let Some(normal) = oriented_nurbs_normal(support, normal_vector) else {
+                return Ok(None);
+            };
             let u_lipschitz =
                 residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
             let v_lipschitz =
@@ -873,7 +886,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             let midpoint_error = Point3::distance(expected, candidate_point.get());
             let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
             if !bound.is_finite() {
-                return None;
+                return Ok(None);
             }
             if bound <= tolerance {
                 certified_bound = certified_bound.max(bound);
@@ -888,13 +901,11 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 geometry_budget,
             ) {
                 Ok(true) => {}
-                Ok(false) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(false) => return Ok(None),
+                Err(limit) => return Err(limit),
             }
         }
-        Some(Ok(certified_bound))
-    })()
-    .transpose()
+        Ok(Some(certified_bound))
 }
 
 #[derive(Clone, Copy)]
@@ -2477,10 +2488,10 @@ fn intersection_parameter_tangent(
     else {
         return Ok(None);
     };
+    if let Some(tangent) = null_vector_3x4(geometry_budget.charges, jacobian)? {
+        return Ok(Some(tangent));
+    }
     Ok((|| -> Option<[f64; 4]> {
-        if let Some(tangent) = null_vector_3x4(jacobian) {
-            return Some(tangent);
-        }
         let chord = FiniteVector3::new(chord).and_then(FiniteVector3::unit_nonzero)?;
         let derivatives = [
             [
@@ -2613,16 +2624,19 @@ fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 {
         + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
 }
 
-fn null_vector_3x4(mut matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
+fn null_vector_3x4(
+    ctx: &DecodeContext<'_>,
+    mut matrix: [[f64; 4]; 3],
+) -> Result<Option<[f64; 4]>, cadmpeg_core::decode::ResourceLimit> {
     for row in &mut matrix {
         if row.iter().any(|value| !value.is_finite()) {
-            return None;
+            return Ok(None);
         }
         let scale = row
             .iter()
             .fold(0.0_f64, |scale, value| scale.max(value.abs()));
         if scale == 0.0 {
-            return None;
+            return Ok(None);
         }
         for value in row {
             *value /= scale;
@@ -2630,23 +2644,24 @@ fn null_vector_3x4(mut matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
     }
     let mut vector = [0.0; 4];
     for (omitted, component) in vector.iter_mut().enumerate() {
-        let minor = std::array::from_fn(|row| {
+        let mut minor = [[0.0; 3]; 3];
+        for (minor_row, row) in minor.iter_mut().zip(&matrix) {
             let mut column = 0;
-            std::array::from_fn(|_| {
+            for value in minor_row.iter_mut() {
                 while column == omitted {
+                    ctx.charge_work_limit(1, "nx intersection null vector cofactor column")?;
                     column += 1;
                 }
-                let value = matrix[row][column];
+                *value = row[column];
                 column += 1;
-                value
-            })
-        });
+            }
+        }
         *component = if omitted % 2 == 0 { 1.0 } else { -1.0 } * determinant_3x3(minor);
     }
     let norm = vector
         .iter()
         .fold(0.0_f64, |norm, value| norm.hypot(*value));
-    (norm.is_finite() && norm > 1.0e-14).then(|| vector.map(|value| value / norm))
+    Ok((norm.is_finite() && norm > 1.0e-14).then(|| vector.map(|value| value / norm)))
 }
 
 fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
@@ -3607,16 +3622,101 @@ mod tests {
     }
     #[test]
     fn intersection_null_vector_is_invariant_under_row_scaling() {
-        for a in [1e-200, 1e-5, 1., 1e100, 1e200] {
-            let v = super::null_vector_3x4([[a, 0., -a, 0.], [0., a, 0., 0.], [0., 0., 0., -a]])
+        crate::test_support::with_decode_context(|ctx| {
+            for a in [1e-200, 1e-5, 1., 1e100, 1e200] {
+                let v = super::null_vector_3x4(
+                    ctx,
+                    [[a, 0., -a, 0.], [0., a, 0., 0.], [0., 0., 0., -a]],
+                )
+                .unwrap()
                 .unwrap();
-            assert_eq!(v[0], v[2]);
-            assert_eq!(v[1], 0.);
-            assert_eq!(v[3], 0.);
-            assert!((v[0].abs() - std::f64::consts::FRAC_1_SQRT_2).abs() <= f64::EPSILON);
-        }
-        assert!(super::null_vector_3x4([[0.; 4]; 3]).is_none());
+                assert_eq!(v[0], v[2]);
+                assert_eq!(v[1], 0.);
+                assert_eq!(v[3], 0.);
+                assert!((v[0].abs() - std::f64::consts::FRAC_1_SQRT_2).abs() <= f64::EPSILON);
+            }
+            assert!(super::null_vector_3x4(ctx, [[0.; 4]; 3]).unwrap().is_none());
+        });
     }
+    #[test]
+    fn intersection_null_vector_propagates_work_refusal() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let refusal = super::null_vector_3x4(
+                    ctx,
+                    [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
+                )
+                .expect_err("the first omitted-column skip needs work");
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(refusal.operation, "nx intersection null vector cofactor column");
+            },
+        );
+    }
+
+    #[test]
+    fn offset_rectangle_probe_refuses_session_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+        let setup_ctx = cadmpeg_test_support::service_decode_context();
+        let support = NurbsSurface::from_lanes(
+            &setup_ctx,
+            NurbsSurfaceAxis::new(2, vec![0., 0., 0., 1., 1., 1.], false),
+            NurbsSurfaceAxis::new(2, vec![0., 0., 0., 1., 1., 1.], false),
+            NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| {
+                                Point3::new(
+                                    [0.0, 0.5, 1.0][u],
+                                    [0.0, 0.5, 1.0][v],
+                                    [0.0, 0.0, 1.0][u] + [0.0, 0.0, 1.0][v],
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid polynomial surface");
+
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "nx offset rectangle probe",
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(
+                    ctx,
+                    cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+                );
+                super::certified_curved_offset_cache_fit_with_budget(
+                    &support,
+                    &support,
+                    0.01,
+                    0.02,
+                    true,
+                    &geometry_budget,
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "nx offset rectangle probe"
+        ));
+    }
+
     #[test]
     fn periodic_lift_avoids_overflowing_the_parameter_difference() {
         let lifted = super::lift_periodic_parameter(-1e308, 1e308, 1e307);

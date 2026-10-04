@@ -2972,7 +2972,13 @@ fn coincident_pcurve_pair_with_index(
         "nx coincident pcurve intervals",
     )?;
     intervals.push(range);
-    while let Some([start, end]) = intervals.pop() {
+    loop {
+        geometry_budget
+            .charges
+            .charge_work_limit(1, "nx coincident pcurve interval probe")?;
+        let Some([start, end]) = intervals.pop() else {
+            break;
+        };
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(false), Err);
         }

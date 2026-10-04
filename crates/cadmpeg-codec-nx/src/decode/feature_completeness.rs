@@ -296,8 +296,11 @@ pub(crate) fn incomplete_expression_parameters(
                         return Ok(None);
                     };
                     let mut dependencies = Vec::new();
-                    for name in crate::native::om::expression_parameter_names(&parameter.expression)
-                    {
+                    for name in crate::native::om::expression_parameter_names(
+                        ctx,
+                        &parameter.expression,
+                    ) {
+                        let name = name?;
                         let Some(ids) = ids_by_name.get(&(name, unit)) else {
                             return Ok(None);
                         };
@@ -331,17 +334,21 @@ pub(crate) fn incomplete_expression_parameters(
         }
         let mut emitted = BTreeSet::new();
         let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
-        while let Some(index) = (0..parameters.len()).find(|index| {
-            !emitted.contains(index)
-                && expected[*index].as_ref().is_some_and(|dependencies| {
-                    dependencies.iter().all(|dependency| {
-                        evaluated.contains_key(dependency)
-                            && indices
-                                .get(dependency)
-                                .is_some_and(|index| emitted.contains(index))
+        loop {
+            ctx.charge_work(1, "nx expression parameter evaluation pass")?;
+            let Some(index) = (0..parameters.len()).find(|index| {
+                !emitted.contains(index)
+                    && expected[*index].as_ref().is_some_and(|dependencies| {
+                        dependencies.iter().all(|dependency| {
+                            evaluated.contains_key(dependency)
+                                && indices
+                                    .get(dependency)
+                                    .is_some_and(|index| emitted.contains(index))
+                        })
                     })
-                })
-        }) {
+            }) else {
+                break;
+            };
             let parameter = parameters[index];
             let unit = parameter.properties.get("unit").map(String::as_str);
             let value = crate::native::om::evaluate_parameterized_expression(

@@ -6,10 +6,14 @@ use std::collections::BTreeMap;
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
-        crate::native::om::expression_parameter_names(
-            "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_"
-        )
-        .collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::native::om::expression_parameter_names(
+                ctx,
+                "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_",
+            )
+            .collect::<Result<Vec<_>, _>>()
+        })
+        .unwrap(),
         vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
     );
 }
@@ -1149,4 +1153,89 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
     .expect("ambiguous parameter binding");
     assert_eq!(ambiguous.len(), 1);
     assert_eq!(ambiguous[0].expression, None);
+}
+
+#[test]
+fn nx_expression_parameter_iterator_refuses_named_work_sites() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    fn refusal(expression: &'static str, operation: &'static str) -> cadmpeg_core::CodecError {
+        crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let mut names = crate::native::om::expression_parameter_names(ctx, expression);
+                match names.next() {
+                    Some(Err(error)) => {
+                        assert!(names.next().is_none());
+                        Err(error)
+                    }
+                    Some(Ok(_)) | None => Ok(()),
+                }
+            },
+        )
+    }
+
+    for (expression, operation) in [
+        ("p1", "NX expression parameter scan"),
+        ("p1", "NX expression parameter token scan"),
+    ] {
+        let error = refusal(expression, operation);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
+}
+#[test]
+fn nx_expression_substitution_refuses_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX expression substitution",
+        |ctx| crate::native::om::evaluate_parameterized_expression(ctx, "1", |_| None),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "NX expression substitution"
+    ));
+}
+
+#[test]
+fn nx_expression_graph_refuses_pass_work_at_the_named_site() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX expression graph pass",
+        |ctx| {
+            let mut expressions = vec![crate::native::om::ParameterFormula {
+                id: "nx:test:expression#p1".into(),
+                owner: None,
+                declaration: None,
+                name: crate::om::parameter_name::ParameterName::new("p1".to_owned()),
+                unit: crate::native::om::ExpressionUnit::Millimeter,
+                expression: "1".into(),
+                value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(1.0).unwrap()),
+                source_entry: "part".into(),
+                source_table: cadmpeg_core::text::NonBlankString::try_from("table").unwrap(),
+                source_offset: 0,
+            }];
+            crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "NX expression graph pass"
+    ));
 }

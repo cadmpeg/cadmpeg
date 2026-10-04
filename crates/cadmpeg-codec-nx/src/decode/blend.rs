@@ -567,6 +567,52 @@ mod tests {
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }
+
+    #[test]
+    fn bezier_root_interval_end_probe_refuses_session_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                // One interval probe and the separate geometry evaluation use two units.
+                policy.limits.max_work_units = 2;
+            },
+            |ctx| {
+                let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
+                let span = super::ScalarBezierSpan {
+                    domain: [0.0, 1.0],
+                    controls: vec![1.0, 1.0],
+                };
+
+                let Err(refusal) = super::scalar_bezier_roots_with_budget(span, &geometry_budget) else {
+                    panic!("the terminal interval probe needs work");
+                };
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(refusal.operation, "nx Bezier root interval probe");
+                assert_eq!((refusal.used, refusal.additional), (2, 1));
+            },
+        );
+    }
+
+    #[test]
+    fn polynomial_root_coefficient_probe_refuses_session_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = super::polynomial_roots_in_unit_interval(ctx, &[0.0, 1.0])
+                    .expect_err("the coefficient probe needs work");
+                let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+                    panic!("the coefficient probe must propagate the work refusal");
+                };
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(refusal.operation, "nx polynomial coefficient trim probe");
+            },
+        );
+    }
 }
 
 pub(super) fn decoded_surface_point_inner_with_budget(
@@ -3551,7 +3597,13 @@ pub(super) fn scalar_bezier_roots_with_budget(
         "nx Bezier root intervals",
     )?;
     intervals.push(span);
-    while let Some(span) = intervals.pop() {
+    loop {
+        geometry_budget
+            .charges
+            .charge_work_limit(1, "nx Bezier root interval probe")?;
+        let Some(span) = intervals.pop() else {
+            break;
+        };
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
@@ -5106,10 +5158,14 @@ fn polynomial_roots_in_unit_interval(
     coefficients: &[f64],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut coefficients = coefficients.to_vec();
-    while coefficients
-        .last()
-        .is_some_and(|coefficient| *coefficient == 0.0)
-    {
+    loop {
+        ctx.charge_work(1, "nx polynomial coefficient trim probe")?;
+        let Some(coefficient) = coefficients.last() else {
+            break;
+        };
+        if *coefficient != 0.0 {
+            break;
+        }
         coefficients.pop();
     }
     if coefficients.is_empty() {

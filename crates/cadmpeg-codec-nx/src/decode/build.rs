@@ -1181,6 +1181,7 @@ pub(super) fn try_decode_geometry(
         }
         let surface_curves = &view.surface_curves;
         loop {
+            ctx.charge_work(1, "nx geometry carrier mapping pass")?;
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
                 if let Some(basis_ref) = curves_by_xmt.get(&trim.state.basis()) {
@@ -1727,6 +1728,7 @@ fn prune_unreferenced_unknown_carriers(
         }
     }
     loop {
+        ctx.charge_work(1, "nx unknown carrier reachability pass")?;
         let previous = (used_surfaces.len(), used_curves.len());
         for procedural in &ir.model.procedural_surfaces {
             let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
@@ -2381,6 +2383,7 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
     }
 
     loop {
+        ctx.charge_work(1, "nx active geometry reachability pass")?;
         let old_surface_count = surfaces.len();
         let old_curve_count = curves.len();
         for procedural in &ir.model.procedural_surfaces {
