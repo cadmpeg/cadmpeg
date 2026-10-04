@@ -1265,11 +1265,14 @@ pub(super) fn bind_detached_relation_drivers(
         let (Some(feature), Some(name)) = (feature, name) else {
             continue;
         };
-        let values = temporary
-            .with_storage(|| ctx.entry_hash_map(&mut drivers, (feature, name), INDEX))?
-            .or_default();
         temporary.with_storage(|| {
-            ctx.push_vec(values, scalar, "collect SLDPRT detached relation drivers")
+            ctx.push_hash_group(
+                &mut drivers,
+                (feature, name),
+                scalar,
+                INDEX,
+                "collect SLDPRT detached relation drivers",
+            )
         })?;
     }
     let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
@@ -1319,11 +1322,14 @@ pub(super) fn bind_detached_relation_drivers(
                 copy_relation_text(ctx, name)?,
             ))
         })?;
-        let values = temporary
-            .with_storage(|| ctx.entry_hash_map(&mut candidates, key, INDEX))?
-            .or_default();
         temporary.with_storage(|| {
-            ctx.push_vec(values, index, "collect SLDPRT detached relation candidates")
+            ctx.push_hash_group(
+                &mut candidates,
+                key,
+                index,
+                INDEX,
+                "collect SLDPRT detached relation candidates",
+            )
         })?;
     }
     for (key, relation_indices) in
