@@ -6975,15 +6975,20 @@ fn validate_edge_operands<'a>(
             .and_then(|recipe| recipe.record_index)
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
-        let expected_faces = match design_reference {
-            Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
-                ctx.decode,
-                design_reference,
-                &native.persistent_subentity_tags,
-                Some(&operand.id),
-            )?,
-            None => Vec::new(),
-        };
+        let _expected_faces_storage;
+        let expected_faces;
+        (expected_faces, _expected_faces_storage) = ctx.decode.with_scoped_storage(
+            "F3D validation expected edge operand candidate faces",
+            || match design_reference {
+                Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
+                    ctx.decode,
+                    design_reference,
+                    &native.persistent_subentity_tags,
+                    Some(&operand.id),
+                ),
+                None => Ok(Vec::new()),
+            },
+        )?;
         let mut expected_references =
             design::decode::dimension_frames::decode_recipe_references_charged(
                 ctx.decode,
