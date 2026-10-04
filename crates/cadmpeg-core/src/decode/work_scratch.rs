@@ -11,6 +11,12 @@ pub struct WorkScratch<'a> {
 }
 
 impl<'a> WorkScratch<'a> {
+    pub(super) fn from_reservation(reservation: ScopedReservation<'a>) -> Self {
+        Self {
+            reservation: Some(reservation),
+        }
+    }
+
     pub(super) fn new(
         session: Option<&'a DecodeBudget>,
         bytes: u64,
