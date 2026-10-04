@@ -419,7 +419,7 @@ fn validate_design(
                         operand.index(),
                         "collect Inventor PmDc expression references",
                     )
-                })?
+                })?;
             }
             PmDcExpressionKind::Binary { left, right, .. } => {
                 references_storage.with_storage(|| {
@@ -2636,8 +2636,7 @@ where
 {
     let records = ctx
         .get_btree_map(namespace.arenas(), name, operation)?
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[][..], Vec::as_slice);
     let records = ctx
         .admit_iter(records, operation)
         .map_err(CodecError::ResourceLimit)?;
@@ -2921,7 +2920,7 @@ impl NativeData {
                 namespace,
                 "pm_dc_feature_labels",
                 "convert Inventor PmDc feature labels",
-                |wire, ctx| wire.into_record(ctx),
+                super::feature::PmDcFeatureLabelPayloadWire::into_record,
             )?,
             pm_dc_entity_style_links: read_contextual_located_arena::<
                 crate::feature::PmDcEntityStyleLinkPayload,
@@ -3028,6 +3027,8 @@ fn validate_segments(
     data: &NativeData,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    const EXPECTED_SECTIONS: [u8; 11] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
     unique(
         ctx,
         findings,
@@ -3108,20 +3109,18 @@ fn validate_segments(
         ctx,
         findings,
         &pair_tokens,
-        &data.metadata,
-        |record| record.token.as_str(),
-        &data.metadata_issues,
-        |record| record.token.as_str(),
+        (data.metadata.as_slice(), |record| record.token.as_str()),
+        (data.metadata_issues.as_slice(), |record| {
+            record.token.as_str()
+        }),
         "metadata",
     )?;
     validate_segment_states(
         ctx,
         findings,
         &pair_tokens,
-        &data.bulk,
-        |record| record.token.as_str(),
-        &data.bulk_issues,
-        |record| record.token.as_str(),
+        (data.bulk.as_slice(), |record| record.token.as_str()),
+        (data.bulk_issues.as_slice(), |record| record.token.as_str()),
         "bulk",
     )?;
     let (metadata_by_token, _metadata_by_token_storage) =
@@ -3203,7 +3202,6 @@ fn validate_segments(
             Ok::<(), CodecError>(())
         })?;
     }
-    const EXPECTED_SECTIONS: [u8; 11] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     let (expected_sections, _expected_sections_storage) =
         ctx.with_scoped_storage("collect expected Inventor metadata sections", || {
             ctx.collect_hash_set(
@@ -3370,16 +3368,16 @@ fn validate_segment_states<P, I, F, G>(
     ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     pairs: &HashSet<&str>,
-    parsed: &[P],
-    parsed_token: F,
-    issues: &[I],
-    issue_token: G,
+    parsed: (&[P], F),
+    issues: (&[I], G),
     member: &str,
 ) -> Result<(), CodecError>
 where
     F: Fn(&P) -> &str,
     G: Fn(&I) -> &str,
 {
+    let (parsed, parsed_token) = parsed;
+    let (issues, issue_token) = issues;
     let (mut states, mut states_storage) =
         ctx.temporary_set(0, "index Inventor uniqueness keys")?;
     unique_into(
@@ -3400,12 +3398,7 @@ where
         |record| Ok(issue_token(record)),
         format_args!("segment {member} state"),
     )?;
-    if !equal_hash_sets(
-        ctx,
-        &states,
-        pairs,
-        "compare Inventor segment states",
-    )? {
+    if !equal_hash_sets(ctx, &states, pairs, "compare Inventor segment states")? {
         push_finding(
             ctx,
             findings,

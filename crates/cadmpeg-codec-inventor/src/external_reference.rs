@@ -184,10 +184,7 @@ fn parse_stream_grammar<'a>(
     }
     let mut section_versions =
         ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
-    for _ in ctx.admit_iter(
-        &(0..section_count),
-        "admit UFRxDoc section-version entries",
-    )? {
+    for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
         ctx.push_vec(
             &mut section_versions,
             cursor.u16("section version")?,
@@ -784,7 +781,10 @@ fn parse_model_states<'a>(
         let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
         let mut parameters =
             ctx.vector_storage(parameter_count, "admit UFRxDoc model-state parameters")?;
-        for _ in ctx.admit_iter(&(0..parameter_count), "admit UFRxDoc model-state parameters")? {
+        for _ in ctx.admit_iter(
+            &(0..parameter_count),
+            "admit UFRxDoc model-state parameters",
+        )? {
             ctx.push_vec(
                 &mut parameters,
                 UfrxModelStateParameter {
@@ -833,10 +833,7 @@ fn parse_schema_table(
     let section_count = cursor.count16("section-version count", 256)?;
     let mut section_versions =
         ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
-    for _ in ctx.admit_iter(
-        &(0..section_count),
-        "admit UFRxDoc section-version entries",
-    )? {
+    for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
         ctx.push_vec(
             &mut section_versions,
             cursor.u16("section version")?,

@@ -1682,17 +1682,31 @@ fn project_preview_asset(
         "admit Inventor preview asset entity",
     )?;
     let ordinal_digits = decimal_digits(ordinal)?;
-    let key_len = "preview-".len().checked_add(ordinal_digits).ok_or_else(|| {
-        ctx.refuse_codec_limit("format Inventor preview identity key", u64::MAX - 1, u64::MAX)
-    })?;
-    let id_len = "inventor:document:asset#".len().checked_add(key_len).ok_or_else(|| {
-        ctx.refuse_codec_limit("format Inventor preview asset id", u64::MAX - 1, u64::MAX)
-    })?;
+    let key_len = "preview-"
+        .len()
+        .checked_add(ordinal_digits)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "format Inventor preview identity key",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    let id_len = "inventor:document:asset#"
+        .len()
+        .checked_add(key_len)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("format Inventor preview asset id", u64::MAX - 1, u64::MAX)
+        })?;
     let identity_work = ordinal_digits
         .checked_add(key_len)
         .and_then(|work| work.checked_add(id_len))
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("format Inventor preview asset identity", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "format Inventor preview asset identity",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(identity_work),

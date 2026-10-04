@@ -1426,9 +1426,7 @@ mod tests {
             .reserve_scoped(0, "short digest key test storage")
             .expect("digest storage");
         let key = storage
-            .with_storage(|| {
-                short_digest_key(&ctx, b"abc", "short digest key test storage")
-            })
+            .with_storage(|| short_digest_key(&ctx, b"abc", "short digest key test storage"))
             .expect("admitted digest key");
         assert_eq!(key.as_str(), "ba7816bf8f01cfea");
     }
@@ -1438,8 +1436,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 15;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy)
-            .expect("digest source view");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"abc", &arena, &policy).expect("digest source view");
         let mut storage = ctx
             .reserve_scoped(0, "compose Inventor default binding key")
             .expect("empty digest storage");

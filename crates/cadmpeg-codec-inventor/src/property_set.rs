@@ -898,8 +898,7 @@ fn decode_code_page(
         || decoded.len() != decoded_len
     {
         return Err(CodecError::malformed(format_args!(
-            "OLE code-page {} string is malformed",
-            page
+            "OLE code-page {page} string is malformed"
         )));
     }
     Ok(decoded)

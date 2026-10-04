@@ -51,7 +51,7 @@ impl StorageBand {
                     digits.as_bytes(),
                     "validate RSe database storage-band digits",
                 )?
-                .all(|byte| byte.is_ascii_digit())
+                .all(u8::is_ascii_digit)
         {
             return Ok(None);
         }

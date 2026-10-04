@@ -400,29 +400,33 @@ impl DialectRecovery {
                 "retain Inventor absent schema reason",
             )?;
             ctx.push_vec(&mut reasons, "no RSe database stream declares a schema".to_owned(), "collect Inventor dialect reasons")?;
-        } else {
-            if ctx.admit_iter(&self.schemas, "classify Inventor schema declarations")?
-                .any(|schema| *schema != RseSchema::SCHEMA_31)
-            {
-                let foreign = join(
-                    ctx,
-                    &self.schemas,
-                    |schema| {
-                        if *schema == RseSchema::SCHEMA_31 { return Ok(None); }
-                            ctx.format_retained(
-                                format_args!("{}", schema.value()),
-                                "retain Inventor foreign schema reason part",
-                            )
-                        .map(Some)
-                    },
-                    "visit Inventor foreign schemas",
-                    "retain Inventor foreign schema reason list",
-                )?;
-                ctx.push_vec(&mut reasons, ctx.format_retained(
+        } else if ctx.admit_iter(&self.schemas, "classify Inventor schema declarations")?
+            .any(|schema| *schema != RseSchema::SCHEMA_31)
+        {
+            let foreign = join(
+                ctx,
+                &self.schemas,
+                |schema| {
+                    if *schema == RseSchema::SCHEMA_31 {
+                        return Ok(None);
+                    }
+                    ctx.format_retained(
+                        format_args!("{}", schema.value()),
+                        "retain Inventor foreign schema reason part",
+                    )
+                    .map(Some)
+                },
+                "visit Inventor foreign schemas",
+                "retain Inventor foreign schema reason list",
+            )?;
+            ctx.push_vec(
+                &mut reasons,
+                ctx.format_retained(
                     format_args!("RSe database schema {foreign} is declared"),
                     "retain Inventor foreign schema reason",
-                )?, "collect Inventor dialect reasons")?;
-            }
+                )?,
+                "collect Inventor dialect reasons",
+            )?;
         }
         if !self.unframed_meta_streams.is_empty() {
             let markers = join(
@@ -463,49 +467,55 @@ impl DialectRecovery {
                 "retain Inventor absent metadata reason",
             )?;
             ctx.push_vec(&mut reasons, "no RSe segment metadata stream declares a marker and version".to_owned(), "collect Inventor dialect reasons")?;
-        } else {
-            if ctx.admit_iter(&self.meta_streams, "classify Inventor metadata declarations")?
-                .any(|declared| !declared.is_verified())
-            {
-                let markers = join(
-                    ctx,
-                    &self.meta_streams,
-                    |declared| {
-                        if declared.is_verified() { return Ok(None); }
-                            ctx.format_retained(
-                                format_args!("{:?}", declared.marker),
-                                "retain Inventor foreign marker reason part",
-                            )
-                        .map(Some)
-                    },
-                    "visit Inventor foreign metadata",
-                    "retain Inventor foreign marker reason list",
-                )?;
-                let versions = join(
-                    ctx,
-                    &self.meta_streams,
-                    |declared| {
-                        if declared.is_verified() { return Ok(None); }
-                            ctx.format_retained(
-                                format_args!("{}", declared.version),
-                                "retain Inventor foreign version reason part",
-                            )
-                        .map(Some)
-                    },
-                    "visit Inventor foreign metadata",
-                    "retain Inventor foreign version reason list",
-                )?;
-                ctx.push_vec(&mut reasons, ctx.format_retained(
+        } else if ctx.admit_iter(&self.meta_streams, "classify Inventor metadata declarations")?
+            .any(|declared| !declared.is_verified())
+        {
+            let markers = join(
+                ctx,
+                &self.meta_streams,
+                |declared| {
+                    if declared.is_verified() {
+                        return Ok(None);
+                    }
+                    ctx.format_retained(
+                        format_args!("{:?}", declared.marker),
+                        "retain Inventor foreign marker reason part",
+                    )
+                    .map(Some)
+                },
+                "visit Inventor foreign metadata",
+                "retain Inventor foreign marker reason list",
+            )?;
+            let versions = join(
+                ctx,
+                &self.meta_streams,
+                |declared| {
+                    if declared.is_verified() {
+                        return Ok(None);
+                    }
+                    ctx.format_retained(
+                        format_args!("{}", declared.version),
+                        "retain Inventor foreign version reason part",
+                    )
+                    .map(Some)
+                },
+                "visit Inventor foreign metadata",
+                "retain Inventor foreign version reason list",
+            )?;
+            ctx.push_vec(
+                &mut reasons,
+                ctx.format_retained(
                     format_args!(
                         "RSe segment metadata marker {markers} version {versions} is declared"
                     ),
                     "retain Inventor foreign metadata reason",
-                )?, "collect Inventor dialect reasons")?;
-            }
+                )?,
+                "collect Inventor dialect reasons",
+            )?;
         }
         ctx.join_retained(&reasons, "; ", "retain Inventor joined dialect reasons")
         })?;
-        Ok(InventorLossCode::SourceDialectUnverified.note(
+        InventorLossCode::SourceDialectUnverified.note(
             ctx,
             format_args!(
                 "{}; this decode applied the only Inventor grammars this codec implements — RSe \
@@ -518,7 +528,7 @@ impl DialectRecovery {
                 MetaStreamDeclaration::VERIFIED_VERSION
             ),
             "retain Inventor dialect loss message",
-        )?)
+        )
     }
 }
 

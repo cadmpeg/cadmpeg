@@ -2051,28 +2051,22 @@ fn project_constraint(
         ),
         "retain projected Inventor sketch constraint id",
     ));
-    let key_len = match id
+    let Some(key_len) = id
         .len()
         .checked_sub("inventor:design:sketch-constraint#".len())
-    {
-        Some(value) => value,
-        None => {
-            return Some(Err(CodecError::malformed(
-                "formatted Inventor constraint id is shorter than its prefix",
-            )))
-        }
+    else {
+        return Some(Err(CodecError::malformed(
+            "formatted Inventor constraint id is shorter than its prefix",
+        )));
     };
-    let validation_work = match cadmpeg_core::decode::u64_from_index(id.len())
+    let Some(validation_work) = cadmpeg_core::decode::u64_from_index(id.len())
         .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    {
-        Some(value) => value,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "validate projected Inventor identity",
-                u64::MAX,
-                u64::MAX,
-            )))
-        }
+    else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "validate projected Inventor identity",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
     admit!(ctx.charge_work(validation_work, "validate projected Inventor identity"));
     Some(Ok(SketchConstraint {
@@ -2739,11 +2733,7 @@ fn line_component<'ctx>(
             {
                 for &neighbour in ctx.admit_iter(neighbours, "queue Inventor profile neighbours")? {
                     pending_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut pending,
-                            neighbour,
-                            "queue Inventor profile neighbours",
-                        )
+                        ctx.push_vec(&mut pending, neighbour, "queue Inventor profile neighbours")
                     })?;
                 }
             }

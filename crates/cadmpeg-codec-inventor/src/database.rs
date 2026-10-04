@@ -242,7 +242,11 @@ pub(crate) fn parse_registry(
                 node_count: cursor.u32("object node count")?,
             };
             node_count = Some(object.node_count);
-            ctx.push_vec(&mut objects, object, "admit Inventor segment registry objects")?;
+            ctx.push_vec(
+                &mut objects,
+                object,
+                "admit Inventor segment registry objects",
+            )?;
         }
         let node_count = node_count
             .unwrap_or(1)
@@ -258,30 +262,38 @@ pub(crate) fn parse_registry(
 
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
         for _ in ctx.admit_iter(&(0..node_count), "visit Inventor segment nodes")? {
-            ctx.push_vec(&mut nodes, SegmentNode {
-                index: cursor.u32("node index")?,
-                segment_list_indexes: [
-                    cursor.i16("node segment-list index")?,
-                    cursor.i16("node segment-list index")?,
-                ],
-                values: cursor.u16_array("node values")?,
-                number: cursor.u16("node number")?,
-            }, "admit Inventor segment registry nodes")?;
+            ctx.push_vec(
+                &mut nodes,
+                SegmentNode {
+                    index: cursor.u32("node index")?,
+                    segment_list_indexes: [
+                        cursor.i16("node segment-list index")?,
+                        cursor.i16("node segment-list index")?,
+                    ],
+                    values: cursor.u16_array("node values")?,
+                    number: cursor.u16("node number")?,
+                },
+                "admit Inventor segment registry nodes",
+            )?;
         }
-        ctx.push_vec(&mut entries, SegmentRegistryEntry {
-            display_name,
-            segment_id,
-            revision_id,
-            value,
-            state,
-            secondary_count,
-            type_name,
-            type_state,
-            version,
-            trailing_value,
-            objects,
-            nodes,
-        }, "admit Inventor segment registry entries")?;
+        ctx.push_vec(
+            &mut entries,
+            SegmentRegistryEntry {
+                display_name,
+                segment_id,
+                revision_id,
+                value,
+                state,
+                secondary_count,
+                type_name,
+                type_state,
+                version,
+                trailing_value,
+                objects,
+                nodes,
+            },
+            "admit Inventor segment registry entries",
+        )?;
     }
     let state = cursor.u16_array("registry state")?;
     let primary_ids = cursor.id_list(ctx, "primary registry ids")?;
@@ -320,12 +332,16 @@ pub(crate) fn parse_revisions(
         } else {
             RevisionPayload::None
         };
-        ctx.push_vec(&mut entries, RevisionEntry {
-            id,
-            flags,
-            kind,
-            payload,
-        }, "admit Inventor revision entries")?;
+        ctx.push_vec(
+            &mut entries,
+            RevisionEntry {
+                id,
+                flags,
+                kind,
+                payload,
+            },
+            "admit Inventor revision entries",
+        )?;
     }
     cursor.finish()?;
     Ok(RevisionTable { version, entries })
@@ -431,7 +447,11 @@ impl<'a> Cursor<'a> {
             })?;
         let mut ids = ctx.vector_storage(count, "admit Inventor registry identifier list")?;
         for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
-            ctx.push_vec(&mut ids, self.array(field)?, "admit Inventor registry identifier list")?;
+            ctx.push_vec(
+                &mut ids,
+                self.array(field)?,
+                "admit Inventor registry identifier list",
+            )?;
         }
         Ok(ids)
     }
@@ -520,7 +540,8 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("bounded identifier context");
         assert_eq!(
-            super::Cursor::new(&bytes, "test").id_list(&ctx, "ids")
+            super::Cursor::new(&bytes, "test")
+                .id_list(&ctx, "ids")
                 .expect("one admitted identifier"),
             vec![[0x35; 16]],
         );

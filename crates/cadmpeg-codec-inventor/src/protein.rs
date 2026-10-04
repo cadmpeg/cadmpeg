@@ -409,6 +409,7 @@ mod tests {
             .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
+            const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 292;
             let ParsedProtein::Package {
                 archive, payload, ..
             } = parse_stream(ctx, root).expect("synthetic Protein package parses")
@@ -422,7 +423,6 @@ mod tests {
                 1
             );
             // Prior slots: ZIP index 10 + schema view 1 + XML tree/depth 58 + schema maps 2 + entry/view 2 + frames 213 + outcome 1 + inheritance 4 + property 1 = 292; the outer result slot is next.
-            const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 292;
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = RESULT_COLLECTION_PRIOR_ITEMS;

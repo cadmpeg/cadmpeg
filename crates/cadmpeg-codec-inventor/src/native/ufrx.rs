@@ -22,7 +22,7 @@ impl Identifier16 {
                     value.as_bytes(),
                     "validate Inventor UFRx sixteen-byte identifier",
                 )?
-                .all(|byte| byte.is_ascii_hexdigit())
+                .all(u8::is_ascii_hexdigit)
         {
             return Err(CodecError::Malformed(
                 "identifier must contain 32 hexadecimal digits".into(),
@@ -162,8 +162,7 @@ where
 {
     let records = ctx
         .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[][..], Vec::as_slice);
     let records = ctx
         .admit_iter(records, operation)
         .map_err(CodecError::from)?;
@@ -192,8 +191,7 @@ where
 {
     let records = ctx
         .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[][..], Vec::as_slice);
     let count = records.len();
     let records = ctx
         .admit_iter(records, operation)
@@ -896,7 +894,7 @@ impl ExternalReferenceRecordWire {
                 suffix.as_bytes(),
                 "validate Inventor UFRx external reference ordinal digits",
             )?
-            .all(|byte| byte.is_ascii_digit());
+            .all(u8::is_ascii_digit);
         if !digits {
             return Err(malformed(
                 ctx,
@@ -1095,15 +1093,12 @@ impl EmbeddedReferenceRecordWire {
                 "retain Inventor UFRx embedded conversion issue",
             )?);
         }
-        let record_len = match NonZeroU64::new(self.record_len) {
-            Some(record_len) => record_len,
-            None => {
-                return Err(malformed(
-                    ctx,
-                    "record_len must not be zero",
-                    "retain Inventor UFRx embedded conversion issue",
-                )?);
-            }
+        let Some(record_len) = NonZeroU64::new(self.record_len) else {
+            return Err(malformed(
+                ctx,
+                "record_len must not be zero",
+                "retain Inventor UFRx embedded conversion issue",
+            )?);
         };
         let record_sha256 = match Sha256Digest::try_from(self.record_sha256) {
             Ok(digest) => digest,
@@ -1191,15 +1186,12 @@ impl UfrxOccurrenceRecordWire {
                 "retain Inventor UFRx occurrence conversion issue",
             )?);
         }
-        let record_len = match NonZeroU64::new(self.record_len) {
-            Some(record_len) => record_len,
-            None => {
-                return Err(malformed(
-                    ctx,
-                    "record_len must not be zero",
-                    "retain Inventor UFRx occurrence conversion issue",
-                )?);
-            }
+        let Some(record_len) = NonZeroU64::new(self.record_len) else {
+            return Err(malformed(
+                ctx,
+                "record_len must not be zero",
+                "retain Inventor UFRx occurrence conversion issue",
+            )?);
         };
         let record_sha256 = match Sha256Digest::try_from(self.record_sha256) {
             Ok(digest) => digest,
@@ -1289,10 +1281,7 @@ impl UfrxRecord {
         )?;
         if record_count != 1 {
             return Err(NativeConvertError::ConversionMessage(ctx.format_retained(
-                format_args!(
-                    "Inventor native data has {} UFRxDoc state records",
-                    record_count
-                ),
+                format_args!("Inventor native data has {record_count} UFRxDoc state records"),
                 "format Inventor UFRx record count issue",
             )?));
         }
@@ -1309,28 +1298,28 @@ impl UfrxRecord {
             namespace,
             "ufrx_model_states",
             "convert Inventor UFRx model states",
-            |wire, ctx| wire.into_record(ctx),
+            UfrxModelStateRecordWire::into_record,
         )?;
         let external_references = convert_arena::<ExternalReferenceRecordWire, _>(
             ctx,
             namespace,
             "external_references",
             "convert Inventor UFRx external references",
-            |wire, ctx| wire.into_record(ctx),
+            ExternalReferenceRecordWire::into_record,
         )?;
         let embedded_references = convert_arena::<EmbeddedReferenceRecordWire, _>(
             ctx,
             namespace,
             "embedded_references",
             "convert Inventor UFRx embedded references",
-            |wire, ctx| wire.into_record(ctx),
+            EmbeddedReferenceRecordWire::into_record,
         )?;
         let occurrences = convert_arena::<UfrxOccurrenceRecordWire, _>(
             ctx,
             namespace,
             "ufrx_occurrences",
             "convert Inventor UFRx occurrences",
-            |wire, ctx| wire.into_record(ctx),
+            UfrxOccurrenceRecordWire::into_record,
         )?;
         wire.into_record(
             ctx,
@@ -1672,7 +1661,6 @@ mod tests {
             } else {
                 assert!(record
                     .expect_err("invalid native record fixture")
-                    .to_string()
                     .contains("document_id"));
             }
         }
