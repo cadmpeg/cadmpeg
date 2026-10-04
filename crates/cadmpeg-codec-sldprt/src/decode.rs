@@ -2096,7 +2096,7 @@ fn conflicting_display_reference(
         write!(&mut message, "{}", source.value())
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    message.push(')');
+    ctx.push_retained_char(&mut message, ')', "append SLDPRT decoded character")?;
     Ok(message)
 }
 
@@ -2183,7 +2183,7 @@ fn appearance_assignment_loss_message(
             message.push_str(conflict);
         }
     }
-    message.push('.');
+    ctx.push_retained_char(&mut message, '.', "append SLDPRT decoded character")?;
     Ok(Some(message))
 }
 
@@ -3184,7 +3184,7 @@ fn build_geometry_ir(
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.try_reserve_retained_text(&mut qualified_site, bytes, OPERATION)?;
-            qualified_site.push('@');
+            ctx.push_retained_char(&mut qualified_site, '@', OPERATION)?;
             qualified_site.push_str(site);
         }
         let face_color = owned_face_color.value;
@@ -3408,7 +3408,7 @@ fn build_geometry_ir(
                 source_entity_id.push_str(source_stream);
                 source_entity_id.push_str("::DisplayFace[");
                 source_entity_id.push_str(&table_index_text);
-                source_entity_id.push(']');
+                ctx.push_retained_char(&mut source_entity_id, ']', "append SLDPRT decoded character")?;
                 let appearance = ensure_display_appearance(
                     ctx,
                     &mut ir,
@@ -5798,7 +5798,7 @@ fn append_swift_pmi_losses(
         classes.push_str(" (");
         write!(&mut classes, "{class_count}")
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        classes.push(')');
+        ctx.push_retained_char(&mut classes, ')', "append SLDPRT decoded character")?;
     }
     let message = ctx.format_retained(
         format_args!(

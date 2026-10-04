@@ -178,7 +178,7 @@ impl Brep {
             .ok_or_else(|| ctx.refuse_codec_limit("qualify SLDPRT site", u64::MAX - 1, u64::MAX))?;
         let (mut tail_text, _tail_reservation) =
             ctx.scoped_string(tail_len, "qualify SLDPRT site")?;
-        tail_text.push('@');
+        ctx.push_retained_char(&mut tail_text, '@', "append SLDPRT decoded character")?;
         tail_text.push_str(site);
         let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(tail_text).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(

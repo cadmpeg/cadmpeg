@@ -1055,7 +1055,7 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
                 value.push_str(first);
             }
             for segment in segments {
-                value.push('"');
+                ctx.push_retained_char(&mut value, '"', "append SLDPRT decoded character")?;
                 value.push_str(segment);
             }
             ParameterTokenText::Owned {

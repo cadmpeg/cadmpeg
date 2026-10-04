@@ -1289,14 +1289,17 @@ fn swift_rendered_literals_refuse_collection_limit() {
 
 #[test]
 fn swift_rendered_utf16_preserves_surrogate_pairs_and_rejects_invalid_pairs() {
-    let mut text = String::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+let policy = cadmpeg_core::decode::DecodePolicy::service();
+let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+let mut text = String::new();
     assert_eq!(
-        decode_rendered_utf16(&[0x3d, 0xd8, 0x00, 0xde], 0, 2, &mut text),
+        decode_rendered_utf16(&ctx, &[0x3d, 0xd8, 0x00, 0xde], 0, 2, &mut text).unwrap(),
         Some(())
     );
     assert_eq!(text, "😀");
     text.clear();
-    assert_eq!(decode_rendered_utf16(&[0x00, 0xd8], 0, 1, &mut text), None);
+    assert_eq!(decode_rendered_utf16(&ctx, &[0x00, 0xd8], 0, 1, &mut text).unwrap(), None);
 }
 fn zero_nominal_angle_root() -> Entity {
     let mut angle = entity("GdtAngleBetween");
@@ -1350,4 +1353,24 @@ fn dimension_without_a_nominal_key_is_skipped() {
     assert!(!annotations
         .iter()
         .any(|annotation| annotation.id == pmi_id("A60").unwrap()));
+}
+
+#[test]
+fn rendered_utf16_character_refusal_preserves_the_resource_limit() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut output = String::new();
+    assert_eq!(decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1, &mut output).unwrap(), Some(()));
+    assert_eq!(output, "µ");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = String::new();
+    let error = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1, &mut output).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("rendered character refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "append SLDPRT decoded character");
+    assert_eq!(limit.additional, 2);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(output.is_empty());
 }

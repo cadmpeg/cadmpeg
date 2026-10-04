@@ -1527,7 +1527,7 @@ fn scan_solidworks_envelopes<'a>(
             ctx.try_reserve_retained_text(&mut key, length, "retain SLDPRT configuration key")?;
             key.push_str("sw_configuration_");
             key.push_str(slot);
-            key.push('_');
+            ctx.push_retained_char(&mut key, '_', "append SLDPRT decoded character")?;
             key.push_str(target);
             let value = ctx.copy_retained_text(value, "retain SLDPRT configuration value")?;
             ctx.charge_collection_items(1, "retain SLDPRT configuration attribute")?;
