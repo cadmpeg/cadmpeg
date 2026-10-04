@@ -326,11 +326,9 @@ fn project_default_bindings(
     let mut bindings = Vec::new();
     for body in ctx.admit_iter(bodies, "visit Inventor presentation items")? {
         ctx.charge_entities(1, "project Inventor default appearance binding")?;
-        let compose_work = body
-            .as_str()
+        let compose_work = "inventor:presentation:body-default#"
             .len()
-            .checked_add(32)
-            .and_then(|len| len.checked_add("inventor:presentation:body-default#".len()))
+            .checked_add(16)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("compose Inventor default binding key", u64::MAX, u64::MAX)
             })?;
@@ -338,19 +336,32 @@ fn project_default_bindings(
             cadmpeg_core::decode::u64_from_index(compose_work),
             "compose Inventor default binding key",
         )?;
-        let _digest_reservation = ctx.reserve_scoped(16, "compose Inventor default binding key")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:body-default#".len() + 16),
             "retain Inventor default binding id",
         )?;
         ctx.charge_retained(4, "retain Inventor body binding object type")?;
+        let binding_id = {
+            let mut digest_storage =
+                ctx.reserve_scoped(0, "compose Inventor default binding key")?;
+            let key = digest_storage.with_storage(|| {
+                short_digest_key(
+                    ctx,
+                    body.as_str().as_bytes(),
+                    "compose Inventor default binding key",
+                )
+            })?;
+            let binding_id = AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
+                key,
+            );
+            drop(digest_storage);
+            binding_id
+        };
         ctx.push_vec(
             &mut bindings,
             AppearanceBinding {
-                id: AppearanceBindingId::compose(
-                    &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
-                    short_digest_key(body.as_str().as_bytes()),
-                ),
+                id: binding_id,
                 target: AppearanceTarget::Body(
                     body.try_clone_for_decode(ctx, "retain Inventor bound body id")?,
                 ),
@@ -634,11 +645,9 @@ fn project_face_bindings(
         };
 
         ctx.charge_entities(1, "project Inventor face appearance binding")?;
-        let compose_work = face_id
-            .as_str()
+        let compose_work = "inventor:presentation:face-override#"
             .len()
-            .checked_add(32)
-            .and_then(|len| len.checked_add("inventor:presentation:face-override#".len()))
+            .checked_add(16)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("compose Inventor face binding key", u64::MAX, u64::MAX)
             })?;
@@ -646,7 +655,6 @@ fn project_face_bindings(
             cadmpeg_core::decode::u64_from_index(compose_work),
             "compose Inventor face binding key",
         )?;
-        let _digest_reservation = ctx.reserve_scoped(16, "compose Inventor face binding key")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:face-override#".len() + 16),
             "retain Inventor face binding id",
@@ -659,13 +667,26 @@ fn project_face_bindings(
             ctx.copy_retained_text("face_over_body", "retain Inventor face binding precedence")?,
             "project Inventor face binding channel",
         )?;
+        let binding_id = {
+            let mut digest_storage = ctx.reserve_scoped(0, "compose Inventor face binding key")?;
+            let key = digest_storage.with_storage(|| {
+                short_digest_key(
+                    ctx,
+                    face_id.as_str().as_bytes(),
+                    "compose Inventor face binding key",
+                )
+            })?;
+            let binding_id = AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
+                key,
+            );
+            drop(digest_storage);
+            binding_id
+        };
         ctx.push_vec(
             &mut projection.bindings,
             AppearanceBinding {
-                id: AppearanceBindingId::compose(
-                    &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
-                    short_digest_key(face_id.as_str().as_bytes()),
-                ),
+                id: binding_id,
                 target: AppearanceTarget::Face(
                     face_id.try_clone_for_decode(ctx, "retain Inventor bound face id")?,
                 ),
@@ -1355,9 +1376,16 @@ impl<'a> Cursor<'a> {
 ///
 /// A hexadecimal digit is identity-key text, so the key is built from the
 /// digest bytes rather than sliced back out of a rendered string.
-fn short_digest_key(bytes: &[u8]) -> cadmpeg_ir::ids::IdentityKey {
+fn short_digest_key(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<IdentityKey, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
     let digest = cadmpeg_ir::hash::sha256(bytes);
-    cadmpeg_ir::ids::IdentityKey::hex_byte(digest[0]).with_hex_bytes(&digest[1..8])
+    let mut text = ctx.retained_string(16, operation)?;
+    crate::pmdc::push_hex(ctx, &mut text, &digest[..8], operation)?;
+    crate::record_identity::try_identity_key(ctx, text, operation, None)
 }
 
 #[cfg(test)]
@@ -1373,9 +1401,10 @@ mod tests {
     use super::{
         inventory, parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
         parse_graphics_style_collection, parse_rendering_style, project_bindings,
-        project_default_bindings, Cursor, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
-        PmGraphicsStyleCollection, PresentationInventory, DEFAULT_STYLE_TYPE, GRAPHICS_FACE_TYPE,
-        GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
+        project_default_bindings, short_digest_key, Cursor, PmGraphicsFace,
+        PmGraphicsPrimaryColorStyle, PmGraphicsStyleCollection, PresentationInventory,
+        DEFAULT_STYLE_TYPE, GRAPHICS_FACE_TYPE, GRAPHICS_PRIMARY_COLOR_STYLE_TYPE,
+        GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
@@ -1387,6 +1416,48 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn short_digest_key_preserves_the_first_eight_sha256_bytes() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service())
+            .expect("digest source view");
+        let mut storage = ctx
+            .reserve_scoped(0, "short digest key test storage")
+            .expect("digest storage");
+        let key = storage
+            .with_storage(|| {
+                short_digest_key(&ctx, b"abc", "short digest key test storage")
+            })
+            .expect("admitted digest key");
+        assert_eq!(key.as_str(), "ba7816bf8f01cfea");
+    }
+
+    #[test]
+    fn short_digest_key_refuses_scoped_limit_before_allocation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 15;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy)
+            .expect("digest source view");
+        let mut storage = ctx
+            .reserve_scoped(0, "compose Inventor default binding key")
+            .expect("empty digest storage");
+        assert!(matches!(
+            storage.with_storage(|| {
+                short_digest_key(
+                    &ctx,
+                    b"abc",
+                    "compose Inventor default binding key",
+                )
+            }),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "compose Inventor default binding key"
+                    && limit.used == 0
+                    && limit.additional == 16
+        ));
+    }
 
     #[test]
     fn presentation_utf16_local_ceiling_refuses_resources_for_complete_payload() {
@@ -1985,6 +2056,10 @@ mod tests {
             binding.target,
             AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
         );
+        assert_eq!(
+            binding.id.as_str(),
+            "inventor:presentation:body-default#c33e8e01e06e1f56"
+        );
     }
 
     fn default_style_fixture() -> Vec<u8> {
@@ -2254,6 +2329,10 @@ mod tests {
         };
         assert_eq!(binding.target, AppearanceTarget::Face(face_id));
         assert_eq!(binding.appearance, appearance.id);
+        assert_eq!(
+            binding.id.as_str(),
+            "inventor:presentation:face-override#13eff7fe6cd1d8c5"
+        );
         assert_eq!(
             binding.channels.get("precedence").map(String::as_str),
             Some("face_over_body")
