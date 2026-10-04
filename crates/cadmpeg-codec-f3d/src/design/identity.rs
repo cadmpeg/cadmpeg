@@ -57,8 +57,8 @@ fn encoded_length<A: DesignAdmission>(
     Ok(length.0)
 }
 
-pub(super) fn neutral_configuration_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn neutral_configuration_id<A: DesignAdmission>(
+    ctx: &A,
     entry: &str,
     name: &str,
 ) -> Result<cadmpeg_ir::features::ConfigurationId, CodecError> {
@@ -72,7 +72,7 @@ pub(super) fn neutral_configuration_id(
             Encoded(name, false)
         ),
         operation,
-    )?;
+    ).map_err(A::into_error)?;
     cadmpeg_ir::features::ConfigurationId::mint(text)
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
@@ -370,14 +370,14 @@ pub(super) fn neutral_assembly_joint_id<A: DesignAdmission>(
     )
 }
 
-pub(super) fn configuration_entry_id(
-    ctx: &DecodeContext<'_>,
+pub(super) fn configuration_entry_id<A: DesignAdmission>(
+    ctx: &A,
     entry: &str,
 ) -> Result<String, CodecError> {
     ctx.format_retained(
         format_args!("f3d:configuration:entry#{}", Encoded(entry, false)),
         "f3d configuration native identifier",
-    )
+    ).map_err(A::into_error)
 }
 
 pub(super) fn history_input_prefix(

@@ -74,6 +74,21 @@ pub(crate) trait DesignAdmission {
         -> Result<String, Self::Error>;
     fn validate_nonblank_text(&self, text: String, operation: &'static str)
         -> Result<Option<NonBlankString>, Self::Error>;
+    fn append_retained(&self, text: &mut String, suffix: &str, operation: &'static str)
+        -> Result<(), Self::Error>;
+    fn strip_prefix<'text>(&self, text: &'text str, prefix: &str, operation: &'static str)
+        -> Result<Option<&'text str>, Self::Error>;
+    fn reserve_vec<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str)
+        -> Result<(), Self::Error>;
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(&self, values: &mut [T],
+        key: impl Fn(&T) -> &K, compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str) -> Result<(), Self::Error>;
+    fn copy_feature_id(&self, value: &cadmpeg_ir::features::FeatureId, operation: &'static str)
+        -> Result<cadmpeg_ir::features::FeatureId, Self::Error>;
+    fn copy_feature_definition(&self, value: &cadmpeg_ir::features::FeatureDefinition,
+        operation: &'static str) -> Result<cadmpeg_ir::features::FeatureDefinition, Self::Error>;
+    fn insert_feature_member(&self, values: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+        value: cadmpeg_ir::features::FeatureId, operation: &'static str) -> Result<bool, Self::Error>;
     fn identifier_extent_error(&self, operation: &'static str) -> CodecError;
 }
 
@@ -148,6 +163,27 @@ impl DesignAdmission for DecodeContext<'_> {
         -> Result<Option<NonBlankString>, CodecError> {
         Ok(NonBlankString::for_decode(self, text, operation)?)
     }
+    fn append_retained(&self, text: &mut String, suffix: &str, operation: &'static str)
+        -> Result<(), CodecError> { DecodeContext::append_retained(self, text, suffix, operation) }
+    fn strip_prefix<'text>(&self, text: &'text str, prefix: &str, operation: &'static str)
+        -> Result<Option<&'text str>, CodecError> { DecodeContext::strip_prefix(self, text, prefix, operation) }
+    fn reserve_vec<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str)
+        -> Result<(), CodecError> { DecodeContext::reserve_vec(self, values, count, operation) }
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(&self, values: &mut [T],
+        key: impl Fn(&T) -> &K, compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str) -> Result<(), CodecError> {
+        DecodeContext::stable_sort_by(self, values, key, compare, operation)
+    }
+    fn copy_feature_id(&self, value: &cadmpeg_ir::features::FeatureId, operation: &'static str)
+        -> Result<cadmpeg_ir::features::FeatureId, CodecError> { value.try_clone_for_decode(self, operation) }
+    fn copy_feature_definition(&self, value: &cadmpeg_ir::features::FeatureDefinition,
+        operation: &'static str) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+        value.try_clone_for_decode(self, operation)
+    }
+    fn insert_feature_member(&self, values: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+        value: cadmpeg_ir::features::FeatureId, operation: &'static str) -> Result<bool, CodecError> {
+        values.insert(self, value, operation)
+    }
     fn identifier_extent_error(&self, operation: &'static str) -> CodecError {
         self.refuse_codec_limit(operation, 0, 1)
     }
@@ -198,6 +234,27 @@ impl DesignAdmission for StandardIndex {
         -> Result<String, Infallible> { Ok(format!("{arguments}")) }
     fn validate_nonblank_text(&self, text: String, _operation: &'static str)
         -> Result<Option<NonBlankString>, Infallible> { Ok(text.try_into().ok()) }
+    fn append_retained(&self, text: &mut String, suffix: &str, _operation: &'static str)
+        -> Result<(), Infallible> { text.push_str(suffix); Ok(()) }
+    fn strip_prefix<'text>(&self, text: &'text str, prefix: &str, _operation: &'static str)
+        -> Result<Option<&'text str>, Infallible> { Ok(text.strip_prefix(prefix)) }
+    fn reserve_vec<T>(&self, values: &mut Vec<T>, count: usize, _operation: &'static str)
+        -> Result<(), Infallible> { values.reserve(count); Ok(()) }
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(&self, values: &mut [T],
+        key: impl Fn(&T) -> &K, mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        _operation: &'static str) -> Result<(), Infallible> {
+        values.sort_by(|left, right| compare(key(left), key(right))); Ok(())
+    }
+    fn copy_feature_id(&self, value: &cadmpeg_ir::features::FeatureId, _operation: &'static str)
+        -> Result<cadmpeg_ir::features::FeatureId, Infallible> { Ok(value.clone()) }
+    fn copy_feature_definition(&self, value: &cadmpeg_ir::features::FeatureDefinition,
+        _operation: &'static str) -> Result<cadmpeg_ir::features::FeatureDefinition, Infallible> { Ok(value.clone()) }
+    fn insert_feature_member(&self, values: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+        value: cadmpeg_ir::features::FeatureId, _operation: &'static str) -> Result<bool, Infallible> {
+        let count = values.as_slice().len();
+        values.extend(std::iter::once(value));
+        Ok(values.as_slice().len() != count)
+    }
     fn identifier_extent_error(&self, _operation: &'static str) -> CodecError {
         CodecError::malformed("Design identifier extent exceeds the addressable length")
     }

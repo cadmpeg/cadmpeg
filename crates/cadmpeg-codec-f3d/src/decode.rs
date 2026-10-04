@@ -274,8 +274,9 @@ fn report_unresolved_configuration_rules(
     ir: &CadIr,
 ) -> Result<(), CodecError> {
     let count = crate::design::configurations::unresolved_configuration_member_count(
+        ctx,
         &native.design_configurations,
-    );
+    )?;
     if count != 0 {
         push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
             "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
@@ -292,16 +293,18 @@ fn report_unresolved_configuration_rules(
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_parameter_override_count(
+        ctx,
         &ir.model.configurations,
-    );
+    )?;
     if count != 0 {
         push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationParameterOverrideUnbound, format_args!(
             "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_suppressed_feature_count(
+        ctx,
         &ir.model.configurations,
-    );
+    )?;
     if count != 0 {
         push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
             "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."

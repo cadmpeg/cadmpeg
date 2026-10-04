@@ -19,25 +19,17 @@ pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
     let mut projected = crate::design::configurations::project_configurations(
-        decode_ctx,
+        &cadmpeg_ir::index::StandardIndex,
         &native.design_configurations,
     )?;
     crate::design::configurations::bind_configuration_parameter_overrides(
-        decode_ctx,
+        &cadmpeg_ir::index::StandardIndex,
         &mut projected,
         &target.model.parameters,
     )?;
     crate::design::configurations::bind_configuration_suppressed_features(
-        decode_ctx,
+        &cadmpeg_ir::index::StandardIndex,
         &mut projected,
         &target.model.features,
     )?;
