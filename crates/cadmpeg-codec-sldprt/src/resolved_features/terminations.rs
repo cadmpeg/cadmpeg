@@ -2871,7 +2871,7 @@ pub(crate) fn compact_surface_selection_value(
             Some(local_id) => {
                 ctx.append_formatted_retained(&mut value, format_args!("{local_id}"), OPERATION)?;
             }
-            None => value.push('_'),
+            None => ctx.push_retained_char(&mut value, '_', OPERATION)?,
         }
     }
     Ok(value)
