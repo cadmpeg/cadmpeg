@@ -4719,10 +4719,7 @@ fn regeneration_references<'ctx, 'a>(
     }
     let mut ordered =
         Scratch::filter_map(ctx, references.values(), |reference| Ok(Some(*reference)))?;
-    ordered.stable_sort_by(
-        |reference| *reference,
-        Ord::cmp,
-    )?;
+    ordered.stable_sort_by(|reference| *reference, Ord::cmp)?;
     Ok(ordered)
 }
 

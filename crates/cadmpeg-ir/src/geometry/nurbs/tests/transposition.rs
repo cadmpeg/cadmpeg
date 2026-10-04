@@ -27,9 +27,10 @@ fn source(rational: bool) -> NurbsSurface {
 
 #[test]
 fn surface_transposition_refuses_before_mutation_at_every_copy_boundary() {
+    // Two columns each collect three rows and a terminal probe; the outer collector adds three: 11.
     for rational in [false, true] {
         let original = source(rational);
-        for cap in 0..8 {
+        for cap in 0..11 {
             let mut surface = original.clone();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -88,7 +89,8 @@ fn surface_transposition_admits_exact_output_storage_and_preserves_axes() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = bytes;
         policy.limits.max_collection_items = 8;
-        policy.limits.max_work_units = 8;
+        // Two columns use eight row probes plus three outer probes: eleven work units.
+        policy.limits.max_work_units = 11;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut surface = original.clone();
         surface
