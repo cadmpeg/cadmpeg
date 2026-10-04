@@ -109,3 +109,48 @@ fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
     let record = source[offset..].lines().next().unwrap();
     assert_eq!(retained.data(), Some(record.as_bytes()));
 }
+
+#[test]
+fn unverified_header_interpretation_keeps_geometry_and_exact_source() {
+    let original = include_str!("../../../tests/fixtures/ap214_sheet.p21");
+    let codec = crate::StepCodec::default();
+    let expected = codec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .expect("canonical sheet");
+    for (source, code) in [
+        (
+            original.replace("'2;1'", "' '"),
+            crate::loss::StepLossCode::ImplementationLevelUnverified,
+        ),
+        (
+            original.replace("'2;1'", "'1;1'"),
+            crate::loss::StepLossCode::ImplementationLevelUnverified,
+        ),
+        (
+            original.replace("'AUTOMOTIVE_DESIGN'", "'AUTOMOTIVE_DESIGN { 3 40 }'"),
+            crate::loss::StepLossCode::SchemaObjectIdentifierOutOfRange,
+        ),
+    ] {
+        let recovered = EditableDecodeResult::from(
+            codec
+                .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                .expect("readable header interpretation"),
+        );
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind()));
+        for name in ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"] {
+            let offset = source.find(name).expect("header record");
+            let id = crate::ids::header(offset);
+            let retained = recovered
+                .source_fidelity()
+                .retained_record(id.as_str())
+                .expect("exact header source survives unverified interpretation");
+            let record = source[offset..].lines().next().expect("header line");
+            assert_eq!(retained.data(), Some(record.as_bytes()));
+        }
+    }
+}

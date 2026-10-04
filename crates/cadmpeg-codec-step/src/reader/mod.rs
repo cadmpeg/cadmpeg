@@ -349,7 +349,12 @@ fn decode_exchange_mode(
 
     let mut header_spans = Vec::new();
     if diagnostics.iter().any(|diagnostic| {
-        diagnostic.kind == crate::parse::ParseDiagnosticKind::HeaderMetadataNoncanonical
+        matches!(
+            diagnostic.kind,
+            crate::parse::ParseDiagnosticKind::HeaderMetadataNoncanonical
+                | crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
+                | crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange
+        )
     }) {
         for record in exchange.header() {
             ctx.push_vec(
