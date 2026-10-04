@@ -147,7 +147,7 @@ fn attach_container_payloads(
         if !content.retains_opaque_payload()
             || (typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
-                && has_complete_saved_toggle_stream(&scan.container))
+                && has_complete_saved_toggle_stream(ctx, &scan.container)?)
         {
             continue;
         }
@@ -3465,22 +3465,24 @@ fn attach_feature_operations(
                     | BooleanOffsetStoreResolution::Unresolved => None,
                 };
                 if let Some(writer) = boolean_participant_writer(
+                    ctx,
                     target,
                     operation.target.token.value(),
                     offset_store_body_blocks,
                     &body_alias_roots,
                     &body_writer_history,
-                ) {
+                )? {
                     push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
                 for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
+                        ctx,
                         tools,
                         body.token.value(),
                         offset_store_body_blocks,
                         &body_alias_roots,
                         &body_writer_history,
-                    ) {
+                    )? {
                         push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                     }
                 }
@@ -3491,8 +3493,8 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            if let Some(writer) =
-                body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
+            if let Some(writer) = body_writer_history
+                .native_writer(ctx, canonical_body(operand.operand.atom.value()))?
             {
                 push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
@@ -3505,7 +3507,7 @@ fn attach_feature_operations(
             let Some(data_block) = operand.operand_data_block.as_deref() else {
                 continue;
             };
-            let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
+            let Some(writer) = body_writer_history.offset_store_writer(ctx, data_block)? else {
                 continue;
             };
             push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
@@ -5078,32 +5080,35 @@ fn attach_feature_operations(
         let body_reference_count = body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .map_or(0, Vec::len);
-        let block_op = new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: block_projection.is_some(),
-            has_complete_primitive_construction: block_constructions_by_operation
-                .get(label.id.as_str())
-                .is_some_and(|construction| {
-                    block_construction_payloads_by_operation
-                        .get(label.id.as_str())
-                        .is_some_and(|payloads| {
-                            matches!(payloads.as_slice(), [payload]
+        let block_op = new_body_boolean_op(
+            ctx,
+            &NewBodyEvidence {
+                has_complete_projection: block_projection.is_some(),
+                has_complete_primitive_construction: block_constructions_by_operation
+                    .get(label.id.as_str())
+                    .is_some_and(|construction| {
+                        block_construction_payloads_by_operation
+                            .get(label.id.as_str())
+                            .is_some_and(|payloads| {
+                                matches!(payloads.as_slice(), [payload]
                                 if matches!(&payload.owner,
                                     crate::native::features::FeatureConstructionOwner::Block {
                                         construction: owner,
                                     } if owner == &construction.id))
-                        })
-                }),
-            outputs: &outputs,
-            body_reference_count,
-            provisional_feature: initial_body_id.as_ref(),
-            native_primary_body,
-            offset_store_primary_body,
-            history: &body_writer_history,
-        });
-        let sphere_op = sphere_projection
-            .as_ref()
-            .map_or(BooleanOp::Unresolved, |_| {
-                new_body_boolean_op(&NewBodyEvidence {
+                            })
+                    }),
+                outputs: &outputs,
+                body_reference_count,
+                provisional_feature: initial_body_id.as_ref(),
+                native_primary_body,
+                offset_store_primary_body,
+                history: &body_writer_history,
+            },
+        )?;
+        let sphere_op = if sphere_projection.is_some() {
+            new_body_boolean_op(
+                ctx,
+                &NewBodyEvidence {
                     has_complete_projection: true,
                     has_complete_primitive_construction: true,
                     outputs: sphere_outputs,
@@ -5112,8 +5117,11 @@ fn attach_feature_operations(
                     native_primary_body,
                     offset_store_primary_body,
                     history: &body_writer_history,
-                })
-            });
+                },
+            )?
+        } else {
+            BooleanOp::Unresolved
+        };
         if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
             if let Some((body, _, _)) = &sphere_projection {
                 ctx.reserve_vec(&mut outputs, 1, "NX sphere output bodies")?;
@@ -5138,7 +5146,7 @@ fn attach_feature_operations(
                             bodies.retain(|body| !outputs.contains(body));
                         }
                     });
-                body_writer_history.retract_outputs(&initial_feature.id, &outputs);
+                body_writer_history.retract_outputs(ctx, &initial_feature.id, &outputs)?;
             }
         }
         body_writer_history.extend_primary_dependencies(
@@ -5272,11 +5280,12 @@ fn attach_feature_operations(
                 output_kinds.push(body.kind);
             }
             let op = extrude_boolean_op(
+                ctx,
                 &body_writer_history,
                 native_primary_body,
                 offset_store_primary_body,
                 &output_kinds,
-            );
+            )?;
             let construction_profile = extrude_construction_profiles_by_operation
                 .get(label.id.as_str())
                 .map(|profile| profile.id.as_str());
@@ -8377,14 +8386,21 @@ fn extrude_feature_definition(
 }
 
 fn extrude_boolean_op(
+    ctx: &DecodeContext<'_>,
     history: &BodyWriterHistory,
     native_primary_body: Option<u32>,
     offset_store_primary_body: Option<&str>,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
-) -> BooleanOp {
+) -> Result<BooleanOp, CodecError> {
     let has_previous_writer =
         if native_primary_body.is_some() || offset_store_primary_body.is_some() {
-            history.has_preceding_writer(None, native_primary_body, offset_store_primary_body, &[])
+            history.has_preceding_writer(
+                ctx,
+                None,
+                native_primary_body,
+                offset_store_primary_body,
+                &[],
+            )?
         } else {
             true
         };
@@ -8394,9 +8410,9 @@ fn extrude_boolean_op(
             [cadmpeg_ir::topology::BodyKind::Solid | cadmpeg_ir::topology::BodyKind::Sheet]
         )
     {
-        BooleanOp::NewBody
+        Ok(BooleanOp::NewBody)
     } else {
-        BooleanOp::Unresolved
+        Ok(BooleanOp::Unresolved)
     }
 }
 
@@ -8919,7 +8935,7 @@ fn feature_body_outputs(
     segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<Vec<BodyId>, CodecError> {
-    if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
+    if crate::native::segments::unique_segment_body_binding(ctx, object_index, segment_bindings)?
         .is_none()
     {
         return Ok(Vec::new());

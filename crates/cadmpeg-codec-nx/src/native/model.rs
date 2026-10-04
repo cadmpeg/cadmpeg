@@ -261,7 +261,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 
 /// Records extracted from the `display_jt` domain.
 pub(in crate::native) struct DisplayJtRecords {
@@ -644,7 +643,11 @@ pub(crate) fn terminal_feature_body_ids(
     let mut storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
     let mut statuses_by_binding = BTreeMap::new();
     for status in ctx.admit_iter(statuses, "nx terminal body statuses")? {
-        if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
+        if ctx.contains_key_btree_map(
+            &statuses_by_binding,
+            status.segment_body_binding.as_str(),
+            "nx terminal body status index",
+        )? {
             return Ok(None);
         }
         storage.with_storage(|| {
@@ -658,44 +661,29 @@ pub(crate) fn terminal_feature_body_ids(
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for binding in bindings {
-        let Some(status) = statuses_by_binding.remove(binding.id.as_str()) else {
+    for binding in ctx.admit_iter(bindings, "nx terminal body bindings")? {
+        let Some(status) = ctx.remove_btree_map(
+            &mut statuses_by_binding,
+            binding.id.as_str(),
+            "nx terminal body status index",
+        )?
+        else {
             return Ok(None);
         };
-        let mut ordinal = binding.stream_ordinal;
-        let mut digits = 1_u64;
-        while ordinal >= 10 {
-            ordinal /= 10;
-            digits += 1;
-        }
-        let prefix_len = 5_u64 + digits;
-        let mut prefix_reservation = ctx.reserve_scoped(0, "nx terminal body prefix")?;
-        let mut prefix = String::new();
-        prefix_reservation.with_storage(|| {
-            ctx.try_reserve_retained_text(
-                &mut prefix,
-                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
-                })?,
-                "nx terminal body prefix",
-            )
-        })?;
-        write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(emitted.len()),
-            "nx terminal body scan",
+        let (prefix, _prefix_storage) = ctx.format_scoped(
+            format_args!("nx:s{}:", binding.stream_ordinal),
+            "nx terminal body prefix",
         )?;
-        for body in emitted
-            .iter()
-            .filter(|body| body.as_str().starts_with(&prefix))
-        {
-            if !mapped.contains(body) {
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")
-                })?;
+        for body in ctx.admit_iter(emitted, "nx terminal body scan")? {
+            if !ctx.starts_with(body.as_str(), &prefix, "nx terminal body scan")? {
+                continue;
             }
-            if status.terminal && !selected.contains(body) {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")
+            })?;
+            if status.terminal
+                && !ctx.contains_btree_set(&selected, body, "nx selected terminal body")?
+            {
                 let body_id =
                     body.try_clone_for_decode(ctx, "nx selected terminal body identity")?;
                 ctx.insert_btree_set(&mut selected, body_id, "nx selected terminal body")?;
@@ -752,15 +740,13 @@ impl NativeModel {
         let segment_om_links = segment_om_links(ctx, container)?;
         let segment_stream_links = segment_stream_links(ctx, container, streams)?;
         let mut linked_deltas = BTreeSet::new();
-        for link in segment_stream_links
-            .iter()
+        for link in ctx
+            .admit_iter(&segment_stream_links, "nx linked delta index")?
             .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
         {
             let ordinal = usize::try_from(link.stream_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("nx linked delta ordinal", 0, u64::MAX))?;
-            if !linked_deltas.contains(&ordinal) {
-                ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta index")?;
-            }
+            ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta index")?;
         }
         let delta_pairs = pair_stream_indices(
             ctx,

@@ -412,12 +412,13 @@ pub(super) fn atomic_disjoint_body_selections(
 /// complete Boolean definition. Native integer identity is used only when the
 /// definition did not establish one exact offset-store selection.
 pub(super) fn boolean_participant_writer<'a>(
+    ctx: &DecodeContext<'_>,
     selection: &BodySelection,
     object_index: u32,
     offset_store_body_blocks: Option<&BTreeMap<u32, String>>,
     body_alias_roots: &BTreeMap<u32, u32>,
     history: &'a BodyWriterHistory,
-) -> Option<&'a FeatureId> {
+) -> Result<Option<&'a FeatureId>, CodecError> {
     let offset_store_selection = matches!(
         selection,
         BodySelection::Local { bodies, .. }
@@ -427,11 +428,13 @@ pub(super) fn boolean_participant_writer<'a>(
                     .all(|body| offset_store_identity(body).is_some())
     );
     if offset_store_selection {
-        return offset_store_body_blocks
-            .and_then(|blocks| blocks.get(&object_index))
-            .and_then(|data_block| history.offset_store_writer(data_block));
+        return match offset_store_body_blocks.and_then(|blocks| blocks.get(&object_index)) {
+            Some(data_block) => history.offset_store_writer(ctx, data_block),
+            None => Ok(None),
+        };
     }
     history.native_writer(
+        ctx,
         body_alias_roots
             .get(&object_index)
             .copied()
