@@ -533,3 +533,27 @@ fn section_role_prefix_refuses_before_unknown_decoration() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo section decoration prefix"));
 }
+
+#[test]
+fn toc_section_deduplication_refuses_work() {
+    let data = one_toc_section("Body", "Body");
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo toc sections sections deduplication", |ctx| super::super::toc_sections(ctx, &data, 0),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo toc sections sections deduplication"));
+}
+
+#[test]
+fn legacy_toc_section_deduplication_refuses_work() {
+    let data = one_legacy_toc_section();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy toc sections sections deduplication", |ctx| super::super::legacy_toc_sections(ctx, &data, 0),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy toc sections sections deduplication"));
+}

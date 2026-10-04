@@ -3233,7 +3233,7 @@ fn rows_with_boundaries(
         Ord::cmp,
         "creo rows with boundaries result ordering",
     )?;
-    result.dedup_by_key(|row| row.offset);
+    ctx.dedup_by_key(&mut result, |row| Ok(row.offset), "creo rows with boundaries result deduplication")?;
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
         ctx.admit_btree_entry(&id_counts, &row.id, "creo surface row ID nodes")?;

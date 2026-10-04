@@ -619,6 +619,12 @@ pub(crate) struct PcurveEndpoints {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PcurveEndpoints {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.faces, &self.face_0_endpoints, &self.face_1_endpoints, &self.offset), ctx, operation)
+    }
+}
+
 impl PcurveEndpoints {
     /// Stored face identifiers, with zero for an absent face.
     pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
@@ -7987,6 +7993,13 @@ struct FramedRow {
     reference_geometry: [u32; 2],
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FramedRow {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TopologySuffixCandidate {
     start: usize,
@@ -8158,7 +8171,7 @@ fn framed_rows_with_face_ids(
         Ord::cmp,
         "creo framed rows with face ids result ordering",
     )?;
-    result.dedup_by_key(|row| row.start);
+    ctx.dedup_by_key(&mut result, |row| Ok(row.start), "creo framed rows with face ids result deduplication")?;
     Ok(result)
 }
 
