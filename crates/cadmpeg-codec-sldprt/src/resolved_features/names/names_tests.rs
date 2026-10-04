@@ -162,3 +162,25 @@ fn object_name_structure_propagates_lane_key_work_refusal() {
                 && limit.operation == "split SLDPRT feature-input lane key"
     ));
 }
+
+#[test]
+fn retained_name_text_propagates_copy_work_refusal() {
+    const OPERATION: &str = "retain SLDPRT test name";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::retained_text(&ctx, "name", OPERATION),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.additional == 4
+                && limit.operation == OPERATION
+    ));
+    assert_eq!(
+        super::retained_text(&cadmpeg_test_support::service_decode_context(), "name", OPERATION)
+            .unwrap(),
+        "name",
+    );
+}
