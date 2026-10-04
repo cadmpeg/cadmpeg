@@ -35,7 +35,11 @@ pub enum PatternSeed {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PatternSeed {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Feature(value) => (0_u8, value).decode_cost(ctx, operation),
             Self::Faces(value) => (1_u8, value).decode_cost(ctx, operation),
@@ -56,7 +60,11 @@ impl cadmpeg_core::decode::cost::DecodeCost for PatternSeed {
 pub enum NoNestedComposite {}
 
 impl cadmpeg_core::decode::cost::DecodeCost for NoNestedComposite {
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match *self {}
     }
 }
@@ -151,8 +159,14 @@ impl CompositeStages for NoNestedComposite {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternKind<C = CompositePattern>(PatternTransform<C>);
 
-impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for PatternKind<C> {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost
+    for PatternKind<C>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         self.0.decode_cost(ctx, operation)
     }
 }
@@ -455,7 +469,11 @@ pub enum PatternForm {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PatternForm {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Linear => (0_u8,).decode_cost(ctx, operation),
             Self::Circular => (1_u8,).decode_cost(ctx, operation),
@@ -578,18 +596,51 @@ pub enum PatternTransform<C = CompositePattern> {
     },
 }
 
-impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for PatternTransform<C> {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost
+    for PatternTransform<C>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
-            Self::Linear { direction, spacing, count, second } => (1_u8, direction, spacing, count, second).decode_cost(ctx, operation),
-            Self::LinearOffsets { direction, offsets } => (2_u8, direction, offsets).decode_cost(ctx, operation),
-            Self::Circular { axis_origin, axis_dir, angle, count } => (3_u8, axis_origin, axis_dir, angle, count).decode_cost(ctx, operation),
-            Self::CircularAngles { axis_origin, axis_dir, angles } => (4_u8, axis_origin, axis_dir, angles).decode_cost(ctx, operation),
-            Self::CurveDriven { path, spacing, count } => (5_u8, path, spacing, count).decode_cost(ctx, operation),
-            Self::Mirror { plane_origin, plane_normal } => (6_u8, plane_origin, plane_normal).decode_cost(ctx, operation),
+            Self::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => (1_u8, direction, spacing, count, second).decode_cost(ctx, operation),
+            Self::LinearOffsets { direction, offsets } => {
+                (2_u8, direction, offsets).decode_cost(ctx, operation)
+            }
+            Self::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => (3_u8, axis_origin, axis_dir, angle, count).decode_cost(ctx, operation),
+            Self::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => (4_u8, axis_origin, axis_dir, angles).decode_cost(ctx, operation),
+            Self::CurveDriven {
+                path,
+                spacing,
+                count,
+            } => (5_u8, path, spacing, count).decode_cost(ctx, operation),
+            Self::Mirror {
+                plane_origin,
+                plane_normal,
+            } => (6_u8, plane_origin, plane_normal).decode_cost(ctx, operation),
             Self::MirrorReference { plane } => (7_u8, plane).decode_cost(ctx, operation),
-            Self::Scale { center, final_factor, count } => (8_u8, center, final_factor, count).decode_cost(ctx, operation),
+            Self::Scale {
+                center,
+                final_factor,
+                count,
+            } => (8_u8, center, final_factor, count).decode_cost(ctx, operation),
             Self::Composite { stages } => (9_u8, stages).decode_cost(ctx, operation),
         }
     }
@@ -603,7 +654,11 @@ impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::Deco
 pub struct CompositePattern(Vec<PatternStage>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for CompositePattern {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         self.0.decode_cost(ctx, operation)
     }
 }
@@ -761,7 +816,11 @@ pub enum PatternScaleCenter {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PatternScaleCenter {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::FirstSeedCentroid => (0_u8,).decode_cost(ctx, operation),
             Self::Point(value) => (1_u8, value).decode_cost(ctx, operation),
@@ -780,7 +839,11 @@ pub struct PatternStage {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PatternStage {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.pattern,).decode_cost(ctx, operation)
     }
 }
@@ -813,7 +876,11 @@ pub struct LinearPatternDirection {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for LinearPatternDirection {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.direction, &self.spacing, &self.count).decode_cost(ctx, operation)
     }
 }

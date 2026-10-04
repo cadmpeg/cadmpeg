@@ -22,9 +22,18 @@ use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecor
 pub(crate) struct StorageBand(u32);
 
 impl cadmpeg_core::decode::cost::DecodeCost for StorageBand {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -62,7 +71,11 @@ impl StorageBand {
 pub(crate) struct SegmentToken(IdentityKey);
 
 impl cadmpeg_core::decode::cost::DecodeCost for SegmentToken {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -144,8 +157,16 @@ pub(crate) struct MetaStreamDeclaration {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for MetaStreamDeclaration {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.marker, self.version), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.marker, self.version),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -471,12 +492,9 @@ impl DatabaseDescriptor {
             DatabaseState::Unframed { schema, detail } => {
                 Ok(Some(DatabaseHeader::unframed_detail(ctx, *schema, detail)?))
             }
-            DatabaseState::Unreadable(detail) => {
-                Ok(Some(ctx.copy_retained_text(
-                    detail,
-                    "retain Inventor database issue detail",
-                )?))
-            }
+            DatabaseState::Unreadable(detail) => Ok(Some(
+                ctx.copy_retained_text(detail, "retain Inventor database issue detail")?,
+            )),
         }
     }
 }
@@ -551,9 +569,7 @@ impl<'a> RseInventory<'a> {
         )?;
         let mut database_descriptors =
             ctx.vector_storage(databases.len(), "admit RSe database descriptors")?;
-        for &(band, stream_id) in
-            ctx.admit_iter(&databases, "read RSe database descriptors")?
-        {
+        for &(band, stream_id) in ctx.admit_iter(&databases, "read RSe database descriptors")? {
             let state = match snapshot.stream_by_id(ctx, stream_id)? {
                 Some(stream) => match snapshot
                     .open(ctx, stream)
@@ -633,62 +649,57 @@ impl<'a> RseInventory<'a> {
                 metadata: *metadata_id,
                 bulk: *bulk_id,
             };
-            pairs_storage.with_storage(|| {
-                ctx.push_vec(&mut pairs, pair, "pair RSe segment streams")
-            })?;
+            pairs_storage
+                .with_storage(|| ctx.push_vec(&mut pairs, pair, "pair RSe segment streams"))?;
         }
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(pairs.len()),
             "admit RSe segment descriptors",
         )?;
         let mut segments = pairs
-                .into_iter()
-                .map(
-                    |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
-                        let meta = snapshot
-                            .stream_by_id(ctx, pair.metadata)?
-                            .ok_or_else(|| {
-                                CodecError::Malformed("RSe metadata stream handle is absent".into())
-                            })
-                            .and_then(|entry| snapshot.open(ctx, entry))
-                            .and_then(|view| parse_meta_stream(ctx, view));
-                        let meta = match meta {
-                            Ok(meta) => meta,
-                            Err(error) => SegmentMetaState::Malformed {
-                                declared: None,
-                                detail: crate::issue_detail(
-                                    ctx,
-                                    error,
-                                    "retain RSe issue detail",
-                                )?,
-                            },
-                        };
-                        let bulk = snapshot
-                            .stream_by_id(ctx, pair.bulk)?
-                            .ok_or_else(|| {
-                                CodecError::Malformed("RSe bulk stream handle is absent".into())
-                            })
-                            .and_then(|entry| snapshot.open(ctx, entry))
-                            .and_then(|view| parse_bulk_stream(ctx, view));
-                        let bulk = match bulk {
-                            Ok(bulk) => SegmentBulkState::Framed(bulk),
-                            Err(error) => SegmentBulkState::Malformed(crate::issue_detail(
-                                ctx,
-                                error,
-                                "retain RSe issue detail",
-                            )?),
-                        };
-                        Ok(SegmentDescriptor {
-                            pair,
-                            registry: None,
-                            kind: SegmentKind::Unresolved,
-                            identity_issues: Vec::new(),
-                            meta,
-                            bulk,
+            .into_iter()
+            .map(
+                |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
+                    let meta = snapshot
+                        .stream_by_id(ctx, pair.metadata)?
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe metadata stream handle is absent".into())
                         })
-                    },
-                )
-                .collect::<Result<Vec<_>, _>>()?;
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_meta_stream(ctx, view));
+                    let meta = match meta {
+                        Ok(meta) => meta,
+                        Err(error) => SegmentMetaState::Malformed {
+                            declared: None,
+                            detail: crate::issue_detail(ctx, error, "retain RSe issue detail")?,
+                        },
+                    };
+                    let bulk = snapshot
+                        .stream_by_id(ctx, pair.bulk)?
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe bulk stream handle is absent".into())
+                        })
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_bulk_stream(ctx, view));
+                    let bulk = match bulk {
+                        Ok(bulk) => SegmentBulkState::Framed(bulk),
+                        Err(error) => SegmentBulkState::Malformed(crate::issue_detail(
+                            ctx,
+                            error,
+                            "retain RSe issue detail",
+                        )?),
+                    };
+                    Ok(SegmentDescriptor {
+                        pair,
+                        registry: None,
+                        kind: SegmentKind::Unresolved,
+                        identity_issues: Vec::new(),
+                        meta,
+                        bulk,
+                    })
+                },
+            )
+            .collect::<Result<Vec<_>, _>>()?;
         drop(pairs_storage);
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(ctx, &mut segments, registry)?;
@@ -951,10 +962,8 @@ fn parse_meta_stream<'a>(
     // grammar is attempted on every stream, and a body that does not obey it is
     // `Malformed` with the declaration intact.
     let parsed_declaration = MetaStreamDeclaration {
-        marker: ctx.copy_retained_text(
-            &declared.marker,
-            "retain RSe metadata declaration marker",
-        )?,
+        marker: ctx
+            .copy_retained_text(&declared.marker, "retain RSe metadata declaration marker")?,
         version: declared.version,
     };
     match parse_meta_stream_v8(ctx, source, cursor, parsed_declaration) {
@@ -1430,8 +1439,12 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
             .expect("empty root fits service policy");
         assert_eq!(
-            crate::issue_detail(&ctx, CodecError::Malformed("bad registry".into()), "retain RSe issue detail")
-                .expect("service policy admits detail"),
+            crate::issue_detail(
+                &ctx,
+                CodecError::Malformed("bad registry".into()),
+                "retain RSe issue detail"
+            )
+            .expect("service policy admits detail"),
             detail
         );
     }

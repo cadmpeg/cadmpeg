@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Located parser failures shared by the Inventor record families.
 
-use serde::ser::SerializeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::record_identity::RecordTypeId;
@@ -113,10 +113,7 @@ impl From<RecordIssue> for RecordIssueWire {
 }
 
 impl RecordIssueWire {
-    pub(crate) fn into_record(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<RecordIssue, CodecError> {
+    pub(crate) fn into_record(self, ctx: &DecodeContext<'_>) -> Result<RecordIssue, CodecError> {
         let prefix = ctx
             .split_once(&self.id, "#", "split Inventor record issue identity")?
             .map(|(prefix, _)| prefix);
@@ -147,11 +144,11 @@ impl RecordIssueWire {
                 )? =>
             {
                 RecordIssueFamily::Design {
-                    type_id: type_id
-                        .try_into()
-                        .map_err(|_| CodecError::Malformed(
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
                             "type_id must contain 32 lowercase hexadecimal digits".into(),
-                        ))?,
+                        )
+                    })?,
                 }
             }
             (Some(prefix), Some(type_id))
@@ -162,11 +159,11 @@ impl RecordIssueWire {
                 )? =>
             {
                 RecordIssueFamily::Sketch {
-                    type_id: type_id
-                        .try_into()
-                        .map_err(|_| CodecError::Malformed(
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
                             "type_id must contain 32 lowercase hexadecimal digits".into(),
-                        ))?,
+                        )
+                    })?,
                 }
             }
             (Some(prefix), Some(type_id))
@@ -177,11 +174,11 @@ impl RecordIssueWire {
                 )? =>
             {
                 RecordIssueFamily::Feature {
-                    type_id: type_id
-                        .try_into()
-                        .map_err(|_| CodecError::Malformed(
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
                             "type_id must contain 32 lowercase hexadecimal digits".into(),
-                        ))?,
+                        )
+                    })?,
                 }
             }
             _ => {
@@ -203,9 +200,7 @@ impl RecordIssueWire {
             detail: self.detail,
         };
         let (expected_id, _expected_id_storage) =
-            ctx.with_scoped_storage("validate Inventor record issue identity", || {
-                issue.id(ctx)
-            })?;
+            ctx.with_scoped_storage("validate Inventor record issue identity", || issue.id(ctx))?;
         if !ctx.equal(
             &expected_id,
             &self.id,
@@ -225,8 +220,8 @@ mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     fn from_value(value: serde_json::Value) -> Result<RecordIssue, String> {
-        let wire = serde_json::from_value::<RecordIssueWire>(value)
-            .map_err(|error| error.to_string())?;
+        let wire =
+            serde_json::from_value::<RecordIssueWire>(value).map_err(|error| error.to_string())?;
         wire.into_record(&cadmpeg_test_support::service_decode_context())
             .map_err(|error| error.to_string())
     }

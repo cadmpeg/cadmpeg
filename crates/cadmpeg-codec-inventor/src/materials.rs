@@ -47,29 +47,25 @@ pub(crate) fn project_catalog(
                 let Some(instance) = instances_iter.next() else {
                     return Ok(None);
                 };
-                instance_records = Some(ctx.admit_iter(
-                    &instance.records,
-                    "Inventor material instance records",
-                )?);
+                instance_records =
+                    Some(ctx.admit_iter(&instance.records, "Inventor material instance records")?);
             }
-        })().transpose()
+        })()
+        .transpose()
     });
-    let records = records_storage.with_storage(|| {
-        ctx.try_collect_vec(records, "Inventor material record references")
-    })?;
+    let records = records_storage
+        .with_storage(|| ctx.try_collect_vec(records, "Inventor material record references"))?;
     let mut guid_counts: HashMap<&str, usize> = HashMap::new();
     let mut guid_counts_storage = ctx.reserve_scoped(0, "Inventor material GUID counts")?;
     for record in ctx.admit_iter(&records, "Inventor material GUID count records")? {
         let guid = record.guid.as_str();
         guid_counts_storage.with_storage(|| {
-            if let Some(count) = ctx.get_mut_hash_map(
-                &mut guid_counts,
-                guid,
-                "Inventor material GUID counts",
-            )? {
-                *count = count.checked_add(1).ok_or_else(|| {
-                    CodecError::Malformed("Protein GUID count overflows".into())
-                })?;
+            if let Some(count) =
+                ctx.get_mut_hash_map(&mut guid_counts, guid, "Inventor material GUID counts")?
+            {
+                *count = count
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
             } else {
                 ctx.insert_hash_map(
                     &mut guid_counts,
@@ -125,10 +121,8 @@ pub(crate) fn project_catalog(
             TextureAssetResult::Usable(texture) => texture,
         };
         textures_storage.with_storage(|| {
-            let key = ctx.copy_retained_text(
-                &texture.asset_guid,
-                "Inventor material texture key",
-            )?;
+            let key =
+                ctx.copy_retained_text(&texture.asset_guid, "Inventor material texture key")?;
             ctx.insert_btree_map(
                 &mut textures,
                 key,
@@ -139,8 +133,9 @@ pub(crate) fn project_catalog(
         })?;
     }
     let mut appearances = Vec::new();
-    for (instance_ordinal, instance) in
-        ctx.admit_iter(instances, "Inventor appearance instances")?.enumerate()
+    for (instance_ordinal, instance) in ctx
+        .admit_iter(instances, "Inventor appearance instances")?
+        .enumerate()
     {
         for record in ctx.admit_iter(&instance.records, "Inventor appearance records")? {
             if matches!(
@@ -150,8 +145,7 @@ pub(crate) fn project_catalog(
                 continue;
             }
             let mut property_values = BTreeMap::new();
-            let mut properties_storage =
-                ctx.reserve_scoped(0, "Inventor appearance properties")?;
+            let mut properties_storage = ctx.reserve_scoped(0, "Inventor appearance properties")?;
             let mut connected = Vec::new();
             for (id, property) in
                 ctx.admit_iter(&record.properties, "Inventor appearance properties")?
@@ -172,11 +166,9 @@ pub(crate) fn project_catalog(
                     property.connections(),
                     "Inventor appearance texture connections",
                 )? {
-                    if let Some(texture) = ctx.get_btree_map(
-                        &textures,
-                        guid,
-                        "Inventor connected texture lookup",
-                    )? {
+                    if let Some(texture) =
+                        ctx.get_btree_map(&textures, guid, "Inventor connected texture lookup")?
+                    {
                         ctx.push_vec(
                             &mut connected,
                             texture.to_ref(ctx, id)?,
@@ -322,7 +314,11 @@ fn appearance_id(
         .and_then(|len| len.checked_add(namespace.kind().len()))
         .and_then(|len| len.checked_add(2))
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor appearance namespace length", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "Inventor appearance namespace length",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
     let id_len = namespace_len
         .checked_add(key.as_str().len())
@@ -331,7 +327,13 @@ fn appearance_id(
             ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
         })?;
     let id_text = ctx.format_retained(
-        format_args!("{}:{}:{}#{}", namespace.format(), namespace.scope(), namespace.kind(), key),
+        format_args!(
+            "{}:{}:{}#{}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+            key
+        ),
         "retain Inventor appearance id",
     )?;
     let namespace_scan = cadmpeg_core::decode::u64_from_index(namespace_len);
@@ -369,7 +371,8 @@ fn color_property(
     record: &cadmpeg_protein::DecodedRecord,
     id: &str,
 ) -> Result<Option<Color>, CodecError> {
-    let Some(cadmpeg_protein::property::PropertyValue::Color([r, g, b, a])) = ctx.get_btree_map(
+    let Some(cadmpeg_protein::property::PropertyValue::Color([r, g, b, a])) = ctx
+        .get_btree_map(
             &record.properties,
             id,
             "Inventor appearance color property lookup",
@@ -519,15 +522,10 @@ mod tests {
     fn protein_color_admits_source_range_before_binary32_narrowing() {
         let mut record = one_connected_texture()[0].records[0].clone();
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            b"fixture",
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("service context");
+        let (ctx, _) = DecodeContext::from_root_bytes(b"fixture", &arena, &DecodePolicy::service())
+            .expect("service context");
         assert_eq!(
-            super::color_property(&ctx, &record, "generic_diffuse")
-                .expect("color lookup admitted"),
+            super::color_property(&ctx, &record, "generic_diffuse").expect("color lookup admitted"),
             cadmpeg_ir::topology::Color::new(0.0, 0.25, 1.0, 1.0)
         );
         for invalid in [1.0 + f64::EPSILON, -f64::EPSILON, f64::NAN, f64::INFINITY] {

@@ -3018,7 +3018,13 @@ impl TryFrom<InlineTSplineSubtransformWire> for InlineTSplineSubtransform {
             separator,
             values,
         } = wire;
-        Ok(Self { program: cadmpeg_core::text::NonBlankString::try_from(program).map_err(|_| "T-spline program must not be empty")?, separator, values: cadmpeg_core::text::NonBlankString::try_from(values).map_err(|_| "T-spline values must not be empty")? })
+        Ok(Self {
+            program: cadmpeg_core::text::NonBlankString::try_from(program)
+                .map_err(|_| "T-spline program must not be empty")?,
+            separator,
+            values: cadmpeg_core::text::NonBlankString::try_from(values)
+                .map_err(|_| "T-spline values must not be empty")?,
+        })
     }
 }
 
@@ -3031,11 +3037,23 @@ impl InlineTSplineSubtransform {
         values: impl cadmpeg_core::decode::text::TextSource,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            program: cadmpeg_core::text::NonBlankString::for_decode(ctx, program, "validate T-spline program")?
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("T-spline program must not be empty"))?,
+            program: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                program,
+                "validate T-spline program",
+            )?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("T-spline program must not be empty")
+            })?,
             separator,
-            values: cadmpeg_core::text::NonBlankString::for_decode(ctx, values, "validate T-spline values")?
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("T-spline values must not be empty"))?,
+            values: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                values,
+                "validate T-spline values",
+            )?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("T-spline values must not be empty")
+            })?,
         })
     }
 }
@@ -3088,7 +3106,12 @@ impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
                 program,
                 separator,
                 values,
-            } => InlineTSplineSubtransform::try_from(InlineTSplineSubtransformWire::Inline { program, separator, values }).map(Self::Inline),
+            } => InlineTSplineSubtransform::try_from(InlineTSplineSubtransformWire::Inline {
+                program,
+                separator,
+                values,
+            })
+            .map(Self::Inline),
             TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
                 index,
                 transform: resolved,
@@ -6785,7 +6808,8 @@ impl From<PcurveGeometry> for SupportPcurve {
 pub struct DirectedParameterRange([f64; 2]);
 
 impl cadmpeg_core::decode::cost::DecodeCost for DirectedParameterRange {
-    const FIXED_BYTES: Option<u64> = <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
 
     fn decode_cost(
         &self,

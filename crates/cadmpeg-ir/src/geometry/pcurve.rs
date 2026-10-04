@@ -1999,12 +1999,8 @@ impl DecodeCost for PcurveNurbsPoles<FinitePoint2> {
             Self::Rational { points } => {
                 let mut bytes = 1_u64;
                 for pole in ctx.admit_iter(points, operation)? {
-                    bytes = pcurve_cost_sum(
-                        ctx,
-                        bytes,
-                        pole.decode_cost(ctx, operation)?,
-                        operation,
-                    )?;
+                    bytes =
+                        pcurve_cost_sum(ctx, bytes, pole.decode_cost(ctx, operation)?, operation)?;
                 }
                 Ok(bytes)
             }
@@ -2020,10 +2016,7 @@ impl DecodeCost for PcurveNurbs {
     ) -> Result<u64, CodecError> {
         (
             self.degree,
-            (
-                self.knots.as_slice(),
-                (&self.poles, self.periodic),
-            ),
+            (self.knots.as_slice(), (&self.poles, self.periodic)),
         )
             .decode_cost(ctx, operation)
     }

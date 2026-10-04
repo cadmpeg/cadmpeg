@@ -536,17 +536,16 @@ impl AssemblyPlacementRecordWire {
                 )?));
             }
         };
-        let suffix_sha256 = match
-            cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256)
-        {
-            Ok(suffix_sha256) => suffix_sha256,
-            Err(error) => {
-                return Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("suffix_sha256: {error}"),
-                    "retain Inventor placement conversion issue",
-                )?));
-            }
-        };
+        let suffix_sha256 =
+            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
+                Ok(suffix_sha256) => suffix_sha256,
+                Err(error) => {
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("suffix_sha256: {error}"),
+                        "retain Inventor placement conversion issue",
+                    )?));
+                }
+            };
         Ok(AssemblyPlacementRecord {
             id: self.id,
             segment_token: self.segment_token,
@@ -728,17 +727,16 @@ impl PmAppRenderingStyleRecordWire {
                 "retain Inventor rendering conversion issue",
             )?));
         }
-        let suffix_sha256 = match
-            cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256)
-        {
-            Ok(suffix_sha256) => suffix_sha256,
-            Err(error) => {
-                return Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("suffix_sha256: {error}"),
-                    "retain Inventor rendering conversion issue",
-                )?));
-            }
-        };
+        let suffix_sha256 =
+            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
+                Ok(suffix_sha256) => suffix_sha256,
+                Err(error) => {
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("suffix_sha256: {error}"),
+                        "retain Inventor rendering conversion issue",
+                    )?));
+                }
+            };
         Ok(PmAppRenderingStyleRecord {
             id: self.id,
             segment_token: self.segment_token,
@@ -904,7 +902,9 @@ impl PmGraphicsFaceRecordWire {
                 self.edge_list_metadata,
                 PmDcReference::zip(ctx, self.edge_references, self.edge_reference_qualifiers)?,
             )
-            .ok_or_else(|| CodecError::malformed("edge_list_metadata disagrees with edge_references"))?,
+            .ok_or_else(|| {
+                CodecError::malformed("edge_list_metadata disagrees with edge_references")
+            })?,
             visibility_state: self.visibility_state,
             bounds: self.bounds,
             key: self.key,
@@ -1745,14 +1745,14 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        let [record] = <[_; 1]>::try_from(namespace.arena_as_for_decode::<Self>(ctx, "active_carrier")?).map_err(
-            |records: Vec<_>| {
-                <serde_json::Error as serde::de::Error>::custom(format!(
-                    "active_carrier must contain exactly one record; found {}",
-                    records.len()
-                ))
-            },
-        )?;
+        let [record] =
+            <[_; 1]>::try_from(namespace.arena_as_for_decode::<Self>(ctx, "active_carrier")?)
+                .map_err(|records: Vec<_>| {
+                    <serde_json::Error as serde::de::Error>::custom(format!(
+                        "active_carrier must contain exactly one record; found {}",
+                        records.len()
+                    ))
+                })?;
         Ok(record)
     }
 
@@ -1788,9 +1788,8 @@ pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
 mod tests {
     use super::{
         ActiveCarrierRecord, AssemblyPlacementRecord, AssemblyPlacementRecordWire,
-        PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire,
-        PmGraphicsStyleCollectionRecord, PmGraphicsStyleCollectionRecordWire, SegmentBulkFrame,
-        SegmentBulkRecord,
+        PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire, PmGraphicsStyleCollectionRecord,
+        PmGraphicsStyleCollectionRecordWire, SegmentBulkFrame, SegmentBulkRecord,
     };
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
@@ -1803,18 +1802,14 @@ mod tests {
             .map_err(|error| error.to_string())
     }
 
-    fn rendering_style(
-        value: serde_json::Value,
-    ) -> Result<PmAppRenderingStyleRecord, String> {
+    fn rendering_style(value: serde_json::Value) -> Result<PmAppRenderingStyleRecord, String> {
         let wire = serde_json::from_value::<PmAppRenderingStyleRecordWire>(value)
             .map_err(|error| error.to_string())?;
         wire.into_record(&super::test_ctx())
             .map_err(|error| error.to_string())
     }
 
-    fn assembly_placement(
-        value: serde_json::Value,
-    ) -> Result<AssemblyPlacementRecord, String> {
+    fn assembly_placement(value: serde_json::Value) -> Result<AssemblyPlacementRecord, String> {
         let wire = serde_json::from_value::<AssemblyPlacementRecordWire>(value)
             .map_err(|error| error.to_string())?;
         wire.into_record(&super::test_ctx())
@@ -2026,10 +2021,12 @@ mod tests {
             namespace
                 .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
-            assert!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
-                .expect_err("invalid cardinality")
-                .to_string()
-                .contains("active_carrier"));
+            assert!(
+                ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect_err("invalid cardinality")
+                    .to_string()
+                    .contains("active_carrier")
+            );
         }
     }
 
@@ -2222,20 +2219,18 @@ mod tests {
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
             "graphics_index": 0, "object_reference": 0, "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
-        let placement =
-            assembly_placement(wire.clone()).expect("assembly matrix fixture agrees with its masks");
+        let placement = assembly_placement(wire.clone())
+            .expect("assembly matrix fixture agrees with its masks");
         assert_eq!(
             serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
             wire
         );
         let mut empty_suffix = wire.clone();
         empty_suffix["suffix_len"] = serde_json::json!(0);
-        assert!(
-            assembly_placement(empty_suffix)
-                .expect_err("empty placement suffix")
-                .to_string()
-                .contains("suffix_len")
-        );
+        assert!(assembly_placement(empty_suffix)
+            .expect_err("empty placement suffix")
+            .to_string()
+            .contains("suffix_len"));
         for len in [1, 48, 49] {
             let mut nonempty_suffix = wire.clone();
             nonempty_suffix["suffix_len"] = serde_json::json!(len);
@@ -2250,12 +2245,10 @@ mod tests {
         for digest in ["a".repeat(63), "g".repeat(64)] {
             let mut invalid = wire.clone();
             invalid["suffix_sha256"] = serde_json::json!(digest);
-            assert!(
-                assembly_placement(invalid)
-                    .expect_err("invalid digest")
-                    .to_string()
-                    .contains("suffix_sha256")
-            );
+            assert!(assembly_placement(invalid)
+                .expect_err("invalid digest")
+                .to_string()
+                .contains("suffix_sha256"));
         }
         let mut nonfinite = wire.clone();
         nonfinite["transform_encoding"] = serde_json::json!([0, 0]);

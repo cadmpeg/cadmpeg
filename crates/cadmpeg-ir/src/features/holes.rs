@@ -31,14 +31,20 @@ pub enum HolePlacement {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HolePlacement {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Directed { position, direction } => (0_u8, position, direction).decode_cost(ctx, operation),
+            Self::Directed {
+                position,
+                direction,
+            } => (0_u8, position, direction).decode_cost(ctx, operation),
             Self::Axis { origin, axis } => (1_u8, origin, axis).decode_cost(ctx, operation),
         }
     }
 }
-
 
 /// A counterdrill recess diameter and optional larger entry diameter.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,7 +55,11 @@ pub struct CounterdrillDiameters {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for CounterdrillDiameters {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.diameter, &self.entry_diameter).decode_cost(ctx, operation)
     }
 }
@@ -93,7 +103,11 @@ pub struct HoleShape {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleShape {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.construction, &self.exit_kind, &self.diameter).decode_cost(ctx, operation)
     }
 }
@@ -489,18 +503,38 @@ pub enum HoleKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleKind {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved(value) => (0_u8, value).decode_cost(ctx, operation),
             Self::PartialCounterbore(value) => (1_u8, value).decode_cost(ctx, operation),
             Self::PartialCountersink(value) => (2_u8, value).decode_cost(ctx, operation),
             Self::Simple => (3_u8,).decode_cost(ctx, operation),
-            Self::Chamfer { diameter, angle } => (4_u8, diameter, angle).decode_cost(ctx, operation),
-            Self::SimpleDrilled { drill_point_angle } => (5_u8, drill_point_angle).decode_cost(ctx, operation),
-            Self::Counterbore { diameter, depth } => (6_u8, diameter, depth).decode_cost(ctx, operation),
-            Self::CounterboreDrilled { diameter, depth, drill_point_angle } => (7_u8, diameter, depth, drill_point_angle).decode_cost(ctx, operation),
-            Self::Countersink { diameter, angle } => (8_u8, diameter, angle).decode_cost(ctx, operation),
-            Self::Counterdrill { diameters, depth, angle } => (9_u8, diameters, depth, angle).decode_cost(ctx, operation),
+            Self::Chamfer { diameter, angle } => {
+                (4_u8, diameter, angle).decode_cost(ctx, operation)
+            }
+            Self::SimpleDrilled { drill_point_angle } => {
+                (5_u8, drill_point_angle).decode_cost(ctx, operation)
+            }
+            Self::Counterbore { diameter, depth } => {
+                (6_u8, diameter, depth).decode_cost(ctx, operation)
+            }
+            Self::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle,
+            } => (7_u8, diameter, depth, drill_point_angle).decode_cost(ctx, operation),
+            Self::Countersink { diameter, angle } => {
+                (8_u8, diameter, angle).decode_cost(ctx, operation)
+            }
+            Self::Counterdrill {
+                diameters,
+                depth,
+                angle,
+            } => (9_u8, diameters, depth, angle).decode_cost(ctx, operation),
         }
     }
 }
@@ -541,10 +575,23 @@ pub enum HoleConstruction {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleConstruction {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Form { kind, specification } => (0_u8, kind, specification).decode_cost(ctx, operation),
-            Self::NativeThread { major_diameter, thread_depth, pitch, drill_point_angle } => (1_u8, major_diameter, thread_depth, pitch, drill_point_angle).decode_cost(ctx, operation),
+            Self::Form {
+                kind,
+                specification,
+            } => (0_u8, kind, specification).decode_cost(ctx, operation),
+            Self::NativeThread {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => (1_u8, major_diameter, thread_depth, pitch, drill_point_angle)
+                .decode_cost(ctx, operation),
         }
     }
 }
@@ -579,8 +626,14 @@ pub enum PartialPair<A, B> {
     Second(B),
 }
 
-impl<A: cadmpeg_core::decode::cost::DecodeCost, B: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for PartialPair<A, B> {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+impl<A: cadmpeg_core::decode::cost::DecodeCost, B: cadmpeg_core::decode::cost::DecodeCost>
+    cadmpeg_core::decode::cost::DecodeCost for PartialPair<A, B>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::First(value) => (0_u8, value).decode_cost(ctx, operation),
             Self::Second(value) => (1_u8, value).decode_cost(ctx, operation),
@@ -836,7 +889,11 @@ pub enum HoleProfileFilter {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleProfileFilter {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Points => (0_u8,).decode_cost(ctx, operation),
             Self::Circles => (1_u8,).decode_cost(ctx, operation),
@@ -867,10 +924,17 @@ pub enum HoleBottom {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleBottom {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Flat => (0_u8,).decode_cost(ctx, operation),
-            Self::Angled { included_angle, depth_to_tip } => (1_u8, included_angle, depth_to_tip).decode_cost(ctx, operation),
+            Self::Angled {
+                included_angle,
+                depth_to_tip,
+            } => (1_u8, included_angle, depth_to_tip).decode_cost(ctx, operation),
         }
     }
 }
@@ -1013,10 +1077,50 @@ pub enum HoleSpecification {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleSpecification {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Clearance { standard, designation, fit, modeled, cosmetic, hand, depth, clearance } => (0_u8, standard, designation, fit, modeled, (cosmetic, hand, depth, clearance)).decode_cost(ctx, operation),
-            Self::Threaded { standard, designation, class, modeled, cosmetic, pitch, major_diameter, hand, depth, clearance } => (1_u8, standard, designation, class, modeled, (cosmetic, pitch, major_diameter, hand, depth, clearance)).decode_cost(ctx, operation),
+            Self::Clearance {
+                standard,
+                designation,
+                fit,
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            } => (
+                0_u8,
+                standard,
+                designation,
+                fit,
+                modeled,
+                (cosmetic, hand, depth, clearance),
+            )
+                .decode_cost(ctx, operation),
+            Self::Threaded {
+                standard,
+                designation,
+                class,
+                modeled,
+                cosmetic,
+                pitch,
+                major_diameter,
+                hand,
+                depth,
+                clearance,
+            } => (
+                1_u8,
+                standard,
+                designation,
+                class,
+                modeled,
+                (cosmetic, pitch, major_diameter, hand, depth, clearance),
+            )
+                .decode_cost(ctx, operation),
         }
     }
 }
@@ -1045,7 +1149,11 @@ pub enum ThreadHand {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ThreadHand {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Right => (0_u8,).decode_cost(ctx, operation),
             Self::Left => (1_u8,).decode_cost(ctx, operation),
@@ -1071,7 +1179,11 @@ pub enum HoleThreadDepth {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleThreadDepth {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::HoleDepth => (0_u8,).decode_cost(ctx, operation),
             Self::Blind { depth } => (1_u8, depth).decode_cost(ctx, operation),
@@ -1305,7 +1417,11 @@ pub enum HoleForm {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HoleForm {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Chamfer => (0_u8,).decode_cost(ctx, operation),
             Self::Counterbore => (1_u8,).decode_cost(ctx, operation),

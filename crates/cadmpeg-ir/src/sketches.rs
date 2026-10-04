@@ -15,7 +15,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-
 fn sketch_cost_sum(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     left: u64,
@@ -50,7 +49,12 @@ fn sketch_transform_list_cost(
 ) -> Result<u64, cadmpeg_core::CodecError> {
     let mut bytes = 0_u64;
     for transform in ctx.admit_iter(values, operation)? {
-        bytes = sketch_cost_sum(ctx, bytes, transform.decode_cost(ctx, operation)?, operation)?;
+        bytes = sketch_cost_sum(
+            ctx,
+            bytes,
+            transform.decode_cost(ctx, operation)?,
+            operation,
+        )?;
     }
     Ok(bytes)
 }
@@ -157,7 +161,6 @@ impl DecodeCost for SketchFontWeight {
     }
 }
 
-
 impl TryFrom<i32> for SketchFontWeight {
     type Error = &'static str;
 
@@ -223,7 +226,6 @@ impl DecodeCost for SketchTextHorizontalAlignment {
     }
 }
 
-
 /// Vertical placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -255,7 +257,6 @@ impl DecodeCost for SketchTextVerticalAlignment {
     }
 }
 
-
 /// Canonical reference axis in neutral sketch coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -280,7 +281,6 @@ impl DecodeCost for SketchAxis {
         }
     }
 }
-
 
 /// A planar sketch and its ordered profile loops.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -338,7 +338,10 @@ impl DecodeCost for Sketch {
                     self.configuration.as_deref(),
                     (
                         self.visible,
-                        (&self.placement, (&self.profiles, self.native_ref.as_deref())),
+                        (
+                            &self.placement,
+                            (&self.profiles, self.native_ref.as_deref()),
+                        ),
                     ),
                 ),
             ),
@@ -346,7 +349,6 @@ impl DecodeCost for Sketch {
             .decode_cost(ctx, operation)
     }
 }
-
 
 /// Placement of a planar sketch's local coordinates in model space.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -376,7 +378,6 @@ impl DecodeCost for SketchPlacement {
     }
 }
 
-
 const EPS_SKETCH_PLANE_ORTHOGONALITY: f64 = 1.0e-9;
 
 /// A finite origin with nonzero perpendicular sketch axes.
@@ -393,7 +394,6 @@ impl_sketch_decode_cost!(SketchPlaneFrame, |value| (
     value.origin.get(),
     (value.normal.get(), value.u_axis.get())
 ));
-
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -487,7 +487,6 @@ impl DecodeCost for SketchProfiles {
         self.0.decode_cost(ctx, operation)
     }
 }
-
 
 impl TryFrom<Vec<Vec<SketchEntityUse>>> for SketchProfiles {
     type Error = &'static str;
@@ -649,8 +648,16 @@ pub struct SketchEntityUse {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SketchEntityUse {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity, self.reversed), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.entity, self.reversed),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -712,7 +719,6 @@ impl DecodeCost for SketchEntity {
             .decode_cost(ctx, operation)
     }
 }
-
 
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
@@ -776,7 +782,6 @@ impl DecodeCost for ReferenceLineDirection {
     }
 }
 
-
 impl ReferenceLineDirection {
     /// Admit the direction used by a reference line.
     pub fn new(direction: FinitePoint2) -> Option<Self> {
@@ -823,7 +828,6 @@ impl DecodeCost for OrderedMajorRadius {
         (self.major.get(), self.minor.get()).decode_cost(ctx, operation)
     }
 }
-
 
 impl OrderedMajorRadius {
     /// Admit the relation between two positive radii.
@@ -875,7 +879,9 @@ impl DecodeCost for SketchGeometry {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self.definition() {
-            SketchGeometryDefinition::Point { position } => (0_u8, position.get()).decode_cost(ctx, operation),
+            SketchGeometryDefinition::Point { position } => {
+                (0_u8, position.get()).decode_cost(ctx, operation)
+            }
             SketchGeometryDefinition::Line { start, end } => {
                 (1_u8, (start.get(), end.get())).decode_cost(ctx, operation)
             }
@@ -931,7 +937,10 @@ impl DecodeCost for SketchGeometry {
                         major_angle.get(),
                         (
                             major_radius.get(),
-                            (minor_radius.get(), bounds.map(|pair| pair.map(FiniteReal::get))),
+                            (
+                                minor_radius.get(),
+                                bounds.map(|pair| pair.map(FiniteReal::get)),
+                            ),
                         ),
                     ),
                 ),
@@ -948,7 +957,10 @@ impl DecodeCost for SketchGeometry {
                     vertex.get(),
                     (
                         axis_angle.get(),
-                        (focal_length.get(), bounds.map(|pair| pair.map(FiniteReal::get))),
+                        (
+                            focal_length.get(),
+                            bounds.map(|pair| pair.map(FiniteReal::get)),
+                        ),
                     ),
                 ),
             )
@@ -975,10 +987,7 @@ impl DecodeCost for SketchGeometry {
                                 height.get(),
                                 (
                                     width_factor.map(PositiveReal::get),
-                                    (
-                                        placement,
-                                        (horizontal_alignment, vertical_alignment),
-                                    ),
+                                    (placement, (horizontal_alignment, vertical_alignment)),
                                 ),
                             ),
                         ),
@@ -990,16 +999,13 @@ impl DecodeCost for SketchGeometry {
                 document,
                 object,
                 subelements,
-            } => (
-                10_u8,
-                (document.as_deref(), (object, subelements)),
-            )
-                .decode_cost(ctx, operation),
-            SketchGeometryDefinition::Native { native_kind } => (11_u8, native_kind).decode_cost(ctx, operation),
+            } => (10_u8, (document.as_deref(), (object, subelements))).decode_cost(ctx, operation),
+            SketchGeometryDefinition::Native { native_kind } => {
+                (11_u8, native_kind).decode_cost(ctx, operation)
+            }
         }
     }
 }
-
 
 impl SketchGeometry {
     /// Copy geometry after charging each retained nested allocation.
@@ -1723,7 +1729,6 @@ impl DecodeCost for TextPlacement<FinitePoint2> {
         (self.anchor.get(), self.rotation.get()).decode_cost(ctx, operation)
     }
 }
-
 
 /// A sketch whose solved geometry is expressed directly in model space.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2877,7 +2882,10 @@ impl DecodeCost for SketchConstraint {
                                                 self.label_distance.as_ref(),
                                                 (
                                                     self.label_position.as_ref(),
-                                                    (self.metadata.as_deref(), self.native_ref.as_deref()),
+                                                    (
+                                                        self.metadata.as_deref(),
+                                                        self.native_ref.as_deref(),
+                                                    ),
                                                 ),
                                             ),
                                         ),
@@ -2892,7 +2900,6 @@ impl DecodeCost for SketchConstraint {
             .decode_cost(ctx, operation)
     }
 }
-
 
 /// A geometric locus on a sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2911,8 +2918,15 @@ pub enum SketchLocus {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SketchLocus {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        let id = match self { Self::Entity(id) | Self::Start(id) | Self::End(id) | Self::Center(id) => id }; cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8,id),ctx,operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let id = match self {
+            Self::Entity(id) | Self::Start(id) | Self::End(id) | Self::Center(id) => id,
+        };
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, id), ctx, operation)
     }
 }
 
@@ -2941,7 +2955,6 @@ impl DecodeCost for SketchCoordinateAxis {
     }
 }
 
-
 /// Source-native field and optional role carrying one sketch operand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2958,11 +2971,7 @@ pub struct NativeOperandField {
     pub role: Option<u32>,
 }
 
-impl_sketch_decode_cost!(NativeOperandField, |value| (
-    &value.name,
-    &value.role
-));
-
+impl_sketch_decode_cost!(NativeOperandField, |value| (&value.name, &value.role));
 
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2999,13 +3008,9 @@ impl_sketch_decode_cost!(SketchNativeOperand, |value| (
     &value.native_kind,
     (
         &value.field,
-        (
-            value.object_index,
-            (value.native_ref.as_deref(), ()),
-        ),
+        (value.object_index, (value.native_ref.as_deref(), ()),),
     ),
 ));
-
 
 /// One progenitor/result pair in a sketch offset relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3026,7 +3031,6 @@ impl_sketch_decode_cost!(SketchOffsetPair, |value| (
     (&value.result, value.source_reversed)
 ));
 
-
 /// Signed use of a driving offset-distance parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3039,7 +3043,6 @@ pub struct OffsetParameter {
 }
 
 impl_sketch_decode_cost!(OffsetParameter, |value| (&value.id, value.negated));
-
 
 /// One axis of a rectangular sketch pattern.
 #[derive(Debug, Clone, PartialEq)]
@@ -3062,15 +3065,11 @@ impl DecodeCost for SketchPatternDirection {
     ) -> Result<u64, cadmpeg_core::CodecError> {
         (
             self.direction.get(),
-            (
-                self.spacing.get(),
-                (&self.distance, &self.count_parameter),
-            ),
+            (self.spacing.get(), (&self.distance, &self.count_parameter)),
         )
             .decode_cost(ctx, operation)
     }
 }
-
 
 const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
 
@@ -3135,7 +3134,6 @@ impl DecodeCost for SketchPatternDistance {
     }
 }
 
-
 impl SketchPatternDistance {
     /// Parameter that controls this distance form.
     #[must_use]
@@ -3157,7 +3155,6 @@ pub struct SketchPatternInstance {
 
 impl_sketch_decode_cost!(SketchPatternInstance, |value| &value.entities);
 
-
 /// One resolved circular-pattern instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3173,7 +3170,6 @@ impl_sketch_decode_cost!(SketchCircularPatternInstance, |value| (
     value.angle.get(),
     &value.entities
 ));
-
 
 /// Checked two-axis rectangular sketch pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3196,7 +3192,6 @@ impl DecodeCost for SketchRectangularPattern {
         (&self.directions, &self.rows).decode_cost(ctx, operation)
     }
 }
-
 
 impl SketchRectangularPattern {
     /// Construct a non-empty rectangular grid whose instances have one fixed
@@ -3285,17 +3280,13 @@ impl DecodeCost for SketchCircularPattern {
                 self.angle.get(),
                 (
                     &self.angle_parameter,
-                    (
-                        &self.count_parameter,
-                        (&self.seed, &self.instances),
-                    ),
+                    (&self.count_parameter, (&self.seed, &self.instances)),
                 ),
             ),
         )
             .decode_cost(ctx, operation)
     }
 }
-
 
 /// A nonempty population whose count, with the seed counted, fits the IR
 /// width.
@@ -3319,7 +3310,6 @@ impl<T: DecodeCost> DecodeCost for SeededMembers<T> {
         self.members.decode_cost(ctx, operation)
     }
 }
-
 
 impl<T> TryFrom<Vec<T>> for SeededMembers<T> {
     type Error = &'static str;
@@ -3634,19 +3624,14 @@ impl DecodeCost for SketchDistanceMeasurement {
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Distance { first, second } => {
-                (0_u8, (first, second)).decode_cost(ctx, operation)
-            }
+            Self::Distance { first, second } => (0_u8, (first, second)).decode_cost(ctx, operation),
             Self::Horizontal { first, second } => {
                 (1_u8, (first, second)).decode_cost(ctx, operation)
             }
-            Self::Vertical { first, second } => {
-                (2_u8, (first, second)).decode_cost(ctx, operation)
-            }
+            Self::Vertical { first, second } => (2_u8, (first, second)).decode_cost(ctx, operation),
         }
     }
 }
-
 
 /// One ordered pair of loci whose Euclidean separation participates in an
 /// equality relation.
@@ -3661,7 +3646,6 @@ pub struct SketchDistancePair {
 }
 
 impl_sketch_decode_cost!(SketchDistancePair, |value| (&value.first, &value.second));
-
 
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3716,7 +3700,6 @@ impl DecodeCost for SketchInternalAlignment {
         }
     }
 }
-
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3812,7 +3795,6 @@ impl DecodeCost for SketchPolygon {
     }
 }
 
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -3892,7 +3874,6 @@ impl DecodeCost for SketchSameCoordinate {
     }
 }
 
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -3962,7 +3943,6 @@ impl DecodeCost for SketchLabelValue {
     }
 }
 
-
 impl TryFrom<f64> for SketchLabelValue {
     type Error = &'static str;
 
@@ -3991,7 +3971,6 @@ impl DecodeCost for SketchConstraintDefinition {
         self.0.decode_cost(ctx, operation)
     }
 }
-
 
 impl SketchConstraintDefinition {
     /// Construct a native relation with one source operand and its resolved entities.
@@ -4688,7 +4667,11 @@ impl DecodeCost for SketchConstraintDefinitionInput {
             Self::RectangularPattern { pattern } => (4_u8, pattern).decode_cost(ctx, operation),
             Self::CircularPattern { pattern } => (5_u8, pattern).decode_cost(ctx, operation),
             Self::TextFrame { text, frame } => (6_u8, (text, frame)).decode_cost(ctx, operation),
-            Self::TextPath { text, path, glyph_transforms } => {
+            Self::TextPath {
+                text,
+                path,
+                glyph_transforms,
+            } => {
                 let transforms = sketch_transform_list_cost(glyph_transforms, ctx, operation)?;
                 sketch_cost_sum(
                     ctx,
@@ -4699,109 +4682,218 @@ impl DecodeCost for SketchConstraintDefinitionInput {
             }
             Self::CoincidentLoci { loci } => (8_u8, loci).decode_cost(ctx, operation),
             Self::SameCoordinate { relation } => (9_u8, relation).decode_cost(ctx, operation),
-            Self::PointOnObject { point, entity } => (10_u8, (point, entity)).decode_cost(ctx, operation),
-            Self::Midpoint { point, entity } => (11_u8, (point, entity)).decode_cost(ctx, operation),
-            Self::PointCoordinateValues { point, values } => (12_u8, (point, values)).decode_cost(ctx, operation),
-            Self::MidpointCoordinate { first, second, axis, value } => {
-                (13_u8, (first, (second, (axis, value)))).decode_cost(ctx, operation)
+            Self::PointOnObject { point, entity } => {
+                (10_u8, (point, entity)).decode_cost(ctx, operation)
             }
-            Self::Offset { pairs, distance, parameter } => {
-                (14_u8, (pairs, (distance.get(), parameter))).decode_cost(ctx, operation)
+            Self::Midpoint { point, entity } => {
+                (11_u8, (point, entity)).decode_cost(ctx, operation)
             }
-            Self::ProjectedCopy { source, result } => (15_u8, (source, result)).decode_cost(ctx, operation),
-            Self::AtIntersection { point, first, second } => {
-                (16_u8, (point, (first, second))).decode_cost(ctx, operation)
+            Self::PointCoordinateValues { point, values } => {
+                (12_u8, (point, values)).decode_cost(ctx, operation)
             }
-            Self::Concentric { first, second } => (17_u8, (first, second)).decode_cost(ctx, operation),
-            Self::Coradial { first, second } => (18_u8, (first, second)).decode_cost(ctx, operation),
-            Self::Collinear { first, second } => (19_u8, (first, second)).decode_cost(ctx, operation),
-            Self::Symmetric { first, second, axis } => {
-                (20_u8, (first, (second, axis))).decode_cost(ctx, operation)
+            Self::MidpointCoordinate {
+                first,
+                second,
+                axis,
+                value,
+            } => (13_u8, (first, (second, (axis, value)))).decode_cost(ctx, operation),
+            Self::Offset {
+                pairs,
+                distance,
+                parameter,
+            } => (14_u8, (pairs, (distance.get(), parameter))).decode_cost(ctx, operation),
+            Self::ProjectedCopy { source, result } => {
+                (15_u8, (source, result)).decode_cost(ctx, operation)
             }
-            Self::PointSymmetric { first, second, center } => {
-                (21_u8, (first, (second, center))).decode_cost(ctx, operation)
+            Self::AtIntersection {
+                point,
+                first,
+                second,
+            } => (16_u8, (point, (first, second))).decode_cost(ctx, operation),
+            Self::Concentric { first, second } => {
+                (17_u8, (first, second)).decode_cost(ctx, operation)
             }
+            Self::Coradial { first, second } => {
+                (18_u8, (first, second)).decode_cost(ctx, operation)
+            }
+            Self::Collinear { first, second } => {
+                (19_u8, (first, second)).decode_cost(ctx, operation)
+            }
+            Self::Symmetric {
+                first,
+                second,
+                axis,
+            } => (20_u8, (first, (second, axis))).decode_cost(ctx, operation),
+            Self::PointSymmetric {
+                first,
+                second,
+                center,
+            } => (21_u8, (first, (second, center))).decode_cost(ctx, operation),
             Self::Horizontal { entity } => (22_u8, entity).decode_cost(ctx, operation),
             Self::Vertical { entity } => (23_u8, entity).decode_cost(ctx, operation),
-            Self::Parallel { first, second } => (24_u8, (first, second)).decode_cost(ctx, operation),
-            Self::Perpendicular { first, second } => (25_u8, (first, second)).decode_cost(ctx, operation),
+            Self::Parallel { first, second } => {
+                (24_u8, (first, second)).decode_cost(ctx, operation)
+            }
+            Self::Perpendicular { first, second } => {
+                (25_u8, (first, second)).decode_cost(ctx, operation)
+            }
             Self::Tangent { first, second } => (26_u8, (first, second)).decode_cost(ctx, operation),
-            Self::TangentLoci { first, second } => (27_u8, (first, second)).decode_cost(ctx, operation),
-            Self::Curvature { first, second } => (28_u8, (first, second)).decode_cost(ctx, operation),
+            Self::TangentLoci { first, second } => {
+                (27_u8, (first, second)).decode_cost(ctx, operation)
+            }
+            Self::Curvature { first, second } => {
+                (28_u8, (first, second)).decode_cost(ctx, operation)
+            }
             Self::Equal { first, second } => (29_u8, (first, second)).decode_cost(ctx, operation),
             Self::Fixed { entity } => (30_u8, entity).decode_cost(ctx, operation),
-            Self::ArcAngle { entity, angle } => (31_u8, (entity, angle.get())).decode_cost(ctx, operation),
-            Self::EllipseAngle { entity, angle } => (32_u8, (entity, angle.get())).decode_cost(ctx, operation),
-            Self::Distance { entities, parameter } => (33_u8, (entities, parameter)).decode_cost(ctx, operation),
-            Self::DistanceLoci { first, second, parameter } => {
-                (34_u8, (first, (second, parameter))).decode_cost(ctx, operation)
+            Self::ArcAngle { entity, angle } => {
+                (31_u8, (entity, angle.get())).decode_cost(ctx, operation)
             }
-            Self::DistanceLociValue { first, second, distance, parameter } => {
+            Self::EllipseAngle { entity, angle } => {
+                (32_u8, (entity, angle.get())).decode_cost(ctx, operation)
+            }
+            Self::Distance {
+                entities,
+                parameter,
+            } => (33_u8, (entities, parameter)).decode_cost(ctx, operation),
+            Self::DistanceLoci {
+                first,
+                second,
+                parameter,
+            } => (34_u8, (first, (second, parameter))).decode_cost(ctx, operation),
+            Self::DistanceLociValue {
+                first,
+                second,
+                distance,
+                parameter,
+            } => {
                 (35_u8, (first, (second, (distance.get(), parameter)))).decode_cost(ctx, operation)
             }
-            Self::PolarDistance { first, second, distance, angle, distance_parameter } => {
-                (36_u8, (first, (second, (distance.get(), (angle.map(Angle::get), distance_parameter)))))
-                    .decode_cost(ctx, operation)
+            Self::PolarDistance {
+                first,
+                second,
+                distance,
+                angle,
+                distance_parameter,
+            } => (
+                36_u8,
+                (
+                    first,
+                    (
+                        second,
+                        (distance.get(), (angle.map(Angle::get), distance_parameter)),
+                    ),
+                ),
+            )
+                .decode_cost(ctx, operation),
+            Self::AngleDifference {
+                first,
+                second,
+                difference,
+                value,
+            } => (37_u8, (first, (second, (difference, value.get())))).decode_cost(ctx, operation),
+            Self::ScalarEquality { first, second } => {
+                (38_u8, (first, second)).decode_cost(ctx, operation)
             }
-            Self::AngleDifference { first, second, difference, value } => {
-                (37_u8, (first, (second, (difference, value.get())))).decode_cost(ctx, operation)
+            Self::EqualDistance { first, second } => {
+                (39_u8, (first, second)).decode_cost(ctx, operation)
             }
-            Self::ScalarEquality { first, second } => (38_u8, (first, second)).decode_cost(ctx, operation),
-            Self::EqualDistance { first, second } => (39_u8, (first, second)).decode_cost(ctx, operation),
-            Self::HorizontalDistance { first, second, parameter } => {
-                (40_u8, (first, (second, parameter))).decode_cost(ctx, operation)
+            Self::HorizontalDistance {
+                first,
+                second,
+                parameter,
+            } => (40_u8, (first, (second, parameter))).decode_cost(ctx, operation),
+            Self::VerticalDistance {
+                first,
+                second,
+                parameter,
+            } => (41_u8, (first, (second, parameter))).decode_cost(ctx, operation),
+            Self::RepeatedDistance {
+                measurements,
+                parameter,
+            } => (42_u8, (measurements, parameter)).decode_cost(ctx, operation),
+            Self::RepeatedLength {
+                entities,
+                parameter,
+            } => (43_u8, (entities, parameter)).decode_cost(ctx, operation),
+            Self::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => (44_u8, (first, (second, parameter))).decode_cost(ctx, operation),
+            Self::Angle {
+                first,
+                second,
+                parameter,
+            } => (45_u8, (first, (second, parameter))).decode_cost(ctx, operation),
+            Self::AngleToAxis {
+                entity,
+                axis,
+                parameter,
+            } => (46_u8, (entity, (axis, parameter))).decode_cost(ctx, operation),
+            Self::Radius { entity, parameter } => {
+                (47_u8, (entity, parameter)).decode_cost(ctx, operation)
             }
-            Self::VerticalDistance { first, second, parameter } => {
-                (41_u8, (first, (second, parameter))).decode_cost(ctx, operation)
+            Self::RepeatedRadius {
+                entities,
+                parameter,
+            } => (48_u8, (entities, parameter)).decode_cost(ctx, operation),
+            Self::Diameter { entity, parameter } => {
+                (49_u8, (entity, parameter)).decode_cost(ctx, operation)
             }
-            Self::RepeatedDistance { measurements, parameter } => {
-                (42_u8, (measurements, parameter)).decode_cost(ctx, operation)
-            }
-            Self::RepeatedLength { entities, parameter } => (43_u8, (entities, parameter)).decode_cost(ctx, operation),
-            Self::ParallelLineSetDistance { first, second, parameter } => {
-                (44_u8, (first, (second, parameter))).decode_cost(ctx, operation)
-            }
-            Self::Angle { first, second, parameter } => {
-                (45_u8, (first, (second, parameter))).decode_cost(ctx, operation)
-            }
-            Self::AngleToAxis { entity, axis, parameter } => {
-                (46_u8, (entity, (axis, parameter))).decode_cost(ctx, operation)
-            }
-            Self::Radius { entity, parameter } => (47_u8, (entity, parameter)).decode_cost(ctx, operation),
-            Self::RepeatedRadius { entities, parameter } => (48_u8, (entities, parameter)).decode_cost(ctx, operation),
-            Self::Diameter { entity, parameter } => (49_u8, (entity, parameter)).decode_cost(ctx, operation),
-            Self::RepeatedDiameter { entities, parameter } => (50_u8, (entities, parameter)).decode_cost(ctx, operation),
-            Self::SnellsLaw { incident, refracted, interface, parameter } => {
+            Self::RepeatedDiameter {
+                entities,
+                parameter,
+            } => (50_u8, (entities, parameter)).decode_cost(ctx, operation),
+            Self::SnellsLaw {
+                incident,
+                refracted,
+                interface,
+                parameter,
+            } => {
                 (51_u8, (incident, (refracted, (interface, parameter)))).decode_cost(ctx, operation)
             }
-            Self::Weight { entity, parameter } => (52_u8, (entity, parameter)).decode_cost(ctx, operation),
-            Self::InternalAlignment { helper, parent, alignment } => {
-                (53_u8, (helper, (parent, alignment))).decode_cost(ctx, operation)
+            Self::Weight { entity, parameter } => {
+                (52_u8, (entity, parameter)).decode_cost(ctx, operation)
             }
+            Self::InternalAlignment {
+                helper,
+                parent,
+                alignment,
+            } => (53_u8, (helper, (parent, alignment))).decode_cost(ctx, operation),
             Self::Group { elements } => (54_u8, elements).decode_cost(ctx, operation),
-            Self::Text { elements, text, font, is_text_height } => {
-                (55_u8, (elements, (text, (font.as_deref(), is_text_height))))
-                    .decode_cost(ctx, operation)
-            }
-            Self::Native { native_kind, native_state, native_flags, native_properties, entities, parameter, operands } => {
+            Self::Text {
+                elements,
+                text,
+                font,
+                is_text_height,
+            } => (55_u8, (elements, (text, (font.as_deref(), is_text_height))))
+                .decode_cost(ctx, operation),
+            Self::Native {
+                native_kind,
+                native_state,
+                native_flags,
+                native_properties,
+                entities,
+                parameter,
+                operands,
+            } => {
                 let properties = sketch_btree_map_cost(native_properties, ctx, operation)?;
                 let fields = (
                     native_kind,
-                    (native_state, (native_flags, (entities, (parameter, operands)))),
+                    (
+                        native_state,
+                        (native_flags, (entities, (parameter, operands))),
+                    ),
                 )
                     .decode_cost(ctx, operation)?;
-                let tagged_fields = sketch_cost_sum(
-                    ctx,
-                    56_u8.decode_cost(ctx, operation)?,
-                    fields,
-                    operation,
-                )?;
+                let tagged_fields =
+                    sketch_cost_sum(ctx, 56_u8.decode_cost(ctx, operation)?, fields, operation)?;
                 sketch_cost_sum(ctx, tagged_fields, properties, operation)
             }
         }
     }
 }
-
 
 impl SketchConstraintDefinitionInput {
     /// The entity whose neutral geometry kind this relation restricts, with

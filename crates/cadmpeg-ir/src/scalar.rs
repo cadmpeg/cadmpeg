@@ -74,10 +74,10 @@
 //! assert_eq!(Angle::from_assigned_real(value).get(), -2.5);
 //! ```
 
+use cadmpeg_core::decode::cost::DecodeCost;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use cadmpeg_core::decode::cost::DecodeCost;
 
 /// A finite IEEE-754 binary32 value in its source precision.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]

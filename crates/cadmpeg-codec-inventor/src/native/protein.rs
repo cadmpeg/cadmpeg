@@ -3,8 +3,8 @@
 
 use cadmpeg_container::ZipCompression;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
@@ -145,10 +145,7 @@ impl ProteinRecord {
 }
 
 impl ProteinRecordWire {
-    fn into_record(
-        self,
-        entries: Vec<ProteinEntryRecord>,
-    ) -> Result<ProteinRecord, CodecError> {
+    fn into_record(self, entries: Vec<ProteinEntryRecord>) -> Result<ProteinRecord, CodecError> {
         if self.entry_count != cadmpeg_core::decode::u64_from_index(entries.len()) {
             return Err(CodecError::Malformed(
                 "Protein entry_count does not match its entry arena".into(),
@@ -168,36 +165,28 @@ impl ProteinRecordWire {
             {
                 Ok(ProteinRecord::Empty {
                     id: self.id,
-                    directory_id: self
-                        .directory_id
-                .ok_or_else(|| {
-                    CodecError::Malformed("empty Protein requires directory_id".into())
-                })?,
+                    directory_id: self.directory_id.ok_or_else(|| {
+                        CodecError::Malformed("empty Protein requires directory_id".into())
+                    })?,
                 })
             }
             ProteinRecordState::Package if self.detail.is_none() => Ok(ProteinRecord::Package {
                 id: self.id,
-                directory_id: self
-                    .directory_id
-                    .ok_or_else(|| {
-                        CodecError::Malformed("Protein package requires directory_id".into())
-                    })?,
+                directory_id: self.directory_id.ok_or_else(|| {
+                    CodecError::Malformed("Protein package requires directory_id".into())
+                })?,
                 declared_len: std::num::NonZeroU32::new(self.declared_len.unwrap_or(0))
                     .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "Protein package declared_len must be nonzero".into(),
-                        )
+                        CodecError::Malformed("Protein package declared_len must be nonzero".into())
                     })?,
                 entries,
             }),
             ProteinRecordState::Malformed if self.declared_len.is_none() && entries.is_empty() => {
                 Ok(ProteinRecord::Malformed {
                     id: self.id,
-                    directory_id: self
-                        .directory_id
-                        .ok_or_else(|| {
-                            CodecError::Malformed("malformed Protein requires directory_id".into())
-                        })?,
+                    directory_id: self.directory_id.ok_or_else(|| {
+                        CodecError::Malformed("malformed Protein requires directory_id".into())
+                    })?,
                     detail: self.detail.ok_or_else(|| {
                         CodecError::Malformed("malformed Protein requires detail".into())
                     })?,
@@ -322,11 +311,8 @@ impl ProteinRejectionRecordWire {
             self.entry_name,
             "retain Inventor Protein rejection conversion issue",
         )?;
-        let detail = NonBlankString::for_decode(
-            ctx,
-            self.detail,
-            "validate Protein rejection detail",
-        )?;
+        let detail =
+            NonBlankString::for_decode(ctx, self.detail, "validate Protein rejection detail")?;
         let Some(detail) = detail else {
             return Err(CodecError::Malformed(ctx.copy_retained_text(
                 "detail must not be empty",
