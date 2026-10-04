@@ -722,9 +722,9 @@ fn append_design_losses(
     let incomplete_parameters = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let parameter = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             parameter.value.is_none()
                 && (ir.model.configurations.is_empty()
-                    || ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?.any(|configuration| {
-                        !configuration.parameter_values.contains_key(&parameter.id)
-                    }))
+                    || ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?.try_fold(false, |found, configuration| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
+                        !ctx.contains_key_btree_map(&(configuration.parameter_values), &parameter.id, "test SLDPRT map key")?
+                    } )) })?)
         } )) })?;
     let unresolved_parameter_references =
         crate::history::parameters::parameters_with_unresolved_references(
@@ -4552,7 +4552,7 @@ fn complete_resolved_configuration_parameter_snapshots(
                 continue;
             };
             if !parameter.dependencies.is_empty()
-                || configuration.parameter_values.contains_key(&parameter.id)
+                || ctx.contains_key_btree_map(&(configuration.parameter_values), &parameter.id, "test SLDPRT map key")?
             {
                 continue;
             }

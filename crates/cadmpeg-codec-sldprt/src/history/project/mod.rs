@@ -1295,7 +1295,7 @@ pub(crate) fn incomplete_history_reference_features(
                     .parent_source_id() { Some(source) => ctx.get_hash_map(&(sources), &source, "look up SLDPRT hash key")?.is_some_and(Option::is_some), None => false };
             let incomplete_content = ctx.admit_iter(&feature.content[..], "scan SLDPRT incomplete_history_reference_features values")?.try_fold(false, |found, item| { Ok::<_, cadmpeg_core::CodecError>(found || ( match item {
                 FeatureContent::Feature(child) => !ctx.contains_hash_set(&(native_ids), child.as_str(), "test SLDPRT hashed identity")?,
-                FeatureContent::Dimension(name) => !feature.parameters.contains_key(name.as_str()),
+                FeatureContent::Dimension(name) => !ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")?,
                 FeatureContent::Text(_) => false,
             } )) })?;
             let mut unresolved_dependency = false;
@@ -1340,7 +1340,7 @@ fn project_feature_content(
         ctx.charge_work(1, OPERATION)?;
         if let FeatureContent::Dimension(name) = content {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-            if feature.parameters.contains_key(name.as_str()) && !names.contains(&name.as_str()) {
+            if ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")? && !names.contains(&name.as_str()) {
                 ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
             }
@@ -1708,7 +1708,7 @@ fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<Str
     for content in &feature.content {
         ctx.charge_work(1, OPERATION)?;
         if let FeatureContent::Dimension(name) = content {
-            if feature.parameters.contains_key(name.as_str()) {
+            if ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")? {
                 let name = copy_projected_feature_text(ctx, name)?;
                 ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
