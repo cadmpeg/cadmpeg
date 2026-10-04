@@ -154,51 +154,71 @@ pub(super) fn cyl_spl_sur(
 }
 
 pub(super) fn decode_rolling_ball_side(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<
     Result<
         RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
-        cadmpeg_core::decode::ResourceLimit,
+        cadmpeg_core::CodecError,
     >,
 > {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
-    let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
-        "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
-        "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
-        "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
-        "blend_support_surface" | "blendsupsur" => VariableBlendSupportKind::Surface,
-        "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
-        _ => return None,
+    let support_kind = match take_native_string(ctx, bytes, position, int_width)? {
+        Ok(value) => match value.0.as_str() {
+            "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
+            "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
+            "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
+            "blend_support_surface" | "blendsupsur" => VariableBlendSupportKind::Surface,
+            "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
+            _ => return None,
+        },
+        Err(error) => return Some(Err(error)),
     };
-    let surface = decode_optional_rolling_ball_surface(bytes, position, int_width)?.value();
+    let surface = match decode_optional_rolling_ball_surface(ctx, bytes, position, int_width)? {
+        Ok(surface) => surface.value(),
+        Err(error) => return Some(Err(error)),
+    };
     let saved = *position;
-    let curve = if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
+    let curve_is_null = match take_native_ident(ctx, bytes, position) {
+        None => false,
+        Some(Ok(ident)) => ident.0 == "null_curve",
+        Some(Err(error)) => return Some(Err(error)),
+    };
+    let curve = if curve_is_null {
         None
     } else {
         *position = saved;
-        Some(decode_rolling_ball_curve(bytes, position, int_width)?)
+        Some(match decode_rolling_ball_curve(ctx, bytes, position, int_width)? {
+            Ok(curve) => curve,
+            Err(error) => return Some(Err(error)),
+        })
     };
-    let curve = match curve {
-        Some(Ok(curve)) => Some(curve),
-        Some(Err(limit)) => return Some(Err(limit)),
-        None => None,
+    let pcurve = match decode_nullable_embedded_pcurve(ctx, bytes, position, int_width)? {
+        Ok(pcurve) => pcurve.value(),
+        Err(error) => return Some(Err(error)),
     };
-    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
     let location = take_native_vec3(bytes, position, 0x13)?;
-    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
+    let secondary_pcurve = match decode_nullable_embedded_pcurve(ctx, bytes, position, int_width)? {
+        Ok(pcurve) => pcurve.value(),
+        Err(error) => return Some(Err(error)),
+    };
     let extension_start = *position;
     let extension_fields = (|| {
         let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
-        let tertiary = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
-        Some(RollingBallSideExtension {
+        let tertiary = match decode_nullable_embedded_pcurve(ctx, bytes, position, int_width)? {
+            Ok(pcurve) => pcurve.value(),
+            Err(error) => return Some(Err(error)),
+        };
+        Some(Ok(RollingBallSideExtension {
             value: extension,
             pcurve: tertiary,
-        })
+        }))
     })();
     let extension = match extension_fields {
-        Some(extension) => Some(extension),
+        Some(Ok(extension)) => Some(extension),
+        Some(Err(error)) => return Some(Err(error)),
         None => {
             *position = extension_start;
             None
@@ -222,52 +242,84 @@ pub(super) fn decode_rolling_ball_side(
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
 /// its parameter bounds.
 pub(super) fn decode_optional_rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
+) -> Option<
+    Result<
+        Nullable<RollingBallSupportSurface<SurfaceGeometry>>,
+        cadmpeg_core::CodecError,
+    >,
+> {
     let saved = *position;
-    if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
-        return Some(Nullable::Null);
+    let is_null = match take_native_ident(ctx, bytes, position) {
+        None => false,
+        Some(Ok(ident)) => ident.0 == "null_surface",
+        Some(Err(error)) => return Some(Err(error)),
+    };
+    if is_null {
+        return Some(Ok(Nullable::Null));
     }
     *position = saved;
-    decode_rolling_ball_surface(bytes, position, int_width).map(|(surface, parameter_ranges)| {
-        Nullable::Value(RollingBallSupportSurface {
-            surface,
-            parameter_ranges,
-        })
-    })
+    match decode_rolling_ball_surface(ctx, bytes, position, int_width)? {
+        Ok((surface, parameter_ranges)) => Some(Ok(Nullable::Value(
+            RollingBallSupportSurface {
+                surface,
+                parameter_ranges,
+            },
+        ))),
+        Err(error) => Some(Err(error)),
+    }
 }
 
 pub(super) fn decode_rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+) -> Option<
+    Result<
+        (SurfaceGeometry, [[Option<f64>; 2]; 2]),
+        cadmpeg_core::CodecError,
+    >,
+> {
     let saved = *position;
-    let kind = take_native_ident(bytes, position)?;
-    if kind == "spline" {
+    let kind = match take_native_ident(ctx, bytes, position)? {
+        Ok(kind) => kind,
+        Err(error) => return Some(Err(error)),
+    };
+    let is_spline = kind.0 == "spline";
+    drop(kind);
+    if is_spline {
         if marker_at(bytes, *position).is_some() {
             let surface = decode_surface_block(bytes, *position, int_width)?;
             *position = surface.end();
             let ranges = decode_surface_ranges(bytes, position)?;
-            return Some((
+            return Some(Ok((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.surface)),
                 ranges,
-            ));
+            )));
         }
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?;
-        let surface = decode_owned_surface_cache_at(scope, int_width)?;
+        let scope = match subtype_span(ctx, bytes, *position, int_width) {
+            Ok(Some(scope)) => scope,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let surface = match decode_owned_surface_cache_at(ctx, scope, int_width)? {
+            Ok(surface) => surface,
+            Err(error) => return Some(Err(error)),
+        };
         *position += scope.bytes().len();
         let ranges = decode_surface_ranges(bytes, position)?;
-        return Some((
+        return Some(Ok((
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             ranges,
-        ));
+        )));
     }
     *position = saved;
-    decode_embedded_surface_with_ranges(bytes, position, int_width)
+    decode_embedded_surface_with_ranges(ctx, bytes, position, int_width)
 }
 
 pub(super) fn decode_surface_ranges(
@@ -287,10 +339,11 @@ pub(super) fn decode_surface_ranges(
 }
 
 pub(super) fn decode_rolling_ball_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end();
@@ -303,24 +356,36 @@ pub(super) fn decode_rolling_ball_curve(
             parameter_range,
         }));
     }
-    let kind = take_native_ident(bytes, position)?;
-    if kind == "intcurve" {
+    let kind = match take_native_ident(ctx, bytes, position)? {
+        Ok(kind) => kind,
+        Err(error) => return Some(Err(error)),
+    };
+    if kind.0 == "intcurve" {
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?;
-        let curve = decode_owned_curve_cache_at(scope, int_width)
-            .map(Ok)
-            .or_else(|| decode_par_int_cur_isoline(scope.bytes(), int_width))?;
+        let scope = match subtype_span(ctx, bytes, *position, int_width) {
+            Ok(Some(scope)) => scope,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let curve = match decode_owned_curve_cache_at(ctx, scope, int_width) {
+            Some(Ok(curve)) => curve,
+            Some(Err(error)) => return Some(Err(error)),
+            None => match decode_par_int_cur_isoline(ctx, scope.bytes(), int_width)? {
+                Ok(curve) => curve,
+                Err(error) => return Some(Err(error)),
+            },
+        };
         *position += scope.bytes().len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
-        return Some(curve.map(|curve| RollingBallSupportCurve {
+        return Some(Ok(RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
         }));
     }
-    let geometry = match kind.as_str() {
+    let geometry = match kind.0.as_str() {
         "straight" => {
             let origin = take_native_vec3(bytes, position, 0x13)?;
             let direction = take_native_vec3(bytes, position, 0x14)?;
@@ -1451,32 +1516,49 @@ pub(super) fn compact_rb_blend_spl_sur(
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];
     let mut support_count = 0usize;
-    while matches!(cur.peek(), Some(Token::Str(label)) if label == "blend_support_surface") {
-        if support_count == supports.len() {
-            return None;
+    let support_scan = (|| -> Result<Option<()>, cadmpeg_core::CodecError> {
+        while {
+            ctx.charge_work(1, "ASM compact blend support scan")?;
+            matches!(cur.peek(), Some(Token::Str(label)) if label == "blend_support_surface")
+        } {
+            if support_count == supports.len() {
+                return Ok(None);
+            }
+            if cur.take_str().is_none() {
+                return Ok(None);
+            }
+            let has_outer_kind = matches!(cur.peek(), Some(Token::Ident(name) | Token::SubIdent(name)) if name != "nubs" && name != "nurbs");
+            if has_outer_kind && cur.take_ident().is_none() {
+                return Ok(None);
+            }
+            let payload_start = cur.pos();
+            let support = if !has_outer_kind {
+                let Some((_, end)) = surface_block(ctx, span, cur.pos()).transpose()? else {
+                    return Ok(None);
+                };
+                cur.set_pos(end);
+                None
+            } else if let Some(surface) = embedded_surface(ctx, &mut cur).transpose()? {
+                Some(surface)
+            } else {
+                cur.set_pos(payload_start);
+                let Some((surface, end)) = surface_block(ctx, span, cur.pos()).transpose()? else {
+                    return Ok(None);
+                };
+                cur.set_pos(end);
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    surface,
+                )))
+            };
+            supports[support_count] = support;
+            support_count += 1;
         }
-        cur.take_str()?;
-        let has_outer_kind = matches!(cur.peek(), Some(Token::Ident(name) | Token::SubIdent(name)) if name != "nubs" && name != "nurbs");
-        if has_outer_kind {
-            cur.take_ident()?;
-        }
-        let payload_start = cur.pos();
-        let support = if !has_outer_kind {
-            let (_, end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
-            cur.set_pos(end);
-            None
-        } else if let Some(surface) = embedded_surface(ctx, &mut cur) {
-            Some(propagate_resource!(surface))
-        } else {
-            cur.set_pos(payload_start);
-            let (surface, end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
-            cur.set_pos(end);
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                surface,
-            )))
-        };
-        supports[support_count] = support;
-        support_count += 1;
+        Ok(Some(()))
+    })();
+    match support_scan {
+        Ok(Some(())) => {}
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
     }
     let (spine, spine_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
     cur.set_pos(spine_end);
@@ -1501,6 +1583,36 @@ pub(super) fn compact_rb_blend_spl_sur(
         },
         cache_fit_tolerance,
     )))
+}
+
+#[cfg(test)]
+mod compact_blend_work_tests {
+    use super::compact_rb_blend_spl_sur;
+    use crate::sab::Token;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn compact_blend_support_scan_refuses_work_before_label_probe() {
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("rb_blend_spl_sur".into()),
+            Token::Str("blend_support_surface".into()),
+            Token::SubtypeClose,
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Some(Err(error)) = compact_rb_blend_spl_sur(&ctx, &tokens) else {
+            panic!("support-label admission must propagate");
+        };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM compact blend support scan");
+    }
 }
 
 #[cfg(test)]

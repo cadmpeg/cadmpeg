@@ -1200,3 +1200,101 @@ fn decode_keeps_unattached_name_property_in_native_records() {
         1
     );
 }
+
+#[test]
+fn presentation_name_utf8_refusal_is_not_an_absent_name() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    let error = retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "iges color definition name"));
+}
+
+fn assert_work_refusal<T>(
+    input: &[u8],
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy).unwrap();
+        match run(&ctx) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Err(error) => panic!("unexpected error before {operation}: {error}"),
+            Ok(_) => panic!("operation {operation} was not admitted"),
+        }
+    }
+    panic!("operation {operation} was not reached");
+}
+
+#[test]
+fn body_property_utf8_refusal_reaches_the_decode_result() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "141,1,3,1,1,3,1,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 143,
+            form: 0,
+            label: "BOUNDED".into(),
+            status: "00000000",
+            parameters: "143,1,1,1,7,0,2,11,13;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_A".into(),
+            status: "00010000",
+            parameters: "406,1,5HFIRST;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_B".into(),
+            status: "00010000",
+            parameters: "406,1,6HSECOND;".into(),
+        },
+    ];
+
+    let bytes = owned_test_file(&entities);
+    assert_work_refusal(&bytes, "iges body property name validation", |ctx| {
+        crate::reader::decode(&bytes, &bytes, crate::representation::Representation::FixedAscii, ctx)
+    });
+}

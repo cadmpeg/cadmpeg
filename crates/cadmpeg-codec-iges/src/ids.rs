@@ -22,23 +22,32 @@ pub(crate) fn directory_lookup_key<'a>(
     prefix: &str,
     sequence: u32,
     storage: &'a mut [u8],
-) -> Option<&'a str> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<&'a str>, CodecError> {
     let mut digits = [0_u8; 10];
     let mut value = sequence;
     let mut start = digits.len();
     loop {
+        ctx.charge_work(1, "iges directory lookup digits")?;
         start -= 1;
-        digits[start] = b'0' + u8::try_from(value % 10).ok()?;
+        let Ok(digit) = u8::try_from(value % 10) else {
+            return Ok(None);
+        };
+        digits[start] = b'0' + digit;
         value /= 10;
         if value == 0 {
             break;
         }
     }
-    let length = prefix.len().checked_add(digits.len() - start)?;
-    let result = storage.get_mut(..length)?;
+    let Some(length) = prefix.len().checked_add(digits.len() - start) else {
+        return Ok(None);
+    };
+    let Some(result) = storage.get_mut(..length) else {
+        return Ok(None);
+    };
     result[..prefix.len()].copy_from_slice(prefix.as_bytes());
     result[prefix.len()..].copy_from_slice(&digits[start..]);
-    std::str::from_utf8(result).ok()
+    Ok(ctx.validate_utf8(result, "iges directory lookup text")?.ok())
 }
 
 /// A decoded number an identity key may be spelled with.
@@ -471,18 +480,21 @@ mod tests {
 
     #[test]
     fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
+        let policy = DecodePolicy::service();
+        let arena = DecodeArena::new();
+        let ctx = DecodeContext::new(&arena, &policy, false);
         let mut storage = [0_u8; 64];
         assert_eq!(
-            directory_lookup_key("iges:model:surface#D", 0, &mut storage),
+            directory_lookup_key("iges:model:surface#D", 0, &mut storage, &ctx).unwrap(),
             Some("iges:model:surface#D0")
         );
         assert_eq!(
-            directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage),
+            directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage, &ctx).unwrap(),
             Some("iges:model:edge#D4294967295")
         );
         let mut short = [0_u8; 3];
         assert_eq!(
-            directory_lookup_key("iges:model:edge#D", 1, &mut short),
+            directory_lookup_key("iges:model:edge#D", 1, &mut short, &ctx).unwrap(),
             None
         );
     }
@@ -546,4 +558,31 @@ mod tests {
         );
         assert_eq!(Stem::number(-1_i64).to_string(), "-1");
     }
+    #[test]
+    fn directory_lookup_digits_refuse_work_before_formatting() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let mut storage = [0xaa; 64];
+        let error = directory_lookup_key("D", 1, &mut storage, &ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges directory lookup digits"));
+        assert_eq!(storage, [0xaa; 64]);
+    }
+
+    #[test]
+    fn directory_lookup_text_refuses_utf8_scan() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let arena = DecodeArena::new();
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let mut storage = [0_u8; 64];
+        let error = directory_lookup_key("D", 1, &mut storage, &ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges directory lookup text"));
+    }
+
 }

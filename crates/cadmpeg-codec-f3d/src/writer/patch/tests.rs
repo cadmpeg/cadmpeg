@@ -499,6 +499,7 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     )
     .expect("generated ellipse edit");
     let ratio_offset = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records[0],
         cadmpeg_asm::kernel_header::RefWidth::Eight,

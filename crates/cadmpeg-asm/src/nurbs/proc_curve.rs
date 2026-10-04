@@ -1511,29 +1511,53 @@ pub struct SpringPatchLayout {
 }
 
 /// Locate spring context fields by walking the subtype grammar at `int_width`.
-pub fn spring_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SpringPatchLayout> {
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"spring_int_cur", int_width)?;
+pub fn spring_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<SpringPatchLayout>, cadmpeg_core::CodecError> {
+    let Some((marker, name_len)) =
+        find_owned_intcurve_subtype(ctx, bytes, b"spring_int_cur", int_width)?
+    else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name_len + 3;
     for _ in 0..2 {
         let saved = position;
-        if take_native_ident(bytes, &mut position).as_deref() == Some("null_surface") {
+        let is_null = match take_native_ident(ctx, bytes, &mut position) {
+            None => false,
+            Some(Ok(ident)) => ident.0 == "null_surface",
+            Some(Err(error)) => return Some(Err(error)),
+        };
+        if is_null {
             for _ in 0..4 {
                 take_double_payload(bytes, &mut position)?;
             }
         } else {
             position = saved;
-            decode_embedded_surface(bytes, &mut position, int_width)?;
+            propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
         }
     }
     let saved = position;
-    if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+    let is_null = match take_native_ident(ctx, bytes, &mut position) {
+        None => false,
+        Some(Ok(ident)) => ident.0 == "nullbs",
+        Some(Err(error)) => return Some(Err(error)),
+    };
+    if is_null {
         take_double_payload(bytes, &mut position)?;
         take_double_payload(bytes, &mut position)?;
     } else {
         position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
     }
     let saved = position;
-    if take_native_ident(bytes, &mut position).as_deref() != Some("nullbs") {
+    let is_null = match take_native_ident(ctx, bytes, &mut position) {
+        None => false,
+        Some(Ok(ident)) => ident.0 == "nullbs",
+        Some(Err(error)) => return Some(Err(error)),
+    };
+    if !is_null {
         position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
     }
     let parameter_range = [
@@ -1549,12 +1573,14 @@ pub fn spring_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SpringPa
     take_bool(bytes, &mut position)?;
     let direction = position;
     take_tagged_int(bytes, &mut position, 0x15, int_width)?;
-    Some(SpringPatchLayout {
+    Some(Ok(SpringPatchLayout {
         parameter_range,
         discontinuities,
         discontinuity_flag,
         direction,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 /// Writable radius-law payloads in a rolling-ball blend surface subtype.
@@ -1608,10 +1634,19 @@ pub struct CompoundPatchLayout {
 }
 
 /// Locate both compound parameter arrays from their native counts.
-pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<CompoundPatchLayout> {
+pub fn compound_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<CompoundPatchLayout>, cadmpeg_core::CodecError> {
     let name = b"comp_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    subtype_span(bytes, marker, int_width)?;
+    let Some((marker, _)) = find_owned_subtype_marker(ctx, bytes, &[name], int_width)? else {
+        return Ok(None);
+    };
+    let Some(_scope) = subtype_span(ctx, bytes, marker, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
     let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
     let component_count =
@@ -1627,13 +1662,24 @@ pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Compou
         parameters,
         component_parameters,
     })
+    })();
+    Ok(layout)
 }
 
 /// Locate the subset range by consuming the subtype-owned parent curve.
-pub fn subset_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SubsetPatchLayout> {
+pub fn subset_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<SubsetPatchLayout>, cadmpeg_core::CodecError> {
     let name = b"subset_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    subtype_span(bytes, marker, int_width)?;
+    let Some((marker, _)) = find_owned_subtype_marker(ctx, bytes, &[name], int_width)? else {
+        return Ok(None);
+    };
+    let Some(_scope) = subtype_span(ctx, bytes, marker, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
     position = decode_curve_block(bytes, position, int_width)?.end();
     let parameter_range = [
@@ -1641,16 +1687,24 @@ pub fn subset_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SubsetPa
         take_double_payload(bytes, &mut position)?,
     ];
     Some(SubsetPatchLayout { parameter_range })
+    })();
+    Ok(layout)
 }
 
 /// Locate vector-offset fields by consuming the wrapper flag and source curve.
 pub fn vector_offset_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<VectorOffsetPatchLayout> {
+) -> Result<Option<VectorOffsetPatchLayout>, cadmpeg_core::CodecError> {
     let name = b"offset_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    subtype_span(bytes, marker, int_width)?;
+    let Some((marker, _)) = find_owned_subtype_marker(ctx, bytes, &[name], int_width)? else {
+        return Ok(None);
+    };
+    let Some(_scope) = subtype_span(ctx, bytes, marker, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
     take_bool(bytes, &mut position)?;
     position = decode_curve_block(bytes, position, int_width)?.end();
@@ -1664,13 +1718,24 @@ pub fn vector_offset_patch_layout(
         parameter_range,
         offset,
     })
+    })();
+    Ok(layout)
 }
 
 /// Locate helix fields by consuming the subtype prefix grammar.
-pub fn helix_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<HelixPatchLayout> {
+pub fn helix_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<HelixPatchLayout>, cadmpeg_core::CodecError> {
     let name = b"helix_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    subtype_span(bytes, marker, int_width)?;
+    let Some((marker, _)) = find_owned_subtype_marker(ctx, bytes, &[name], int_width)? else {
+        return Ok(None);
+    };
+    let Some(_scope) = subtype_span(ctx, bytes, marker, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
     let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
     let take_range_payload = |position: &mut usize| {
@@ -1702,14 +1767,25 @@ pub fn helix_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<HelixPatc
         apex_factor,
         axis,
     })
+    })();
+    Ok(layout)
 }
 
 /// Locate extrusion fields from the `cyl_spl_sur` subtype header.
-pub fn extrusion_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ExtrusionPatchLayout> {
+pub fn extrusion_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<ExtrusionPatchLayout>, cadmpeg_core::CodecError> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
-    subtype_span(bytes, start, int_width)?;
+    let Some((start, name)) = find_owned_subtype_marker(ctx, bytes, &names, int_width)? else {
+        return Ok(None);
+    };
+    let Some(_scope) = subtype_span(ctx, bytes, start, int_width)? else {
+        return Ok(None);
+    };
+    let name_len = name.len();
+    let layout = (|| {
     let mut position = start + name_len + 3;
     let parameter_interval = [
         take_double_payload(bytes, &mut position)?,
@@ -1724,13 +1800,16 @@ pub fn extrusion_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Extru
         direction,
         native_position,
     })
+    })();
+    Ok(layout)
 }
 
 /// Locate the rolling-ball radius pair by walking both supports and the slice curve.
 pub fn rolling_ball_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<Result<RollingBallPatchLayout, cadmpeg_core::decode::ResourceLimit>> {
+) -> Result<Option<RollingBallPatchLayout>, cadmpeg_core::CodecError> {
     let names: [&[u8]; 6] = [
         b"rb_blend_spl_sur",
         b"rbblnsur",
@@ -1739,17 +1818,22 @@ pub fn rolling_ball_patch_layout(
         b"sss_blend_spl_sur",
         b"sssblndsur",
     ];
-    let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
-    let span = subtype_span(bytes, start, int_width)?.bytes();
+    let Some((start, name)) = find_owned_subtype_marker(ctx, bytes, &names, int_width)? else {
+        return Ok(None);
+    };
+    let Some(scope) = subtype_span(ctx, bytes, start, int_width)? else {
+        return Ok(None);
+    };
+    let span = scope.bytes();
+    let name_len = name.len();
     let payload_start = name_len + 3;
-    let radii = (|| {
+    let primary = (|| {
         let mut position = payload_start;
         take_tagged_int(span, &mut position, 0x04, int_width)?;
         for _ in 0..2 {
-            match decode_rolling_ball_side(span, &mut position, int_width)? {
+            match decode_rolling_ball_side(ctx, span, &mut position, int_width)? {
                 Ok(_) => {}
-                Err(limit) => return Some(Err(limit)),
+                Err(error) => return Some(Err(error)),
             }
         }
         position = decode_curve_block(span, position, int_width)?.end();
@@ -1757,13 +1841,24 @@ pub fn rolling_ball_patch_layout(
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
         ]))
-    })()
-    .or_else(|| {
+    })();
+    let radii = match primary {
+        Some(Ok(radii)) => Some(radii),
+        Some(Err(error)) => return Err(error),
+        None => (|| {
         let mut position = payload_start;
         for _ in 0..2 {
-            take_native_string(span, &mut position, int_width)?;
-            let support_kind = take_native_ident(span, &mut position)?;
-            if !matches!(support_kind.as_str(), "plane" | "sphere" | "cone" | "torus") {
+            match take_native_string(ctx, span, &mut position, int_width)? {
+                Ok(pair) => drop(pair),
+                Err(error) => return Some(Err(error)),
+            }
+            let support_kind = match take_native_ident(ctx, span, &mut position)? {
+                Ok(kind) => kind,
+                Err(error) => return Some(Err(error)),
+            };
+            let supported = matches!(support_kind.0.as_str(), "plane" | "sphere" | "cone" | "torus");
+            drop(support_kind);
+            if !supported {
                 return None;
             }
             position = decode_surface_block(span, position, int_width)?.end();
@@ -1773,8 +1868,9 @@ pub fn rolling_ball_patch_layout(
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
         ]))
-    })?;
-    Some(radii.map(|radii| RollingBallPatchLayout { radii }))
+        })().transpose()?
+    };
+    Ok(radii.map(|radii| RollingBallPatchLayout { radii }))
 }
 
 /// Embedded cache-first base curve: a direct NURBS block, an analytic
@@ -1997,13 +2093,19 @@ pub struct SurfaceOffsetPatchLayout {
 
 /// Locate surface-offset fields by walking supports and the base curve.
 pub fn surface_offset_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<SurfaceOffsetPatchLayout> {
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"off_surf_int_cur", int_width)?;
+) -> Result<Option<SurfaceOffsetPatchLayout>, cadmpeg_core::CodecError> {
+    let Some((marker, name_len)) =
+        find_owned_intcurve_subtype(ctx, bytes, b"off_surf_int_cur", int_width)?
+    else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name_len + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     let parameter_range = [
@@ -2033,7 +2135,7 @@ pub fn surface_offset_patch_layout(
     let distance = take_double_payload(bytes, &mut position)?;
     let shift = take_double_payload(bytes, &mut position)?;
     let scale = take_double_payload(bytes, &mut position)?;
-    Some(SurfaceOffsetPatchLayout {
+    Some(Ok(SurfaceOffsetPatchLayout {
         parameter_range,
         discontinuities,
         discontinuity_flag,
@@ -2043,7 +2145,9 @@ pub fn surface_offset_patch_layout(
         distance,
         shift,
         scale,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 /// Draft factor of the marker template, replaced by the native tail value.
@@ -2112,20 +2216,24 @@ pub struct SilhouettePatchLayout {
 
 /// Locate silhouette fields by walking its context and cast surface.
 pub fn silhouette_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
     silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
-) -> Option<SilhouettePatchLayout> {
+) -> Result<Option<SilhouettePatchLayout>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let (names, tapered): (&[&[u8]], bool) = match silhouette {
         SilhouetteKind::Standard {} => (&[b"silh_int_cur"], false),
         SilhouetteKind::Parametric {} => (&[b"para_silh_int_cur", b"parasil"], false),
         SilhouetteKind::Taper { .. } => (&[b"taper_silh_int_cur"], true),
     };
-    let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
+    let Some((marker, name)) = find_owned_subtype_marker(ctx, bytes, names, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     take_double_payload(bytes, &mut position)?;
@@ -2133,7 +2241,7 @@ pub fn silhouette_patch_layout(
     for _ in 0..3 {
         take_float_array_payloads(bytes, &mut position, int_width)?;
     }
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     (*bytes.get(position)? == 0x14).then_some(())?;
     let light_direction = position + 1;
     bytes.get(light_direction..light_direction + 24)?;
@@ -2143,10 +2251,12 @@ pub fn silhouette_patch_layout(
     } else {
         None
     };
-    Some(SilhouettePatchLayout {
+    Some(Ok(SilhouettePatchLayout {
         light_direction,
         draft_factor,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn embedded_surface_curve(
@@ -2192,28 +2302,36 @@ fn embedded_surface_curve(
 /// curve of the support's degree over the support's knot vector. Any other
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
 pub fn decode_par_int_cur_isoline(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &[u8],
     int_width: RefWidth,
-) -> Option<Result<NurbsCurve, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
-    let (start, name) = find_owned_subtype_marker(scope, &names, int_width)?;
+    let (start, name) = match find_owned_subtype_marker(ctx, scope, &names, int_width) {
+        Ok(Some(found)) => found,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let mut position = start + name.len() + 3;
     (take_tagged_int(scope, &mut position, 0x04, int_width)? > 0).then_some(())?;
     (take_tagged_int(scope, &mut position, 0x15, int_width)? == 2).then_some(())?;
     take_range_value(scope, &mut position)?;
     take_range_value(scope, &mut position)?;
     take_tagged_int(scope, &mut position, 0x15, int_width)?;
-    let supports = [
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width)?
-            .value()
-            .map(|support| support.surface),
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width)?
-            .value()
-            .map(|support| support.surface),
-    ];
+    let first_support = match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
+        Ok(support) => support.value().map(|support| support.surface),
+        Err(error) => return Some(Err(error)),
+    };
+    let second_support = match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
+        Ok(support) => support.value().map(|support| support.surface),
+        Err(error) => return Some(Err(error)),
+    };
+    let supports = [first_support, second_support];
     let pcurves = [
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
+        propagate_resource!(decode_nullable_embedded_pcurve(ctx, scope, &mut position, int_width)?)
+            .value(),
+        propagate_resource!(decode_nullable_embedded_pcurve(ctx, scope, &mut position, int_width)?)
+            .value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -2229,12 +2347,11 @@ pub fn decode_par_int_cur_isoline(
     else {
         return None;
     };
-    surface_isoline_along(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        support,
-        pcurve,
-    )
-    .transpose()
+    match surface_isoline_along(ctx.into(), support, pcurve) {
+        Ok(Some(curve)) => Some(Ok(curve)),
+        Ok(None) => None,
+        Err(error) => Some(Err(error.into())),
+    }
 }
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
@@ -2575,10 +2692,11 @@ pub struct SurfaceCurvePatchLayout {
 
 /// Locate a surface-curve context by walking its two ordered support pairs.
 pub fn surface_curve_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
     family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
-) -> Option<SurfaceCurvePatchLayout> {
+) -> Result<Option<SurfaceCurvePatchLayout>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names: &[&[u8]] = match family {
         SurfaceCurveFamilyKind::Blend => &[b"blend_int_cur", b"bldcur"],
@@ -2586,10 +2704,13 @@ pub fn surface_curve_patch_layout(
         SurfaceCurveFamilyKind::Parametric => &[b"par_int_cur", b"parcur"],
         SurfaceCurveFamilyKind::Skin => &[b"skin_int_cur", b"d5c2_cur"],
     };
-    let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
+    let Some((marker, name)) = find_owned_subtype_marker(ctx, bytes, names, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     let parameter_range = [
@@ -2601,10 +2722,12 @@ pub fn surface_curve_patch_layout(
         take_float_array_payloads(bytes, &mut position, int_width)?,
         take_float_array_payloads(bytes, &mut position, int_width)?,
     ];
-    Some(SurfaceCurvePatchLayout {
+    Some(Ok(SurfaceCurvePatchLayout {
         parameter_range,
         discontinuities,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn embedded_three_surface_intersection(
@@ -2657,13 +2780,19 @@ pub struct ThreeSurfacePatchLayout {
 
 /// Locate three-surface intersection fields by walking all three support pairs.
 pub fn three_surface_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<ThreeSurfacePatchLayout> {
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"sss_int_cur", int_width)?;
+) -> Result<Option<ThreeSurfacePatchLayout>, cadmpeg_core::CodecError> {
+    let Some((marker, name_len)) =
+        find_owned_intcurve_subtype(ctx, bytes, b"sss_int_cur", int_width)?
+    else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name_len + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     let parameter_range = [
@@ -2677,13 +2806,15 @@ pub fn three_surface_patch_layout(
     ];
     let selector = position;
     take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     decode_pcurve_block_with_end(bytes, position, int_width)?;
-    Some(ThreeSurfacePatchLayout {
+    Some(Ok(ThreeSurfacePatchLayout {
         parameter_range,
         discontinuities,
         selector,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn embedded_projection(
@@ -2791,11 +2922,20 @@ pub struct ProjectionPatchLayout {
 }
 
 /// Locate projection fields by walking supports, source curve, and selected tail.
-pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ProjectionPatchLayout> {
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"proj_int_cur", int_width)?;
+pub fn projection_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<ProjectionPatchLayout>, cadmpeg_core::CodecError> {
+    let Some((marker, name_len)) =
+        find_owned_intcurve_subtype(ctx, bytes, b"proj_int_cur", int_width)?
+    else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name_len + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     let parameter_range = [
@@ -2826,12 +2966,14 @@ pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Proj
             role,
         }
     };
-    Some(ProjectionPatchLayout {
+    Some(Ok(ProjectionPatchLayout {
         parameter_range,
         discontinuities,
         discontinuity_flag,
         tail,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn embedded_intersection(
@@ -2966,14 +3108,18 @@ pub struct IntersectionPatchLayout {
 
 /// Locate an intersection context by walking both ordered support pairs.
 pub fn intersection_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<IntersectionPatchLayout> {
+) -> Result<Option<IntersectionPatchLayout>, cadmpeg_core::CodecError> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
+    let Some((marker, name)) = find_owned_subtype_marker(ctx, bytes, &names, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name.len() + 3;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
-    decode_embedded_surface(bytes, &mut position, int_width)?;
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
     let parameter_range = [
@@ -2987,11 +3133,13 @@ pub fn intersection_patch_layout(
     ];
     let discontinuity_flag = position;
     take_bool(bytes, &mut position)?;
-    Some(IntersectionPatchLayout {
+    Some(Ok(IntersectionPatchLayout {
         parameter_range,
         discontinuities,
         discontinuity_flag,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn embedded_two_sided_offset(
@@ -3150,16 +3298,20 @@ pub struct TwoSidedOffsetPatchLayout {
 
 /// Locates the fixed-width scalar payloads after variable embedded supports.
 pub fn two_sided_offset_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<TwoSidedOffsetPatchLayout> {
+) -> Result<Option<TwoSidedOffsetPatchLayout>, cadmpeg_core::CodecError> {
     let name = b"off_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
+    let Some((marker, name_len)) = find_owned_intcurve_subtype(ctx, bytes, name, int_width)? else {
+        return Ok(None);
+    };
+    let layout = (|| {
     let mut position = marker + name_len + 3;
-    skip_offset_support_surface(bytes, &mut position, int_width)?;
-    skip_offset_support_surface(bytes, &mut position, int_width)?;
-    skip_offset_support_pcurve(bytes, &mut position, int_width)?;
-    skip_offset_support_pcurve(bytes, &mut position, int_width)?;
+    propagate_resource!(skip_offset_support_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(skip_offset_support_surface(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(skip_offset_support_pcurve(ctx, bytes, &mut position, int_width)?);
+    propagate_resource!(skip_offset_support_pcurve(ctx, bytes, &mut position, int_width)?);
     let parameter_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -3175,47 +3327,65 @@ pub fn two_sided_offset_patch_layout(
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
     ];
-    Some(TwoSidedOffsetPatchLayout {
+    Some(Ok(TwoSidedOffsetPatchLayout {
         parameter_range,
         discontinuities,
         discontinuity_flag,
         offsets,
-    })
+    }))
+    })();
+    layout.transpose()
 }
 
 fn skip_offset_support_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<()> {
+) -> Option<Result<(), cadmpeg_core::CodecError>> {
     let start = *position;
-    if take_native_ident(bytes, position)?.as_str() == "null_surface" {
-        return Some(());
+    let kind = match take_native_ident(ctx, bytes, position)? {
+        Ok(kind) => kind,
+        Err(error) => return Some(Err(error)),
+    };
+    let is_null = kind.0 == "null_surface";
+    drop(kind);
+    if is_null {
+        return Some(Ok(()));
     }
     *position = start;
-    decode_embedded_surface(bytes, position, int_width)?;
-    Some(())
+    propagate_resource!(decode_embedded_surface(ctx, bytes, position, int_width)?);
+    Some(Ok(()))
 }
 
 fn skip_offset_support_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<()> {
+) -> Option<Result<(), cadmpeg_core::CodecError>> {
     let start = *position;
-    if take_native_ident(bytes, position)?.as_str() == "nullbs" {
-        return Some(());
+    let kind = match take_native_ident(ctx, bytes, position)? {
+        Ok(kind) => kind,
+        Err(error) => return Some(Err(error)),
+    };
+    let is_null = kind.0 == "nullbs";
+    drop(kind);
+    if is_null {
+        return Some(Ok(()));
     }
     *position = decode_pcurve_block_with_end(bytes, start, int_width)?.1;
-    Some(())
+    Some(Ok(()))
 }
 
 fn decode_embedded_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<SurfaceGeometry> {
-    decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
+) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
+    decode_embedded_surface_fields(ctx, bytes, position, int_width, false)
+        .map(|result| result.map(|(surface, _)| surface))
 }
 
 /// Decode one embedded analytic or spline support surface. Token-space
@@ -3390,22 +3560,27 @@ fn embedded_surface_fields(
 }
 
 pub(super) fn decode_embedded_surface_with_ranges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
-    decode_embedded_surface_fields(bytes, position, int_width, true)
+) -> Option<Result<(SurfaceGeometry, [[Option<f64>; 2]; 2]), cadmpeg_core::CodecError>> {
+    decode_embedded_surface_fields(ctx, bytes, position, int_width, true)
 }
 
 fn decode_embedded_surface_fields(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
     preserve_ranges: bool,
-) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+) -> Option<Result<(SurfaceGeometry, [[Option<f64>; 2]; 2]), cadmpeg_core::CodecError>> {
     let no_ranges = [[None, None], [None, None]];
-    let kind = take_native_ident(bytes, position)?;
-    if kind == "spline" {
+    let kind = match take_native_ident(ctx, bytes, position)? {
+        Ok(kind) => kind,
+        Err(error) => return Some(Err(error)),
+    };
+    if kind.0 == "spline" {
         let decoded = decode_surface_block(bytes, *position, int_width)?;
         *position = decoded.end();
         let ranges = if preserve_ranges {
@@ -3413,10 +3588,10 @@ fn decode_embedded_surface_fields(
         } else {
             no_ranges
         };
-        return Some((
+        return Some(Ok((
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded.surface)),
             ranges,
-        ));
+        )));
     }
     let point = take_native_vec3(bytes, position, 0x13)?;
     let point = Point3::new(
@@ -3424,7 +3599,7 @@ fn decode_embedded_surface_fields(
         point[1] * LEN_TO_MM,
         point[2] * LEN_TO_MM,
     );
-    match kind.as_str() {
+    match kind.0.as_str() {
         "plane" => {
             let normal = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let u_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -3435,12 +3610,12 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (origin, frame) = admitted_placement(point, normal, u_axis)?;
-            Some((
+            Some(Ok((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
                     origin, frame,
                 ))),
                 ranges,
-            ))
+            )))
         }
         "cone" => {
             let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -3484,7 +3659,7 @@ fn decode_embedded_surface_fields(
                     Angle::new(sine.abs().atan2(cosine.abs()))?,
                 )))
             };
-            Some((surface, ranges))
+            Some(Ok((surface, ranges)))
         }
         "sphere" => {
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
@@ -3500,14 +3675,14 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some((
+            Some(Ok((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
                     center,
                     frame,
                     NonZeroLength::new(radius)?,
                 ))),
                 ranges,
-            ))
+            )))
         }
         "torus" => {
             let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -3524,7 +3699,7 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some((
+            Some(Ok((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
                     center,
                     frame,
@@ -3532,7 +3707,7 @@ fn decode_embedded_surface_fields(
                     NonZeroLength::new(minor_radius)?,
                 ))),
                 ranges,
-            ))
+            )))
         }
         _ => None,
     }
@@ -3829,44 +4004,56 @@ pub(super) fn optional_helix_revision(cur: &mut Cur<'_>) -> Option<bool> {
 /// Four optional U/V parameter bounds following a surface record's first
 /// top-level subtype scope, or `None` when the record stores no bound fields.
 /// `toks` is the record's payload tokens.
-pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]> {
+pub fn record_trailing_surface_bounds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+) -> Result<Option<[Option<f64>; 4]>, cadmpeg_core::CodecError> {
     // Walk the fixed spline-record header: any leading payload identifiers,
     // attrib ref, history int, geometry ref, sense boolean, then the subtype
     // scope.
     let mut position = 0usize;
-    while toks.get(position).is_some_and(Token::is_payload_ident) {
+    loop {
+        ctx.charge_work(1, "ASM trailing surface bounds prefix")?;
+        if !toks.get(position).is_some_and(Token::is_payload_ident) {
+            break;
+        }
         position += 1;
     }
     if !matches!(toks.get(position), Some(Token::Ref(_))) {
-        return None;
+        return Ok(None);
     }
     position += 1;
     if !matches!(toks.get(position), Some(Token::Long(_))) {
-        return None;
+        return Ok(None);
     }
     position += 1;
     if !matches!(toks.get(position), Some(Token::Ref(_))) {
-        return None;
+        return Ok(None);
     }
     position += 1;
     if !matches!(toks.get(position), Some(Token::True | Token::False)) {
-        return None;
+        return Ok(None);
     }
     position += 1;
     if !matches!(toks.get(position), Some(Token::SubtypeOpen)) {
-        return None;
+        return Ok(None);
     }
-    let scope = crate::nurbs::toks::subtype_span(toks, position)?.tokens();
-    position += scope.len();
+    let Some(scope) = crate::nurbs::toks::subtype_span(toks, position) else {
+        return Ok(None);
+    };
+    position += scope.tokens().len();
     if !matches!(toks.get(position), Some(Token::True | Token::False)) {
-        return None;
+        return Ok(None);
     }
     let mut cur = Cur::at(toks, position);
     let mut bounds = [None; 4];
     for bound in &mut bounds {
-        *bound = cur.take_optional_range_value()?.value();
+        let Some(value) = cur.take_optional_range_value() else {
+            return Ok(None);
+        };
+        *bound = value.value();
     }
-    Some(bounds)
+    Ok(Some(bounds))
 }
 
 pub(crate) fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
@@ -4166,5 +4353,26 @@ mod cache_form_tests {
                 .expect("resource allocation did not fail")
                 .is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod trailing_surface_bounds_work_tests {
+    use super::record_trailing_surface_bounds;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn trailing_surface_bounds_refuses_work_before_prefix_probe() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = record_trailing_surface_bounds(&ctx, &[]).unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM trailing surface bounds prefix");
     }
 }

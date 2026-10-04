@@ -287,7 +287,7 @@ fn decode_matrix(
                 let (global, _global_losses) =
                     crate::test_support::parse_global(&scan).expect("integration global");
                 let (directory, _quarantined) =
-                    crate::directory::parse(&scan, global.global_table(), decode_ctx)
+                    crate::directory::parse(&scan, global.global_table(decode_ctx).unwrap(), decode_ctx)
                         .expect("integration directory");
                 let subject_count = directory
                     .iter()

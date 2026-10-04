@@ -379,12 +379,11 @@ fn equal_arc_length_parameterization(
     let mut first_storage = [0_u8; 64];
     let mut second_storage = [0_u8; 64];
     let first_id =
-        crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
+        crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage, ctx)?;
     let second_id = crate::ids::directory_lookup_key(
         "iges:model:curve#D",
         second_sequence,
-        &mut second_storage,
-    );
+        &mut second_storage, ctx)?;
     let first = ir
         .model
         .curves
@@ -1654,13 +1653,11 @@ pub(super) fn project(
         let first_id = crate::ids::directory_lookup_key(
             "iges:model:curve#D",
             first_sequence,
-            &mut first_storage,
-        );
+            &mut first_storage, ctx)?;
         let second_id = crate::ids::directory_lookup_key(
             "iges:model:curve#D",
             second_sequence,
-            &mut second_storage,
-        );
+            &mut second_storage, ctx)?;
         let rails = (
             match ir
                 .model

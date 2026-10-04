@@ -3,7 +3,11 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use super::{normalize, parse_data_entity, parse_directory_record, parse_field_specs, DataEntity};
+use super::{
+    field_i64, hollerith_at, logical_global_stream, normalize, parse_data_entity,
+    parse_directory_record, parse_field_specs, parse_sequence, split_lines, CompressedField,
+    DataEntity, DirectoryFields,
+};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::test_support::{global_with_version_flag, only_match};
@@ -30,6 +34,156 @@ fn normalize_with_policy(source: &[u8], policy: &DecodePolicy) -> Result<Vec<u8>
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, policy)?;
     normalize(source, &ctx)
+}
+
+fn with_work_limit<T>(
+    source: &[u8],
+    max_work_units: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn assert_work_limit(error: CodecError, operation: &str, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn compressed_line_scan_refuses_work_before_line_probe() {
+    let error = with_work_limit(b"line\n", 0, |ctx| split_lines(b"line\n", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed ASCII line scan", 1);
+}
+
+#[test]
+fn compressed_global_hollerith_count_refuses_utf8_work() {
+    let mut card = [b' '; 80];
+    card[..6].copy_from_slice(b"1H,1H;");
+    let error = with_work_limit(&card, 0, |ctx| {
+        logical_global_stream(&[&card], ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges compressed Global Hollerith count", 1);
+}
+
+#[test]
+fn compressed_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1H,", 0, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Global Hollerith digits", 1);
+}
+
+#[test]
+fn compressed_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1H,", 2, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Global Hollerith count", 1);
+}
+
+#[test]
+fn compressed_sequence_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1", 0, |ctx| parse_sequence(b"1", 0, "test", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed sequence digits", 1);
+}
+
+#[test]
+fn compressed_sequence_number_refuses_utf8_work() {
+    let error = with_work_limit(b"1", 2, |ctx| parse_sequence(b"1", 0, "test", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed sequence number", 1);
+}
+
+#[test]
+fn compressed_directory_specifier_scan_refuses_work_before_specifier() {
+    let error = with_work_limit(b"@1_116", 0, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Directory specifiers", 1);
+}
+
+#[test]
+fn compressed_directory_field_digit_scan_refuses_work_before_digit() {
+    let error = with_work_limit(b"@1_116", 1, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Directory field digits", 1);
+}
+
+#[test]
+fn compressed_directory_field_number_refuses_utf8_work() {
+    let error = with_work_limit(b"@1_116", 3, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Directory field number", 1);
+}
+
+#[test]
+fn compressed_directory_field_value_scan_refuses_work_before_value() {
+    let error = with_work_limit(b"@1_116", 4, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
+    assert_work_limit(error, "iges compressed Directory field value", 1);
+}
+
+#[test]
+fn compressed_directory_record_line_scan_refuses_work_after_sequence_admission() {
+    let lines = [b"D1;".as_slice()];
+    let error = with_work_limit(b"D1;", 3, |ctx| {
+        parse_directory_record(&lines, 0, b';', ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges compressed Directory record lines", 1);
+}
+
+#[test]
+fn compressed_directory_field_text_refuses_utf8_work() {
+    let fields = DirectoryFields(std::array::from_fn(|_| {
+        std::rc::Rc::new(b"1".to_vec())
+    }));
+    let error = with_work_limit(b"1", 0, |ctx| {
+        field_i64(
+            &fields,
+            CompressedField::Shared(crate::directory::DirectoryFieldSlot::EntityType),
+            "entity type",
+            ctx,
+        )
+        .unwrap_err()
+    });
+    assert_work_limit(error, "iges compressed Directory field text", 1);
+}
+
+#[test]
+fn compressed_start_section_scan_refuses_work_before_section_probe() {
+    let source = compressed_points_file();
+    let lines = source_lines(&source);
+    // source_lines retains an empty slice after this fixture's final CRLF; split_lines stops at EOF.
+    let split_line_count = lines.iter().filter(|line| !line.is_empty()).count();
+    // split_lines admits each physical line and every amortized move of its &[u8] index.
+    let preceding_work = split_line_count
+        .checked_add(compressed_line_index_growth_work(split_line_count))
+        .unwrap();
+    let error = with_work_limit(&source, u64::try_from(preceding_work).unwrap(), |ctx| {
+        normalize(&source, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges compressed Start section lines", 1);
+}
+
+#[test]
+fn compressed_global_section_scan_refuses_work_after_start_scan() {
+    let source = compressed_points_file();
+    let lines = source_lines(&source);
+    // source_lines retains an empty slice after this fixture's final CRLF; split_lines stops at EOF.
+    let split_line_count = lines.iter().filter(|line| !line.is_empty()).count();
+    let start_lines = lines
+        .iter()
+        .filter(|line| line.get(72) == Some(&b'S'))
+        .count();
+    let split_line_work = split_line_count
+        .checked_add(compressed_line_index_growth_work(split_line_count))
+        .unwrap();
+    let admitted_work = split_line_work
+        .checked_add(start_lines)
+        .and_then(|work| work.checked_add(1))
+        .unwrap();
+    let error = with_work_limit(&source, u64::try_from(admitted_work).unwrap(), |ctx| {
+        normalize(&source, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges compressed Global section lines", 1);
 }
 
 #[test]
@@ -153,11 +307,54 @@ fn compressed_entity_index_refuses_collection_limit_before_growth() {
 #[test]
 fn compressed_normalization_refuses_work_before_directory_loop() {
     let source = compressed_points_file();
+    let lines = source_lines(&source);
+    let start_lines = lines
+        .iter()
+        .filter(|line| line.get(72) == Some(&b'S'))
+        .count();
+    let global_lines = lines
+        .iter()
+        .filter(|line| line.get(72) == Some(&b'G'))
+        .count();
+    let hollerith_count_lengths = compressed_global_hollerith_count_lengths(&lines);
+    let logical_global_utf8_work = hollerith_count_lengths
+        .iter()
+        .try_fold(0_usize, |work, count| work.checked_add(*count))
+        .unwrap();
+    let delimiter_count_bytes = hollerith_count_lengths
+        .iter()
+        .take(2)
+        .try_fold(0_usize, |work, count| work.checked_add(*count))
+        .unwrap();
+    // The cap admits line splitting and index moves, both section scans and stop probes, Global
+    // count UTF-8 checks, and both delimiter Hollerith scans with their repeated UTF-8 checks.
+    // source_lines retains an empty slice after this fixture's final CRLF; split_lines stops at EOF.
+    let split_line_count = lines.iter().filter(|line| !line.is_empty()).count();
+    let split_line_work = split_line_count
+        .checked_add(compressed_line_index_growth_work(split_line_count))
+        .unwrap();
+    let preceding_work = split_line_work
+        .checked_add(start_lines)
+        .and_then(|work| work.checked_add(1))
+        .and_then(|work| work.checked_add(global_lines))
+        .and_then(|work| work.checked_add(1))
+        .and_then(|work| work.checked_add(logical_global_utf8_work))
+        .and_then(|work| {
+            delimiter_count_bytes
+                .checked_mul(2)
+                .and_then(|delimiter_work| delimiter_work.checked_add(2))
+                .and_then(|delimiter_work| work.checked_add(delimiter_work))
+        })
+        .unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::try_from(source.len() - 1).unwrap();
+    policy.limits.max_work_units = u64::try_from(preceding_work).unwrap();
     let error = normalize_with_policy(&source, &policy).unwrap_err();
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iges_compressed_ascii_normalization")
+        matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == u64::try_from(preceding_work).unwrap()
+                && limit.additional == 1
+                && limit.operation == "iges_compressed_ascii_normalization")
     );
 }
 
@@ -213,6 +410,75 @@ fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
         .filter(|line| !line.is_empty())
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line).to_vec())
         .collect()
+}
+
+fn compressed_line_index_growth_work(line_count: usize) -> usize {
+    let mut lines: Vec<&[u8]> = Vec::new();
+    let mut moved_work = 0_usize;
+    for _ in 0..line_count {
+        let capacity = lines.capacity();
+        let required = lines.len().checked_add(1).unwrap();
+        if required > capacity {
+            let minimum = match std::mem::size_of::<&[u8]>() {
+                1 => 8,
+                2..=1024 => 4,
+                _ => 1,
+            };
+            let target = capacity
+                .checked_mul(2)
+                .unwrap()
+                .max(required)
+                .max(minimum);
+            moved_work = moved_work
+                .checked_add(
+                    capacity
+                        .checked_mul(std::mem::size_of::<&[u8]>())
+                        .unwrap(),
+                )
+                .unwrap();
+            lines
+                .try_reserve_exact(target.checked_sub(lines.len()).unwrap())
+                .unwrap();
+        }
+        lines.push(&[]);
+    }
+    moved_work
+}
+
+fn compressed_global_hollerith_count_lengths(lines: &[Vec<u8>]) -> Vec<usize> {
+    let mut count_lengths = Vec::new();
+    let mut pending_digits = Vec::new();
+    let mut payload_remaining = 0_usize;
+    for line in lines
+        .iter()
+        .filter(|line| line.get(72) == Some(&b'G'))
+    {
+        for byte in &line[..72] {
+            if payload_remaining > 0 {
+                payload_remaining -= 1;
+                continue;
+            }
+            if *byte == b' ' {
+                continue;
+            }
+            if byte.is_ascii_digit() {
+                pending_digits.push(*byte);
+                continue;
+            }
+            if matches!(*byte, b'H' | b'h') && !pending_digits.is_empty() {
+                let count = std::str::from_utf8(&pending_digits)
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                count_lengths.push(pending_digits.len());
+                pending_digits.clear();
+                payload_remaining = count;
+            } else {
+                pending_digits.clear();
+            }
+        }
+    }
+    count_lengths
 }
 
 fn de_value(lines: &[Vec<u8>], field: usize) -> String {

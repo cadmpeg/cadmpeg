@@ -990,39 +990,46 @@ fn reduce_homogeneous_bezier_to_quadratic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: &[[f64; 4]],
 ) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
-    let mut control =
-        propagate_resource!(ctx.collection_vec(input.len(), "ASM rational four-arc control copy"));
-    control.extend_from_slice(input);
-    while control.len() > 3 {
-        let degree = control.len() - 1;
-        let mut reduced = propagate_resource!(
-            ctx.collection_vec(degree, "ASM rational four-arc degree reduction")
-        );
-        reduced.push(control[0]);
-        for index in 1..degree {
-            let alpha = cadmpeg_core::convert::f64_from_index(index)?
-                / cadmpeg_core::convert::f64_from_index(degree)?;
-            let denominator = 1.0 - alpha;
-            reduced.push(std::array::from_fn(|coordinate| {
-                (control[index][coordinate] - alpha * reduced[index - 1][coordinate]) / denominator
-            }));
+    (|| -> Result<Option<[[f64; 4]; 3]>, cadmpeg_core::CodecError> {
+        let mut control = ctx.collection_vec(input.len(), "ASM rational four-arc control copy")?;
+        control.extend_from_slice(input);
+        while control.len() > 3 {
+            ctx.charge_work(1, "ASM rational four-arc reduction work")?;
+            let degree = control.len() - 1;
+            let mut reduced = ctx.collection_vec(degree, "ASM rational four-arc degree reduction")?;
+            reduced.push(control[0]);
+            for index in 1..degree {
+                let (Some(index_value), Some(degree_value)) = (
+                    cadmpeg_core::convert::f64_from_index(index),
+                    cadmpeg_core::convert::f64_from_index(degree),
+                ) else {
+                    return Ok(None);
+                };
+                let alpha = index_value / degree_value;
+                let denominator = 1.0 - alpha;
+                reduced.push(std::array::from_fn(|coordinate| {
+                    (control[index][coordinate] - alpha * reduced[index - 1][coordinate])
+                        / denominator
+                }));
+            }
+            if reduced.iter().flatten().any(|value| !value.is_finite()) {
+                return Ok(None);
+            }
+            if (0..4).any(|coordinate| {
+                let scale = control
+                    .iter()
+                    .map(|point| point[coordinate].abs())
+                    .fold(0.0, f64::max);
+                (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
+                    > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
+            }) {
+                return Ok(None);
+            }
+            control = reduced;
         }
-        if reduced.iter().flatten().any(|value| !value.is_finite()) {
-            return None;
-        }
-        if (0..4).any(|coordinate| {
-            let scale = control
-                .iter()
-                .map(|point| point[coordinate].abs())
-                .fold(0.0, f64::max);
-            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
-                > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
-        }) {
-            return None;
-        }
-        control = reduced;
-    }
-    control.try_into().ok().map(Ok)
+        Ok(control.try_into().ok())
+    })()
+    .transpose()
 }
 
 pub(super) fn point_vector(origin: Point3, point: Point3) -> Vector3 {
@@ -1316,6 +1323,26 @@ mod tests {
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     }
+    #[test]
+    fn rational_circle_degree_reduction_refuses_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
+        let error = super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+            .expect("degree-four input")
+            .expect_err("degree reduction exceeds admitted work");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM rational four-arc reduction work");
+    }
+
     #[test]
     fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
         for scale in [1.0, SMALL_CURVED_SPINE_EXTENT, 1.0e100] {

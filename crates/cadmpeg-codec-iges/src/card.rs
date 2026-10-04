@@ -431,6 +431,7 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
     let mut start = 0_usize;
     let mut terminated = false;
     while start < source.len() {
+        ctx.charge_work(1, "iges physical line traversal")?;
         let relative_end = memchr::memchr2(b'\r', b'\n', &source[start..]);
         let (payload_end, ending, next) = match relative_end {
             Some(relative) => {
@@ -634,9 +635,11 @@ fn terminate_counts(
         (b'P', Section::Parameter),
     ];
     for (field, (marker, section)) in data.chunks_exact(8).zip(expected) {
-        let declared = (field[0] == marker)
-            .then(|| std::str::from_utf8(&field[1..]).ok().map(str::trim))
-            .flatten()
+        let declared = if field[0] == marker {
+            ctx.validate_utf8(&field[1..], "iges terminate count text")?.ok().map(str::trim)
+        } else {
+            None
+        }
             .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
             .and_then(|text| text.parse::<usize>().ok());
         let census = lines

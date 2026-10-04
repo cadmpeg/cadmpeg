@@ -38,14 +38,16 @@ fn admit_analytic<T>(
     }
 }
 
-fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
+fn point(ir: &CadIr, sequence: u32, ctx: &DecodeContext<'_>) -> Result<Option<Point3>, CodecError> {
     let mut storage = [0_u8; 64];
-    let id = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage)?;
-    ir.model
+    let Some(id) = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage, ctx)? else {
+        return Ok(None);
+    };
+    Ok(ir.model
         .points
         .iter()
         .find(|point| point.id.as_str() == id)
-        .map(|point| point.position().get())
+        .map(|point| point.position().get()))
 }
 
 #[derive(Debug)]
@@ -314,7 +316,11 @@ pub(super) fn project(
             }
         };
         let location_index = pointer(record, 1);
-        let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
+        let location = match location_index {
+            Some(sequence) => point(ir, sequence, ctx)?,
+            None => None,
+        };
+        let Some(location) = location else {
             push_entity_loss(
                 ctx,
                 &mut losses,

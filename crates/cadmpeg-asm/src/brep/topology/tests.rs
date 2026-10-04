@@ -8,7 +8,7 @@ use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     Record {
@@ -30,6 +30,87 @@ fn with_collection_limit<T>(
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     f(&ctx)
+}
+
+fn with_work_limit<T>(
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = limit;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    f(&ctx)
+}
+
+fn assert_work_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
+    use cadmpeg_core::decode::ResourceDimension;
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected work refusal: {error:?}")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, operation);
+}
+
+fn indexed_records(records: &[Record]) -> HashMap<i64, &Record> {
+    records
+        .iter()
+        .map(|record| (i64::try_from(record.index).unwrap(), record))
+        .collect()
+}
+
+fn reachable_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    faces: HashSet<i64>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let by_index = indexed_records(records);
+    let token_table = crate::nurbs::toks::SubtypeTable::from_records(ctx, records)?;
+    let mut out = AsmBrep::default();
+    let mut carriers = Carriers::default();
+    let mut reach = Reachable {
+        faces,
+        ..Reachable::default()
+    };
+    super::walk_reachable_topology(
+        TopologyContext {
+            ctx,
+            by_index: &by_index,
+            token_table: &token_table,
+            purpose: DecodePurpose::History,
+            format: crate::asm_format!("f3d"),
+        },
+        &mut out,
+        &mut carriers,
+        &mut reach,
+    )
+}
+
+fn wire_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let by_index = indexed_records(records);
+    let token_table = crate::nurbs::toks::SubtypeTable::from_records(ctx, records)?;
+    let mut out = AsmBrep::default();
+    let mut carriers = Carriers::default();
+    let mut reach = Reachable::default();
+    super::collect_wire_topology(
+        TopologyContext {
+            ctx,
+            by_index: &by_index,
+            token_table: &token_table,
+            purpose: DecodePurpose::Model,
+            format: crate::asm_format!("f3d"),
+        },
+        &mut out,
+        records,
+        None,
+        &mut carriers,
+        &mut reach,
+    )
+    .map(|_| ())
 }
 
 fn assert_collection_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
@@ -186,6 +267,201 @@ fn region_chain_refuses_collection_limit() {
         super::region_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
     });
     assert_collection_refusal(&error, "ASM body regions");
+}
+
+#[test]
+fn reachable_face_loop_walk_refuses_work() {
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1, -1, -1, -1, -1]),
+    ];
+    let error = with_work_limit(2, |ctx| {
+        reachable_topology(ctx, &records, HashSet::from([0])).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM reachable face loop walk");
+}
+
+#[test]
+fn reachable_coedge_ring_walk_refuses_work() {
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
+        ref_record(2, "coedge", &[-1, -1, -1, -1]),
+    ];
+    let error = with_work_limit(35, |ctx| {
+        reachable_topology(ctx, &records, HashSet::from([0])).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM reachable coedge ring walk");
+}
+
+#[test]
+fn shell_wire_chain_walk_refuses_work() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]),
+        ref_record(1, "wire", &[-1; 8]),
+    ];
+    let error = with_work_limit(3, |ctx| wire_topology(ctx, &records).unwrap_err());
+    assert_work_refusal(&error, "ASM shell wire chain walk");
+}
+
+#[test]
+fn wire_coedge_ring_walk_refuses_work() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]),
+        ref_record(1, "wire", &[-1, -1, -1, -1, 2, -1, -1, -1]),
+        ref_record(2, "coedge", &[-1; 7]),
+    ];
+    let error = with_work_limit(20, |ctx| wire_topology(ctx, &records).unwrap_err());
+    assert_work_refusal(&error, "ASM wire coedge ring walk");
+}
+
+#[test]
+fn ring_coedges_walk_refuses_work() {
+    let records = [
+        ref_record(0, "loop", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "coedge", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::ring_coedges(
+            ctx,
+            &records[0],
+            &by_index,
+            &HashSet::from([1]),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM ring coedges walk");
+}
+
+#[test]
+fn loop_chain_walk_refuses_work() {
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::loop_chain(
+            ctx,
+            &records[0],
+            &by_index,
+            &HashSet::from([1]),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM face loop chain walk");
+}
+
+#[test]
+fn face_chain_walk_refuses_work() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, -1, 1]),
+        ref_record(1, "face", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::face_chain(
+            ctx,
+            &records[0],
+            &by_index,
+            &HashSet::from([1]),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM shell face chain walk");
+}
+
+#[test]
+fn subshell_ancestor_walk_refuses_work() {
+    let records = [
+        ref_record(0, "subshell", &[-1, -1, -1, 1]),
+        ref_record(1, "shell", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::subshell_ancestor_shells(ctx, &records, &by_index).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM subshell ancestor walk");
+}
+
+#[test]
+fn shell_faces_walk_refuses_work() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, 1, -1]),
+        ref_record(1, "subshell", &[-1; 8]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(2, |ctx| {
+        super::shell_faces(
+            ctx,
+            &records[0],
+            &by_index,
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM shell faces walk");
+}
+
+#[test]
+fn shell_wire_roots_walk_refuses_work() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, 1, -1, -1]),
+        ref_record(1, "subshell", &[-1; 8]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(3, |ctx| {
+        super::shell_wire_roots(ctx, &records[0], &by_index).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM shell wire roots walk");
+}
+
+#[test]
+fn subshell_face_chain_walk_refuses_work() {
+    let records = [ref_record(0, "face", &[-1; 4])];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::face_chain_from(
+            ctx,
+            Some(0),
+            &by_index,
+            &HashSet::from([0]),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM subshell face chain walk");
+}
+
+#[test]
+fn region_shell_chain_walk_refuses_work() {
+    let records = [
+        ref_record(0, "region", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "shell", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::shell_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM region shell chain walk");
+}
+
+#[test]
+fn body_region_chain_walk_refuses_work() {
+    let records = [
+        ref_record(0, "body", &[-1, -1, -1, 1]),
+        ref_record(1, "region", &[-1; 4]),
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit(0, |ctx| {
+        super::region_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
+    });
+    assert_work_refusal(&error, "ASM body region chain walk");
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {

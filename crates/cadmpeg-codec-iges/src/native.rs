@@ -2406,6 +2406,7 @@ pub(crate) fn store(
     limits: ProductOccurrenceLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
+    let global_table = global.global_table(ctx)?;
     let NativeStoreInputs {
         scan,
         directory,
@@ -2551,7 +2552,7 @@ pub(crate) fn store(
                 crate::parameter::entity_primary_end_for_global_table(
                     record,
                     &entries,
-                    global.global_table(),
+                    global_table,
                 )
                 .unwrap_or(record.parameter_end()),
             )
@@ -2976,7 +2977,7 @@ pub(crate) fn store(
                 view: entry.view,
                 line_weight_number: entry.line_weight,
                 line_weight_mm: global
-                    .length_context()
+                    .length_context(ctx)?
                     .and_then(|context| context.line_weight_mm(entry.line_weight)),
                 color: resolve_display_ref(
                     ctx,
@@ -5246,7 +5247,7 @@ pub(crate) fn store(
                                             ExpectationLabel::NonAssociativityOrType402Form7,
                                         ),
                                         |target| {
-                                            flow_join_target_valid(target, global.global_table())
+                                            flow_join_target_valid(target, global_table)
                                         },
                                     )
                                 })
@@ -6236,7 +6237,7 @@ pub(crate) fn store(
                     let entity_count = record.and_then(|record| {
                         crate::parameter::view_visibility_entity_count(
                             record,
-                            global.global_table(),
+                            global_table,
                         )
                     })?;
                     let entity_start = 3_usize.checked_add(view_count.checked_mul(width)?)?;
@@ -6575,7 +6576,7 @@ pub(crate) fn store(
                                         ExpectationLabel::DrawingSpaceAnnotation,
                                     ),
                                     |target| {
-                                        target.status.use_flag(global.global_table())
+                                        target.status.use_flag(global_table)
                                             == Some(UseFlag::Annotation)
                                             && target.status.is_physically_dependent()
                                     },
@@ -6627,14 +6628,14 @@ pub(crate) fn store(
         &parameter_resolver,
         &clamped_primary_end,
         &mut overdeclared_counts,
-        global.global_table(),
+        global_table,
         ctx,
     )?;
     let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
     let occurrence_length_factor = global
-        .length_context()
+        .length_context(ctx)?
         .map(|context| context.length_factor_mm());
     let mut malformed_definition_sequences = Vec::new();
     let mut all_occurrence_definitions = BTreeMap::new();

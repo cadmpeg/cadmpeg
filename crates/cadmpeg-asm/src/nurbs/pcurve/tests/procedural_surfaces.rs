@@ -1157,8 +1157,13 @@ fn spring_layout_walks_both_integer_widths() {
         let direction = bytes.len();
         push_int(&mut bytes, 0x15, -3, int_width);
 
-        let layout = spring_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("spring layout at width {int_width}"));
+        let layout = spring_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("spring layout at width {int_width}"));
         assert_eq!(layout.direction, direction);
         assert_eq!(
             layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
@@ -1200,8 +1205,13 @@ fn three_surface_layout_walks_both_integer_widths() {
         bytes.extend_from_slice(&surface_block(int_width));
         bytes.extend_from_slice(&pcurve_block(int_width));
 
-        let layout = three_surface_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("three-surface layout at width {int_width}"));
+        let layout = three_surface_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("three-surface layout at width {int_width}"));
         assert_eq!(layout.selector, selector);
         assert_eq!(
             layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
@@ -1247,8 +1257,14 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
                 }
             }
 
-            let layout = surface_curve_patch_layout(&bytes, int_width, family)
-                .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+            let layout = surface_curve_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                int_width,
+                family,
+            )
+            .expect("decode work admission")
+            .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(
                 layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
                 3
@@ -1290,8 +1306,13 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
             let flag = bytes.len();
             bytes.push(0x0a);
 
-            let layout = intersection_patch_layout(&bytes, int_width)
-                .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+            let layout = intersection_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                int_width,
+            )
+            .expect("decode work admission")
+            .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(layout.discontinuity_flag, flag);
             assert_eq!(
                 layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
@@ -1686,8 +1707,13 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                 bytes.extend_from_slice(b"surf1");
             }
 
-            let layout = projection_patch_layout(&bytes, int_width)
-                .unwrap_or_else(|| panic!("projection layout at width {int_width}"));
+            let layout = projection_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                int_width,
+            )
+            .expect("decode work admission")
+            .unwrap_or_else(|| panic!("projection layout at width {int_width}"));
             assert_eq!(layout.discontinuity_flag, context_flag);
             match layout.tail {
                 ProjectionTailPatchLayout::EarlyClose { flag } => {
@@ -1703,7 +1729,13 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                         let mut malformed = bytes[..role.start - 1].to_vec();
                         malformed.push(u8::try_from(word.len()).expect("test value fits"));
                         malformed.extend_from_slice(word);
-                        assert!(projection_patch_layout(&malformed, int_width).is_none());
+                        assert!(projection_patch_layout(
+                            &cadmpeg_test_support::service_decode_context(),
+                            &malformed,
+                            int_width,
+                        )
+                        .expect("decode work admission")
+                        .is_none());
                         let record = crate::sab::Record {
                             index: 0,
                             name: "intcurve".into(),
@@ -1736,6 +1768,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                         let before = malformed.clone();
                         assert!(matches!(
                             edits.patch_procedural_curve_definition(
+                                &cadmpeg_test_support::service_decode_context(),
                                 &mut malformed,
                                 &record,
                                 &definition
@@ -1802,8 +1835,14 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
                 push_f64(&mut bytes, 0.5);
             }
 
-            let layout = silhouette_patch_layout(&bytes, int_width, &kind)
-                .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+        let layout = silhouette_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+            &kind,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(layout.light_direction, light);
             assert_eq!(layout.draft_factor.is_some(), name.starts_with("taper"));
         }
@@ -1850,8 +1889,13 @@ fn surface_offset_layout_walks_both_integer_widths() {
             push_f64(&mut bytes, value);
         }
 
-        let layout = surface_offset_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("surface-offset layout at width {int_width}"));
+        let layout = surface_offset_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("surface-offset layout at width {int_width}"));
         assert_eq!(layout.discontinuity_flag, flag);
         assert_eq!(
             layout.discontinuities.iter().map(Vec::len).sum::<usize>(),

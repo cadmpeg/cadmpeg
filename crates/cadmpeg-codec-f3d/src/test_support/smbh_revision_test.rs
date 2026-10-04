@@ -195,10 +195,12 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         .position(|&byte| byte == 0x0f)
         .expect("subtype opening");
     cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &service_decode_context(),
         &bytes,
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
+    .expect("decode work admission")
     .expect("subtype span")
     .bytes()
     .to_vec()
@@ -221,10 +223,12 @@ pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let slice = &smbh[record.offset..record.offset + record.len];
     let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
     cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &service_decode_context(),
         slice,
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
+    .expect("decode work admission")
     .unwrap()
     .bytes()
     .to_vec()

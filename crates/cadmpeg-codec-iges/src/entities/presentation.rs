@@ -41,7 +41,7 @@ fn retained_utf8(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<Option<String>, CodecError> {
-    let Ok(value) = std::str::from_utf8(bytes) else {
+    let Ok(value) = ctx.validate_utf8(bytes, operation)? else {
         return Ok(None);
     };
     Ok(Some(
@@ -721,23 +721,38 @@ pub(super) fn project(
         else {
             continue;
         };
-        let mut names = groups.properties().iter().filter_map(|pointer| {
-            entries
-                .get(pointer)
-                .filter(|entry| entry.entity_type == 406 && entry.form == 15)?;
-            let record = records.get(pointer)?;
-            (record.integer(1) == Some(1))
-                .then(|| record.string(2))
-                .flatten()
-                .filter(|name| !name.is_empty())
-                .filter(|name| {
-                    name.iter()
-                        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-                })
-                .and_then(|name| std::str::from_utf8(name).ok())
-        });
-        let first = names.next();
-        if first.is_some_and(|first| names.any(|name| name != first)) {
+        let mut first = None;
+        let mut conflicting = false;
+        for pointer in groups.properties() {
+            let name = (|| {
+                entries
+                    .get(pointer)
+                    .filter(|entry| entry.entity_type == 406 && entry.form == 15)?;
+                let record = records.get(pointer)?;
+                (record.integer(1) == Some(1))
+                    .then(|| record.string(2))
+                    .flatten()
+                    .filter(|name| !name.is_empty())
+                    .filter(|name| {
+                        name.iter().all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+                    })
+            })();
+            let Some(name) = name else {
+                continue;
+            };
+            let Ok(name) = ctx.validate_utf8(name, "iges body property name validation")? else {
+                continue;
+            };
+            match first {
+                Some(first) if name != first => {
+                    conflicting = true;
+                    break;
+                }
+                None => first = Some(name),
+                Some(_) => {}
+            }
+        }
+        if conflicting {
             if let Some(entry) = entries.get(&sequence) {
                 push_attributed_loss(
                     ctx,

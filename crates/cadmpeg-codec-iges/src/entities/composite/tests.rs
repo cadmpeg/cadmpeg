@@ -1879,3 +1879,60 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
 
 mod attachments;
 mod carrier_projection;
+
+#[test]
+fn bezier_degree_elevation_refuses_loop_work() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 2.0, 0.0, 0.0]];
+    let service_arena = DecodeArena::new();
+    let service_policy = DecodePolicy::service();
+    let service_ctx = DecodeContext::new(&service_arena, &service_policy, false);
+    assert!(super::elevate_bezier_homogeneous(&service_ctx, &controls, 1, 2)
+        .unwrap()
+        .is_some());
+    let error = super::elevate_bezier_homogeneous(&ctx, &controls, 1, 2).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "iges composite Bezier degree elevation"));
+}
+
+fn assert_work_refusal<T>(
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    let mut cap = 0_u64;
+    for _ in 0..128 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
+        match run(&ctx) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Err(error) => panic!("unexpected error before {operation}: {error}"),
+            Ok(_) => panic!("operation {operation} was not admitted"),
+        }
+    }
+    panic!("operation {operation} was not reached");
+}
+
+#[test]
+fn composite_trim_multiplicity_refuses_work_before_scan() {
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+    );
+    assert_work_refusal("iges composite trim knot multiplicity", |ctx| {
+        super::trim_nurbs_lanes(ctx, &curve, [0.25, 0.75])
+    });
+}

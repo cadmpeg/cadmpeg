@@ -372,6 +372,7 @@ pub(super) fn walk_reachable_topology(
         let mut loop_ref = face.ref_at(4);
         let mut loop_guard = HashSet::new();
         while let Some(li) = loop_ref {
+            ctx.charge_work(1, "ASM reachable face loop walk")?;
             if !ctx.insert_hash_set(&mut loop_guard, li, "ASM topology loop_guard")? {
                 break;
             }
@@ -385,6 +386,7 @@ pub(super) fn walk_reachable_topology(
                 let mut ce_ref = Some(first_ce);
                 let mut ce_guard = HashSet::new();
                 while let Some(ci) = ce_ref {
+                    ctx.charge_work(1, "ASM reachable coedge ring walk")?;
                     if !ctx.insert_hash_set(&mut ce_guard, ci, "ASM topology ce_guard")? {
                         break;
                     }
@@ -693,6 +695,7 @@ pub(super) fn collect_wire_topology(
         for root in shell_wire_roots(ctx, shell, by_index)? {
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref {
+                ctx.charge_work(1, "ASM shell wire chain walk")?;
                 if !ctx.insert_hash_set(&mut wire_guard, wire_index, "ASM topology wire_guard")? {
                     break;
                 }
@@ -712,6 +715,7 @@ pub(super) fn collect_wire_topology(
                     let mut coedge_ref = Some(first_coedge);
                     let mut coedge_guard = HashSet::new();
                     while let Some(coedge_index) = coedge_ref {
+                        ctx.charge_work(1, "ASM wire coedge ring walk")?;
                         if !ctx.insert_hash_set(
                             &mut coedge_guard,
                             coedge_index,
@@ -1033,6 +1037,7 @@ pub(super) fn ring_coedges(
     let mut cur = Some(first);
     let mut guard = HashSet::new();
     while let Some(ci) = cur {
+        ctx.charge_work(1, "ASM ring coedges walk")?;
         if !ctx.insert_hash_set(&mut guard, ci, "ASM topology guard")? || !kept.contains(&ci) {
             break;
         }
@@ -1058,6 +1063,7 @@ pub(super) fn loop_chain(
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
     while let Some(li) = cur {
+        ctx.charge_work(1, "ASM face loop chain walk")?;
         if !ctx.insert_hash_set(&mut guard, li, "ASM topology guard")? {
             break;
         }
@@ -1082,6 +1088,7 @@ fn face_chain(
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
     while let Some(fi) = cur {
+        ctx.charge_work(1, "ASM shell face chain walk")?;
         if !ctx.insert_hash_set(&mut guard, fi, "ASM topology guard")? {
             break;
         }
@@ -1104,6 +1111,7 @@ pub(super) fn subshell_ancestor_shells(
         let mut owner = record.ref_at(3);
         let mut guard = HashSet::new();
         while let Some(index) = owner {
+            ctx.charge_work(1, "ASM subshell ancestor walk")?;
             if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
                 break;
             }
@@ -1145,6 +1153,7 @@ pub(super) fn shell_faces(
     let mut pending = ctx.collect_vec(shell.ref_at(4), "ASM pending subshells")?;
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
+        ctx.charge_work(1, "ASM shell faces walk")?;
         if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
             break;
         }
@@ -1176,6 +1185,7 @@ pub(super) fn shell_wire_roots(
     let mut pending = ctx.collect_vec(shell.ref_at(4), "ASM pending subshells")?;
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
+        ctx.charge_work(1, "ASM shell wire roots walk")?;
         if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
             break;
         }
@@ -1208,6 +1218,7 @@ fn face_chain_from(
     let mut out = Vec::new();
     let mut guard = HashSet::new();
     while let Some(index) = current {
+        ctx.charge_work(1, "ASM subshell face chain walk")?;
         if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
             break;
         }
@@ -1233,6 +1244,7 @@ pub(super) fn shell_chain(
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
     while let Some(si) = cur {
+        ctx.charge_work(1, "ASM region shell chain walk")?;
         if !ctx.insert_hash_set(&mut guard, si, "ASM topology guard")? {
             break;
         }
@@ -1254,6 +1266,7 @@ pub(super) fn region_chain(
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();
     while let Some(li) = cur {
+        ctx.charge_work(1, "ASM body region chain walk")?;
         if !ctx.insert_hash_set(&mut guard, li, "ASM topology guard")? {
             break;
         }

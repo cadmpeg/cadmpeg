@@ -4,6 +4,7 @@
 use crate::card;
 use crate::layout::binary_flag;
 use cadmpeg_core::{CodecError, ReadSeek};
+use cadmpeg_core::decode::{DecodeContext, u64_from_index};
 use cadmpeg_ir::codec::Confidence;
 use std::io::{ErrorKind, SeekFrom};
 
@@ -80,12 +81,15 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
     }
 }
 
-pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Option<Representation>, CodecError> {
+pub(crate) fn classify<R: ReadSeek>(reader: &mut R, ctx: &DecodeContext<'_>) -> Result<Option<Representation>, CodecError> {
     let position = reader.stream_position()?;
     let mut prefix = [0; DETECTION_PREFIX_BYTES];
     let mut count = 0;
     while count < prefix.len() {
-        match reader.read(&mut prefix[count..]) {
+        ctx.charge_work(1, "iges representation prefix traversal")?;
+        let window = &mut prefix[count..];
+        ctx.charge_work(u64_from_index(window.len()), "iges representation prefix read")?;
+        match reader.read(window) {
             Ok(0) => break,
             Ok(read) => count += read,
             Err(error) if error.kind() == ErrorKind::Interrupted => {}

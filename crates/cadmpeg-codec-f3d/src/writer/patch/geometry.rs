@@ -126,8 +126,8 @@ fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
 }
 
 pub(super) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
-        patch_asm_geometry(bytes, asm_edits, edits)
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
+        patch_asm_geometry(ctx, bytes, asm_edits, edits)
     })
 }
 
@@ -138,18 +138,20 @@ pub(in crate::writer) fn patch_framed_geometry(
     edits: &GeometryEdits,
     header_scale: f64,
 ) -> Result<(), CodecError> {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let asm_edits = AsmEditSet::from_framed(
         records.to_vec(),
-        cadmpeg_asm::asm_header::parse(&cadmpeg_test_support::service_decode_context(), bytes)?
+        cadmpeg_asm::asm_header::parse(&ctx, bytes)?
             .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
                 header.width
             }),
         header_scale,
     );
-    patch_asm_geometry(bytes, &asm_edits, edits)
+    patch_asm_geometry(&ctx, bytes, &asm_edits, edits)
 }
 
 fn patch_asm_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &mut [u8],
     asm_edits: &AsmEditSet,
     edits: &GeometryEdits,
@@ -276,7 +278,7 @@ fn patch_asm_geometry(
                     record.index
                 )));
             }
-            let offset = asm_edits.required_payload_field(bytes, record, family + 2, 0x06)?;
+            let offset = asm_edits.required_payload_field(ctx, bytes, record, family + 2, 0x06)?;
             AsmEditSet::patch_f64_payload(bytes, offset + 1, *timestamp)?;
             continue;
         }
@@ -287,8 +289,8 @@ fn patch_asm_geometry(
                     record.index
                 )));
             }
-            asm_edits.patch_sense_field(bytes, record, 9, *sense)?;
-            asm_edits.patch_ascii_field(bytes, record, 10, continuity)?;
+            asm_edits.patch_sense_field(ctx, bytes, record, 9, *sense)?;
+            asm_edits.patch_ascii_field(ctx, bytes, record, 10, continuity)?;
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
             if !matches!(record.head(), "vertex" | "tvertex") {
@@ -301,7 +303,7 @@ fn patch_asm_geometry(
                 (3usize, 0x0c, *owning_edge),
                 (4, 0x04, i64::from(endpoint_index.code())),
             ] {
-                asm_edits.patch_integer_field(bytes, record, index, tag, value)?;
+                asm_edits.patch_integer_field(ctx, bytes, record, index, tag, value)?;
             }
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
@@ -315,7 +317,7 @@ fn patch_asm_geometry(
                 cadmpeg_asm::brep::records::FaceContainment::In => Sense::Reversed,
                 cadmpeg_asm::brep::records::FaceContainment::Out => Sense::Forward,
             };
-            asm_edits.patch_sense_field(bytes, record, 10, sense)?;
+            asm_edits.patch_sense_field(ctx, bytes, record, 10, sense)?;
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
             if record.head() != "tvertex" {
@@ -327,7 +329,7 @@ fn patch_asm_geometry(
             // The record's three f64 tolerance slots: the two leading slots
             // verbatim and the evaluated tolerance last.
             for (index, value) in [(6usize, leading[0]), (7, leading[1]), (8, *tolerance)] {
-                let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
+                let offset = asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
                 AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
             }
         }
@@ -341,7 +343,7 @@ fn patch_asm_geometry(
                     record.index
                 )));
             }
-            let offset = asm_edits.required_payload_field(bytes, record, 11, 0x06)?;
+            let offset = asm_edits.required_payload_field(ctx, bytes, record, 11, 0x06)?;
             AsmEditSet::patch_f64_payload(bytes, offset + 1, *tolerance)?;
         }
         if let Some((color, carrier)) = color_records.get(&record.index) {
@@ -353,36 +355,37 @@ fn patch_asm_geometry(
                         f64::from(color.b()),
                     ]) {
                         let offset =
-                            asm_edits.required_payload_field(bytes, record, index, 0x06)?;
+                            asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
                         AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                     }
                 }
                 DirectColorCarrier::AutodeskTrueColor { field } => {
                     let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
                     let packed = assemble_u32_be([0xc2, red, green, blue]);
-                    asm_edits.patch_truecolor_field(bytes, record, *field, packed)?;
+                    asm_edits.patch_truecolor_field(ctx, bytes, record, *field, packed)?;
                 }
                 DirectColorCarrier::DecimalRgb { field } => {
                     let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
                     let packed = assemble_u32_be([0, red, green, blue]);
-                    asm_edits.patch_decimal_rgb_field(bytes, record, *field, packed)?;
+                    asm_edits.patch_decimal_rgb_field(ctx, bytes, record, *field, packed)?;
                 }
             }
             continue;
         }
         if let Some(transform) = transform_records.get(&record.index) {
-            asm_edits.patch_transform(bytes, record, *transform)?;
+            asm_edits.patch_transform(ctx, bytes, record, *transform)?;
             continue;
         }
         let id = crate::ids::brep_entity_id(record.index);
         if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
-            asm_edits.patch_pcurve(bytes, record, *edit)?;
+            asm_edits.patch_pcurve(ctx, bytes, record, *edit)?;
         }
         if let Some(edit) = pcurves.get(&id) {
-            asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
+            asm_edits.patch_pcurve(ctx, bytes, record, asm_pcurve_edit(edit))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
             asm_edits.patch_nurbs_curve(
+                ctx,
                 bytes,
                 record,
                 asm_nurbs_curve_edit(edit),
@@ -407,6 +410,7 @@ fn patch_asm_geometry(
                 )?;
                 native_curve.reverse_parameterization(&writer_ctx)?;
                 asm_edits.patch_nurbs_curve(
+                    ctx,
                     bytes,
                     record,
                     AsmNurbsCurveEdit {
@@ -417,6 +421,7 @@ fn patch_asm_geometry(
                 )?;
             } else {
                 asm_edits.patch_nurbs_curve(
+                    ctx,
                     bytes,
                     record,
                     asm_nurbs_curve_edit(edit),
@@ -427,15 +432,16 @@ fn patch_asm_geometry(
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
         if let Some(edit) = procedural_curve_edits.get(&procedural_curve_id) {
             if let Some(tolerance) = edit.fit_tolerance() {
-                asm_edits.patch_procedural_curve_fit(bytes, record, tolerance)?;
+                asm_edits.patch_procedural_curve_fit(ctx, bytes, record, tolerance)?;
             }
             if let Some(definition) = edit.definition() {
-                asm_edits.patch_procedural_curve_definition(bytes, record, definition)?;
+                asm_edits.patch_procedural_curve_definition(ctx, bytes, record, definition)?;
             }
         }
         let directrix_id = format!("f3d:brep:procedural_surface#{}:directrix", record.index);
         if let Some(edit) = nurbs_curves.get(&directrix_id) {
             asm_edits.patch_nurbs_curve(
+                ctx,
                 bytes,
                 record,
                 asm_nurbs_curve_edit(edit),
@@ -445,6 +451,7 @@ fn patch_asm_geometry(
         let spine_id = format!("f3d:brep:procedural_surface#{}:spine", record.index);
         if let Some(edit) = nurbs_curves.get(&spine_id) {
             asm_edits.patch_nurbs_curve(
+                ctx,
                 bytes,
                 record,
                 asm_nurbs_curve_edit(edit),
@@ -452,12 +459,13 @@ fn patch_asm_geometry(
             )?;
         }
         if let Some(edit) = nurbs_surfaces.get(&id) {
-            asm_edits.patch_nurbs_surface(bytes, record, asm_nurbs_surface_edit(edit), None)?;
+            asm_edits.patch_nurbs_surface(ctx, bytes, record, asm_nurbs_surface_edit(edit), None)?;
         }
         for side in 0..2 {
             let support_id = format!("f3d:brep:procedural_surface#{}:support{side}", record.index);
             if let Some(edit) = nurbs_surfaces.get(&support_id) {
                 asm_edits.patch_nurbs_surface(
+                    ctx,
                     bytes,
                     record,
                     asm_nurbs_surface_edit(edit),
@@ -467,7 +475,7 @@ fn patch_asm_geometry(
         }
         let procedural_id = format!("f3d:brep:procedural_surface#{}", record.index);
         if let Some(tolerance) = procedural_surface_fits.get(&procedural_id) {
-            asm_edits.patch_procedural_surface_fit(bytes, record, *tolerance)?;
+            asm_edits.patch_procedural_surface_fit(ctx, bytes, record, *tolerance)?;
         }
         if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
             if record.head() != "spline" {
@@ -482,6 +490,7 @@ fn patch_asm_geometry(
                     native_position,
                 } => {
                     asm_edits.patch_extrusion_definition(
+                        ctx,
                         bytes,
                         record,
                         *parameter_interval,
@@ -490,28 +499,28 @@ fn patch_asm_geometry(
                     )?;
                 }
                 ProceduralSurfaceEdit::BlendRadii(radii) => {
-                    asm_edits.patch_blend_radii(bytes, record, *radii)?;
+                    asm_edits.patch_blend_radii(ctx, bytes, record, *radii)?;
                 }
             }
         }
         if record.head() == "face" {
             if let Some(sense) = face_senses.get(&id) {
-                asm_edits.patch_sense_field(bytes, record, 8, *sense)?;
+                asm_edits.patch_sense_field(ctx, bytes, record, 8, *sense)?;
             }
         } else if matches!(record.head(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
-                asm_edits.patch_sense_field(bytes, record, 7, *sense)?;
+                asm_edits.patch_sense_field(ctx, bytes, record, 7, *sense)?;
             }
         } else if matches!(record.head(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
                 for (index, value) in [(4usize, range[0]), (6, range[1])] {
-                    let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
+                    let offset = asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
         } else if record.head() == "point" {
             if let Some(position) = positions.get(&id) {
-                let offset = asm_edits.required_payload_field(bytes, record, 3, 0x13)?;
+                let offset = asm_edits.required_payload_field(ctx, bytes, record, 3, 0x13)?;
                 for (component, value) in [
                     position.x / LEN_TO_MM,
                     position.y / LEN_TO_MM,
@@ -537,8 +546,8 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x14)?,
                 ];
                 for (offset, values) in fields.into_iter().zip([
                     [
@@ -566,7 +575,7 @@ fn patch_asm_geometry(
                         )))
                     }
                 };
-                let offset = asm_edits.required_payload_field(bytes, record, field_index, 0x13)?;
+                let offset = asm_edits.required_payload_field(ctx, bytes, record, field_index, 0x13)?;
                 for (component, value) in [
                     point.x / LEN_TO_MM,
                     point.y / LEN_TO_MM,
@@ -592,12 +601,12 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[2], 0x14)?,
                 ];
                 let (ratio_offset, old_ratio) =
-                    asm_edits.required_payload_double(bytes, record, field_indices[3])?;
+                    asm_edits.required_payload_double(ctx, bytes, record, field_indices[3])?;
                 let major = major_radius / LEN_TO_MM;
                 for (offset, values) in fields.iter().zip([
                     [
@@ -638,9 +647,9 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[2], 0x14)?,
                 ];
                 for (offset, values) in fields.into_iter().zip([
                     [
@@ -670,10 +679,10 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x06)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[2], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[3], 0x14)?,
                 ];
                 for (offset, values) in [fields[0], fields[2], fields[3]].into_iter().zip([
                     [
@@ -704,11 +713,11 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[2], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[4], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[2], 0x06)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[3], 0x06)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[4], 0x14)?,
                 ];
                 for (offset, values) in [fields[0], fields[1], fields[4]].into_iter().zip([
                     [
@@ -744,18 +753,18 @@ fn patch_asm_geometry(
                     }
                 };
                 let fields = [
-                    asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[0], 0x13)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[1], 0x14)?,
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[2], 0x14)?,
                 ];
                 let ratio_offset =
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?;
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[3], 0x06)?;
                 let (sine_offset, old_sine) =
-                    asm_edits.required_payload_double(bytes, record, field_indices[4])?;
+                    asm_edits.required_payload_double(ctx, bytes, record, field_indices[4])?;
                 let (cosine_offset, old_cosine) =
-                    asm_edits.required_payload_double(bytes, record, field_indices[5])?;
+                    asm_edits.required_payload_double(ctx, bytes, record, field_indices[5])?;
                 let radius_offset =
-                    asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?;
+                    asm_edits.required_payload_field(ctx, bytes, record, field_indices[6], 0x06)?;
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {

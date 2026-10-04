@@ -1480,8 +1480,13 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
 
     // The support is the unit bilinear patch scaled to millimetres, so the
     // isoline at u = 1 is the patch's far edge.
+    let ctx = cadmpeg_test_support::service_decode_context();
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+    let curve = decode_par_int_cur_isoline(
+        &ctx,
+        &scope,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
         .transpose()
         .expect("resource allocation did not fail")
         .expect("form-2 isoline");
@@ -1496,14 +1501,23 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
     assert!(
-        decode_par_int_cur_isoline(&diagonal, cadmpeg_asm::kernel_header::RefWidth::Eight)
+        decode_par_int_cur_isoline(
+            &ctx,
+            &diagonal,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
             .is_none()
     );
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
     assert!(
-        decode_par_int_cur_isoline(&partial, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
+        decode_par_int_cur_isoline(
+            &ctx,
+            &partial,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .is_none()
     );
 }
 
@@ -1523,10 +1537,15 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
     scope.push(0x10);
 
     let width = cadmpeg_asm::kernel_header::RefWidth::Eight;
-    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&scope, 0, width)
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&ctx, &scope, 0, width)
+        .expect("decode work admission")
         .expect("the fixture is a balanced subtype scope");
     assert!(decode_curve_cache(&scope).is_some());
-    assert!(decode_owned_curve_cache_at(span, width).is_none());
+    assert!(decode_owned_curve_cache_at(&ctx, span, width)
+        .transpose()
+        .expect("decode work admission")
+        .is_none());
 }
 
 #[test]

@@ -279,39 +279,44 @@ where
         toks::SubtypeScope<'_>,
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
-    let mut seen = std::collections::HashSet::new();
-    let mut pending = propagate_resource!(ctx.collection_vec(1, "ASM subtype search stack"));
-    pending.push(toks::subtype_refs(toks));
-    while let Some(references) = pending.last_mut() {
-        let Some(index) = references.next() else {
-            pending.pop();
-            continue;
-        };
-        if !propagate_resource!(ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited"))
-        {
-            continue;
+    (|| -> Result<Option<T>, cadmpeg_core::CodecError> {
+        let mut seen = std::collections::HashSet::new();
+        let mut pending = ctx.collection_vec(1, "ASM subtype search stack")?;
+        pending.push(toks::subtype_refs(toks));
+        while let Some(references) = pending.last_mut() {
+            ctx.charge_work(1, "ASM subtype reference search")?;
+            let Some(index) = references.next() else {
+                pending.pop();
+                continue;
+            };
+            if !ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited")? {
+                continue;
+            }
+            // The doc states what the index means. `docs/formats/asm.md`: "A named
+            // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
+            // surface, curve, or pcurve body indexes a per-file subtype table, not
+            // a byte offset. Each subtype definition -- a `0x0F` opening followed
+            // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
+            // table entry in stream order." An index at or beyond the table's
+            // length therefore names no definition the stream states. What the
+            // decoder does about it is the decoder's decision: the search refuses
+            // the stream rather than skipping the reference and reading the one
+            // behind it.
+            let Some(target) = table.span(index) else {
+                return Ok(None);
+            };
+            if let Some(decoded) = decode_scope(ctx, target) {
+                return decoded.map(Some);
+            }
+            ctx.push_vec(
+                &mut pending,
+                toks::subtype_refs(target.tokens()),
+                "ASM subtype search stack",
+            )?;
         }
-        // The doc states what the index means. `docs/formats/asm.md`: "A named
-        // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
-        // surface, curve, or pcurve body indexes a per-file subtype table, not
-        // a byte offset. Each subtype definition -- a `0x0F` opening followed
-        // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
-        // table entry in stream order." An index at or beyond the table's
-        // length therefore names no definition the stream states. What the
-        // decoder does about it is the decoder's decision: the search refuses
-        // the stream rather than skipping the reference and reading the one
-        // behind it.
-        let target = table.span(index)?;
-        if let Some(decoded) = decode_scope(ctx, target) {
-            return Some(decoded);
-        }
-        propagate_resource!(ctx.push_vec(
-            &mut pending,
-            toks::subtype_refs(target.tokens()),
-            "ASM subtype search stack"
-        ));
-    }
-    None
+        Ok(None)
+    })()
+    .transpose()
 }
 
 /// Decode a surface cache, following subtype-table references.
@@ -486,26 +491,32 @@ pub(super) fn decode_surface_block(
 /// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
 /// integer width.
 pub fn final_surface_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &[u8],
     int_width: RefWidth,
-) -> Option<SurfacePatchLayout> {
-    construction_marker_positions(record, int_width)?
-        .into_iter()
+) -> Result<Option<SurfacePatchLayout>, cadmpeg_core::CodecError> {
+    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+        return Ok(None);
+    };
+    Ok(positions.into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
-        .next_back()
+        .next_back())
 }
 
 /// Locate the surface block at `ordinal` among valid surface caches at the
 /// stream's known integer width.
 pub fn surface_patch_layout_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &[u8],
     ordinal: usize,
     int_width: RefWidth,
-) -> Option<SurfacePatchLayout> {
-    construction_marker_positions(record, int_width)?
-        .into_iter()
+) -> Result<Option<SurfacePatchLayout>, cadmpeg_core::CodecError> {
+    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+        return Ok(None);
+    };
+    Ok(positions.into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
-        .nth(ordinal)
+        .nth(ordinal))
 }
 
 /// Decode a curve `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
@@ -590,18 +601,29 @@ pub(super) fn decode_curve_block(
 }
 
 /// Locate the first valid 3D curve cache at the stream's known integer width.
-pub fn first_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
-    construction_marker_positions(record, int_width)?
-        .into_iter()
-        .find_map(|position| decode_curve_block(record, position, int_width))
+pub fn first_curve_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<CurvePatchLayout>, cadmpeg_core::CodecError> {
+    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+        return Ok(None);
+    };
+    Ok(positions.into_iter().find_map(|position| decode_curve_block(record, position, int_width)))
 }
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
-pub fn final_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
-    construction_marker_positions(record, int_width)?
-        .into_iter()
+pub fn final_curve_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<CurvePatchLayout>, cadmpeg_core::CodecError> {
+    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+        return Ok(None);
+    };
+    Ok(positions.into_iter()
         .filter_map(|position| decode_curve_block(record, position, int_width))
-        .next_back()
+        .next_back())
 }
 
 /// Decode the unique well-formed surface cache across both integer widths.
@@ -619,14 +641,18 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 /// block outside every construction the scope nests. A scope whose supports are
 /// nested constructions carries their caches too, and those are not its own.
 pub(super) fn decode_owned_surface_cache_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: subtypes::SubtypeScope<'_>,
     int_width: RefWidth,
-) -> Option<NurbsSurface> {
+) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let bytes = scope.bytes();
-    scope
-        .owned_marker_positions(int_width)
-        .into_iter()
-        .find_map(|pos| decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface))
+    let positions = match scope.owned_marker_positions(ctx, int_width) {
+        Ok(positions) => positions,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(positions.into_iter().find_map(|pos| {
+        decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface)
+    })?))
 }
 
 /// Decode the unique well-formed 3D curve cache across both integer widths.
@@ -642,14 +668,18 @@ pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
 pub fn decode_owned_curve_cache_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: subtypes::SubtypeScope<'_>,
     int_width: RefWidth,
-) -> Option<NurbsCurve> {
+) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let bytes = scope.bytes();
-    scope
-        .owned_marker_positions(int_width)
-        .into_iter()
-        .find_map(|pos| decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve))
+    let positions = match scope.owned_marker_positions(ctx, int_width) {
+        Ok(positions) => positions,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(positions.into_iter().find_map(|pos| {
+        decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve)
+    })?))
 }
 
 fn decode_unique_cache<T>(
@@ -752,6 +782,27 @@ mod tests {
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM surface pole recovery")))
         );
+    }
+
+    #[test]
+    fn subtype_search_refuses_work_before_reference_probe() {
+        use crate::sab::Token;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+        let Some(Err(error)) = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
+        else {
+            panic!("reference-search admission must propagate");
+        };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM subtype reference search");
     }
 
     #[test]

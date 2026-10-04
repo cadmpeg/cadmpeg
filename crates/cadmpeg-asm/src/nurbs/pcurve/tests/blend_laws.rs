@@ -30,6 +30,7 @@ use cadmpeg_ir::math::Vector3;
 fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
 
+    let resource_ctx = cadmpeg_test_support::service_decode_context();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             (
@@ -55,7 +56,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
             for expected in [None, Some(0), Some(3)] {
                 let bytes = variable_blend_side(int_width, name, expected);
                 let mut position = 0;
-                let side = decode_rolling_ball_side(&bytes, &mut position, int_width).transpose().expect("resource allocation did not fail")
+                let side = decode_rolling_ball_side(&resource_ctx, &bytes, &mut position, int_width).transpose().expect("resource allocation did not fail")
                     .unwrap_or_else(|| {
                         panic!(
                             "variable-blend support side {name} width {int_width} extension {expected:?}"
@@ -381,6 +382,7 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn rolling_ball_layout_walks_both_integer_widths() {
+    let resource_ctx = cadmpeg_test_support::service_decode_context();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rb_blend_spl_sur");
@@ -393,8 +395,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_int(&mut bytes, 0x15, -1, int_width);
         bytes.push(0x10);
 
-        let layout = rolling_ball_patch_layout(&bytes, int_width)
-            .transpose()
+        let layout = rolling_ball_patch_layout(&resource_ctx, &bytes, int_width)
             .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
         let values = layout
@@ -414,8 +415,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_f64(&mut compact, -2.5);
         push_int(&mut compact, 0x15, -1, int_width);
         compact.push(0x10);
-        let layout = rolling_ball_patch_layout(&compact, int_width)
-            .transpose()
+        let layout = rolling_ball_patch_layout(&resource_ctx, &compact, int_width)
             .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
         let values = layout
@@ -445,7 +445,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         push_f64(&mut straight, 3.0);
         let mut position = 0;
         assert!(
-            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width).transpose().expect("resource allocation did not fail"),
+            matches!(decode_rolling_ball_curve(&resource_ctx, &straight, &mut position, int_width).transpose().expect("resource allocation did not fail"),
                 Some(RollingBallSupportCurve {
                     curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                     parameter_range: [Some(-2.0), Some(3.0)],
@@ -469,7 +469,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         intcurve.extend_from_slice(&[0x0b, 0x0b]);
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_curve(&intcurve, &mut position, int_width).transpose().expect("resource allocation did not fail"),
+            decode_rolling_ball_curve(&resource_ctx, &intcurve, &mut position, int_width).transpose().expect("resource allocation did not fail"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
@@ -510,6 +510,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
 
 #[test]
 fn rolling_ball_surfaces_decode_framed_spline_supports() {
+    let resource_ctx = cadmpeg_test_support::service_decode_context();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_ident(&mut bytes, "spline");
@@ -524,7 +525,9 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
         }
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_surface(&bytes, &mut position, int_width),
+            decode_rolling_ball_surface(&resource_ctx, &bytes, &mut position, int_width)
+                .transpose()
+                .expect("resource allocation did not fail"),
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],

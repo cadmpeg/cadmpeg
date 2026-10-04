@@ -72,9 +72,15 @@ impl PcurvePatchLayout {
 }
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
-pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
-    construction_marker_positions(record, int_width)?
-        .into_iter()
+pub fn final_pcurve_patch_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<PcurvePatchLayout>, cadmpeg_core::CodecError> {
+    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+        return Ok(None);
+    };
+    Ok(positions.into_iter()
         .filter_map(|marker_pos| {
             let marker = marker_at(record, marker_pos)?;
             let rational = marker.rational();
@@ -114,7 +120,7 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
                 periodic_value_offset,
             })
         })
-        .next_back()
+        .next_back())
 }
 
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<PcurveNurbs> {

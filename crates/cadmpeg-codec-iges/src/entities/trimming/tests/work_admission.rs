@@ -186,3 +186,45 @@ fn boundary_clustering_propagates_root_work_refusal() {
                     && ctx.resource_refusal() == Some(limit)));
     });
 }
+
+fn assert_scan_work_refusal<T>(
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    let mut cap = 0_u64;
+    for _ in 0..128 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
+        match run(&ctx) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Err(error) => panic!("unexpected error before {operation}: {error}"),
+            Ok(_) => panic!("operation {operation} was not admitted"),
+        }
+    }
+    panic!("operation {operation} was not reached");
+}
+
+#[test]
+fn pcurve_internal_multiplicity_refuses_work_before_scan() {
+    let controls = [[1.0, 0.0, 0.0, 0.0]; 4];
+    let knots = [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
+    assert_scan_work_refusal("iges pcurve internal knot multiplicity", |ctx| {
+        super::super::homogeneous_pcurve_spans(2, &knots, controls.to_vec(), ctx)
+    });
+}
+
+#[test]
+fn pcurve_split_refuses_work_before_level_creation() {
+    let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
+    assert_scan_work_refusal("iges pcurve split levels", |ctx| {
+        super::super::split_homogeneous_pcurve(&controls, 0.5, ctx)
+    });
+}
