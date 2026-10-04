@@ -1076,13 +1076,18 @@ pub(in super::super) fn schema_feature_definition(
             return Ok(definition);
         }
     }
+    let kind = kind.into();
+    let (text_storage, node_storage, parameters) = feature_parameters(ctx, scan, feature_id)?;
+    text_storage.commit()?;
+    let parameters = cadmpeg_core::text::named_entries_for_decode(
+        ctx,
+        format_args!("creo:model:feature#{feature_id}"),
+        parameters,
+    )?;
+    drop(node_storage);
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-        kind: kind.into(),
-        parameters: cadmpeg_core::text::named_entries_for_decode(
-            ctx,
-            format_args!("creo:model:feature#{feature_id}"),
-            feature_parameters(ctx, scan, feature_id)?,
-        )?,
+        kind,
+        parameters,
     }))
 }
 

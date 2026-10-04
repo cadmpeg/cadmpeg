@@ -560,8 +560,21 @@ fn feature_parameter_refuses_before_btree_node() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
     let mut parameters = BTreeMap::new();
-    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+    let error = insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
         .expect_err("one parameter needs one BTreeMap node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -571,17 +584,61 @@ fn feature_parameter_refuses_before_btree_node() {
 }
 
 #[test]
-fn feature_parameter_refuses_before_retained_value() {
+fn feature_parameter_staging_node_refuses_materialized_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index("choice.value".len() + "x".len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
     let mut parameters = BTreeMap::new();
-    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
-        .expect_err("value exceeds retained allowance");
+    let error = insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
+    .expect_err("one source node exceeds materialized storage");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo feature parameter nodes"
+            && resource.additional > 0)
+    );
+}
+
+#[test]
+fn feature_parameter_refuses_before_staging_value() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    let error = insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
+    .expect_err("staging value exceeds materialized allowance");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo feature parameter value")
     );
 }
@@ -590,10 +647,23 @@ fn feature_parameter_refuses_before_retained_value() {
 fn feature_parameter_refuses_before_scoped_key_candidate() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
     let mut parameters = BTreeMap::new();
-    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+    let error = insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
         .expect_err("candidate exceeds materialized allowance");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -603,18 +673,34 @@ fn feature_parameter_refuses_before_scoped_key_candidate() {
 }
 
 #[test]
-fn feature_parameter_refuses_before_retained_key() {
+fn feature_parameter_native_text_transfer_refuses_retained_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
     let mut parameters = BTreeMap::new();
-    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
-        .expect_err("key exceeds retained allowance");
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
+    .expect("staging text fits materialized storage");
+    let error = text_storage
+        .commit()
+        .expect_err("Native parameter text exceeds retained allowance");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo feature parameter key")
+            && resource.operation == "creo feature parameter text")
     );
 }
 
@@ -623,12 +709,49 @@ fn feature_parameter_keeps_duplicate_suffix_and_direct_replacement() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
     let mut parameters = BTreeMap::new();
-    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "a").expect("first fits");
-    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "b").expect("second fits");
-    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "c").expect("third fits");
-    replace_feature_parameter(&ctx, &mut parameters, "choice.value", "z")
-        .expect("replacement fits");
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "a",
+    )
+    .expect("first fits");
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "b",
+    )
+    .expect("second fits");
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "c",
+    )
+    .expect("third fits");
+    replace_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "z",
+    )
+    .expect("replacement fits");
     assert_eq!(
         parameters.into_iter().collect::<Vec<_>>(),
         vec![
@@ -640,14 +763,65 @@ fn feature_parameter_keeps_duplicate_suffix_and_direct_replacement() {
 }
 
 #[test]
+fn feature_parameter_named_entry_service_preserves_suffix_order() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    for value in ["a", "b", "c"] {
+        insert_feature_parameter(
+            &ctx,
+            &mut text_storage,
+            &mut node_storage,
+            &mut parameters,
+            "choice.value",
+            value,
+        )
+        .expect("parameter collision suffix is admitted");
+    }
+    text_storage
+        .commit()
+        .expect("Native output retains staged parameter text");
+    let entries = cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", parameters)
+        .expect("parameter names are nonblank and unique");
+    drop(node_storage);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("choice.value", "a"),
+            ("choice.value#2", "b"),
+            ("choice.value#3", "c"),
+        ]
+    );
+}
+
+#[test]
 fn feature_source_property_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
     let mut properties = BTreeMap::new();
-    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+    let error = insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
         .expect_err("one property needs one map node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -658,14 +832,49 @@ fn feature_source_property_refuses_before_btree_node() {
 }
 
 #[test]
+fn feature_source_property_staging_node_refuses_materialized_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    let error = insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
+    .expect_err("one staging node exceeds materialized storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo feature source property nodes")
+    );
+}
+
+#[test]
 fn feature_source_property_refuses_before_key_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
     let mut properties = BTreeMap::new();
-    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+    let error = insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
         .expect_err("key bytes exceed the retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -681,8 +890,17 @@ fn feature_source_property_refuses_before_value_copy() {
     policy.limits.max_retained_bytes = 6;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
     let mut properties = BTreeMap::new();
-    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+    let error = insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
         .expect_err("value bytes exceed the retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -697,13 +915,76 @@ fn feature_source_property_keeps_key_order_and_replacement() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
     let mut properties = BTreeMap::new();
-    insert_feature_source_property(&ctx, &mut properties, "z", 1).expect("first property fits");
-    insert_feature_source_property(&ctx, &mut properties, "a", 2).expect("second property fits");
-    insert_feature_source_property(&ctx, &mut properties, "z", 3).expect("replacement fits");
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "z", 1)
+        .expect("first property fits");
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "a", 2)
+        .expect("second property fits");
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "z", 3)
+        .expect("replacement fits");
     assert_eq!(
         properties.into_iter().collect::<Vec<_>>(),
         vec![("a".into(), "2".into()), ("z".into(), "3".into())]
+    );
+}
+
+#[test]
+fn feature_source_property_named_output_node_remains_retained() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("recipe".len() + "Extrude".len());
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
+    .expect("staging node uses scoped storage");
+    let error = cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", properties)
+        .expect_err("the decoded output node needs retained storage");
+    assert!(
+        matches!(error, cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "named entry map nodes")
+    );
+}
+
+#[test]
+fn feature_source_property_named_entry_service_preserves_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "z", 1)
+        .expect("first property fits");
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "a", 2)
+        .expect("second property fits");
+    insert_feature_source_property(&ctx, &mut node_storage, &mut properties, "z", 3)
+        .expect("replacement fits");
+    let entries = cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", properties)
+        .expect("property names are nonblank and unique");
+    drop(node_storage);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("a", "2"), ("z", "3")]
     );
 }
 
@@ -1276,11 +1557,20 @@ fn feature_parameter_collision_boundary_keeps_first_unused_suffix() {
     let parameters = crate::test_support::assert_work_boundaries(
         &["creo feature parameter collision candidate"],
         |ctx| {
+            let mut text_storage = ctx.reserve_scoped(0, "creo feature parameter text")?;
+            let mut node_storage = ctx.reserve_scoped(0, "creo feature parameter nodes")?;
             let mut parameters = BTreeMap::from([
                 ("choice.value".to_owned(), "a".to_owned()),
                 ("choice.value#2".to_owned(), "b".to_owned()),
             ]);
-            insert_feature_parameter(ctx, &mut parameters, "choice.value", "c")?;
+            insert_feature_parameter(
+                ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "c",
+            )?;
             Ok::<_, cadmpeg_core::CodecError>(parameters)
         },
     );

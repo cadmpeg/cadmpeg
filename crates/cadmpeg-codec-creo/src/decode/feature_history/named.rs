@@ -453,6 +453,7 @@ pub(in super::super) fn reference_named_feature_definition(
 
 pub(in super::super) fn retain_native_feature_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source_property_nodes: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
     parameters: &BTreeMap<String, String>,
@@ -466,6 +467,7 @@ pub(in super::super) fn retain_native_feature_parameters(
     for (name, value) in ctx.admit_iter(parameters, "creo native feature parameters")? {
         insert_feature_source_property(
             ctx,
+            source_property_nodes,
             source_properties,
             format_args!("native_parameter.{name}"),
             value,

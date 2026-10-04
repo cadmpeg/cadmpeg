@@ -250,6 +250,99 @@ fn existing_feature_property_merge_keeps_order_and_replacement() {
 }
 
 #[test]
+fn existing_feature_property_staging_nodes_are_scoped_before_retained_destination() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("recipe".len() + "Extrude".len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut source_nodes = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property lease");
+    let mut source = BTreeMap::new();
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "recipe",
+        "Extrude",
+    )
+    .expect("source text is retained and its map node is scoped");
+    let mut incoming_nodes = ctx
+        .reserve_scoped(0, "named entry map nodes")
+        .expect("intermediate output lease");
+    let incoming = incoming_nodes
+        .with_storage(|| {
+            cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", source)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("intermediate named map node is scoped");
+    drop(source_nodes);
+    let mut target = BTreeMap::new();
+    let error = merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect_err("the persistent destination node needs retained storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo IR Feature source property nodes")
+    );
+    assert!(target.is_empty());
+    drop(incoming_nodes);
+}
+
+#[test]
+fn existing_feature_property_scoped_named_merge_keeps_order_and_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut source_nodes = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property lease");
+    let mut source = BTreeMap::new();
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "featdefs_schema_state",
+        "absent",
+    )
+    .expect("first source property fits");
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "recipe",
+        "Extrude",
+    )
+    .expect("second source property fits");
+    let mut incoming_nodes = ctx
+        .reserve_scoped(0, "named entry map nodes")
+        .expect("intermediate output lease");
+    let incoming = incoming_nodes
+        .with_storage(|| {
+            cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", source)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("intermediate named map nodes are scoped");
+    drop(source_nodes);
+    let mut target = BTreeMap::from([(property_key("recipe"), "Native".to_string())]);
+    merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect("persistent destination inserts and replaces under service policy");
+    drop(incoming_nodes);
+    assert_eq!(target["recipe"], "Extrude");
+    assert_eq!(target["featdefs_schema_state"], "absent");
+    assert_eq!(
+        target
+            .keys()
+            .next()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("featdefs_schema_state")
+    );
+}
+
+#[test]
 fn existing_feature_dependency_refuses_before_member_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
