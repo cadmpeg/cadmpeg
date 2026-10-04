@@ -203,20 +203,17 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         let occupied = self
             .storage
             .with_storage(|| ctx.copy_retained_text(target.as_str(), operation))?;
-        let collision = self
-            .context
-            .contains_btree_set(&self.occupied, occupied.as_str(), operation)?;
-        if collision {
+        ctx.charge_work(1, operation)?;
+        let inserted = self.storage.with_storage(|| {
+            self.context
+                .insert_btree_set(&mut self.occupied, occupied, operation)
+        })?;
+        if !inserted {
             return self.refuse(
                 ctx,
                 format_args!("identity {source} collides at rewritten identity {target}"),
             );
         }
-        ctx.charge_work(1, operation)?;
-        self.storage.with_storage(|| {
-            self.context
-                .insert_btree_set(&mut self.occupied, occupied, operation)
-        })?;
         ctx.charge_work(1, operation)?;
         drop(self.storage.with_storage(|| {
             self.context
