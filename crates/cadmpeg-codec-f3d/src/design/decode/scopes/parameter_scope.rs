@@ -670,14 +670,14 @@ pub(crate) fn admit_history_bound_scope_variants(
         .filter(|selected| **selected).count();
 
     let mut retained = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut retained,
         retained_count,
         "f3d scope admission retained output",
     )?;
     for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
         if admitted[index] {
-            retained.push(scope);
+            ctx.push_vec(&mut retained, scope, "f3d scope admission retained output")?;
         }
     }
     *scopes = retained;
@@ -1168,14 +1168,14 @@ pub(in crate::design::decode) fn parse_parameter_scope(
 
             let mut members = Vec::new();
             if let Err(error) =
-                ctx.reserve_vec(&mut members, count, "f3d Design scope reference members")
+                ctx.reserve_capacity(&mut members, count, "f3d Design scope reference members")
             {
                 return Some(Err(error));
             }
 
             let mut offsets = Vec::new();
             if let Err(error) =
-                ctx.reserve_vec(&mut offsets, count, "f3d Design scope reference offsets")
+                ctx.reserve_capacity(&mut offsets, count, "f3d Design scope reference offsets")
             {
                 return Some(Err(error));
             }
@@ -1185,8 +1185,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                     members.clear();
                     break;
                 }
-                members.push(View::u32_le_at(bytes, marker + 1)?);
-                offsets.push(u64::try_from(marker + 1).ok()?);
+                if let Err(error) = ctx.push_vec(&mut members, View::u32_le_at(bytes, marker + 1)?, "f3d Design scope reference members") { return Some(Err(error)); };
+                if let Err(error) = ctx.push_vec(&mut offsets, u64::try_from(marker + 1).ok()?, "f3d Design scope reference offsets") { return Some(Err(error)); };
             }
             if members.len() == count
                 && reference_table

@@ -102,6 +102,31 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     );
     assert!(alignment.operand_frames().is_some());
 
+    for skip in 0..4 {
+        let refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "collect F3D assembly alignment owners",
+            skip,
+            |ctx| {
+                exact_assembly_alignment(
+                    ctx,
+                    &bytes,
+                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                    &scope,
+                    &owners,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D assembly alignment owners"
+                    && limit.additional == 1
+        ));
+    }
+
     let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());

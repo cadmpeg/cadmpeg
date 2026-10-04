@@ -206,14 +206,14 @@ fn exact_surface_offset_face_groups(
                 covered_references.insert(*member);
             }
 
-            if let Err(error) = ctx.reserve_vec(
+            if let Err(error) = ctx.reserve_capacity(
                 &mut group_record_indices,
                 1,
                 "f3d surface offset face group",
             ) {
                 return Some(Err(error));
             }
-            group_record_indices.push(group.record_index);
+            if let Err(error) = ctx.push_vec(&mut group_record_indices, group.record_index, "f3d surface offset face group") { return Some(Err(error)); };
         }
         if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
             return None;
@@ -590,15 +590,15 @@ pub(super) fn exact_ruled_surface_operation(
             cursor = cursor.checked_add(4)?;
 
             let mut records = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references")
+            if let Err(error) = ctx.reserve_capacity(&mut records, count, "f3d ruled surface references")
             {
                 return Some(Err(error));
             }
             for _ in 0..count {
-                records.push(match fixed_reference(cursor) {
+                if let Err(error) = ctx.push_vec(&mut records, match fixed_reference(cursor) {
                     Some(record) => record,
                     None => return None,
-                });
+                }, "f3d ruled surface references") { return Some(Err(error)); };
                 cursor = cursor.checked_add(11)?;
             }
             Some(Ok((records, cursor)))

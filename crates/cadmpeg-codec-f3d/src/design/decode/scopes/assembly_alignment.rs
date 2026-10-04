@@ -189,7 +189,7 @@ pub(super) fn exact_assembly_alignment(
                 _ => return None,
             };
             // Both supported alignment lanes use one fixed four-owner allocation.
-            let mut owners = match ctx.collection_vec(4, "collect F3D assembly alignment owners") {
+            let mut owners = match ctx.vector_storage(4, "collect F3D assembly alignment owners") {
                 Ok(values) => values,
                 Err(error) => return Some(Err(error)),
             };
@@ -201,10 +201,10 @@ pub(super) fn exact_assembly_alignment(
                 Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
             };
             for owner in admitted_owners {
-                owners.push(crate::records::identity::Located {
+                if let Err(error) = ctx.push_vec(&mut owners, crate::records::identity::Located {
                     value: owner.record_index(),
                     offset: owner.evaluated_value_offset(),
-                });
+                }, "collect F3D assembly alignment owners") { return Some(Err(error)); };
             }
             if legacy_class_388 {
                 let owner_reference_order_matches =

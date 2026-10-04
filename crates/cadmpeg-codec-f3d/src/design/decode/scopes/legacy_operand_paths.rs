@@ -929,7 +929,7 @@ fn exact_legacy_class_388_operand_path_envelope(
         let final_path = path_records[final_index].take()?;
 
         let mut occurrence_guids = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut occurrence_guids,
             usize::try_from(path_count).ok()?,
             "f3d legacy occurrence GUIDs",
@@ -937,9 +937,9 @@ fn exact_legacy_class_388_operand_path_envelope(
             return Some(Err(error));
         }
         for path in path_records.into_iter().flatten() {
-            occurrence_guids.push(path.occurrence_guid);
+            if let Err(error) = ctx.push_vec(&mut occurrence_guids, path.occurrence_guid, "f3d legacy occurrence GUIDs") { return Some(Err(error)); };
         }
-        occurrence_guids.push(final_path.occurrence_guid);
+        if let Err(error) = ctx.push_vec(&mut occurrence_guids, final_path.occurrence_guid, "f3d legacy occurrence GUIDs") { return Some(Err(error)); };
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {
                 locator_reference_offset,
@@ -1016,7 +1016,7 @@ fn exact_legacy_class_412_path(
             class_412_path::THIRD_IDENTITY_GUID,
             class_412_path::FOURTH_IDENTITY_GUID,
         ];
-        let mut identity_guids = match ctx.collection_vec(
+        let mut identity_guids = match ctx.vector_storage(
             identity_offsets.len(),
             "collect F3D legacy path identity GUIDs",
         ) {
@@ -1041,10 +1041,10 @@ fn exact_legacy_class_412_path(
             if identity_end != start.checked_add(expected_end)? {
                 return None;
             }
-            identity_guids.push(crate::records::identity::Located {
+            if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
                 value: identity_guid,
                 offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
-            });
+            }, "collect F3D legacy path identity GUIDs") { return Some(Err(error)); };
         }
         Some(Ok(LegacyClass412Path {
             record_index,

@@ -518,7 +518,7 @@ pub(super) fn design_primary_frames<'a>(
         }
     }
     let mut frames = Vec::new();
-    ctx.reserve_vec(&mut frames, indexed.len(), "f3d design primary frames")?;
+    ctx.reserve_capacity(&mut frames, indexed.len(), "f3d design primary frames")?;
     for frame in ctx.admit_iter(&indexed, "scan F3D indexed primary record frames")? {
         let entity_id = frame.entity_id;
         let Some(class_tag) = record_header_class_tag(ctx, bytes, frame.start, frame.end, entity_id)?
@@ -551,13 +551,13 @@ pub(super) fn design_primary_frames<'a>(
                 ));
             }
         }
-        frames.push(DesignPrimaryFrame {
+        ctx.push_vec(&mut frames, DesignPrimaryFrame {
             entity_id,
             class_tag,
             start: frame.start,
             end: frame.end,
             design_type,
-        });
+        }, "f3d design primary frames")?;
     }
     Ok(frames)
 }
@@ -853,7 +853,7 @@ fn parse_feature_timeline_record(
         .ok_or_else(|| ctx.refuse_codec_limit("F3D timeline sort work", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "validate F3D timeline item uniqueness")?;
     let mut items = Vec::new();
-    ctx.reserve_vec(&mut items, count, "admit F3D timeline item slots")?;
+    ctx.reserve_capacity(&mut items, count, "admit F3D timeline item slots")?;
     for _ in 0..count {
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
@@ -867,10 +867,10 @@ fn parse_feature_timeline_record(
         let Some(target_offset) = u64::try_from(target_offset).ok() else {
             return Ok(None);
         };
-        items.push(crate::records::identity::Located {
+        ctx.push_vec(&mut items, crate::records::identity::Located {
             value: target,
             offset: target_offset,
-        });
+        }, "admit F3D timeline item slots")?;
     }
     if at != frame.end {
         return Ok(None);

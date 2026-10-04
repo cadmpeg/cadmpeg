@@ -1357,11 +1357,11 @@ pub(crate) fn decode_face_source_groups(
                     }))
                 });
             // The supported carrier layouts contain at most four source slots.
-            let mut source_members = ctx.collection_vec(4, "collect F3D face source members")?;
+            let mut source_members = ctx.vector_storage(4, "collect F3D face source members")?;
             let mut complete = true;
             for member in parsed_source_members {
                 match member? {
-                    Some(member) => source_members.push(member),
+                    Some(member) => ctx.push_vec(&mut source_members, member, "collect F3D face source members")?,
                     None => complete = false,
                 }
             }
@@ -1442,7 +1442,7 @@ fn face_source_reference_headers<'a>(
     records: &IndexedRecordOffsets,
 ) -> Result<Vec<Option<FaceSourceReferenceHeader<'a>>>, CodecError> {
     let mut headers = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut headers,
         references.len(),
         "f3d face source reference headers",
@@ -1468,7 +1468,7 @@ fn face_source_reference_headers<'a>(
                     },
                 )
             });
-        headers.push(header);
+        ctx.push_vec(&mut headers, header, "f3d face source reference headers")?;
     }
     Ok(headers)
 }
@@ -1539,7 +1539,7 @@ fn parse_face_source_carrier_prefix(
             return None;
         }
         // Every supported carrier uses the same four-slot allocation.
-        let mut references = match ctx.collection_vec(4, "collect F3D face source references") {
+        let mut references = match ctx.vector_storage(4, "collect F3D face source references") {
             Ok(values) => values,
             Err(error) => return Some(Err(error)),
         };
@@ -1547,7 +1547,7 @@ fn parse_face_source_carrier_prefix(
             let offset = start
                 .checked_add(layout.source_reference_offset)?
                 .checked_add(ordinal.checked_mul(11)?)?;
-            references.push((offset, marked_face_source_reference(bytes, offset)?));
+            if let Err(error) = ctx.push_vec(&mut references, (offset, marked_face_source_reference(bytes, offset)?), "collect F3D face source references") { return Some(Err(error)); };
         }
         Some(Ok(references))
     })();
@@ -2814,7 +2814,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let mut members = Vec::new();
 
-    if let Err(error) = ctx.reserve_vec(
+    if let Err(error) = ctx.reserve_capacity(
         &mut members,
         index_from_u32(member_count),
         "f3d construction operand members",
@@ -2825,10 +2825,10 @@ pub(super) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        members.push(crate::records::identity::Located {
+        if let Err(error) = ctx.push_vec(&mut members, crate::records::identity::Located {
             value: record_index,
             offset,
-        });
+        }, "f3d construction operand members") { return Refused(error); };
     }
     let mut auxiliary_records = Vec::new();
     let mut auxiliary_reference_slots = [false; 2];
@@ -2842,17 +2842,17 @@ pub(super) fn parse_construction_operand_group(
             return NotAGroup;
         };
 
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut auxiliary_records,
             1,
             "f3d construction operand auxiliary record",
         ) {
             return Refused(error);
         }
-        auxiliary_records.push(crate::records::identity::Located {
+        if let Err(error) = ctx.push_vec(&mut auxiliary_records, crate::records::identity::Located {
             value: record_index,
             offset,
-        });
+        }, "f3d construction operand auxiliary record") { return Refused(error); };
     }
     let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
@@ -2867,7 +2867,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let mut trailing_records = Vec::new();
 
-    if let Err(error) = ctx.reserve_vec(
+    if let Err(error) = ctx.reserve_capacity(
         &mut trailing_records,
         index_from_u32(trailing_count),
         "f3d construction operand trailing records",
@@ -2878,10 +2878,10 @@ pub(super) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        trailing_records.push(crate::records::identity::Located {
+        if let Err(error) = ctx.push_vec(&mut trailing_records, crate::records::identity::Located {
             value: record_index,
             offset,
-        });
+        }, "f3d construction operand trailing records") { return Refused(error); };
     }
     let legacy_move_class_328 = scope.kind()
         == crate::records::feature::scope::DesignFeatureKind::Move
@@ -3566,9 +3566,9 @@ fn copy_lost_edge_run_ids(
     run: &[&LostEdgeReference],
 ) -> Result<Vec<String>, CodecError> {
     let mut ids = Vec::new();
-    ctx.reserve_vec(&mut ids, run.len(), "f3d lost-edge run IDs")?;
+    ctx.reserve_capacity(&mut ids, run.len(), "f3d lost-edge run IDs")?;
     for edge in ctx.admit_iter(run, "copy F3D lost-edge run IDs")? {
-        ids.push(ctx.copy_retained_text(&edge.id, "f3d lost-edge run ID text")?);
+        ctx.push_vec(&mut ids, ctx.copy_retained_text(&edge.id, "f3d lost-edge run ID text")?, "f3d lost-edge run IDs")?;
     }
     Ok(ids)
 }
@@ -3719,17 +3719,15 @@ fn parse_construction_operand_identity(
         }
         seen.insert((current_record_index, current_at));
 
-        if let Err(error) = ctx.reserve_vec(&mut wrappers, 1, "f3d construction identity wrappers")
+        if let Err(error) = ctx.reserve_capacity(&mut wrappers, 1, "f3d construction identity wrappers")
         {
             return Some(Err(error));
         }
-        wrappers.push(
-            crate::records::topology::construction::DesignIdentityWrapper {
+        if let Err(error) = ctx.push_vec(&mut wrappers, crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: current_record_index,
                 byte_offset: u64::try_from(current_at).ok()?,
                 class_tag: current_class_tag,
-            },
-        );
+            }, "f3d construction identity wrappers") { return Some(Err(error)); };
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered_view(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -3957,12 +3955,12 @@ fn parse_extrude_selection_group(
             return None;
         }
         let members_operation = "parse F3D extrude selection members";
-        let mut members = match ctx.collection_vec(member_count, members_operation) {
+        let mut members = match ctx.vector_storage(member_count, members_operation) {
             Ok(members) => members,
             Err(error) => return Some(Err(error)),
         };
         let offsets_operation = "parse F3D extrude selection member offsets";
-        let mut member_offsets = match ctx.collection_vec(member_count, offsets_operation) {
+        let mut member_offsets = match ctx.vector_storage(member_count, offsets_operation) {
             Ok(member_offsets) => member_offsets,
             Err(error) => return Some(Err(error)),
         };
@@ -3972,8 +3970,8 @@ fn parse_extrude_selection_group(
             {
                 return None;
             }
-            members.push(View::u32_le_at(bytes, position + 1)?);
-            member_offsets.push(u64::try_from(position + 1).ok()?);
+            if let Err(error) = ctx.push_vec(&mut members, View::u32_le_at(bytes, position + 1)?, members_operation) { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(&mut member_offsets, u64::try_from(position + 1).ok()?, offsets_operation) { return Some(Err(error)); };
             position = position.checked_add(11)?;
         }
         let opaque_index = View::u32_le_at(bytes, position)?;
@@ -5027,7 +5025,7 @@ fn parse_body_recipe_operand_frame_with_index(
     }
 
     let mut references = Vec::new();
-    if let Err(error) = ctx.reserve_vec(
+    if let Err(error) = ctx.reserve_capacity(
         &mut references,
         reference_count,
         "f3d body recipe references",
@@ -5035,7 +5033,7 @@ fn parse_body_recipe_operand_frame_with_index(
         return Some(Err(error));
     }
     for _ in 0..reference_count {
-        references.push(DesignBodyRecipeReference {
+        if let Err(error) = ctx.push_vec(&mut references, DesignBodyRecipeReference {
             design_reference: View::u64_le_at(bytes, cursor)?,
             design_reference_offset: u64::try_from(cursor).ok()?,
             form: View::u32_le_at(bytes, cursor + 8)?,
@@ -5043,7 +5041,7 @@ fn parse_body_recipe_operand_frame_with_index(
             candidate_faces: Vec::new(),
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
-        });
+        }, "f3d body recipe references") { return Some(Err(error)); };
         cursor = cursor.checked_add(12)?;
     }
     if bytes.get(cursor) != Some(&1)
@@ -5319,9 +5317,9 @@ pub(crate) fn bind_extrude_selection_identities(
         )?;
 
         let mut ids = Vec::new();
-        ctx.reserve_vec(&mut ids, matches.len(), "f3d Extrude identity IDs")?;
+        ctx.reserve_capacity(&mut ids, matches.len(), "f3d Extrude identity IDs")?;
         for identity in ctx.admit_iter(&matches, "copy F3D Extrude identity matches")?.copied() {
-            ids.push(ctx.copy_retained_text(&identity.id, "f3d Extrude identity ID text")?);
+            ctx.push_vec(&mut ids, ctx.copy_retained_text(&identity.id, "f3d Extrude identity ID text")?, "f3d Extrude identity IDs")?;
         }
         member.operand_identity_ids = ids;
     }
@@ -5757,7 +5755,7 @@ fn parse_sketch_profile_region_selection(
     }
 
     let mut regions = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut regions, region_count, "f3d sketch profile regions") {
+    if let Err(error) = ctx.reserve_capacity(&mut regions, region_count, "f3d sketch profile regions") {
         return Some(Err(error));
     }
     for region_ordinal in 0..region_count {
@@ -5792,7 +5790,7 @@ fn parse_sketch_profile_region_selection(
         }
 
         let mut members = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut members,
             member_count,
             "f3d sketch profile region members",
@@ -5821,7 +5819,7 @@ fn parse_sketch_profile_region_selection(
             {
                 return None;
             }
-            members.push(DesignSketchProfileRegionMember {
+            if let Err(error) = ctx.push_vec(&mut members, DesignSketchProfileRegionMember {
                 kind_offset: u64::try_from(kind_offset).ok()?,
                 curve_primary_id,
                 curve_primary_id_offset: u64::try_from(
@@ -5840,13 +5838,13 @@ fn parse_sketch_profile_region_selection(
                     .ok()?,
                 ],
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
-            });
+            }, "f3d sketch profile region members") { return Some(Err(error)); };
             cursor = cursor.checked_add(region_member::LEN)?;
         }
-        regions.push(DesignSketchProfileRegion {
+        if let Err(error) = ctx.push_vec(&mut regions, DesignSketchProfileRegion {
             member_count_offset: u64::try_from(member_count_offset).ok()?,
             members,
-        });
+        }, "f3d sketch profile regions") { return Some(Err(error)); };
     }
     let companion_at = cursor.checked_add(TERMINATOR_LEN)?;
     if bytes.get(cursor..companion_at)? != [0; TERMINATOR_LEN]
@@ -6265,9 +6263,9 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
         return Ok(None);
     }
     remaining = tail;
-    let mut clauses = ctx.collection_vec(2, "collect F3D SurfacePatch clauses")?;
+    let mut clauses = ctx.vector_storage(2, "collect F3D SurfacePatch clauses")?;
     for _ in 0..2 {
-        let mut fields = ctx.collection_vec(6, "collect F3D SurfacePatch fields")?;
+        let mut fields = ctx.vector_storage(6, "collect F3D SurfacePatch fields")?;
         for _ in 0..6 {
             let Some(delimiter_at) = ctx
                 .admit_iter(remaining, "scan F3D SurfacePatch field delimiters")?
@@ -6296,7 +6294,7 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
                 return Ok(None);
             };
             remaining = tail;
-            fields.push(field);
+            ctx.push_vec(&mut fields, field, "collect F3D SurfacePatch fields")?;
         }
         let Some((&payload_entry_count, tail)) = remaining.split_first() else {
             return Ok(None);
@@ -6355,15 +6353,13 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
         else {
             return Ok(None);
         };
-        clauses.push(
-            crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
+        ctx.push_vec(&mut clauses, crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
                 fields,
                 face_reference_ordinals,
                 edge_reference_ordinals,
 
                 entries,
-            },
-        );
+            }, "collect F3D SurfacePatch clauses")?;
     }
     if let Some(&delimiter) = remaining.first() {
         if delimiter != 0 {
@@ -6564,12 +6560,12 @@ fn edge_recipe_counted_side_candidates<'w>(
         return Ok(Vec::new());
     }
     let mut scalars = Vec::new();
-    ctx.reserve_vec(&mut scalars, scalar_count, "f3d recipe scalars")?;
+    ctx.reserve_capacity(&mut scalars, scalar_count, "f3d recipe scalars")?;
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {
             return Ok(Vec::new());
         };
-        scalars.push(scalar);
+        ctx.push_vec(&mut scalars, scalar, "f3d recipe scalars")?;
         let Some(tail) = recipe_delimiter(tail) else {
             return Ok(Vec::new());
         };

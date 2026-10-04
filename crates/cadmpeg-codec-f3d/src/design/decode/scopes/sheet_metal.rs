@@ -442,7 +442,7 @@ fn legacy_edge_flange_operation_at(
                 Ok(None) => return std::ops::ControlFlow::Break(None),
                 Err(error) => return std::ops::ControlFlow::Break(Some(error)),
             };
-            record_indices.push(record_index);
+            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange wrapper references") { return std::ops::ControlFlow::Break(Some(error)); };
             std::ops::ControlFlow::Continue(record_indices)
         },
     ) {
@@ -538,7 +538,7 @@ fn legacy_edge_flange_operation_at(
                 Ok(None) => return std::ops::ControlFlow::Break(None),
                 Err(error) => return std::ops::ControlFlow::Break(Some(error)),
             };
-            record_indices.push(record_index);
+            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange group references") { return std::ops::ControlFlow::Break(Some(error)); };
             std::ops::ControlFlow::Continue(record_indices)
         },
     ) {
@@ -564,7 +564,7 @@ fn legacy_edge_flange_operation_at(
                 Ok(None) => return std::ops::ControlFlow::Break(None),
                 Err(error) => return std::ops::ControlFlow::Break(Some(error)),
             };
-            record_indices.push(record_index);
+            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange operand references") { return std::ops::ControlFlow::Break(Some(error)); };
             std::ops::ControlFlow::Continue(record_indices)
         },
     ) {

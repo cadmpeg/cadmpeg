@@ -145,14 +145,21 @@ fn exact_rectangular_pattern_instances(
         }
 
         let mut record_indices = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut record_indices,
             count,
             "f3d rectangular pattern record indices",
         ) {
             return Some(Err(error));
         }
-        record_indices.push(*scope.reference_members().values().next()?);
+        if let Err(error) = ctx.push_vec(&mut record_indices, *scope.reference_members().values().next()?, "f3d rectangular pattern record indices") { return Some(Err(error)); };
+        if let Err(error) = ctx.reserve_vec(
+            &mut record_indices,
+            count.checked_sub(1)?,
+            "f3d rectangular pattern record indices",
+        ) {
+            return Some(Err(error));
+        }
         record_indices.extend(
             scope
                 .reference_members()
@@ -162,7 +169,7 @@ fn exact_rectangular_pattern_instances(
         let reference_count = scope.reference_members().len();
 
         let mut reference_starts = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut reference_starts,
             reference_count,
             "f3d rectangular pattern reference starts",
@@ -178,11 +185,11 @@ fn exact_rectangular_pattern_instances(
         Err(error) => return Some(Err(error)),
         };
         for record_index in references {
-            reference_starts.push((record_index, records.first_at_or_after(0, record_index)?));
+            if let Err(error) = ctx.push_vec(&mut reference_starts, (record_index, records.first_at_or_after(0, record_index)?), "f3d rectangular pattern reference starts") { return Some(Err(error)); };
         }
 
         let mut candidates = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut candidates,
             count,
             "f3d rectangular pattern candidate groups",
@@ -245,7 +252,7 @@ fn exact_rectangular_pattern_instances(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            candidates.push(candidate);
+            if let Err(error) = ctx.push_vec(&mut candidates, candidate, "f3d rectangular pattern candidate groups") { return Some(Err(error)); };
         }
         let first_candidates = candidates.first()?;
         let final_candidates = candidates.last()?;
@@ -282,11 +289,11 @@ fn exact_rectangular_pattern_instances(
 
                 let mut run = Vec::new();
                 if let Err(error) =
-                    ctx.reserve_vec(&mut run, count, "f3d rectangular pattern candidate run")
+                    ctx.reserve_capacity(&mut run, count, "f3d rectangular pattern candidate run")
                 {
                     return Some(Err(error));
                 }
-                run.push(*first);
+                if let Err(error) = ctx.push_vec(&mut run, *first, "f3d rectangular pattern candidate run") { return Some(Err(error)); };
                 let mut unique = true;
                 let intermediate_records = match ctx.admit_iter(
                     &candidates[1..count - 1],
@@ -334,17 +341,17 @@ fn exact_rectangular_pattern_instances(
                     if !unique {
                         break;
                     }
-                    run.push(*candidate);
+                    if let Err(error) = ctx.push_vec(&mut run, *candidate, "f3d rectangular pattern candidate run") { return Some(Err(error)); };
                 }
                 if unique {
-                    run.push(*final_candidate);
+                    if let Err(error) = ctx.push_vec(&mut run, *final_candidate, "f3d rectangular pattern candidate run") { return Some(Err(error)); };
 
                     if let Err(error) =
-                        ctx.reserve_vec(&mut runs, 1, "f3d rectangular pattern matching runs")
+                        ctx.reserve_capacity(&mut runs, 1, "f3d rectangular pattern matching runs")
                     {
                         return Some(Err(error));
                     }
-                    runs.push(run);
+                    if let Err(error) = ctx.push_vec(&mut runs, run, "f3d rectangular pattern matching runs") { return Some(Err(error)); };
                 }
             }
         }
@@ -367,7 +374,7 @@ fn exact_rectangular_pattern_instances(
 
         let mut instances = Vec::new();
         if let Err(error) =
-            ctx.reserve_vec(&mut instances, count, "f3d rectangular pattern instances")
+            ctx.reserve_capacity(&mut instances, count, "f3d rectangular pattern instances")
         {
             return Some(Err(error));
         }
@@ -383,13 +390,13 @@ fn exact_rectangular_pattern_instances(
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
         for (record_index, (value, offset)) in record_indices.copied().zip(run) {
-            instances.push(patterns::DesignPatternInstance {
+            if let Err(error) = ctx.push_vec(&mut instances, patterns::DesignPatternInstance {
                 record_index,
                 transform: crate::records::identity::Located {
                     value: *value,
                     offset: *offset,
                 },
-            });
+            }, "f3d rectangular pattern instances") { return Some(Err(error)); };
         }
         Some(Ok(DesignRectangularPatternInstances::Bodies(instances)))
     })();
@@ -451,14 +458,14 @@ fn exact_rigid_transform_candidates(
             if let Ok(transform) =
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
             {
-                if let Err(error) = ctx.reserve_vec(
+                if let Err(error) = ctx.reserve_capacity(
                     &mut candidates,
                     1,
                     "f3d rectangular pattern transform candidates",
                 ) {
                     return Some(Err(error));
                 }
-                candidates.push((transform, u64::try_from(offset).ok()?));
+                if let Err(error) = ctx.push_vec(&mut candidates, (transform, u64::try_from(offset).ok()?), "f3d rectangular pattern transform candidates") { return Some(Err(error)); };
             }
         }
         (!candidates.is_empty()).then_some(Ok(candidates))
@@ -537,18 +544,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Err(error) => return Some(Err(error)),
                 };
                 if let Some(axis) = axis {
-                    if let Err(error) = ctx.reserve_vec(
+                    if let Err(error) = ctx.reserve_capacity(
                         &mut axis_candidates,
                         1,
                         "f3d circular pattern axis candidates",
                     ) {
                         return Some(Err(error));
                     }
-                    axis_candidates.push(CircularPatternAxisCandidate {
+                    if let Err(error) = ctx.push_vec(&mut axis_candidates, CircularPatternAxisCandidate {
                         axis,
                         axis_record_index: record_index,
                         selection_record_index,
-                    });
+                    }, "f3d circular pattern axis candidates") { return Some(Err(error)); };
                 }
             }
         }
@@ -579,18 +586,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Err(error) => return Some(Err(error)),
                 };
                 if let Some((axis, selection_record_index)) = candidate {
-                    if let Err(error) = ctx.reserve_vec(
+                    if let Err(error) = ctx.reserve_capacity(
                         &mut axis_candidates,
                         1,
                         "f3d circular pattern axis candidates",
                     ) {
                         return Some(Err(error));
                     }
-                    axis_candidates.push(CircularPatternAxisCandidate {
+                    if let Err(error) = ctx.push_vec(&mut axis_candidates, CircularPatternAxisCandidate {
                         axis,
                         axis_record_index: record_index,
                         selection_record_index,
-                    });
+                    }, "f3d circular pattern axis candidates") { return Some(Err(error)); };
                 }
             }
         }
@@ -634,14 +641,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         };
         let mut count_candidates = Vec::new();
         for candidate in owner_count_candidates {
-            if let Err(error) = ctx.reserve_vec(
+            if let Err(error) = ctx.reserve_capacity(
                 &mut count_candidates,
                 1,
                 "f3d circular pattern count candidates",
             ) {
                 return Some(Err(error));
             }
-            count_candidates.push(candidate);
+            if let Err(error) = ctx.push_vec(&mut count_candidates, candidate, "f3d circular pattern count candidates") { return Some(Err(error)); };
         }
         if count_candidates.is_empty() {
             let record_indices = match super::parameter_scope::reference_members(
@@ -664,14 +671,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Err(error) => return Some(Err(error)),
                 };
                 if let Some((count, count_offset)) = candidate {
-                    if let Err(error) = ctx.reserve_vec(
+                    if let Err(error) = ctx.reserve_capacity(
                         &mut count_candidates,
                         1,
                         "f3d circular pattern count candidates",
                     ) {
                         return Some(Err(error));
                     }
-                    count_candidates.push((count, record_index, count_offset));
+                    if let Err(error) = ctx.push_vec(&mut count_candidates, (count, record_index, count_offset), "f3d circular pattern count candidates") { return Some(Err(error)); };
                 }
             }
         }
@@ -706,14 +713,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         };
         let mut angle_candidates = Vec::new();
         for candidate in owner_angle_candidates {
-            if let Err(error) = ctx.reserve_vec(
+            if let Err(error) = ctx.reserve_capacity(
                 &mut angle_candidates,
                 1,
                 "f3d circular pattern angle candidates",
             ) {
                 return Some(Err(error));
             }
-            angle_candidates.push(candidate);
+            if let Err(error) = ctx.push_vec(&mut angle_candidates, candidate, "f3d circular pattern angle candidates") { return Some(Err(error)); };
         }
         if angle_candidates.is_empty() {
             let record_indices = match super::parameter_scope::reference_members(
@@ -737,14 +744,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     continue;
                 };
 
-                if let Err(error) = ctx.reserve_vec(
+                if let Err(error) = ctx.reserve_capacity(
                     &mut angle_candidates,
                     1,
                     "f3d circular pattern angle candidates",
                 ) {
                     return Some(Err(error));
                 }
-                angle_candidates.push((angle, record_index, scalar.value_offset));
+                if let Err(error) = ctx.push_vec(&mut angle_candidates, (angle, record_index, scalar.value_offset), "f3d circular pattern angle candidates") { return Some(Err(error)); };
             }
         }
         if let Err(error) = ctx.stable_sort_by_key(
@@ -963,7 +970,7 @@ fn exact_legacy_circular_pattern_axis(
         };
 
         let mut retained_wrappers = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut retained_wrappers,
             count,
             "f3d circular pattern historical axis wrappers",
@@ -971,7 +978,7 @@ fn exact_legacy_circular_pattern_axis(
             return Some(Err(error));
         }
         for (_, wrapper) in wrappers.into_iter().flatten() {
-            retained_wrappers.push(wrapper);
+            if let Err(error) = ctx.push_vec(&mut retained_wrappers, wrapper, "f3d circular pattern historical axis wrappers") { return Some(Err(error)); };
         }
         Some(Ok((
             DesignCircularPatternAxis::HistoricalEdge {

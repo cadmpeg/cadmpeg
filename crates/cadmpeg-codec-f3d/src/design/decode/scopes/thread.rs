@@ -43,7 +43,7 @@ pub(super) fn exact_thread_construction(
     };
 
     let mut face_group_record_indices = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut face_group_record_indices,
         count,
         "f3d Thread face groups",
@@ -53,9 +53,18 @@ pub(super) fn exact_thread_construction(
             let Some(first) = scope.reference_members().values().next() else {
                 return Ok(None);
             };
-            face_group_record_indices.push(*first);
+            ctx.push_vec(
+                &mut face_group_record_indices,
+                *first,
+                "f3d Thread face groups",
+            )?;
         }
         ThreadPrefix::Compact => {
+            ctx.reserve_vec(
+                &mut face_group_record_indices,
+                count,
+                "f3d Thread face groups",
+            )?;
             face_group_record_indices
                 .extend(scope.reference_members().values().step_by(2).copied());
         }

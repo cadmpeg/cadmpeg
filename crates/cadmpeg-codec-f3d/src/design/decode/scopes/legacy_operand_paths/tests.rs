@@ -143,3 +143,59 @@ fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
         );
     });
 }
+
+#[test]
+fn legacy_class_412_identity_guid_push_refuses_each_collection_item() {
+    let bytes = path_fixture();
+    let start = path_locator::LEN;
+    let end = start + class_412_path::LEN;
+    let path = crate::design::test_support::with_test_decode_context(|ctx| {
+        super::exact_legacy_class_412_path(ctx, &bytes, start, 11, end)
+            .expect("valid legacy class-412 path")
+    })
+    .expect("four class-412 identity GUIDs");
+    assert_eq!(path.identity_guids.len(), 4);
+
+    for skip in 0..4 {
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "collect F3D legacy path identity GUIDs",
+            skip,
+            |ctx| {
+                super::exact_legacy_class_412_path(ctx, &bytes, start, 11, end).map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D legacy path identity GUIDs"
+                    && limit.additional == 1
+        ));
+    }
+}
+
+#[test]
+fn legacy_path_identity_guids_refuse_collection_limit() {
+    let bytes = path_fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let scope = scope();
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "collect F3D legacy path identity GUIDs",
+        0,
+        |ctx| {
+            super::exact_legacy_class_388_operand_path_envelope(
+                ctx, &bytes, &records, &scope, 10, 1, 0,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect F3D legacy path identity GUIDs"
+                && limit.additional == 1
+    ));
+}

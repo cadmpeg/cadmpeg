@@ -1399,3 +1399,47 @@ fn legacy_edge_flange_result_table_rejects_each_duplicate_without_heap_growth() 
         assert!(decode(&bytes).is_none(), "duplicate at result {ordinal}");
     }
 }
+
+#[test]
+fn legacy_edge_flange_reference_vectors_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let references = [
+        201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246,
+    ];
+    let frame = legacy_class325_two_sided_per_edge_flange_frame();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            ctx,
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "325",
+            "258",
+            &references,
+        )
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(decode(ctx).expect("valid legacy EdgeFlange frame").is_some());
+    });
+
+    for operation in [
+        "collect F3D legacy edge flange wrapper references",
+        "collect F3D legacy edge flange group references",
+        "collect F3D legacy edge flange operand references",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| decode(ctx).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+                    && limit.additional == 1
+        ));
+    }
+}

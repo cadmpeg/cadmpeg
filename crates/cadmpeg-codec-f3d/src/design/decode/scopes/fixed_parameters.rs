@@ -255,12 +255,12 @@ pub(super) fn exact_fixed_fillet_parameters(
         lanes.len() / 2
     };
 
-    ctx.reserve_vec(&mut groups, group_count, "f3d fixed Fillet groups")?;
+    ctx.reserve_capacity(&mut groups, group_count, "f3d fixed Fillet groups")?;
     if lanes.len() == 1 {
         let Some(value) = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0]))) else {
             return Ok(None);
         };
-        groups.push(value);
+        ctx.push_vec(&mut groups, value, "f3d fixed Fillet groups")?;
     } else if lanes.len() % 2 == 0 {
         let mut admitted_lanes =
             ctx.admit_iter(&lanes, "group F3D fixed Fillet scalar lanes")?;
@@ -274,13 +274,13 @@ pub(super) fn exact_fixed_fillet_parameters(
             ) else {
                 return Ok(None);
             };
-            groups.push(value);
+            ctx.push_vec(&mut groups, value, "f3d fixed Fillet groups")?;
         }
     } else {
         let intermediate_count = (lanes.len() - 3) / 2;
 
         let mut intermediate = Vec::new();
-        ctx.reserve_vec(
+        ctx.reserve_capacity(
             &mut intermediate,
             intermediate_count,
             "f3d fixed Fillet intermediate rows",
@@ -292,10 +292,10 @@ pub(super) fn exact_fixed_fillet_parameters(
         while let (Some(radius_lane), Some(parameter_lane)) =
             (admitted_lanes.next(), admitted_lanes.next())
         {
-            intermediate.push(DesignFixedFilletIntermediate {
+            ctx.push_vec(&mut intermediate, DesignFixedFilletIntermediate {
                 radius: scalar(radius_lane),
                 parameter: scalar(parameter_lane),
-            });
+            }, "f3d fixed Fillet intermediate rows")?;
         }
         let Some(value) = group(
             Some(&lanes[0]),
@@ -307,7 +307,7 @@ pub(super) fn exact_fixed_fillet_parameters(
         ) else {
             return Ok(None);
         };
-        groups.push(value);
+        ctx.push_vec(&mut groups, value, "f3d fixed Fillet groups")?;
     }
     Ok(Some(DesignFixedFilletParameters { groups }))
 }
