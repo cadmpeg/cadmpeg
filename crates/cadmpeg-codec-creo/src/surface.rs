@@ -4642,11 +4642,10 @@ fn inline_suffix_witness_agrees(
         InlineSurfaceCarrier::Cylinder { frame: witness, .. } => {
             let matching = ctx
                 .admit_iter(candidates, "creo inline witness carrier count")?
-                .flatten()
                 .filter(|candidate| {
-                    let InlineSurfaceCarrier::Cylinder {
+                    let Some(InlineSurfaceCarrier::Cylinder {
                         frame: candidate, ..
-                    } = **candidate
+                    }) = **candidate
                     else {
                         return false;
                     };
