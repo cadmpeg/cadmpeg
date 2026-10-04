@@ -658,11 +658,11 @@ fn local_reference_candidates(
     at: usize,
     allow_extra_zero: bool,
 ) -> Result<Vec<LocalReferenceCandidate>, CodecError> {
-    let mut candidates = ctx.collection_vec(4, "collect F3D local reference candidates")?;
+    let mut candidates = ctx.vector_storage(4, "collect F3D local reference candidates")?;
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
         if let Some((target, inline_type_guid)) = reference.into_local() {
-            candidates.push(LocalReferenceCandidate {
+            ctx.push_vec(&mut candidates, LocalReferenceCandidate {
                 target,
                 end,
                 inline_type_guid: inline_type_guid
@@ -671,9 +671,9 @@ fn local_reference_candidates(
                     })
                     .transpose()?,
                 padding: ReferencePadding::TwoZeros,
-            });
+            }, "collect F3D local reference candidates")?;
             if allow_extra_zero && bytes.get(end) == Some(&0) {
-                candidates.push(LocalReferenceCandidate {
+                ctx.push_vec(&mut candidates, LocalReferenceCandidate {
                     target,
                     end: end + 1,
                     inline_type_guid: inline_type_guid
@@ -682,26 +682,26 @@ fn local_reference_candidates(
                         })
                         .transpose()?,
                     padding: ReferencePadding::TwoZeros,
-                });
+                }, "collect F3D local reference candidates")?;
             }
         }
     }
     if at.checked_add(2).and_then(|end| bytes.get(at..end)) == Some(&[1, 1]) {
         if let (Some(target_at), Some(end)) = (at.checked_add(2), at.checked_add(10)) {
             if let Some(target) = View::u64_le_at(bytes, target_at) {
-                candidates.push(LocalReferenceCandidate {
+                ctx.push_vec(&mut candidates, LocalReferenceCandidate {
                     target,
                     end,
                     inline_type_guid: None,
                     padding: ReferencePadding::None,
-                });
+                }, "collect F3D local reference candidates")?;
                 if allow_extra_zero && bytes.get(end) == Some(&0) {
-                    candidates.push(LocalReferenceCandidate {
+                    ctx.push_vec(&mut candidates, LocalReferenceCandidate {
                         target,
                         end: end + 1,
                         inline_type_guid: None,
                         padding: ReferencePadding::None,
-                    });
+                    }, "collect F3D local reference candidates")?;
                 }
             }
         }
@@ -973,18 +973,18 @@ fn parse_snapshot_body_map_frame(
             }
             let mut bindings = Vec::new();
 
-            ctx.reserve_vec(&mut bindings, count, "f3d snapshot body-map pairs")?;
+            ctx.reserve_capacity(&mut bindings, count, "f3d snapshot body-map pairs")?;
             for (ordinal, pair) in ctx
                 .admit_iter(pairs, "scan F3D snapshot body-map pair payload")?
                 .chunks(pair_size)
                 .enumerate()
             {
                 let mut pair = View::over_retained(pair);
-                bindings.push(BodyBinding {
+                ctx.push_vec(&mut bindings, BodyBinding {
                     asm_key: pair.req_u64_le()?,
                     asm_key_offset: pairs_start + ordinal * 16,
                     entity_suffix: pair.req_u64_le()?,
-                });
+                }, "f3d snapshot body-map pairs")?;
             }
             return Ok(Some(BodyMapRecord {
                 blob_name,
@@ -1826,6 +1826,7 @@ fn is_utf16_guid(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecErr
 mod tests {
     mod extend_slice;
     mod map_limits;
+    mod push_vec;
     mod utf8;
 
     use cadmpeg_core::decode::u64_from_index;

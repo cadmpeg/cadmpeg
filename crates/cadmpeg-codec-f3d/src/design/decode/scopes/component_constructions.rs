@@ -401,7 +401,7 @@ pub(super) fn exact_component_insert_construction(
                             return Some(Err(error));
                         }
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            if let Err(error) = ctx.reserve_vec(
+                            if let Err(error) = ctx.reserve_capacity(
                                 &mut placements,
                                 1,
                                 "f3d component insert placements",
@@ -419,7 +419,7 @@ pub(super) fn exact_component_insert_construction(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                            placements.push((role, at + 4, Some(transform_at)));
+                            if let Err(error) = ctx.push_vec(&mut placements, (role, at + 4, Some(transform_at)), "f3d component insert placements") { return Some(Err(error)); };
                         }
                     }
                 }
@@ -591,11 +591,11 @@ pub(super) fn exact_component_insert_construction(
                         };
 
                         if let Err(error) =
-                            ctx.reserve_vec(&mut placements, 1, "f3d component insert placements")
+                            ctx.reserve_capacity(&mut placements, 1, "f3d component insert placements")
                         {
                             return Some(Err(error));
                         }
-                        placements.push((role, at + 4, Some(transform_at)));
+                        if let Err(error) = ctx.push_vec(&mut placements, (role, at + 4, Some(transform_at)), "f3d component insert placements") { return Some(Err(error)); };
                     }
                 }
                 if scope.frame_length() == 381 {

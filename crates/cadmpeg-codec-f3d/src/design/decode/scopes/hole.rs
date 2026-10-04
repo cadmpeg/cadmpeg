@@ -283,7 +283,7 @@ fn hole_construction_frame_at(
 
         let mut input_records = Vec::new();
         if let Err(error) =
-            ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records")
+            ctx.reserve_capacity(&mut input_records, input_count, "f3d Hole input records")
         {
             return Some(Err(error));
         }
@@ -291,10 +291,10 @@ fn hole_construction_frame_at(
             let reference_at = cursor;
             let reference = take_reference(body, &mut cursor)?;
             let target = u32::try_from(reference.target()?).ok()?;
-            input_records.push(crate::records::identity::Located {
+            if let Err(error) = ctx.push_vec(&mut input_records, crate::records::identity::Located {
                 value: target,
                 offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            });
+            }, "f3d Hole input records") { return Some(Err(error)); };
         }
         let paired_end_matches = if version == 4 {
             cursor == paired_at

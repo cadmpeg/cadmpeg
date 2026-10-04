@@ -221,7 +221,7 @@ fn exact_assembly_operand_path_envelope(
             usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
 
         let mut path_spans = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut path_spans, span_count, "f3d assembly path spans")
+        if let Err(error) = ctx.reserve_capacity(&mut path_spans, span_count, "f3d assembly path spans")
         {
             return Some(Err(error));
         }
@@ -236,7 +236,7 @@ fn exact_assembly_operand_path_envelope(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            path_spans.push((record_index, record_at, next));
+            if let Err(error) = ctx.push_vec(&mut path_spans, (record_index, record_at, next), "f3d assembly path spans") { return Some(Err(error)); };
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
@@ -388,10 +388,10 @@ fn exact_assembly_operand_path(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                occurrence_guids.push(crate::records::identity::Located {
+                if let Err(error) = ctx.push_vec(&mut occurrence_guids, crate::records::identity::Located {
                     value: occurrence,
                     offset: u64::try_from(position + 4).ok()?,
-                });
+                }, "f3d assembly path occurrences") { return Some(Err(error)); };
                 position = after_occurrence;
                 for _ in 0..2 {
                     let (guid, after_guid) =
@@ -400,10 +400,10 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    identity_guids.push(crate::records::identity::Located {
+                    if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
-                    });
+                    }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
                     position = after_guid;
                 }
                 if View::u64_le_at(bytes, position)? != 2 {
@@ -417,10 +417,10 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    identity_guids.push(crate::records::identity::Located {
+                    if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
-                    });
+                    }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
                     position = after_guid;
                 }
                 if View::u32_le_at(bytes, position)? != 2 {
@@ -447,7 +447,7 @@ fn exact_assembly_operand_path(
                     return None;
                 }
 
-                if let Err(error) = ctx.reserve_vec(
+                if let Err(error) = ctx.reserve_capacity(
                     &mut occurrence_guids,
                     count,
                     "f3d assembly path occurrences",
@@ -462,10 +462,10 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    occurrence_guids.push(crate::records::identity::Located {
+                    if let Err(error) = ctx.push_vec(&mut occurrence_guids, crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
-                    });
+                    }, "f3d assembly path occurrences") { return Some(Err(error)); };
                     position = after_guid;
                 }
                 if position == limit {
@@ -480,10 +480,10 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                        identity_guids.push(crate::records::identity::Located {
+                        if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,
-                        });
+                        }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
                         position = after_guid;
                     }
                     if View::u64_le_at(bytes, position)? != 2 {
@@ -497,10 +497,10 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                        identity_guids.push(crate::records::identity::Located {
+                        if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,
-                        });
+                        }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
                         position = after_guid;
                     }
                     if View::u32_le_at(bytes, position)? != 2 {

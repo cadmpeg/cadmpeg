@@ -101,20 +101,18 @@ fn point_data_level(
         }
 
         let mut inputs = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut inputs, arity, "f3d point-data inputs") {
+        if let Err(error) = ctx.reserve_capacity(&mut inputs, arity, "f3d point-data inputs") {
             return Some(Err(error));
         }
         for _ in 0..arity {
             let reference_offset = cursor.checked_add(1)?;
             let reference = take_reference(body, &mut cursor)?;
-            inputs.push(
-                DesignWorkPointInput::try_new(
+            if let Err(error) = ctx.push_vec(&mut inputs, DesignWorkPointInput::try_new(
                     u32::try_from(reference.target()?).ok()?,
                     u64::try_from(reference_offset).ok()?,
                     None,
                 )
-                .ok()?,
-            );
+                .ok()?, "f3d point-data inputs") { return Some(Err(error)); };
         }
         Some(Ok(PointDataLevel {
             position_at,

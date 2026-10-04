@@ -228,8 +228,8 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // Two clause slots, six field slots and nine field words precede the topology entry.
-    policy.limits.max_collection_items = 2 + 6 + 9;
+    // Counts six first-clause field slots and nine field words before the topology entry.
+    policy.limits.max_collection_items = 6 + 9;
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
@@ -237,9 +237,43 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology entry"
+                && failure.additional == 1
     ));
 }
 
+#[test]
+fn surface_patch_field_and_clause_pushes_refuse_each_collection_item() {
+    let program = [
+        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2, 1,
+        1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
+    ];
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        surface_patch_recipe_structure_with_context(ctx, &program, 4)
+    })
+    .expect("valid SurfacePatch recipe")
+    .is_some());
+
+    for (operation, request_count) in [
+        ("collect F3D SurfacePatch fields", 12),
+        ("collect F3D SurfacePatch clauses", 2),
+    ] {
+        for skip in 0..request_count {
+            let refusal = crate::test_support::resource_refusal_at(
+                ResourceDimension::CollectionItems,
+                operation,
+                skip,
+                |ctx| surface_patch_recipe_structure_with_context(ctx, &program, 4).map(|_| ()),
+            );
+            assert!(matches!(
+                refusal,
+                CodecError::ResourceLimit(failure)
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+                        && failure.additional == 1
+            ));
+        }
+    }
+}
 #[test]
 fn surface_patch_recipe_scans_refuse_work_limits() {
     let program = [

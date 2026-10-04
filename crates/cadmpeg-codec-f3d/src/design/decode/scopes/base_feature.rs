@@ -974,24 +974,24 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let mut cursor = start + result_body::LEN;
-        let mut entities = match ctx.collection_vec(body_count, "f3d BaseFeature entities") {
+        let mut entities = match ctx.vector_storage(body_count, "f3d BaseFeature entities") {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
         for _ in 0..body_count {
-            entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
+            if let Err(error) = ctx.push_vec(&mut entities, read_base_feature_entry_at(bytes, &mut cursor)?, "f3d BaseFeature entities") { return Some(Err(error)); };
         }
-        let mut references = match ctx.collection_vec(body_count, "f3d BaseFeature references") {
+        let mut references = match ctx.vector_storage(body_count, "f3d BaseFeature references") {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
-            references.push(DesignBaseFeatureEntry {
+            if let Err(error) = ctx.push_vec(&mut references, DesignBaseFeatureEntry {
                 value: u32::try_from(entry.value).ok()?,
                 offset: entry.offset,
                 field: entry.field,
-            });
+            }, "f3d BaseFeature references") { return Some(Err(error)); };
         }
         if expanded {
             if bytes.get(cursor) != Some(&1)
@@ -1039,7 +1039,7 @@ pub(super) fn exact_base_feature_construction(
             cursor += 4;
         }
         let mut repeated_reference_fields =
-            match ctx.collection_vec(body_count, "f3d BaseFeature repeated reference fields") {
+            match ctx.vector_storage(body_count, "f3d BaseFeature repeated reference fields") {
                 Ok(rows) => rows,
                 Err(error) => return Some(Err(error)),
             };
@@ -1054,12 +1054,10 @@ pub(super) fn exact_base_feature_construction(
             {
                 return None;
             }
-            repeated_reference_fields.push(
-                bytes
+            if let Err(error) = ctx.push_vec(&mut repeated_reference_fields, bytes
                     .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
                     .try_into()
-                    .ok()?,
-            );
+                    .ok()?, "f3d BaseFeature repeated reference fields") { return Some(Err(error)); };
             cursor += compact_entry::LEN;
         }
         if bytes.get(cursor) != Some(&0) {
@@ -1089,7 +1087,7 @@ pub(super) fn exact_base_feature_construction(
         }
         cursor += 4;
         let mut first = None;
-        let mut rest = match ctx.collection_vec(
+        let mut rest = match ctx.vector_storage(
             body_count.checked_sub(1)?,
             "f3d BaseFeature remaining result bodies",
         ) {
@@ -1134,7 +1132,7 @@ pub(super) fn exact_base_feature_construction(
             if first.is_none() {
                 first = Some(row);
             } else {
-                rest.push(row);
+                if let Err(error) = ctx.push_vec(&mut rest, row, "f3d BaseFeature remaining result bodies") { return Some(Err(error)); };
             }
             cursor += 11;
         }
@@ -1203,7 +1201,7 @@ fn exact_base_feature_body_snapshot(
             return None;
         }
         let mut cursor = start + snapshot::LEN;
-        let mut bodies = match ctx.collection_vec(body_count, "f3d BaseFeature snapshot bodies") {
+        let mut bodies = match ctx.vector_storage(body_count, "f3d BaseFeature snapshot bodies") {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
@@ -1211,8 +1209,7 @@ fn exact_base_feature_body_snapshot(
             if bytes.get(cursor) != Some(&1) {
                 return None;
             }
-            bodies.push(
-                crate::records::feature::base_feature::DesignBaseFeatureEntry {
+            if let Err(error) = ctx.push_vec(&mut bodies, crate::records::feature::base_feature::DesignBaseFeatureEntry {
                     value: View::u64_le_at(bytes, cursor + snapshot_entry::BODY_ENTITY_SUFFIX)?,
                     offset: u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?,
                     field: bytes
@@ -1222,8 +1219,7 @@ fn exact_base_feature_body_snapshot(
                         )?
                         .try_into()
                         .ok()?,
-                },
-            );
+                }, "f3d BaseFeature snapshot bodies") { return Some(Err(error)); };
             cursor += snapshot_entry::LEN;
         }
         let preamble = bytes.get(cursor..cursor + snapshot_expanded_preamble::LEN)?;

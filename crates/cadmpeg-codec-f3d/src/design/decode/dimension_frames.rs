@@ -1073,11 +1073,11 @@ pub(super) fn contiguous_i32_program(
     let count = view.remaining() / 4;
 
     let mut program = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut program, count, "f3d recipe program words") {
+    if let Err(error) = ctx.reserve_capacity(&mut program, count, "f3d recipe program words") {
         return Some(Err(error));
     }
     for at in (start..end).step_by(4) {
-        program.push(View::i32_le_at(bytes, at)?);
+        if let Err(error) = ctx.push_vec(&mut program, View::i32_le_at(bytes, at)?, "f3d recipe program words") { return Some(Err(error)); };
     }
     Some(Ok(program))
 }
@@ -1804,7 +1804,7 @@ fn parse_dimension_annotation_frame(
     let mut position = start.checked_add(24)?;
 
     let mut operands = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut operands, count, "f3d dimension annotation operands") {
+    if let Err(error) = ctx.reserve_capacity(&mut operands, count, "f3d dimension annotation operands") {
         return Some(Err(error));
     }
     for _ in 0..count {
@@ -1818,12 +1818,12 @@ fn parse_dimension_annotation_frame(
         if geometry_record_index.is_some_and(|index| !geometry_indices.contains(&index.get())) {
             return None;
         }
-        operands.push(DesignDimensionAnnotationOperand {
+        if let Err(error) = ctx.push_vec(&mut operands, DesignDimensionAnnotationOperand {
             geometry_record_index,
             geometry_reference_offset: u64_from_index(position + 1),
             role: View::u32_le_at(bytes, position + 11)?,
             role_offset: u64_from_index(position + 11),
-        });
+        }, "f3d dimension annotation operands") { return Some(Err(error)); };
         position = position.checked_add(15)?;
     }
     if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
@@ -1890,7 +1890,7 @@ fn parse_dimension_annotation_frame(
                 let mut cursor = tail + 15;
 
                 let mut return_members = Vec::new();
-                if let Err(error) = ctx.reserve_vec(
+                if let Err(error) = ctx.reserve_capacity(
                     &mut return_members,
                     return_count,
                     "f3d dimension annotation return members",
@@ -1915,10 +1915,10 @@ fn parse_dimension_annotation_frame(
                         valid = false;
                         break;
                     }
-                    return_members.push(crate::records::identity::Located {
+                    if let Err(error) = ctx.push_vec(&mut return_members, crate::records::identity::Located {
                         value: reference,
                         offset: u64_from_index(cursor + 1),
-                    });
+                    }, "f3d dimension annotation return members") { return Some(Err(error)); };
                     cursor += 11;
                 }
                 if !valid {
@@ -2253,7 +2253,7 @@ fn parse_dimension_presentation_frame(
     let mut position = start.checked_add(24)?;
 
     let mut operands = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut operands, count, "f3d dimension presentation operands")
+    if let Err(error) = ctx.reserve_capacity(&mut operands, count, "f3d dimension presentation operands")
     {
         return Some(Err(error));
     }
@@ -2268,12 +2268,12 @@ fn parse_dimension_presentation_frame(
         if !geometry_indices.contains(&geometry_record_index.get()) {
             return None;
         }
-        operands.push(DesignDimensionPresentationOperand {
+        if let Err(error) = ctx.push_vec(&mut operands, DesignDimensionPresentationOperand {
             geometry_record_index,
             geometry_reference_offset: u64::try_from(position + 1).ok()?,
             role: View::u32_le_at(bytes, position + 11)?,
             role_offset: u64::try_from(position + 11).ok()?,
-        });
+        }, "f3d dimension presentation operands") { return Some(Err(error)); };
         position = position.checked_add(15)?;
     }
     let presentation_byte_offset = position;
@@ -2612,7 +2612,7 @@ fn parse_dimension_locus_group(
     let mut position = start.checked_add(24)?;
 
     let mut geometry = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut geometry, count, "f3d dimension locus geometry") {
+    if let Err(error) = ctx.reserve_capacity(&mut geometry, count, "f3d dimension locus geometry") {
         return Some(Err(error));
     }
     for _ in 0..count {
@@ -2625,12 +2625,12 @@ fn parse_dimension_locus_group(
         if !geometry_indices.contains(&geometry_record_index) {
             return None;
         }
-        geometry.push((
+        if let Err(error) = ctx.push_vec(&mut geometry, (
             geometry_record_index,
             u64_from_index(position + 1),
             View::u32_le_at(bytes, position + 11)?,
             u64_from_index(position + 11),
-        ));
+        ), "f3d dimension locus geometry") { return Some(Err(error)); };
         position = position.checked_add(15)?;
     }
     if bytes.get(position) != Some(&0)
@@ -2656,7 +2656,7 @@ fn parse_dimension_locus_group(
     position = position.checked_add(8)?;
 
     let mut loci = Vec::new();
-    if let Err(error) = ctx.reserve_vec(
+    if let Err(error) = ctx.reserve_capacity(
         &mut loci,
         return_count,
         "f3d dimension locus return members",
@@ -2677,7 +2677,7 @@ fn parse_dimension_locus_group(
         if !geometry_indices.contains(&record_index) {
             return None;
         }
-        loci.push(DesignDimensionLocus {
+        if let Err(error) = ctx.push_vec(&mut loci, DesignDimensionLocus {
             geometry_record_index,
             geometry_reference_offset,
             role,
@@ -2686,7 +2686,7 @@ fn parse_dimension_locus_group(
                 value: record_index,
                 offset: u64_from_index(position + 1),
             },
-        });
+        }, "f3d dimension locus return members") { return Some(Err(error)); };
         position = position.checked_add(11)?;
     }
     if bytes.get(position) != Some(&0) {

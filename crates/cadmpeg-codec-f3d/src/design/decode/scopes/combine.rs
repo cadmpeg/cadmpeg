@@ -171,7 +171,7 @@ pub(super) fn exact_combine_operation(
                 CombineOperandRole::Tool => {
                     let additional = first_tool.is_some();
                     if additional {
-                        if let Err(error) = ctx.reserve_vec(
+                        if let Err(error) = ctx.reserve_capacity(
                             &mut additional_tools,
                             1,
                             "f3d Combine additional tools",
@@ -195,7 +195,7 @@ pub(super) fn exact_combine_operation(
                         external_identity,
                     };
                     if additional {
-                        additional_tools.push(selection);
+                        if let Err(error) = ctx.push_vec(&mut additional_tools, selection, "f3d Combine additional tools") { return Some(Err(error)); };
                     } else {
                         first_tool = Some(selection);
                     }

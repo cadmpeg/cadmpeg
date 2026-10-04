@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::operands::{
-    face_source_carrier_layout, face_source_reference_headers, parse_face_source_carrier_prefix,
+    decode_face_source_groups, face_source_carrier_layout, face_source_reference_headers,
+    parse_face_source_carrier_prefix,
 };
 use crate::test_support::write_marked_reference;
 
@@ -178,4 +179,121 @@ fn face_source_reference_storage_has_fixed_capacity() {
         assert_eq!(references.len(), count);
         assert_eq!(references.capacity(), 4);
     }
+}
+
+#[test]
+fn face_source_reference_push_refuses_each_collection_item() {
+    let layout = face_source_carrier_layout("398").unwrap();
+    let bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
+    let references = crate::test_support::with_decode_context(|ctx| {
+        parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout)
+            .expect("valid FaceSource carrier")
+    })
+    .expect("four FaceSource references");
+    assert_eq!(references.len(), 4);
+
+    for skip in 0..4 {
+        let refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "collect F3D face source references",
+            skip,
+            |ctx| parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D face source references"
+                    && limit.additional == 1
+        ));
+    }
+}
+
+#[test]
+fn face_source_member_vector_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::identity::ReferenceRun;
+
+    let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"300", 10);
+
+    let carrier_at = bulk.len();
+    crate::test_support::indexed_header(&mut bulk, *b"398", 200);
+    bulk.resize(carrier_at + 96, 0);
+    crate::test_support::write_marked_reference(&mut bulk, carrier_at + 21, 10);
+    bulk[carrier_at + 32..carrier_at + 36].copy_from_slice(&4_u32.to_le_bytes());
+    for (ordinal, record_index) in [202_u32, 203, 204, 205].into_iter().enumerate() {
+        crate::test_support::write_marked_reference(
+            &mut bulk,
+            carrier_at + 36 + ordinal * 11,
+            record_index,
+        );
+    }
+    bulk[carrier_at + 80..carrier_at + 84].copy_from_slice(&100_u32.to_le_bytes());
+    bulk[carrier_at + 84..carrier_at + 92].copy_from_slice(&0.125_f64.to_le_bytes());
+    bulk[carrier_at + 92..carrier_at + 96].copy_from_slice(&100_u32.to_le_bytes());
+    crate::test_support::indexed_header(&mut bulk, *b"462", 201);
+    for record_index in [202_u32, 203, 204, 205] {
+        let mut member = Vec::new();
+        crate::test_support::indexed_header(&mut member, *b"286", record_index);
+        member.extend_from_slice(&[0; 10]);
+        member.extend_from_slice(&u64::from(record_index).to_le_bytes());
+        crate::test_support::lp_utf16(
+            &mut member,
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        );
+        crate::test_support::lp_utf16(
+            &mut member,
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        );
+        member.extend_from_slice(&2_u32.to_le_bytes());
+        member.push(0);
+        member.extend_from_slice(&[0; 4]);
+        bulk.extend(member);
+    }
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::Face,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = ReferenceRun::unlocated(vec![200, 201]);
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    let archive = crate::test_support::zip_test::f3d_with_configuration(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+        stream_name,
+        &bulk,
+    );
+
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            decode_face_source_groups(ctx, scan, std::slice::from_ref(&scope))
+        })
+        .expect("valid face-source group");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].source_members.len(), 4);
+
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "collect F3D face source members",
+            0,
+            |ctx| {
+                decode_face_source_groups(ctx, scan, std::slice::from_ref(&scope)).map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D face source members"
+                    && limit.additional == 1
+        ));
+    });
 }

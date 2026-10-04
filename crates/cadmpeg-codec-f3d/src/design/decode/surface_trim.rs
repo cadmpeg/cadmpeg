@@ -205,7 +205,7 @@ fn exact_surface_trim_operation(
     ) = parsed_prefix?;
 
     let mut cell_entries = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut cell_entries,
         cell_count_usize,
         "f3d surface-trim cell entries",
@@ -224,7 +224,7 @@ fn exact_surface_trim_operation(
         cell_count_usize,
         "f3d surface-trim cell ordinals",
     )?;
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<DesignSurfaceTrimOperation, CodecError>> {
         for ordinal in 0..cell_count_usize {
             let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
             let cell_record_index = marked_record_reference(bytes, entry_start)?;
@@ -243,14 +243,14 @@ fn exact_surface_trim_operation(
             {
                 return None;
             }
-            cell_entries.push(DesignSurfaceTrimCellEntry {
+            if let Err(error) = ctx.push_vec(&mut cell_entries, DesignSurfaceTrimCellEntry {
                 record_index: cell_record_index,
                 record_reference_offset: cell_record_reference_offset,
                 ordinal: ordinal_value,
                 ordinal_offset,
-            });
+            }, "f3d surface-trim cell entries") { return Some(Err(error)); };
         }
-        DesignSurfaceTrimOperation::try_from(
+        let operation = DesignSurfaceTrimOperation::try_from(
             crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
                 id: String::new(),
                 scope_record_index: scope.record_index,
@@ -272,9 +272,10 @@ fn exact_surface_trim_operation(
                 trailing_zero_offset: u64::try_from(trailing_zero_offset).ok()?,
             },
         )
-        .ok()
+        .ok()?;
+        Some(Ok(operation))
     })();
-    Ok(parsed)
+    parsed.transpose()
 }
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.

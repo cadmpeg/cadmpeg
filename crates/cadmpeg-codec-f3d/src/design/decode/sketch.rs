@@ -1258,11 +1258,11 @@ fn parse_sketch_member_run(
     }
 
     let mut members = Vec::new();
-    ctx.reserve_vec(&mut members, capacity, "f3d sketch member run")?;
-    members.push(crate::records::identity::Located {
+    ctx.reserve_capacity(&mut members, capacity, "f3d sketch member run")?;
+    ctx.push_vec(&mut members, crate::records::identity::Located {
         value: base_point_index,
         offset: u64_from_index(paired + 57),
-    });
+    }, "f3d sketch member run")?;
     for ordinal in 0..count {
         let marker = paired + 67 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
@@ -1273,10 +1273,10 @@ fn parse_sketch_member_run(
         let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
             return Ok(empty);
         };
-        members.push(crate::records::identity::Located {
+        ctx.push_vec(&mut members, crate::records::identity::Located {
             value: record_index,
             offset: u64_from_index(marker + 1),
-        });
+        }, "f3d sketch member run")?;
     }
     Ok(members)
 }
@@ -1324,8 +1324,8 @@ fn parse_legacy_sketch_member_run(
     };
 
     let mut members = Vec::new();
-    ctx.reserve_vec(&mut members, count, "f3d legacy sketch member run")?;
-    let parsed = (|| {
+    ctx.reserve_capacity(&mut members, count, "f3d legacy sketch member run")?;
+    let parsed = (|| -> Option<Result<Vec<crate::records::identity::Located<u32>>, CodecError>> {
         for ordinal in 0..count {
             let marker = paired_at + 45 + ordinal * 11;
             if bytes.get(marker) != Some(&1)
@@ -1333,14 +1333,14 @@ fn parse_legacy_sketch_member_run(
             {
                 return None;
             }
-            members.push(crate::records::identity::Located {
+            if let Err(error) = ctx.push_vec(&mut members, crate::records::identity::Located {
                 value: View::u32_le_at(bytes, marker + 1)?,
                 offset: u64_from_index(marker + 1),
-            });
+            }, "f3d legacy sketch member run") { return Some(Err(error)); };
         }
-        Some(members)
+        Some(Ok(members))
     })();
-    Ok(parsed)
+    parsed.transpose()
 }
 
 /// Recognize either legacy sketch-container tail. A counted container owns
@@ -1818,13 +1818,13 @@ fn admit_sketch_relation(
     let auxiliary_count = parsed.auxiliary_references.len();
 
     let mut auxiliary_references = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut auxiliary_references,
         auxiliary_count,
         "f3d sketch relation auxiliary output",
     )?;
     for row in ctx.admit_iter(&parsed.auxiliary_references, "scan F3D sketch relation auxiliary references")? {
-        auxiliary_references.push(crate::records::identity::Located {
+        ctx.push_vec(&mut auxiliary_references, crate::records::identity::Located {
             value: row.value,
             offset: u32::try_from(row.offset).map_err(|_| {
                 ctx.refuse_codec_limit(
@@ -1833,7 +1833,7 @@ fn admit_sketch_relation(
                     u64_from_index(row.offset),
                 )
             })?,
-        });
+        }, "f3d sketch relation auxiliary output")?;
     }
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: design_record_id_charged(
@@ -3330,12 +3330,12 @@ fn decode_sketch_point_companion(
     };
 
     let mut incident_curves = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut incident_curves,
         count,
         "f3d sketch point incident curves",
     )?;
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<(SketchPointRecordForm, SketchPointCompanion), CodecError>> {
         for _ in 0..count {
             let (target, type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
             let registered_type = types_by_entity.get(&target)?;
@@ -3347,7 +3347,7 @@ fn decode_sketch_point_companion(
                     }) => {}
                 _ => return None,
             }
-            incident_curves.push(target);
+            if let Err(error) = ctx.push_vec(&mut incident_curves, target, "f3d sketch point incident curves") { return Some(Err(error)); };
         }
         if payload.get(cursor) != Some(&0) {
             return None;
@@ -3362,9 +3362,9 @@ fn decode_sketch_point_companion(
         if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
             return None;
         }
-        Some((record_form, SketchPointCompanion { incident_curves }))
+        Some(Ok((record_form, SketchPointCompanion { incident_curves })))
     })();
-    Ok(parsed)
+    parsed.transpose()
 }
 
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
@@ -3664,7 +3664,7 @@ fn parse_sketch_surface(
     let point_count = frame.coordinate_count / 3;
 
     let mut points = Vec::new();
-    ctx.reserve_vec(&mut points, point_count, "f3d sketch surface scaled points")?;
+    ctx.reserve_capacity(&mut points, point_count, "f3d sketch surface scaled points")?;
     for (ordinal, values) in coordinates.chunks_exact(3).enumerate() {
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
             return Ok(None);
@@ -3674,11 +3674,11 @@ fn parse_sketch_surface(
                 "F3D sketch surface at byte {record_at} control point {ordinal} overflows millimetres"
             ))
         })?;
-        points.push(point);
+        ctx.push_vec(&mut points, point, "f3d sketch surface scaled points")?;
     }
 
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut control_points,
         frame.u_count,
         "f3d sketch surface rows",
@@ -3692,7 +3692,7 @@ fn parse_sketch_surface(
             row,
             "f3d sketch surface row points",
         )?;
-        control_points.push(row_points);
+        ctx.push_vec(&mut control_points, row_points, "f3d sketch surface rows")?;
     }
     let geometry = match SketchSurfaceGeometry::from_checked_parts(
         RecordAdmission::Charged(ctx),
@@ -3786,7 +3786,7 @@ pub(crate) fn bind_sketch_graph(
     }
 
     let mut scoped_relations = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut scoped_relations,
         relations.len(),
         "f3d sketch graph scoped relations",
@@ -3831,12 +3831,12 @@ pub(crate) fn bind_sketch_graph(
                 )
             })?,
         );
-        scoped_relations.push((
+        ctx.push_vec(&mut scoped_relations, (
             scope,
             relation.owner_reference,
             relation.members(),
             relation.return_members(),
-        ));
+        ), "f3d sketch graph scoped relations")?;
     }
     let typed_record_keys = ctx.admit_iter(&*points, "scan F3D sketch typed point keys")?
         .filter_map(|point| Some((native_stream(&point.id)?, point.record_index)))
@@ -4497,7 +4497,7 @@ fn admit_source_sketch_nurbs(
     let point_count = coordinates.len() / 3;
 
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut control_points,
         point_count,
         "f3d sketch NURBS control points",
@@ -4508,7 +4508,7 @@ fn admit_source_sketch_nurbs(
         let Some(source) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
         };
-        control_points.push(scale_sketch_point(ctx, source, record_at, "NURBS")?);
+        ctx.push_vec(&mut control_points, scale_sketch_point(ctx, source, record_at, "NURBS")?, "f3d sketch NURBS control points")?;
     }
     let Ok(poles) = crate::records::sketch_geometry::SketchNurbsPoles::from_checked_points(
         control_points,
@@ -4999,17 +4999,17 @@ fn parse_relation_class_members(
                         Err(error) => return Some(Err(error)),
                     };
 
-                if let Err(error) = ctx.reserve_vec(
+                if let Err(error) = ctx.reserve_capacity(
                     auxiliary_references,
                     1,
                     "f3d sketch auxiliary relation references",
                 ) {
                     return Some(Err(error));
                 }
-                auxiliary_references.push(crate::records::identity::Located {
+                if let Err(error) = ctx.push_vec(auxiliary_references, crate::records::identity::Located {
                     value: text_reference,
                     offset: *cursor + 1,
-                });
+                }, "f3d sketch auxiliary relation references") { return Some(Err(error)); };
                 *cursor = end;
                 RelationClassMembers::TextPath {
                     glyph_transforms: transforms,
@@ -5050,7 +5050,7 @@ fn parse_classed_sketch_relation(
             }
             cursor += 4;
 
-            if let Err(error) = ctx.reserve_vec(
+            if let Err(error) = ctx.reserve_capacity(
                 &mut members,
                 member_count,
                 "f3d sketch relation paired members",
@@ -5059,10 +5059,10 @@ fn parse_classed_sketch_relation(
             }
             for _ in 0..member_count {
                 let reference = take_relation_reference(payload, &mut cursor)?;
-                members.push(ParsedSketchRelationMember {
+                if let Err(error) = ctx.push_vec(&mut members, ParsedSketchRelationMember {
                     reference,
                     relation_ordinal: View::u32_le_at(payload, cursor)?,
-                });
+                }, "f3d sketch relation paired members") { return Some(Err(error)); };
                 cursor += 4;
             }
         }
@@ -5102,7 +5102,7 @@ fn parse_classed_sketch_relation(
         cursor += 4;
 
         let mut return_members = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut return_members,
             return_count,
             "f3d sketch relation return members",
@@ -5110,7 +5110,7 @@ fn parse_classed_sketch_relation(
             return Some(Err(error));
         }
         for _ in 0..return_count {
-            return_members.push(take_relation_reference(payload, &mut cursor)?);
+            if let Err(error) = ctx.push_vec(&mut return_members, take_relation_reference(payload, &mut cursor)?, "f3d sketch relation return members") { return Some(Err(error)); };
         }
         if payload.get(cursor) != Some(&0) {
             return None;
@@ -5158,7 +5158,7 @@ fn parse_text_glyph_run(
 
         let mut transforms = Vec::new();
         if let Err(error) =
-            ctx.reserve_vec(&mut transforms, count, "f3d sketch text glyph transforms")
+            ctx.reserve_capacity(&mut transforms, count, "f3d sketch text glyph transforms")
         {
             return Some(Err(error));
         }
@@ -5172,7 +5172,7 @@ fn parse_text_glyph_run(
                     *cell = view.f64_le()?;
                 }
             }
-            transforms.push(SketchGlyphTransform::try_from(transform).ok()?);
+            if let Err(error) = ctx.push_vec(&mut transforms, SketchGlyphTransform::try_from(transform).ok()?, "f3d sketch text glyph transforms") { return Some(Err(error)); };
         }
         Some(Ok((text_reference, transforms, view.position())))
     })();
@@ -5315,7 +5315,7 @@ fn decode_reference_list(
     }
 
     let mut references = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut references,
         declared_count,
         "f3d sketch header references",
@@ -5335,10 +5335,10 @@ fn decode_reference_list(
         if references.len() == declared_count {
             return Ok(None);
         }
-        references.push(crate::records::identity::Located {
+        ctx.push_vec(&mut references, crate::records::identity::Located {
             value: reference,
             offset: u64_from_index(offset),
-        });
+        }, "f3d sketch header references")?;
         view = probe;
     }
     Ok(

@@ -23,8 +23,8 @@ pub(super) fn exact_copy_paste_bodies_operation(
         return Ok(None);
     }
     let body_count = scope.reference_members().len() - 1;
-    let mut operands = ctx.collection_vec(body_count, "f3d CopyPasteBodies operands")?;
-    let mut bodies = ctx.collection_vec(body_count, "f3d CopyPasteBodies bodies")?;
+    let mut operands = ctx.vector_storage(body_count, "f3d CopyPasteBodies operands")?;
+    let mut bodies = ctx.vector_storage(body_count, "f3d CopyPasteBodies bodies")?;
     let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;
@@ -50,18 +50,25 @@ pub(super) fn exact_copy_paste_bodies_operation(
         }
         let mut body_group_cursor = body_group_count_at.checked_add(4)?;
         {
-        let mut validate_body_reference = |expected: u32| -> Option<()> {
-            let actual = marked_record_reference(bytes, body_group_cursor)?;
-            if actual != expected {
-                return None;
-            }
-            operands.push(crate::records::identity::Located {
-                value: actual,
-                offset: u64::try_from(body_group_cursor + 1).ok()?,
-            });
-            body_group_cursor = body_group_cursor.checked_add(11)?;
-            Some(())
-        };
+        let mut validate_body_reference =
+            |expected: u32| -> Option<Result<(), CodecError>> {
+                let actual = marked_record_reference(bytes, body_group_cursor)?;
+                if actual != expected {
+                    return None;
+                }
+                if let Err(error) = ctx.push_vec(
+                    &mut operands,
+                    crate::records::identity::Located {
+                        value: actual,
+                        offset: u64::try_from(body_group_cursor + 1).ok()?,
+                    },
+                    "f3d CopyPasteBodies operands",
+                ) {
+                    return Some(Err(error));
+                }
+                body_group_cursor = body_group_cursor.checked_add(11)?;
+                Some(Ok(()))
+            };
         let references = scope.reference_members();
         if let Some(values) = references.unlocated_values() {
             let admitted = match ctx.admit_iter(values, "scan F3D CopyPasteBodies scope references") {
@@ -69,7 +76,11 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
             };
             for expected in admitted.skip(1) {
-                validate_body_reference(*expected)?;
+                match validate_body_reference(*expected) {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => return Some(Err(error)),
+                    None => return None,
+                }
             }
         } else if let Some(rows) = references.located_rows() {
             let admitted = match ctx.admit_iter(rows, "scan F3D CopyPasteBodies located scope references") {
@@ -77,7 +88,11 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
             };
             for expected in admitted.skip(1).map(|row| &row.value) {
-                validate_body_reference(*expected)?;
+                match validate_body_reference(*expected) {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => return Some(Err(error)),
+                    None => return None,
+                }
             }
         }
         }
@@ -133,7 +148,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            bodies.push(body_ops::DesignCopiedBody {
+            if let Err(error) = ctx.push_vec(&mut bodies, body_ops::DesignCopiedBody {
                 operand,
                 source: crate::records::identity::Located {
                     value: source_record_index,
@@ -143,7 +158,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
                     value: copied_record_index,
                     offset: u64::try_from(copied_at + 1).ok()?,
                 },
-            });
+            }, "f3d CopyPasteBodies bodies") { return Some(Err(error)); };
         }
         let body_group_class_tag = match crate::design::decode::text::class_tag_from_view(
             ctx,
