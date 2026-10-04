@@ -26,7 +26,10 @@ pub(super) fn surface_patch_boundaries(
     reference_members: &[u32],
 ) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
     let mut boundaries = Vec::new();
-    for (ordinal, record_index) in reference_members.iter().enumerate() {
+    for (ordinal, record_index) in ctx
+        .admit_iter(reference_members, "scan F3D SurfacePatch boundary references")?
+        .enumerate()
+    {
         let Some(mut boundary) = records
             .first_at_or_after(0, *record_index)
             .and_then(|at| exact_surface_patch_boundary(bytes, at))
@@ -43,6 +46,33 @@ pub(super) fn surface_patch_boundaries(
         boundaries.push(boundary);
     }
     Ok(boundaries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::surface_patch_boundaries;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn surface_patch_boundary_refuses_work_before_reference_lookup() {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+        assert!(matches!(
+            surface_patch_boundaries(&ctx, &[], &records, &[42]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D SurfacePatch boundary references"
+                    && limit.additional == 1
+        ));
+        assert!(surface_patch_boundaries(
+            &cadmpeg_test_support::service_decode_context(), &[], &records, &[42],
+        ).unwrap().is_empty());
+    }
 }
 
 /// One boundary-settings record read at the indexed header offset `at`.
