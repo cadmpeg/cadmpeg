@@ -221,7 +221,7 @@ pub(crate) fn parse_property_set_stream<'a>(
     let mut directories_storage = ctx.reserve_scoped(0, "admit OLE section directories")?;
     let mut fmtids = BTreeSet::new();
     let mut fmtids_storage = ctx.reserve_scoped(0, "admit OLE section FMTIDs")?;
-    for _ in 0..section_count {
+    for _ in ctx.admit_iter(&(0..section_count), "admit OLE section directories")? {
         let fmtid = cursor.array("section FMTID")?;
         if !fmtids_storage
             .with_storage(|| ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs"))?
@@ -319,7 +319,7 @@ fn parse_section<'a>(
     let mut ids_storage = ctx.reserve_scoped(0, "admit OLE property IDs")?;
     let mut directory = Vec::new();
     let mut directory_storage = ctx.reserve_scoped(0, "admit OLE property directory")?;
-    for _ in 0..property_count {
+    for _ in ctx.admit_iter(&(0..property_count), "admit OLE property directory")? {
         let id = cursor.u32("property id")?;
         if !ids_storage
             .with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))?
@@ -484,7 +484,7 @@ fn parse_dictionary(
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
     let mut names = BTreeMap::new();
     let mut folded_names = BTreeSet::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "admit OLE property dictionary entries")? {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = names_storage
@@ -559,12 +559,8 @@ fn parse_vector<'a>(
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property vector elements",
-    )?;
     let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "admit OLE property vector elements")? {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
             if cursor.u16("variant type padding")? != 0 {
@@ -572,23 +568,17 @@ fn parse_vector<'a>(
                     "OLE vector variant padding is nonzero".into(),
                 ));
             }
-            values.push(parse_scalar(
-                ctx,
-                raw,
-                cursor,
-                nested_type,
-                code_page,
-                true,
-            )?);
+            ctx.push_vec(
+                &mut values,
+                parse_scalar(ctx, raw, cursor, nested_type, code_page, true)?,
+                "admit OLE property vector elements",
+            )?;
         } else {
-            values.push(parse_scalar(
-                ctx,
-                raw,
-                cursor,
-                element_type,
-                code_page,
-                false,
-            )?);
+            ctx.push_vec(
+                &mut values,
+                parse_scalar(ctx, raw, cursor, element_type, code_page, false)?,
+                "admit OLE property vector elements",
+            )?;
         }
     }
     cursor.align4(ctx, "vector padding")?;
@@ -834,9 +824,11 @@ fn decode_code_page(
             ctx.utf16le_text(bytes, bytes.len() / 2, false, "retain OLE property string")?;
         return require_and_remove_null(ctx, value, "OLE Unicode code-page string");
     }
-    let (content, had_null) = bytes
-        .strip_suffix(&[0])
-        .map_or((bytes, false), |content| (content, true));
+    let (content, had_null) = if bytes.last() == Some(&0) {
+        (&bytes[..bytes.len() - 1], true)
+    } else {
+        (bytes, false)
+    };
     if !bytes.is_empty() && !had_null {
         return Err(CodecError::Malformed(
             "OLE code-page string has no null terminator".into(),
@@ -966,8 +958,7 @@ fn hex(ctx: &DecodeContext<'_>, bytes: &[u8; 16]) -> Result<String, CodecError> 
     let mut output = String::new();
     ctx.try_reserve_retained_text(&mut output, output_len, "retain OLE scalar text")?;
     for byte in ctx.admit_iter(bytes, "format OLE GUID as hexadecimal")? {
-        ctx.charge_work(2, "format OLE GUID as hexadecimal")?;
-        crate::decode::push_hex(&mut output, *byte);
+        crate::decode::push_hex(ctx, &mut output, *byte)?;
     }
     Ok(output)
 }
