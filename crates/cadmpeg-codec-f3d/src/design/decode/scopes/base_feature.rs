@@ -768,7 +768,13 @@ pub(super) fn exact_base_feature_construction(
                     usize::try_from(scope.byte_offset()).ok()? + 37,
                 )?,
                 metadata_record_offset: scope.byte_offset() + 37,
-                metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
+                metadata_field: match ctx.copy_slice(
+                    bytes.get(start + 45..start + 51)?,
+                    "f3d BaseFeature 267-byte metadata field",
+                ) {
+                    Ok(field) => field,
+                    Err(error) => return Some(Err(error)),
+                },
             }));
         }
         let legacy_290_261 =
