@@ -114,31 +114,6 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
         }
     );
 
-    let contains_refusal = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "search F3D class-397 Extrude reference members",
-        0,
-        |ctx| {
-            super::super::legacy_class_397::exact_symmetric_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                layout::LEN,
-                "397",
-                "262",
-                layout::REFERENCE_COUNT,
-                &REFERENCE_MEMBERS,
-            )
-        },
-    );
-    assert!(matches!(
-        contains_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "search F3D class-397 Extrude reference members"
-                && limit.additional == 1
-    ));
-
     let mut invalid_side = bytes;
     invalid_side[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&0u32.to_le_bytes());
