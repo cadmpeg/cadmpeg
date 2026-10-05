@@ -286,8 +286,7 @@ fn fset_construction_payload_from_group(
 ) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let Some((data_blocks, _source_reservation)) = copy_block_ids(
         ctx,
-        ctx.admit_iter(source_blocks, "copy NX FSET source block targets")?
-            .map(|(_, target)| target.as_deref()),
+        source_blocks.iter().map(|(_, target)| target.as_deref()),
         "NX FSET source block references",
     )?
     else {
@@ -303,11 +302,9 @@ fn fset_construction_payload_from_group(
         FeatureFsetReferenceGroup::First => "first",
         FeatureFsetReferenceGroup::Second => "second",
     };
-    let Some(operation_key) = ctx.strip_prefix(
-        &graph.operation_label,
-        "nx:feature-history:operation-label#",
-        "find NX FSET operation key",
-    )?
+    let Some(operation_key) = graph
+        .operation_label
+        .strip_prefix("nx:feature-history:operation-label#")
     else {
         return Ok(None);
     };

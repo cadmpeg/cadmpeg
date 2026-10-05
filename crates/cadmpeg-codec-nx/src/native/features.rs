@@ -6293,7 +6293,7 @@ pub(super) fn feature_datum_csys_constructions(
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
-    let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, &inputs)?;
+    let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, inputs)?;
     let mut constructions = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -6390,9 +6390,7 @@ pub(super) fn feature_datum_plane_payloads(
     let mut output = Vec::new();
     for header in ctx.admit_iter(headers, "build NX datum plane payloads")? {
         let source_blocks = header.resolved_data_block_slots(DatumPlaneBlockLane::Object);
-        let mut sources = ctx
-            .admit_iter(&source_blocks, "copy NX datum plane source blocks")?
-            .filter_map(|source| source.as_deref());
+        let mut sources = source_blocks.iter().filter_map(|source| source.as_deref());
         let Some(first_source) = sources.next() else {
             continue;
         };
@@ -6872,8 +6870,8 @@ pub(super) fn feature_datum_plane_descriptors(
     let mut descriptors = Vec::new();
     for header in ctx.admit_iter(headers, "build NX datum plane descriptors")? {
         let data_blocks = header.resolved_data_block_slots(DatumPlaneBlockLane::Descriptor);
-        for (ordinal, data_block) in ctx
-            .admit_iter(&data_blocks, "visit NX datum plane descriptors")?
+        for (ordinal, data_block) in data_blocks
+            .iter()
             .filter_map(|data_block| *data_block)
             .enumerate()
         {
@@ -6932,8 +6930,8 @@ pub(super) fn feature_datum_plane_block_uses(
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
             let data_blocks = header.resolved_data_block_slots(lane);
-            for (reference_ordinal, data_block) in ctx
-                .admit_iter(&data_blocks, "visit NX datum plane block references")?
+            for (reference_ordinal, data_block) in data_blocks
+                .iter()
                 .filter_map(|data_block| *data_block)
                 .enumerate()
             {
@@ -8370,20 +8368,17 @@ pub(super) fn feature_sketch_point_groups(
         {
             continue;
         }
-        let mut coordinates_differ = false;
-        for candidate in ctx.admit_iter(witnesses, "check NX sketch point group coordinates")? {
-            if ctx
-                .admit_iter(
-                    &*candidate.coordinates,
-                    "compare NX sketch point group coordinates",
-                )?
-                .zip(*point.coordinates)
-                .any(|(first, second)| first.to_bits() != second.to_bits())
-            {
-                coordinates_differ = true;
-                break;
-            }
-        }
+        let coordinates_differ = ctx.any_by(
+            witnesses,
+            |candidate| {
+                Ok(candidate
+                    .coordinates
+                    .iter()
+                    .zip(*point.coordinates)
+                    .any(|(first, second)| first.to_bits() != second.to_bits()))
+            },
+            "check NX sketch point group coordinates",
+        )?;
         if coordinates_differ {
             continue;
         }
@@ -8441,17 +8436,21 @@ pub(super) fn offset_store_named_points(
             let value_source_offset =
                 |payload_offset: usize| -> Result<Option<u64>, cadmpeg_core::CodecError> {
                     let mut relative = payload_offset;
-                    for record in ctx.admit_iter(records, "resolve NX named point source offset")? {
-                        if relative < record.bytes.len() {
-                            return Ok(Some(
-                                entry_offset
-                                    + cadmpeg_core::decode::u64_from_index(record.offset)
-                                    + cadmpeg_core::decode::u64_from_index(relative),
-                            ));
-                        }
-                        relative -= record.bytes.len();
-                    }
-                    Ok(None)
+                    ctx.find_map(
+                        records,
+                        |record| {
+                            if relative < record.bytes.len() {
+                                return Ok(Some(
+                                    entry_offset
+                                        + cadmpeg_core::decode::u64_from_index(record.offset)
+                                        + cadmpeg_core::decode::u64_from_index(relative),
+                                ));
+                            }
+                            relative -= record.bytes.len();
+                            Ok(None)
+                        },
+                        "resolve NX named point source offset",
+                    )
                 };
             let first_source =
                 entry_offset + cadmpeg_core::decode::u64_from_index(records[0].offset);
@@ -8883,11 +8882,9 @@ pub(super) fn feature_sketch_point_uses(
         else {
             continue;
         };
-        if ctx
-            .admit_iter(
-                &*point_group.coordinates,
-                "compare NX sketch point-use coordinates",
-            )?
+        if point_group
+            .coordinates
+            .iter()
             .zip(named_point.values.map(|token| token.scalar.value()))
             .any(|(first, second)| first.to_bits() != second.get().to_bits())
         {

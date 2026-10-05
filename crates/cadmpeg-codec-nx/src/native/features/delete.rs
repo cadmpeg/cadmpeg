@@ -241,7 +241,8 @@ fn delete_construction_payload_from_field(
     let slots = field.references.slots();
     let Some((data_blocks, _source_reservation)) = copy_block_ids(
         ctx,
-        ctx.admit_iter(slots, "copy NX DELETE source block references")?
+        slots
+            .iter()
             .map(|reference| reference.as_ref().and_then(|(_, block)| block.as_deref())),
         "NX DELETE source block references",
     )?
@@ -254,11 +255,9 @@ fn delete_construction_payload_from_field(
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
         return Ok(None);
     };
-    let Some(operation_key) = ctx.strip_prefix(
-        &field.operation_label,
-        "nx:feature-history:operation-label#",
-        "find NX DELETE operation key",
-    )?
+    let Some(operation_key) = field
+        .operation_label
+        .strip_prefix("nx:feature-history:operation-label#")
     else {
         return Ok(None);
     };
