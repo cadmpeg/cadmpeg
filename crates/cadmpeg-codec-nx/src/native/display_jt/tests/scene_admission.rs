@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn scene_node_path_limit_error(
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+use crate::native::display_jt::{
+    DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtTessellationInputs, JtSceneGraph,
+    JtTessellationIndex,
+};
+
+/// Resolves the paths of node 7 in a one-node scene under an adjusted policy.
+fn scene_node_paths_under(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let compressed = crate::native::display_jt::DisplayJtCompressedElement {
+) -> Result<usize, CodecError> {
+    let compressed = DisplayJtCompressedElement {
         id: "element".into(),
         segment: "scene".into(),
         segment_type: 0,
@@ -16,7 +25,7 @@ fn scene_node_path_limit_error(
         inflated_offset: 0,
         source_offset: 0,
     };
-    let base = crate::native::display_jt::DisplayJtBaseNodeData {
+    let base = DisplayJtBaseNodeData {
         id: "base".into(),
         element: compressed.id.clone(),
         object_type_id: [0; 16],
@@ -28,7 +37,7 @@ fn scene_node_path_limit_error(
         family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
         source_offset: 0,
     };
-    let inputs = crate::native::display_jt::DisplayJtTessellationInputs {
+    let inputs = DisplayJtTessellationInputs {
         meshes: &[],
         coordinates: &[],
         normals: &[],
@@ -47,107 +56,73 @@ fn scene_node_path_limit_error(
         materials: &[],
         compressed_elements: &[compressed],
     };
+    crate::test_support::with_decode_context_over(&[], configure, |ctx| {
+        scene_node_paths(ctx, &inputs)
+    })
+}
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::display_jt::display_jt_node_paths(ctx, "scene", 7, &inputs)
-                .err()
-                .expect("scene node path limit refusal")
-        },
-    )
+fn scene_node_paths(
+    ctx: &DecodeContext<'_>,
+    inputs: &DisplayJtTessellationInputs<'_>,
+) -> Result<usize, CodecError> {
+    let index = JtTessellationIndex::new(ctx, inputs)?;
+    let graph = JtSceneGraph::new(ctx, "scene", inputs, &index)?.expect("complete scene graph");
+    let (paths, _storage) = graph.node_paths(ctx, 7)?.expect("resolved node paths");
+    Ok(paths.len())
+}
+
+fn refusal_dimension(result: Result<usize, CodecError>) -> ResourceDimension {
+    match result {
+        Err(CodecError::ResourceLimit(limit)) => limit.dimension,
+        other => panic!("expected a resource refusal, got {other:?}"),
+    }
 }
 
 #[test]
 fn scene_node_paths_refuse_collection_limit() {
-    let error = scene_node_path_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    assert_eq!(
+        refusal_dimension(scene_node_paths_under(|policy| {
+            policy.limits.max_collection_items = 0;
+        })),
+        ResourceDimension::CollectionItems
     );
 }
 
 #[test]
 fn scene_node_paths_refuse_scoped_limit() {
-    let error = scene_node_path_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    assert_eq!(
+        refusal_dimension(scene_node_paths_under(|policy| {
+            policy.limits.max_materialized_bytes = 0;
+        })),
+        ResourceDimension::MaterializedBytes
     );
 }
 
 #[test]
-fn scene_node_paths_refuse_retained_limit() {
-    let error = scene_node_path_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
+fn scene_node_paths_hold_temporary_paths_outside_retained_storage() {
+    let paths = scene_node_paths_under(|policy| policy.limits.max_retained_bytes = 0)
+        .expect("scene graph and paths are scoped");
+    assert_eq!(paths, 1);
 }
 
 #[test]
 fn scene_node_paths_refuse_work_limit() {
-    let error = scene_node_path_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    assert_eq!(
+        refusal_dimension(scene_node_paths_under(|policy| {
+            policy.limits.max_work_units = 0;
+        })),
+        ResourceDimension::WorkUnits
     );
 }
 
 #[test]
 fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    let base = crate::native::display_jt::DisplayJtBaseNodeData {
-        id: "base".into(),
-        element: "scene".into(),
-        object_type_id: [0; 16],
-        object_id: 7,
-        version: 1,
-        flags: 0,
-        attribute_object_ids: Vec::new(),
-        family_data_byte_len: 0,
-        family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
-        source_offset: 0,
-    };
-    let mut by_object = BTreeMap::new();
-    by_object.insert(7, &base);
-    let parents = BTreeMap::new();
-    let instance_ids = BTreeMap::new();
-    let lookup = crate::native::display_jt::JtPathLookup {
-        by_object: &by_object,
-        parents: &parents,
-        instance_ids: &instance_ids,
-        transforms: &[],
-        materials: &[],
-    };
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_recursion_depth = 0;
-        },
-        |ctx| {
-            let error = crate::native::display_jt::resolve_display_jt_node_paths(
-                ctx,
-                7,
-                &lookup,
-                &mut BTreeSet::new(),
-                &mut ctx
-                    .reserve_scoped(0, "test JT visiting nodes")
-                    .expect("empty visiting reservation"),
-            )
-            .err()
-            .expect("node path exceeds the nesting limit");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
-                        && limit.operation == "resolve JT node path"
-            ));
-        },
-    );
+    let error = scene_node_paths_under(|policy| policy.limits.max_recursion_depth = 0)
+        .expect_err("node path exceeds the nesting limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RecursionDepth
+                && limit.operation == "resolve JT node path"
+    ));
 }

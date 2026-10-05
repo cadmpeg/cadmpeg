@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of the JT document, segment, and element graph.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize};
@@ -62,131 +63,60 @@ impl DisplayJtGraph {
         ctx: &DecodeContext<'_>,
         wire: DisplayJtGraphWire,
     ) -> Result<Self, NativeConvertError> {
-        let count = |length: usize| {
-            u64::try_from(length)
-                .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))
-        };
-        let _documents = ctx.reserve_scoped(
-            count(wire.documents.len())?
-                .checked_mul(128)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
-                })?,
-            "index DisplayJT graph records",
-        )?;
-        let _segments = ctx.reserve_scoped(
-            count(wire.segments.len())?
-                .checked_mul(128)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
-                })?,
-            "index DisplayJT graph records",
-        )?;
-        let _elements = ctx.reserve_scoped(
-            count(wire.compressed_elements.len())?
-                .checked_mul(128)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
-                })?,
-            "index DisplayJT graph records",
-        )?;
-        let _shape_lods = ctx.reserve_scoped(
-            count(wire.shape_lod_elements.len())?
-                .checked_mul(128)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
-                })?,
-            "index DisplayJT graph records",
-        )?;
-        let _sequences = ctx.reserve_scoped(
-            count(wire.compressed_element_sequences.len())?
-                .checked_mul(128)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
-                })?,
-            "index DisplayJT graph records",
-        )?;
-        let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
-            count(document.toc_entries.len())?
-                .checked_add(sum)
-                .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
-        })?;
-        let _toc = ctx.reserve_scoped(
-            toc_count.checked_mul(128).ok_or_else(|| {
-                ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX)
-            })?,
-            "index DisplayJT TOC entries",
-        )?;
-        Self::from_wire(ctx, wire)
-    }
-
-    pub(crate) fn from_namespace_with_context(
-        ctx: &DecodeContext<'_>,
-        namespace: &NativeNamespace,
-    ) -> Result<Self, NativeConvertError> {
-        Self::from_wire_with_context(
+        let mut storage = ctx.reserve_scoped(0, "index DisplayJT graph records")?;
+        let documents = by_id(
             ctx,
-            DisplayJtGraphWire {
-                documents: namespace.arena_as_for_decode(ctx, "display_jt_documents")?,
-                segments: namespace.arena_as_for_decode(ctx, "display_jt_segments")?,
-                shape_lod_elements: namespace
-                    .arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
-                compressed_elements: namespace
-                    .arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
-                compressed_element_sequences: namespace
-                    .arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
-            },
-        )
-    }
-
-    #[cfg(test)]
-    fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        crate::test_support::with_decode_context(|ctx| {
-            Self::from_namespace_with_context(ctx, namespace)
-        })
-    }
-
-    fn from_wire(
-        ctx: &DecodeContext<'_>,
-        wire: DisplayJtGraphWire,
-    ) -> Result<Self, NativeConvertError> {
-        let documents = by_id(ctx, &wire.documents, |item| item.id.as_str(), "documents")?;
-        let segments = by_id(ctx, &wire.segments, |item| item.id.as_str(), "segments")?;
+            &mut storage,
+            &wire.documents,
+            |item| item.id.as_str(),
+            "duplicate identity in documents",
+        )?;
+        let segments = by_id(
+            ctx,
+            &mut storage,
+            &wire.segments,
+            |item| item.id.as_str(),
+            "duplicate identity in segments",
+        )?;
         let elements = by_id(
             ctx,
+            &mut storage,
             &wire.compressed_elements,
             |item| item.id.as_str(),
-            "compressed_elements",
+            "duplicate identity in compressed_elements",
         )?;
         by_id(
             ctx,
+            &mut storage,
             &wire.shape_lod_elements,
             |item| item.id.as_str(),
-            "shape_lod_elements",
+            "duplicate identity in shape_lod_elements",
         )?;
         by_id(
             ctx,
+            &mut storage,
             &wire.compressed_element_sequences,
             |item| item.id.as_str(),
-            "compressed_element_sequences",
+            "duplicate identity in compressed_element_sequences",
         )?;
-        wire.documents.iter().try_fold(0_u64, |sum, document| {
-            u64::try_from(document.toc_entries.len())
-                .ok()
-                .and_then(|count| sum.checked_add(count))
-                .ok_or_else(|| invalid(ctx, &document.id, "TOC count exceeds u64"))
-        })?;
-        let mut toc_entries = BTreeMap::new();
-        for document in &wire.documents {
-            for entry in &document.toc_entries {
-                ctx.charge_work(1, "index DisplayJT TOC entries")?;
-                if ctx
-                    .insert_btree_map(
-                        &mut toc_entries,
-                        (document.id.as_str(), entry.id.as_str()),
-                        entry,
-                        "index DisplayJT TOC entries",
-                    )?
+        let mut toc_entries = HashMap::new();
+        for document in ctx
+            .admit_iter(&wire.documents, "index DisplayJT TOC entries")
+            .map_err(CodecError::from)?
+        {
+            for entry in ctx
+                .admit_iter(&document.toc_entries, "index DisplayJT TOC entries")
+                .map_err(CodecError::from)?
+            {
+                if storage
+                    .with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut toc_entries,
+                            (document.id.as_str(), entry.id.as_str()),
+                            entry,
+                            "index DisplayJT TOC entries",
+                        )
+                    })?
                     .is_some()
                 {
                     return Err(invalid(
@@ -197,12 +127,23 @@ impl DisplayJtGraph {
                 }
             }
         }
-        for segment in &wire.segments {
-            let document = documents
-                .get(segment.document.as_str())
+        for segment in ctx
+            .admit_iter(&wire.segments, "admit DisplayJT segments")
+            .map_err(CodecError::from)?
+        {
+            let document = ctx
+                .get_hash_map(
+                    &documents,
+                    segment.document.as_str(),
+                    "match DisplayJT segment documents",
+                )?
                 .ok_or_else(|| invalid(ctx, &segment.id, "document does not resolve"))?;
-            let entry = toc_entries
-                .get(&(segment.document.as_str(), segment.toc_entry.as_str()))
+            let entry = ctx
+                .get_hash_map(
+                    &toc_entries,
+                    &(segment.document.as_str(), segment.toc_entry.as_str()),
+                    "match DisplayJT segment TOC entries",
+                )?
                 .ok_or_else(|| {
                     invalid(ctx, &segment.id, "toc_entry does not resolve in document")
                 })?;
@@ -239,9 +180,16 @@ impl DisplayJtGraph {
                 ));
             }
         }
-        for element in &wire.shape_lod_elements {
-            let segment = segments
-                .get(element.segment.as_str())
+        for element in ctx
+            .admit_iter(&wire.shape_lod_elements, "admit DisplayJT shape elements")
+            .map_err(CodecError::from)?
+        {
+            let segment = ctx
+                .get_hash_map(
+                    &segments,
+                    element.segment.as_str(),
+                    "match DisplayJT element segments",
+                )?
                 .ok_or_else(|| invalid(ctx, &element.id, "segment does not resolve"))?;
             if segment.segment_type != 7 {
                 return Err(invalid(
@@ -251,7 +199,13 @@ impl DisplayJtGraph {
                 ));
             }
         }
-        for element in &wire.compressed_elements {
+        for element in ctx
+            .admit_iter(
+                &wire.compressed_elements,
+                "admit DisplayJT compressed elements",
+            )
+            .map_err(CodecError::from)?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -261,7 +215,13 @@ impl DisplayJtGraph {
                 element.source_offset,
             )?;
         }
-        for sequence in &wire.compressed_element_sequences {
+        for sequence in ctx
+            .admit_iter(
+                &wire.compressed_element_sequences,
+                "admit DisplayJT compressed element sequences",
+            )
+            .map_err(CodecError::from)?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -271,16 +231,25 @@ impl DisplayJtGraph {
                 sequence.source_offset,
             )?;
             let mut next_offset = 0u64;
-            for (ordinal, id) in sequence.elements().iter().enumerate() {
-                let element = elements.get(id.as_str()).ok_or_else(|| {
-                    invalid(
-                        ctx,
-                        &sequence.id,
-                        "elements contains an unresolved identity",
-                    )
-                })?;
-                if element.segment != sequence.segment
-                    || usize::try_from(element.ordinal).ok() != Some(ordinal)
+            for (ordinal, id) in ctx
+                .admit_iter(sequence.elements(), "admit DisplayJT sequence elements")
+                .map_err(CodecError::from)?
+                .enumerate()
+            {
+                let element = ctx
+                    .get_hash_map(&elements, id.as_str(), "match DisplayJT sequence elements")?
+                    .ok_or_else(|| {
+                        invalid(
+                            ctx,
+                            &sequence.id,
+                            "elements contains an unresolved identity",
+                        )
+                    })?;
+                if !ctx.equal(
+                    element.segment.as_str(),
+                    sequence.segment.as_str(),
+                    "match DisplayJT sequence elements",
+                )? || usize::try_from(element.ordinal).ok() != Some(ordinal)
                 {
                     return Err(invalid(
                         ctx,
@@ -308,6 +277,32 @@ impl DisplayJtGraph {
             }
         }
         Ok(Self(wire))
+    }
+
+    pub(crate) fn from_namespace_with_context(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        Self::from_wire_with_context(
+            ctx,
+            DisplayJtGraphWire {
+                documents: namespace.arena_as_for_decode(ctx, "display_jt_documents")?,
+                segments: namespace.arena_as_for_decode(ctx, "display_jt_segments")?,
+                shape_lod_elements: namespace
+                    .arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
+                compressed_elements: namespace
+                    .arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
+                compressed_element_sequences: namespace
+                    .arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
+            },
+        )
+    }
+
+    #[cfg(test)]
+    fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
+        crate::test_support::with_decode_context(|ctx| {
+            Self::from_namespace_with_context(ctx, namespace)
+        })
     }
 }
 
@@ -338,14 +333,14 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
 
 fn admit_compressed_owner(
     ctx: &DecodeContext<'_>,
-    segments: &BTreeMap<&str, &DisplayJtSegment>,
+    segments: &HashMap<&str, &DisplayJtSegment>,
     id: &str,
     owner: &str,
     segment_type: u32,
     source_offset: u64,
 ) -> Result<(), NativeConvertError> {
-    let segment = segments
-        .get(owner)
+    let segment = ctx
+        .get_hash_map(segments, owner, "match DisplayJT compressed owners")?
         .ok_or_else(|| invalid(ctx, id, "segment does not resolve"))?;
     if segment.compression.is_none() {
         return Err(invalid(ctx, id, "segment has no compression envelope"));
@@ -361,19 +356,24 @@ fn admit_compressed_owner(
 
 fn by_id<'a, T>(
     ctx: &DecodeContext<'_>,
+    storage: &mut ScopedReservation<'_>,
     records: &'a [T],
     id: impl Fn(&'a T) -> &'a str,
-    arena: &str,
-) -> Result<BTreeMap<&'a str, &'a T>, NativeConvertError> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        ctx.charge_work(1, "index DisplayJT graph records")?;
+    duplicate: &'static str,
+) -> Result<HashMap<&'a str, &'a T>, NativeConvertError> {
+    let mut index = HashMap::new();
+    for record in ctx
+        .admit_iter(records, "index DisplayJT graph records")
+        .map_err(CodecError::from)?
+    {
         let id = id(record);
-        if ctx
-            .insert_btree_map(&mut index, id, record, "index DisplayJT graph records")?
+        if storage
+            .with_storage(|| {
+                ctx.insert_hash_map(&mut index, id, record, "index DisplayJT graph records")
+            })?
             .is_some()
         {
-            return Err(invalid(ctx, id, &format!("duplicate identity in {arena}")));
+            return Err(invalid(ctx, id, duplicate));
         }
     }
     Ok(index)
