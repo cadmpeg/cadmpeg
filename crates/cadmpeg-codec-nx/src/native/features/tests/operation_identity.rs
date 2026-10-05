@@ -20,6 +20,7 @@ use crate::native::features::feature_operation_terminal_frames;
 use crate::native::features::feature_payload_strings;
 use crate::native::features::feature_unlabeled_operation_records;
 use crate::native::features::operation_record::FeatureOperationRecord;
+use crate::native::features::plain_stream_bindings;
 use crate::native::features::FeatureOperationBodyWrite;
 use crate::native::features::FeatureOperationLabel;
 use crate::native::features::FeatureOperationStateJournalUse;
@@ -31,7 +32,6 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
-use std::collections::BTreeMap;
 
 fn image_segment_uses_for_test(
     writes: &[FeatureOperationBodyWrite],
@@ -345,18 +345,20 @@ fn unlabeled_history_fixture() -> crate::container::Container<'static> {
 
 #[test]
 fn operation_header_identity_witness_survives_reordering() {
-    let block_identities = BTreeMap::from([
+    let block_identities = [
         (55, Some("block-55".to_string())),
         (56, Some("block-56".to_string())),
         (61, Some("block-61".to_string())),
-    ]);
+    ];
     let mut original = vec![
         label(0, [Some(55), Some(56), None, None]),
         label(1, [None; 4]),
         label(2, [Some(61), None, None, None]),
     ];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut original, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut original, &table)
     })
     .unwrap();
     let identity = original[0]
@@ -378,7 +380,9 @@ fn operation_header_identity_witness_survives_reordering() {
         label.stable_identity = None;
     }
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut reordered, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut reordered, &table)
     })
     .unwrap();
     assert_eq!(
@@ -636,16 +640,18 @@ fn unlabeled_record_route_refuses_work_limit() {
 
 #[test]
 fn operation_header_identity_rejects_duplicate_tuples() {
-    let block_identities = BTreeMap::from([
+    let block_identities = [
         (55, Some("block-55".to_string())),
         (56, Some("block-56".to_string())),
-    ]);
+    ];
     let mut labels = vec![
         label(0, [Some(55), Some(56), None, None]),
         label(1, [Some(55), Some(56), None, None]),
     ];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut labels, &table)
     })
     .unwrap();
     assert!(labels.iter().all(|label| label.stable_identity.is_none()));
@@ -729,10 +735,12 @@ fn operation_header_identity_survives_offset_store_insertion() {
 
 #[test]
 fn operation_header_identity_requires_unique_resolved_blocks() {
-    let block_identities = BTreeMap::from([(55, None), (56, Some("block-56".to_string()))]);
+    let block_identities = [(55, None), (56, Some("block-56".to_string()))];
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut labels, &table)
     })
     .unwrap();
     assert!(labels[0].stable_identity.is_none());
@@ -740,7 +748,6 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
 
 #[test]
 fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
-    let block_identities = BTreeMap::from([(55, Some("block-55".to_string()))]);
     let mut labels = vec![label(0, [Some(55), None, None, None])];
 
     crate::test_support::with_decode_context_over(
@@ -749,7 +756,9 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             policy.limits.max_materialized_bytes = 0;
         },
         |ctx| {
-            let error = assign_operation_header_identities(ctx, &mut labels, &block_identities)
+            let table: std::collections::HashMap<u32, Option<Option<String>>> =
+                std::collections::HashMap::from([(55, Some(Some("block-55".to_string())))]);
+            let error = assign_operation_header_identities(ctx, &mut labels, &table)
                 .expect_err("scoped key refusal");
             assert!(matches!(
                 error,
@@ -759,6 +768,40 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             ));
         },
     );
+}
+
+#[test]
+fn operation_header_identity_walk_reaches_key_counting_and_assignment() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for operation in [
+        "count NX operation header keys",
+        "assign NX operation header identities",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let (table, _storage) = ctx.unique_index(
+                    [(55, Some("block-55".to_string()))],
+                    "test block identities",
+                )?;
+                let mut labels = vec![
+                    label(0, [Some(55), None, None, None]),
+                    label(1, [Some(55), None, None, None]),
+                    label(2, [None; 4]),
+                ];
+                assign_operation_header_identities(ctx, &mut labels, &table)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -1571,16 +1614,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_empty());
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
-    assert!(
-        crate::test_support::with_decode_context(|ctx| body_history_partition_stream(
-            ctx,
-            &repeated_terminal[1],
-            &repeated_terminal,
-            &streams,
-        ))
-        .expect("admitted body-history partition")
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        let (plain, _storage) = plain_stream_bindings(ctx, &repeated_terminal)?;
+        body_history_partition_stream(ctx, &repeated_terminal[1], &plain, &streams)
+    })
+    .expect("admitted body-history partition")
+    .is_none());
 
     let interrupted_streams = [
         stream(crate::parasolid::ParasolidSubtype::Plain),
