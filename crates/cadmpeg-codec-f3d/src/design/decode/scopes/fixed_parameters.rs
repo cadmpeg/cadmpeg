@@ -439,9 +439,8 @@ pub(super) fn exact_fixed_chamfer_parameters(
             value_offset: scalar.value_offset,
         })
     });
-    let first = match distances.next() {
-        Some(Some(first)) => first,
-        _ => return Ok(None),
+    let Some(Some(first)) = distances.next() else {
+        return Ok(None);
     };
     Ok(Some(match distances.next() {
         Some(Some(second)) => DesignFixedChamferParameters::TwoDistances { first, second },
@@ -462,9 +461,9 @@ pub(super) fn unique_revolve_angle_owner<'a>(
     let stream = record_stream(ctx, &scope.id)?;
     let mut is_angle_owner = |owner: &DesignParameterOwner| -> Result<bool, CodecError> {
         if owner.scope_record_index() != scope.record_index
-            || !record_index.is_none_or(|index| owner.record_index() == index)
+            || record_index.is_some_and(|index| owner.record_index() != index)
             || owner.local_ordinal() != 0
-            || !(owner.evaluated_value().get() > 0.0)
+            || owner.evaluated_value().get() <= 0.0
             || !same_stream(ctx, owner.id(), stream)?
         {
             return Ok(false);

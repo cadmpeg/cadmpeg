@@ -5,6 +5,7 @@ use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_u32};
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::byte_fields::zeros_at;
@@ -1092,17 +1093,19 @@ fn exact_fixed_pattern_count(
     scope_record_index: u32,
 ) -> Result<Option<(u32, u64)>, CodecError> {
     let mut candidate = None;
-    for (start, paired_at) in records.frames(ctx, record_index)? {
-        let Some(count) =
-            fixed_pattern_count_at(bytes, start, paired_at, record_index, scope_record_index)
-        else {
-            continue;
-        };
-        if candidate.replace(count).is_some() {
-            return Ok(None);
-        }
-    }
-    Ok(candidate)
+    let ambiguous = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, paired_at| {
+            Ok(
+                fixed_pattern_count_at(bytes, start, paired_at, record_index, scope_record_index)
+                    .is_some_and(|count| candidate.replace(count).is_some()),
+            )
+        },
+        "scan F3D indexed record frames",
+    )?;
+    Ok(candidate.filter(|_| ambiguous.is_none()))
 }
 
 fn fixed_pattern_count_at(

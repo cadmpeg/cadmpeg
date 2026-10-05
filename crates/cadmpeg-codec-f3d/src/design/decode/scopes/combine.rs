@@ -56,24 +56,34 @@ pub(super) fn exact_combine_operation(
     while let (Some(operation_record_index), Some(selection_record_index)) =
         (members.next(), members.next())
     {
-        let Some(operand) = combine_operand(
+        let Some((role, selection_at, selection_end)) = combine_operand(
             ctx,
             bytes,
             records,
-            scope.record_index,
             *operation_record_index,
             *selection_record_index,
         )?
         else {
             return Ok(None);
         };
-        match operand {
-            CombineOperand::Target(record_index) => {
-                if target.replace(record_index).is_some() {
+        match role {
+            CombineOperandRole::Target => {
+                if target.replace(*selection_record_index).is_some() {
                     return Ok(None);
                 }
             }
-            CombineOperand::Tool(selection) => {
+            CombineOperandRole::Tool => {
+                let selection = DesignCombineBodySelection {
+                    record_index: *selection_record_index,
+                    external_identity: exact_combine_external_body_identity(
+                        ctx,
+                        bytes,
+                        selection_at,
+                        selection_end,
+                        scope.record_index,
+                        *selection_record_index,
+                    )?,
+                };
                 if first_tool.is_none() {
                     first_tool = Some(selection);
                 } else {
@@ -195,23 +205,17 @@ fn combine_prefix(
     })
 }
 
-enum CombineOperand {
-    /// The target body: the selection record index.
-    Target(u32),
-    Tool(DesignCombineBodySelection),
-}
-
-/// The operand named by one operation/selection reference pair. Both records
-/// have exactly one frame, the selection frame carries two consecutive GUIDs,
-/// and the operation frame names the selection as target or tool.
+/// The role of the selection named by one operation/selection reference
+/// pair, with the selection frame. Both records have exactly one frame, the
+/// selection frame carries two consecutive GUIDs, and the operation frame names
+/// the selection as target or tool.
 fn combine_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    scope_record_index: u32,
     operation_record_index: u32,
     selection_record_index: u32,
-) -> Result<Option<CombineOperand>, CodecError> {
+) -> Result<Option<(CombineOperandRole, usize, usize)>, CodecError> {
     let Some(role) = records
         .only_frame(operation_record_index)
         .and_then(|(start, end)| bytes.get(start..end))
@@ -228,20 +232,7 @@ fn combine_operand(
     if !contains_consecutive_guid_pair(ctx, selection_frame)? {
         return Ok(None);
     }
-    Ok(Some(match role {
-        CombineOperandRole::Target => CombineOperand::Target(selection_record_index),
-        CombineOperandRole::Tool => CombineOperand::Tool(DesignCombineBodySelection {
-            record_index: selection_record_index,
-            external_identity: exact_combine_external_body_identity(
-                ctx,
-                bytes,
-                selection_at,
-                selection_end,
-                scope_record_index,
-                selection_record_index,
-            )?,
-        }),
-    }))
+    Ok(Some((role, selection_at, selection_end)))
 }
 
 pub(super) struct ExternalReferenceIdentity {

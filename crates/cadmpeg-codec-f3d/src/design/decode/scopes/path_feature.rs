@@ -79,6 +79,9 @@ fn exact_pipe_owner_lanes(
     Ok((!rejected).then_some([first, second, third, fourth]))
 }
 
+/// One optional owned fixed scalar per lane, with its record index.
+type ScalarLanes<const N: usize> = [Option<(u32, FixedScalarFrame)>; N];
+
 /// The first `N` reference members, in member order, whose fixed scalar frame
 /// the scope owns. `None` when a further member's frame is owned too; a slot
 /// stays empty when fewer members qualify. The search stops at the member
@@ -89,7 +92,7 @@ fn owned_scalar_lanes<const N: usize>(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     operation: &'static str,
-) -> Result<Option<[Option<(u32, FixedScalarFrame)>; N]>, CodecError> {
+) -> Result<Option<ScalarLanes<N>>, CodecError> {
     let mut lanes = [None; N];
     let mut count = 0;
     let extra = reference_position(
@@ -333,17 +336,18 @@ fn exact_sweep_construction(
     scope: &DesignParameterScope,
     start: usize,
 ) -> Result<Option<DesignPathFeatureConstruction>, CodecError> {
-    let Some([Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)]) = owned_scalar_lanes::<6>(
-        ctx,
-        bytes,
-        records,
-        scope,
-        "scan F3D sweep reference members",
-    )?
+    let Some([Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth)]) =
+        owned_scalar_lanes::<6>(
+            ctx,
+            bytes,
+            records,
+            scope,
+            "scan F3D sweep reference members",
+        )?
     else {
         return Ok(None);
     };
-    let lanes = [a, b, c, d, e, f];
+    let lanes = [first, second, third, fourth, fifth, sixth];
     if !ordinals_in_order(&lanes) {
         return Ok(None);
     }

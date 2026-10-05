@@ -89,20 +89,28 @@ pub(super) fn find_frame(
 }
 
 /// The frames of the records `run` names, in run order and then byte order,
-/// until `visit` returns `true`. Each visited reference and frame is admitted
+/// until `visit` returns `true` for a record index and frame. Each visited reference and frame is admitted
 /// before its test; the search stops at the match.
 pub(super) fn find_reference_frame(
     ctx: &DecodeContext<'_>,
     records: &IndexedRecordOffsets,
     run: &ReferenceRun<u32>,
-    mut visit: impl FnMut(usize, usize) -> Result<bool, CodecError>,
+    mut visit: impl FnMut(u32, usize, usize) -> Result<bool, CodecError>,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
     Ok(reference_position(
         ctx,
         run,
         |record_index| {
-            Ok(find_frame(ctx, records, *record_index, &mut visit, operation)?.is_some())
+            let record_index = *record_index;
+            Ok(find_frame(
+                ctx,
+                records,
+                record_index,
+                |start, paired| visit(record_index, start, paired),
+                operation,
+            )?
+            .is_some())
         },
         operation,
     )?

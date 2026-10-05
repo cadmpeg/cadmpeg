@@ -7,12 +7,12 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::point_data::exact_point_data_construction;
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::exact_indexed_header_at;
+use super::shared_frames::find_reference_frame;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
@@ -235,21 +235,17 @@ pub(super) fn exact_move_operation(
         return Ok(None);
     }
     let mut candidate = None;
-    for record_index in admit_reference_values(
+    let ambiguous = find_reference_frame(
         ctx,
+        records,
         scope.reference_members(),
-        "scan F3D Move scope reference members",
-    )? {
-        for (start, paired) in records.frames(ctx, *record_index)? {
-            let Some(next) = move_frame_at(bytes, start, paired, *record_index) else {
-                continue;
-            };
-            if candidate.replace(next).is_some() {
-                return Ok(None);
-            }
-        }
-    }
-    Ok(candidate)
+        |record_index, start, paired| {
+            Ok(move_frame_at(bytes, start, paired, record_index)
+                .is_some_and(|next| candidate.replace(next).is_some()))
+        },
+        "scan F3D Move scope reference frames",
+    )?;
+    Ok(candidate.filter(|_| !ambiguous))
 }
 
 /// The Move transform of the frame of `record_index` from `start` to its
@@ -265,7 +261,7 @@ fn move_frame_at(
     if !zeros_at::<32>(bytes, start + 11) {
         return None;
     }
-    let (form_offset, transform_offset) = move_transform_layout(class_tag, paired - start)?;
+    let (form_offset, transform_offset) = move_transform_layout(*class_tag, paired - start)?;
     let expected_paired_class = match class_tag {
         b"447" => Some(b"263"),
         b"456" => Some(b"258"),
@@ -294,8 +290,8 @@ fn move_frame_at(
 /// The legacy classes carry the same matrix envelope as the current classes;
 /// their class tags are the generation discriminator. Keeping the admission
 /// keyed by class avoids treating an arbitrary 253-byte record as a transform.
-fn move_transform_layout(class_tag: &[u8; 3], frame_length: usize) -> Option<(usize, usize)> {
-    let admitted = match class_tag {
+fn move_transform_layout(class_tag: [u8; 3], frame_length: usize) -> Option<(usize, usize)> {
+    let admitted = match &class_tag {
         b"296" | b"362" | b"433" | b"447" if frame_length == 253 => true,
         b"349" if matches!(frame_length, 254 | 274) => true,
         b"368" if frame_length == 254 => true,

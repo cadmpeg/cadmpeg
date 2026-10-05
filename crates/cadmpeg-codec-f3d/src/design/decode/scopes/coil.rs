@@ -719,7 +719,7 @@ fn exact_long_coil_transform_values(
     valid_right_handed_coil_transform(&transform).then_some(transform)
 }
 
-/// Bind the extent mode of a long-form CoilPrimitive scope from the source
+/// Bind the extent mode of a long-form `CoilPrimitive` scope from the source
 /// kinds of its owned parameters, in local-ordinal order.
 pub(super) fn bind_coil_extent_from_parameters(
     ctx: &DecodeContext<'_>,

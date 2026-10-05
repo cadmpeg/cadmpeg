@@ -71,6 +71,7 @@ pub(crate) fn decode_parameter_scopes(
     scan: &ContainerScan,
     native: &crate::native::F3dNative,
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
+    const STREAMS_OPERATION: &str = "f3d Design parameter-scope streams";
     let types = &native.design_types;
     let mut sketch_entities = None;
     let mut out = Vec::new();
@@ -78,7 +79,6 @@ pub(crate) fn decode_parameter_scopes(
         .ok_or_else(|| CodecError::malformed("F3D parameter-scope frame width is zero"))?;
     // Each Design stream decodes once: a repeated entry name names the same
     // payload and would repeat every scope ID.
-    const STREAMS_OPERATION: &str = "f3d Design parameter-scope streams";
     let mut names_storage = ctx.reserve_scoped(0, STREAMS_OPERATION)?;
     let mut names = Vec::new();
     for entry in ctx
@@ -126,16 +126,15 @@ pub(crate) fn decode_parameter_scopes(
                     scope.byte_offset(),
                     "f3d Design parameter scope ID",
                 )?;
-                bind_scope_constructions(
+                bind_sketch_entity(
                     ctx,
                     bytes,
-                    &records,
                     &mut scope,
                     &stream,
-                    &stream_types,
-                    native,
+                    &native.design_entity_headers,
                     &mut sketch_entities,
                 )?;
+                bind_scope_constructions(ctx, bytes, &records, &mut scope, &stream_types, native)?;
                 ctx.push_vec(&mut out, scope, "f3d Design parameter scopes")?;
             }
         }
@@ -258,18 +257,70 @@ fn unique_sketch_entity_reference<'entities>(
     Ok(found.map(|(_, entity, suffix_at)| (entity, suffix_at)))
 }
 
+/// Bind a sketch scope to the only sketch-module entity of its stream that a
+/// marked reference in its frame names.
+fn bind_sketch_entity<'entities, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    scope: &mut DesignParameterScope,
+    stream: &str,
+    entities: &'entities [crate::records::entity_header::DesignEntityHeader],
+    sketch_entities: &mut Option<SketchEntityIndex<'entities, 'ctx>>,
+) -> Result<(), CodecError> {
+    if !matches!(
+        scope.payload(),
+        scope::DesignScopePayload::Sketch(_)
+            | scope::DesignScopePayload::Esquisse(_)
+            | scope::DesignScopePayload::Skizze(_)
+            | scope::DesignScopePayload::Esboco(_)
+    ) {
+        return Ok(());
+    }
+    let Some(frame) = usize::try_from(scope.byte_offset())
+        .ok()
+        .zip(usize::try_from(scope.paired_byte_offset()).ok())
+        .and_then(|(start, end)| bytes.get(start..end))
+    else {
+        return Ok(());
+    };
+    let index = match sketch_entities {
+        Some(index) => index,
+        None => sketch_entities.insert(sketch_entity_index(ctx, entities)?),
+    };
+    let Some((entity, relative_offset)) =
+        unique_sketch_entity_reference(ctx, frame, stream, index)?
+    else {
+        return Ok(());
+    };
+    let Some(entity_reference_offset) = scope
+        .byte_offset()
+        .checked_add(u64_from_index(relative_offset))
+    else {
+        return Ok(());
+    };
+    let entity_id = copy_sketch_entity_id(ctx, &entity.entity_id)?;
+    if let scope::DesignScopePayloadMut::Sketch(slot)
+    | scope::DesignScopePayloadMut::Esquisse(slot)
+    | scope::DesignScopePayloadMut::Skizze(slot)
+    | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
+    {
+        *slot = Some(scope::DesignSketchEntityBinding {
+            entity_id,
+            entity_reference_offset,
+        });
+    }
+    Ok(())
+}
+
 /// Bind the specialized construction fields that each scope family decodes
 /// beside its generic envelope.
-#[allow(clippy::too_many_arguments)]
-fn bind_scope_constructions<'entities, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn bind_scope_constructions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &mut DesignParameterScope,
-    stream: &str,
     stream_types: &HashMap<u64, (&str, u32)>,
-    native: &'entities crate::native::F3dNative,
-    sketch_entities: &mut Option<SketchEntityIndex<'entities, 'ctx>>,
+    native: &crate::native::F3dNative,
 ) -> Result<(), CodecError> {
     let parameters = &native.design_parameters;
     let parameter_owners = &native.design_parameter_owners;
@@ -277,46 +328,6 @@ fn bind_scope_constructions<'entities, 'ctx>(
     let recipes = &native.construction_recipes;
     bind_coil_extent_from_parameters(ctx, scope, parameters, parameter_owners)?;
     bind_hem_operation_from_parameters(ctx, bytes, scope, parameters, parameter_owners)?;
-    if matches!(
-        scope.payload(),
-        scope::DesignScopePayload::Sketch(_)
-            | scope::DesignScopePayload::Esquisse(_)
-            | scope::DesignScopePayload::Skizze(_)
-            | scope::DesignScopePayload::Esboco(_)
-    ) {
-        let frame = usize::try_from(scope.byte_offset())
-            .ok()
-            .zip(usize::try_from(scope.paired_byte_offset()).ok())
-            .and_then(|(start, end)| bytes.get(start..end));
-        if let Some(frame) = frame {
-            let index = match sketch_entities {
-                Some(index) => index,
-                None => {
-                    sketch_entities.insert(sketch_entity_index(ctx, &native.design_entity_headers)?)
-                }
-            };
-            if let Some((entity, relative_offset)) =
-                unique_sketch_entity_reference(ctx, frame, stream, index)?
-            {
-                if let Some(entity_reference_offset) = scope
-                    .byte_offset()
-                    .checked_add(u64_from_index(relative_offset))
-                {
-                    let entity_id = copy_sketch_entity_id(ctx, &entity.entity_id)?;
-                    if let scope::DesignScopePayloadMut::Sketch(slot)
-                    | scope::DesignScopePayloadMut::Esquisse(slot)
-                    | scope::DesignScopePayloadMut::Skizze(slot)
-                    | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
-                    {
-                        *slot = Some(scope::DesignSketchEntityBinding {
-                            entity_id,
-                            entity_reference_offset,
-                        });
-                    }
-                }
-            }
-        }
-    }
     if matches!(scope.payload(), scope::DesignScopePayload::WorkPlane(_)) {
         if let Some(frame) = exact_work_plane_frame(ctx, bytes, records, scope)? {
             if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {

@@ -963,15 +963,15 @@ fn is_operation_candidate(bytes: &[u8], operation_offset: usize) -> bool {
 
 /// The operation offset and the leading reference of a current Extrude
 /// prologue. Without a marked reference at offset 25 the operation sits at
-/// offset 28 and the inner value is `None`. With one, exactly one placement
-/// of the operation after the reference may read as an operation: after seven
+/// offset 28 and the reference is `None`. With one, exactly one placement of
+/// the operation after the reference may read as an operation: after seven
 /// or eight zero bytes, or after seven zero bytes and a marker.
 fn current_extrude_reference(
     bytes: &[u8],
     start: usize,
-) -> Option<Option<(usize, DesignExtrudePrologueReference)>> {
+) -> Option<(usize, Option<DesignExtrudePrologueReference>)> {
     if bytes.get(start.checked_add(25)?) != Some(&1) {
-        return Some(None);
+        return Some((start.checked_add(28)?, None));
     }
     let record_index_offset = start.checked_add(26)?;
     let record_index = View::u32_le_at(bytes, record_index_offset)?;
@@ -1004,15 +1004,15 @@ fn current_extrude_reference(
     }
     let (operation_offset, operation_marker_offset) = found?;
     let padding_end = operation_marker_offset.unwrap_or(operation_offset);
-    Some(Some((
+    Some((
         operation_offset,
-        DesignExtrudePrologueReference {
+        Some(DesignExtrudePrologueReference {
             record_index,
             record_index_offset: u64_from_index(record_index_offset),
             trailing_zero_count: u8::try_from(padding_end.checked_sub(prefix_tail)?).ok()?,
             operation_prefix_marker_offset: operation_marker_offset.map(u64_from_index),
-        },
-    )))
+        }),
+    ))
 }
 
 /// The fixed operation fields of a current Extrude prologue, from the
@@ -1129,27 +1129,18 @@ fn exact_current_extrude_prologue(
     {
         return Ok(None);
     }
-    let Some(leading) = current_extrude_reference(bytes, start) else {
+    let Some((operation_offset, reference)) = current_extrude_reference(bytes, start) else {
         return Ok(None);
     };
-    let (operation_offset, reference) = match leading {
-        Some((operation_offset, reference)) => {
-            if !ctx.contains(
-                reference_members,
-                &reference.record_index,
-                "search F3D current Extrude candidate reference member",
-            )? {
-                return Ok(None);
-            }
-            (operation_offset, Some(reference))
+    if let Some(reference) = &reference {
+        if !ctx.contains(
+            reference_members,
+            &reference.record_index,
+            "search F3D current Extrude candidate reference member",
+        )? {
+            return Ok(None);
         }
-        None => {
-            let Some(direct_offset) = start.checked_add(28) else {
-                return Ok(None);
-            };
-            (direct_offset, None)
-        }
-    };
+    }
     let Some(fields) = current_extrude_fields(bytes, operation_offset, reference) else {
         return Ok(None);
     };
@@ -1187,7 +1178,7 @@ fn exact_current_extrude_prologue(
         reference_count_at,
         reference_members,
         legacy_class_415_symmetric_distance,
-        fields,
+        &fields,
         &slots,
     ))
 }
@@ -1200,7 +1191,7 @@ fn current_extrude_extent(
     reference_count_at: usize,
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
-    fields: CurrentExtrudeFields,
+    fields: &CurrentExtrudeFields,
     slots: &CurrentExtrudeSlots,
 ) -> Option<DesignExtrudePrologue> {
     if legacy_class_415_symmetric_distance
