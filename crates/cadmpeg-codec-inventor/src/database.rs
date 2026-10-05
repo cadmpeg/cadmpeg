@@ -7,6 +7,18 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for RseSchema {
+    const FIXED_BYTES: Option<u64> = Some(4);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(4)
+    }
+}
+
 impl RseSchema {
     pub(crate) const SCHEMA_31: Self = Self(31);
 
@@ -125,12 +137,19 @@ pub(crate) enum DatabaseHeader {
 
 impl DatabaseHeader {
     /// The detail an unframed schema reports as a database issue.
-    pub(crate) fn unframed_detail(schema: RseSchema, detail: &str) -> String {
-        format!(
-            "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
-             {detail}",
-            schema.value(),
-            RseSchema::SCHEMA_31.value()
+    pub(crate) fn unframed_detail(
+        ctx: &DecodeContext<'_>,
+        schema: RseSchema,
+        detail: &str,
+    ) -> Result<String, CodecError> {
+        ctx.format_retained(
+            format_args!(
+                "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
+                 {detail}",
+                schema.value(),
+                RseSchema::SCHEMA_31.value()
+            ),
+            "retain Inventor database issue detail",
         )
     }
 }
@@ -152,14 +171,11 @@ pub(crate) fn parse_database(
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            ctx.charge_formatted_retained(
+            let detail = ctx.format_retained(
                 format_args!("{error}"),
                 "retain RSe unframed database detail",
             )?;
-            Ok(DatabaseHeader::Unframed {
-                schema,
-                detail: error.to_string(),
-            })
+            Ok(DatabaseHeader::Unframed { schema, detail })
         }
     }
 }
@@ -201,12 +217,8 @@ pub(crate) fn parse_registry(
 ) -> Result<SegmentRegistry, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor segment registry entries",
-    )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
@@ -218,14 +230,10 @@ pub(crate) fn parse_registry(
         let type_state = cursor.u32_array("segment type state")?;
         let version = cursor.version("segment version")?;
         let trailing_value = cursor.u32("segment trailing value")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(object_count),
-            "admit Inventor segment registry objects",
-        )?;
         let mut objects =
             ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
-        for _ in 0..object_count {
+        for _ in ctx.admit_iter(&(0..object_count), "visit Inventor segment objects")? {
             let object = SegmentObject {
                 revision_id: cursor.array("object revision id")?,
                 state: cursor.array("object state")?,
@@ -234,7 +242,11 @@ pub(crate) fn parse_registry(
                 node_count: cursor.u32("object node count")?,
             };
             node_count = Some(object.node_count);
-            objects.push(object);
+            ctx.push_vec(
+                &mut objects,
+                object,
+                "admit Inventor segment registry objects",
+            )?;
         }
         let node_count = node_count
             .unwrap_or(1)
@@ -247,36 +259,41 @@ pub(crate) fn parse_registry(
                 "RSe segment node count exceeds 1000000".into(),
             ));
         }
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(node_count),
-            "admit Inventor segment registry nodes",
-        )?;
+
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
-        for _ in 0..node_count {
-            nodes.push(SegmentNode {
-                index: cursor.u32("node index")?,
-                segment_list_indexes: [
-                    cursor.i16("node segment-list index")?,
-                    cursor.i16("node segment-list index")?,
-                ],
-                values: cursor.u16_array("node values")?,
-                number: cursor.u16("node number")?,
-            });
+        for _ in ctx.admit_iter(&(0..node_count), "visit Inventor segment nodes")? {
+            ctx.push_vec(
+                &mut nodes,
+                SegmentNode {
+                    index: cursor.u32("node index")?,
+                    segment_list_indexes: [
+                        cursor.i16("node segment-list index")?,
+                        cursor.i16("node segment-list index")?,
+                    ],
+                    values: cursor.u16_array("node values")?,
+                    number: cursor.u16("node number")?,
+                },
+                "admit Inventor segment registry nodes",
+            )?;
         }
-        entries.push(SegmentRegistryEntry {
-            display_name,
-            segment_id,
-            revision_id,
-            value,
-            state,
-            secondary_count,
-            type_name,
-            type_state,
-            version,
-            trailing_value,
-            objects,
-            nodes,
-        });
+        ctx.push_vec(
+            &mut entries,
+            SegmentRegistryEntry {
+                display_name,
+                segment_id,
+                revision_id,
+                value,
+                state,
+                secondary_count,
+                type_name,
+                type_state,
+                version,
+                trailing_value,
+                objects,
+                nodes,
+            },
+            "admit Inventor segment registry entries",
+        )?;
     }
     let state = cursor.u16_array("registry state")?;
     let primary_ids = cursor.id_list(ctx, "primary registry ids")?;
@@ -300,12 +317,8 @@ pub(crate) fn parse_revisions(
     // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
     let count = cursor.count("revision count", 1_000_000)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor revision entries",
-    )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
         let kind = cursor.u16("revision kind")?;
@@ -319,12 +332,16 @@ pub(crate) fn parse_revisions(
         } else {
             RevisionPayload::None
         };
-        entries.push(RevisionEntry {
-            id,
-            flags,
-            kind,
-            payload,
-        });
+        ctx.push_vec(
+            &mut entries,
+            RevisionEntry {
+                id,
+                flags,
+                kind,
+                payload,
+            },
+            "admit Inventor revision entries",
+        )?;
     }
     cursor.finish()?;
     Ok(RevisionTable { version, entries })
@@ -428,9 +445,13 @@ impl<'a> Cursor<'a> {
                     "Inventor registry identifier count exceeds remaining payload",
                 )
             })?;
-        let mut ids = ctx.collection_vec(count, "admit Inventor registry identifier list")?;
-        for _ in 0..count {
-            ids.push(self.array(field)?);
+        let mut ids = ctx.vector_storage(count, "admit Inventor registry identifier list")?;
+        for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+            ctx.push_vec(
+                &mut ids,
+                self.array(field)?,
+                "admit Inventor registry identifier list",
+            )?;
         }
         Ok(ids)
     }
@@ -462,6 +483,24 @@ mod tests {
     };
 
     #[test]
+    fn revision_traversal_refuses_work_before_record_read() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 3);
+        push_u32(&mut bytes, 1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("revision header fits input cap");
+        assert!(matches!(
+            parse_revisions(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor database table records"
+        ));
+    }
+
+    #[test]
     fn registry_identifiers_prove_extent_and_admit_retained_storage() {
         let bytes = 1_000_000_u32.to_le_bytes();
         crate::test_support::test_fixtures::parse(&bytes, |ctx, _| {
@@ -488,6 +527,33 @@ mod tests {
         assert!(
             matches!(super::Cursor::new(&complete, "test").id_list(&ctx, "ids"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
+    }
+
+    #[test]
+    fn registry_identifier_push_admits_one_slot() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0x35; 16]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One identifier occupies one collection slot; capacity adds no slot charge.
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("bounded identifier context");
+        assert_eq!(
+            super::Cursor::new(&bytes, "test")
+                .id_list(&ctx, "ids")
+                .expect("one admitted identifier"),
+            vec![[0x35; 16]],
+        );
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("zero-slot identifier context");
+        assert!(matches!(
+            super::Cursor::new(&bytes, "test").id_list(&ctx, "ids"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor registry identifier list"
+        ));
     }
 
     #[test]
@@ -646,7 +712,8 @@ mod tests {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema(12));
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            let reported = DatabaseHeader::unframed_detail(ctx, schema, &detail)
+                .expect("service policy admits issue detail");
             assert!(reported.contains("schema 12"), "{reported}");
             assert!(reported.contains("schema 31 grammar"), "{reported}");
         });
@@ -662,7 +729,8 @@ mod tests {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema::SCHEMA_31);
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            let reported = DatabaseHeader::unframed_detail(ctx, schema, &detail)
+                .expect("service policy admits issue detail");
             assert!(reported.contains("schema 31"), "{reported}");
         });
     }

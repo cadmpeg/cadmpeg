@@ -128,7 +128,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
                 .unwrap()
                 .expect("the recovery is charged");
-            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code"));
             assert!(loss.message.contains(nearest), "{}", loss.message);
         }
 
@@ -154,7 +154,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
                 .unwrap()
                 .expect("the recovery is charged");
-            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code"));
             assert!(
                 !loss.message.contains("acis:save-format"),
                 "{}",
@@ -264,13 +264,15 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
 
 #[test]
 fn the_declared_keys_are_pinned() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let kernel = header(Some(21_804));
 
-    let binary = classify(&StreamEvidence::Binary {
+    let binary = classify(&ctx, &StreamEvidence::Binary {
         family: Family::Acis,
         header: &kernel,
         stream: Some(RecordStreamStart(0)),
     })
+    .expect("framing declarations admitted")
     .declared()
     .clone();
     assert_eq!(binary[DECLARED_ENCODING], "binary");
@@ -278,10 +280,11 @@ fn the_declared_keys_are_pinned() {
     assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MINOR));
     assert!(!binary.contains_key(DECLARED_TERMINATOR));
 
-    let text = classify(&StreamEvidence::Text(Some(TextEvidence {
+    let text = classify(&ctx, &StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Acis,
         header: &kernel.metadata,
     })))
+    .expect("framing declarations admitted")
     .declared()
     .clone();
     assert_eq!(text[DECLARED_ENCODING], "text");
@@ -289,21 +292,23 @@ fn the_declared_keys_are_pinned() {
     assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
     assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MINOR));
 
-    let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
+    let asm_text = classify(&ctx, &StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Asm,
         header: &kernel.metadata,
     })))
+    .expect("framing declarations admitted")
     .declared()
     .clone();
     assert_eq!(asm_text[DECLARED_TERMINATOR], "End-of-ASM-data");
 
     // An absent save-format word declares no band, which is a different
     // statement from a declaration of zero.
-    let silent = classify(&StreamEvidence::Binary {
+    let silent = classify(&ctx, &StreamEvidence::Binary {
         family: Family::Asm,
         header: &header(None),
         stream: Some(RecordStreamStart(0)),
     })
+    .expect("framing declarations admitted")
     .declared()
     .clone();
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
@@ -399,7 +404,7 @@ fn cases() -> Vec<Case> {
 fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
     // End to end on real bytes: the admission the decode reports, and the
     // recovery loss charged exactly with it.
-    let recovery = SatLossCode::SourceDialectUnverified.kind();
+    let recovery = SatLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("service loss code");
     for case in cases() {
         let result = SatCodec
             .decode(

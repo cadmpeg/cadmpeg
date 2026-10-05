@@ -90,7 +90,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
         panic!("Parasolid fixture");
     };
     *schema = Some(
-        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
+        cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_3501171_35102_13006".into()).expect("service token admission")
             .expect("the fixture text is a schema token"),
     );
     let scan = crate::decode::Scan {
