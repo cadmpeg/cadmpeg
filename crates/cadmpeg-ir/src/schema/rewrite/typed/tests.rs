@@ -311,7 +311,27 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
         // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, one comparison with the single stored key and one copy.
         let first_work =
             4 * bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
-        let repeat_work = 12 * bytes + 1;
+        let repeat_work = 2 * bytes + 1;
+        // One unit below the exact need refuses the repeated rewrite.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = first_work + repeat_work - 1;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 2 * bytes;
+        policy.limits.max_collection_items = 2;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut map = IdentityMap::new(&ctx, "single grammar cache", |source: &str| {
+            ctx.copy_retained_text(source, "typed callback copy")
+        })
+        .unwrap();
+        let identity = || crate::ids::Identity::new(source).unwrap();
+        identity().rewrite_identities(&ctx, &mut map).unwrap();
+        let refused = identity().rewrite_identities(&ctx, &mut map).unwrap_err();
+        assert!(
+            matches!(refused, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
+        drop(map);
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = first_work + repeat_work;
         policy.limits.max_materialized_bytes = 4096;
