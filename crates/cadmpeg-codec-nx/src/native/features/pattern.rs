@@ -1099,21 +1099,20 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             Ord::cmp,
             "sort NX pattern construction graph",
         )?;
-        if ctx
-            .admit_iter(graph.as_slice(), "validate NX pattern graph order")?
+        if graph
+            .iter()
             .enumerate()
             .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
-            || ctx.any_by(
-                graph.as_slice(),
-                |reference| Ok(reference.layout != graph[0].layout),
-                "validate NX pattern graph layouts",
-            )?
+            || graph
+                .iter()
+                .any(|reference| reference.layout != graph[0].layout)
         {
             continue;
         }
         let Some((data_blocks, _source_id_storage)) = copy_block_ids(
             ctx,
-            ctx.admit_iter(&graph, "copy NX pattern construction blocks")?
+            graph
+                .iter()
                 .map(|reference| reference.data_block.as_deref()),
             "NX pattern construction block IDs",
         )?
@@ -1145,10 +1144,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             "NX pattern construction payload identity",
         )?;
         let mut construction_references = Vec::new();
-        for reference in ctx
-            .admit_iter(&graph, "copy NX pattern construction reference IDs")?
-            .copied()
-        {
+        for reference in graph.iter().copied() {
             ctx.reserve_vec(
                 &mut construction_references,
                 1,
