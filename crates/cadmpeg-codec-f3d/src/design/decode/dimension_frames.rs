@@ -832,11 +832,10 @@ pub(crate) fn decode_dimension_recipe_records(
             let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
                 continue;
             };
-            let Some(program) = contiguous_i32_program(ctx, bytes, program_offset, record_end)
+            let Some(program) = contiguous_i32_program(ctx, bytes, program_offset, record_end)?
             else {
                 continue;
             };
-            let program = program?;
             let references = decode_recipe_references_charged(ctx, prefix_bytes, prefix_offset)?;
             let prefix_bytes = ctx.copy_retained(prefix_bytes, "f3d dimension recipe prefix")?;
             let class_tag = header.retain_class_tag(ctx, "f3d dimension recipe class tag")?;
@@ -1791,23 +1790,22 @@ pub(super) fn contiguous_i32_program(
     bytes: &[u8],
     start: usize,
     end: usize,
-) -> Option<Result<Vec<i32>, CodecError>> {
-    let view = View::over_retained(bytes).child(start, end)?;
+) -> Result<Option<Vec<i32>>, CodecError> {
+    let Some(view) = View::over_retained(bytes).child(start, end) else {
+        return Ok(None);
+    };
     if view.remaining() == 0 || !view.remaining().is_multiple_of(4) {
-        return None;
+        return Ok(None);
     }
     let (words, _) = view.unread().as_chunks::<4>();
     let mut program = Vec::new();
-    let collected = (|| {
-        ctx.reserve_capacity(&mut program, words.len(), "f3d recipe program words")?;
-        for word in ctx.admit_iter(words, "scan F3D recipe program words")? {
-            let value = View::i32_le_at(word, 0)
-                .ok_or_else(|| CodecError::malformed("F3D recipe program word is short"))?;
-            ctx.push_vec(&mut program, value, "f3d recipe program words")?;
-        }
-        Ok(())
-    })();
-    Some(collected.map(|()| program))
+    ctx.reserve_capacity(&mut program, words.len(), "f3d recipe program words")?;
+    for word in ctx.admit_iter(words, "scan F3D recipe program words")? {
+        let value = View::i32_le_at(word, 0)
+            .ok_or_else(|| CodecError::malformed("F3D recipe program word is short"))?;
+        ctx.push_vec(&mut program, value, "f3d recipe program words")?;
+    }
+    Ok(Some(program))
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
