@@ -4370,32 +4370,43 @@ fn standard_mesh_assignment_corner_points(
             }
         }
         loop {
-            let before = corner_points.values().map(BTreeSet::len).sum::<usize>();
-            for &(left, right, pair) in &run_constraints {
+            // Each round either removes a point or ends the loop, so rounds are
+            // bounded by the admitted points; every round admits its visits.
+            let mut changed = false;
+            let constraints =
+                match ctx.admit_iter(&run_constraints, "catia_corner_point_constraint_round") {
+                    Ok(constraints) => constraints,
+                    Err(error) => return Some(Err(error.into())),
+                };
+            for &(left, right, pair) in constraints {
                 let left_points = corner_points.get(&left)?;
                 let right_points = corner_points.get(&right)?;
                 let left_single = (left_points.len() == 1)
-                    .then(|| left_points.iter().copied().next())
+                    .then(|| left_points.first().copied())
                     .flatten();
                 let right_single = (right_points.len() == 1)
-                    .then(|| right_points.iter().copied().next())
+                    .then(|| right_points.first().copied())
                     .flatten();
-                if let Some(point) = left_single {
-                    corner_points
-                        .get_mut(&right)?
-                        .retain(|candidate| *candidate != point && pair.contains(candidate));
-                }
-                if let Some(point) = right_single {
-                    corner_points
-                        .get_mut(&left)?
-                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                for (single, target) in [(left_single, right), (right_single, left)] {
+                    let Some(point) = single else {
+                        continue;
+                    };
+                    let stored = corner_points.get_mut(&target)?;
+                    let before = stored.len();
+                    if let Err(error) = ctx.retain_btree_set(
+                        stored,
+                        |candidate| Ok(*candidate != point && pair.contains(candidate)),
+                        "catia_corner_point_narrowing",
+                    ) {
+                        return Some(Err(error));
+                    }
+                    changed |= stored.len() != before;
                 }
                 if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
                     return None;
                 }
             }
-            let after = corner_points.values().map(BTreeSet::len).sum::<usize>();
-            if after == before {
+            if !changed {
                 break;
             }
         }
