@@ -41,23 +41,21 @@ use crate::native::features::FeatureHistory;
 
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
-    display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
-    display_jt_geometric_transform_attributes, display_jt_group_node_data, display_jt_indices,
-    display_jt_initial_face_degree_symbols, display_jt_instance_nodes,
-    display_jt_material_attributes, display_jt_partition_nodes, display_jt_polygon_meshes,
-    display_jt_range_lod_nodes, display_jt_segments, display_jt_shape_lod_bindings,
-    display_jt_shape_lod_elements, display_jt_string_property_atoms,
-    display_jt_topology_packet_sequences, display_jt_tri_strip_lod_headers,
-    display_jt_tri_strip_shape_nodes, display_jt_vertex_colors, display_jt_vertex_coordinates,
+    display_jt_compressed_element_sequences, display_jt_documents, display_jt_indices,
+    display_jt_initial_face_degree_symbols, display_jt_polygon_meshes, display_jt_scene_nodes,
+    display_jt_segments, display_jt_shape_lod_bindings, display_jt_shape_lod_elements,
+    display_jt_string_property_atoms, display_jt_topology_packet_sequences,
+    display_jt_tri_strip_lod_headers, display_jt_vertex_colors, display_jt_vertex_coordinates,
     display_jt_vertex_flags, display_jt_vertex_normals, display_jt_vertex_texture_coordinates,
     DisplayJtBaseNodeData, DisplayJtCompressedVertexRecordsHeader,
     DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
     DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
-    DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
-    DisplayJtStringPropertyAtom, DisplayJtTopologyArrays, DisplayJtTopologyPacketSequence,
-    DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
-    DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
-    DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+    DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtSceneNodes,
+    DisplayJtShapeLodBinding, DisplayJtStringPropertyAtom, DisplayJtTopologyArrays,
+    DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode,
+    DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+    DisplayJtVertexFlagInputs, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
 };
 use super::features::construction_records::{
     data_block_object_frames, feature_block_construction_payloads,
@@ -161,15 +159,16 @@ use super::parasolid::{
     parasolid_deltas_events_with_censuses, parasolid_entity_51_numeric_uses,
     parasolid_entity_51_records, parasolid_entity_51_string_uses,
     parasolid_entity_51_structured_uses, parasolid_entity_value_records,
-    parasolid_field_names_records, parasolid_group_members, parasolid_group_records,
-    parasolid_intersection_records, parasolid_offset_surface_records, parasolid_support_uv_records,
+    parasolid_field_names_records, parasolid_groups, parasolid_intersection_records,
+    parasolid_offset_surface_records, parasolid_support_uv_records,
     parasolid_surface_curve_records, parasolid_term_use_records,
     parasolid_topology_attribute_class_uses,
     parasolid_topology_attribute_fields_have_untransferred_values,
     parasolid_topology_attribute_list_references, parasolid_trimmed_curve_records,
-    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldNames,
-    ParasolidAttributeFieldUse, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
-    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
+    resolve_parasolid_group_member_targets, ParasolidAttributeClassUse,
+    ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
+    ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord, ParasolidChartRecord,
+    ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
     ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
     ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
     ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
@@ -180,7 +179,7 @@ use super::parasolid::{
     ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
     ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
     ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
-    ParasolidGroupMember, ParasolidGroupRecord, ParasolidIntersectionRecord,
+    ParasolidGroupMember, ParasolidGroupRecord, ParasolidGroups, ParasolidIntersectionRecord,
     ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
     ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
@@ -766,9 +765,11 @@ impl NativeModel {
         )?;
         let deltas_events =
             parasolid_deltas_events_with_censuses(ctx, streams, parsed.take_delta_censuses(ctx)?)?;
-        let parasolid_group_records =
-            parasolid_group_records(ctx, streams, &delta_pairs, &deltas_events.records)?;
-        let parasolid_group_members = parasolid_group_members(ctx, streams, &delta_pairs, parsed)?;
+        let ParasolidGroups {
+            records: parasolid_group_records,
+            members: mut parasolid_group_members,
+        } = parasolid_groups(ctx, streams, &delta_pairs, &deltas_events)?;
+        resolve_parasolid_group_member_targets(ctx, &mut parasolid_group_members, parsed)?;
         let parasolid_blend_surface_records = parasolid_blend_surface_records(ctx, parsed)?;
         let parasolid_blend_bound_records = parasolid_blend_bound_records(ctx, streams)?;
         let parasolid_offset_surface_records = parasolid_offset_surface_records(ctx, parsed)?;
@@ -1013,46 +1014,16 @@ impl NativeModel {
             display_jt_string_property_atoms(ctx, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
             display_jt_shape_lod_bindings(ctx, container, &display_jt_segments)?;
-        let display_jt_base_node_data =
-            display_jt_base_node_data(ctx, container, &display_jt_segments, &display_jt_documents)?;
-        let display_jt_group_node_data = display_jt_group_node_data(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_instance_nodes =
-            display_jt_instance_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
-        let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_material_attributes = display_jt_material_attributes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_partition_nodes = display_jt_partition_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+        let DisplayJtSceneNodes {
+            base_nodes: display_jt_base_node_data,
+            group_nodes: display_jt_group_node_data,
+            instance_nodes: display_jt_instance_nodes,
+            transforms: display_jt_geometric_transform_attributes,
+            materials: display_jt_material_attributes,
+            partition_nodes: display_jt_partition_nodes,
+            range_lod_nodes: display_jt_range_lod_nodes,
+            tri_strip_shape_nodes: display_jt_tri_strip_shape_nodes,
+        } = display_jt_scene_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let feature_datum_csys_constructions =
             feature_datum_csys_constructions(ctx, &feature_history)?;
         let feature_datum_csys_payloads =
