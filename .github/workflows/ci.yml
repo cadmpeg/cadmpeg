@@ -29,27 +29,64 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
+  changes:
+    name: Select affected crates
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.scope.outputs.packages }}
+      full: ${{ steps.scope.outputs.full }}
+      rust: ${{ steps.scope.outputs.rust }}
+      features: ${{ steps.scope.outputs.features }}
+      schema: ${{ steps.scope.outputs.schema }}
+      iges: ${{ steps.scope.outputs.iges }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Select gate inputs
+        id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            python3 scripts/ci_scope.py --base "$BASE" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci_scope.py --full --github-output "$GITHUB_OUTPUT"
+          fi
+
   # The stable gate is three jobs rather than one long one. Clippy compiles the
   # workspace through `clippy-driver`, whose artifacts are separate from the
   # ones `cargo test` builds, so the work is additive and the steps only ever
   # queued behind each other. Splitting makes the gate's wall-clock the slowest
   # job instead of the sum of every step.
   lint:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' }}
     name: fmt / clippy (stable)
+    env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned toolchain
+        if: needs.changes.outputs.rust == 'true'
+        uses: ./.github/actions/pinned-rust
         with:
           components: rustfmt, clippy
 
       - name: Match cargo's job count to the runner
+        if: needs.changes.outputs.rust == 'true'
         uses: ./.github/actions/cargo-job-count
 
       - name: Cache cargo registry and target
+        if: needs.changes.outputs.rust == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: stable
@@ -60,14 +97,12 @@ jobs:
         # start. Catches a reference that names no paragraph or several.
         run: python3 scripts/check-doc-anchors.py
 
+      - name: Python tooling tests
+        run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
+
       - name: Source policy
         run: |
           set -euo pipefail
-          python3 -m unittest -q scripts/test_pre_commit.py
-          python3 -m unittest -v scripts/test_check_source_policy.py
-          python3 -m unittest -v scripts/test_check_fuzz_seeds.py
-          python3 -m unittest -v scripts/test_census_panic_calls.py
-          python3 -m unittest -v scripts/test_check_deny_census.py
           python3 scripts/check-source-policy.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
@@ -77,14 +112,12 @@ jobs:
         # rise when fixtures are added; they must never silently fall.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
           python3 scripts/check-golden-coverage-floors.py
 
       - name: Codec facade
         # Crate-root pub items must match docs/codec-facade.toml.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
 
       - name: Dialect identity registry
@@ -92,7 +125,6 @@ jobs:
         # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
         run: |
           set -euo pipefail
-          python3 -m unittest discover -q -s scripts -p test_check_dialects.py
           python3 scripts/check-dialects.py
 
       - name: Dialect capability registry
@@ -102,7 +134,6 @@ jobs:
         # here: a row with no fixture cannot claim a read score.
         run: |
           set -euo pipefail
-          python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
           python3 scripts/check-dialect-support.py
 
       - name: Rendered capability tables
@@ -112,30 +143,39 @@ jobs:
         # a registry edit without a re-render fails here.
         run: |
           set -euo pipefail
-          python3 -m unittest discover -q -s scripts -p test_render_format_support.py
           python3 scripts/render-format-support.py --check
 
       - name: Format check
+        if: needs.changes.outputs.rust == 'true'
         run: cargo fmt --all --check
 
       - name: Clippy
+        if: needs.changes.outputs.rust == 'true'
         # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
         # trailing flags here. Trailing flags are part of the compilation
         # fingerprint, and a flagged run and a bare run evict each other's
         # cached artifacts.
         # `--all-targets` covers lib, bins, tests, and benches so test-only
         # style debt cannot hide behind crate-root cfg(test) mute lists.
-        run: cargo clippy --workspace --all-targets
+        run: python3 scripts/ci_cargo.py clippy --all-targets
 
   test:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: test (stable)
+    env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
 
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
@@ -150,11 +190,22 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Unit and integration tests
-        # Builds the full workspace (libs, bins, test harnesses) before
-        # running, so a separate `cargo build` step would be redundant.
-        run: cargo test-fast
+        # Compile selected packages and their dependencies before running.
+        # A separate `cargo build` step would repeat that compilation.
+        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
+
+      - name: Inventor CLI evidence tests
+        if: contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg')
+        # These two tooling tests need the default CLI built by the Rust gate.
+        # The lint job runs the remaining Python tests without a CLI build.
+        run: |
+          test -x target/debug/cadmpeg
+          python3 -m unittest -q \
+            scripts.test_inventor_evidence.EvidenceTest.test_primary_carrier_parity_when_cli_is_built \
+            scripts.test_inventor_evidence.EvidenceTest.test_cli_sweep_is_per_profile_and_deterministic
 
       - name: Bounded IGES decode and round-trip gate
+        if: needs.changes.outputs.iges == 'true'
         # Give every synthesized IGES fixture independent decode, validation,
         # conversion, generated-file decode, and generated-file validation
         # deadlines under the unattended resource profile. Use the production
@@ -162,7 +213,6 @@ jobs:
         # unoptimized debug binary.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_verify_iges_bounded.py
           mkdir -p "$HOME/side2/tmp/iges-l9"
           cargo build -q --release -p cadmpeg --no-default-features --features iges
           python3 scripts/verify-iges-bounded.py \
@@ -173,23 +223,25 @@ jobs:
             --roundtrip \
             --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
 
-      - name: Independent Inventor evidence test
-        run: python3 -m unittest -v scripts/test_inventor_evidence.py
-
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
         # would pay for the whole workspace again.
-        run: cargo test --workspace --doc
+        run: python3 scripts/ci_cargo.py test --doc
 
   features:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.features == 'true') }}
     name: schema / fuzz (stable)
     runs-on: ubuntu-latest
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
 
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
@@ -197,18 +249,19 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: stable
-          save-if: false
+          shared-key: features
+          workspaces: |
+            . -> target
+            crates/cadmpeg-fuzz -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Schema feature
-        # `schema` is off by default, so the other jobs never build the
-        # `JsonSchema` derives. This step is the only thing that compiles them
-        # and runs the schema assertions, so a derive that stops matching its
-        # type fails here rather than at release time.
+        if: needs.changes.outputs.schema == 'true'
+        # The CLI enables IR schemas. This gate also checks schema assertions
+        # and the core/assembly feature combinations without CLI defaults.
         run: |
           set -euo pipefail
-          cargo test -q -p cadmpeg-ir --features schema --lib
-          cargo test -q -p cadmpeg-asm --features schema --lib
+          cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
@@ -220,7 +273,7 @@ jobs:
         # every harness and seed binary, and `--keep-going` reports all of them
         # rather than stopping at the first.
         run: |
-          cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
+          cargo check -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
             --all-targets --keep-going
 
       - name: Fuzz crate tests
@@ -232,7 +285,7 @@ jobs:
 
       - name: Single-codec CLI feature gate
         # Per-codec optional deps must keep a one-feature binary compiling.
-        run: cargo build -q -p cadmpeg --no-default-features --features sldprt
+        run: cargo check -q -p cadmpeg --no-default-features --features sldprt
 
       - name: STEP-only low-confidence regression
         # This test target only exists when STEP is enabled without FCStd or F3D.
@@ -241,15 +294,22 @@ jobs:
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
     env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
       RUSTUP_TOOLCHAIN: "1.88"
       # `[workspace.lints]` denies warnings on every toolchain, and 1.88's lint
       # set differs from the pinned one's. This job checks compilation, not
       # lints; deny-by-default lints stay hard errors.
       RUSTFLAGS: "-A warnings"
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
@@ -267,22 +327,30 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
-        run: cargo check --workspace
+        run: python3 scripts/ci_cargo.py check
 
   # Byte-level codecs are the code most likely to break across platforms.
   cross-platform:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: build / test (${{ matrix.os }})
+    env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
 
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
@@ -293,7 +361,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Unit and integration tests
-        run: cargo test-fast
+        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
   # RustSec advisory scan of the dependency tree.
   audit:

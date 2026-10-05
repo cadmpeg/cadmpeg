@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::copious_data_file;
@@ -54,59 +54,31 @@ fn copious_merge_refuses_free_vertex_growth() {
 }
 
 fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: cadmpeg_core::decode::DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
 }
 
 fn assert_copious_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: cadmpeg_core::decode::DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::RetainedBytes,
+        operation,
+        0,
+    );
 }
 
 #[test]

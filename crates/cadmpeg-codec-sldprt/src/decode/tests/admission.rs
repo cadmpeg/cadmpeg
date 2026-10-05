@@ -25,30 +25,15 @@ fn retained_refusal_at(
     options: &mut DecodeOptions,
     operation: &str,
 ) -> cadmpeg_ir::DecodeFailure {
-    for _ in 0..4096 {
-        let refused = SldprtCodec
-            .decode(&mut Cursor::new(source), options)
-            .expect_err("fixture must refuse retained bytes");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            &refused
-        else {
-            panic!("expected retained refusal: {refused:?}");
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        );
-        if limit.operation == operation {
-            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
-            return SldprtCodec
-                .decode(&mut Cursor::new(source), options)
-                .expect_err("one byte below the requested copy need refuses");
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_retained_bytes);
-        options.policy.limits.max_retained_bytes = next;
-    }
-    panic!("target charge was not reached within fixture admissions");
+    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        source,
+        options,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        0,
+    ))
+    .into()
 }
 
 fn collection_refusal_at(source: &[u8], operation: &str) -> cadmpeg_core::decode::ResourceLimit {
@@ -60,37 +45,14 @@ fn collection_refusal_with_options(
     mut options: DecodeOptions,
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(source), &options)
-            .expect_err("collection limit must refuse the decode");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a collection-item refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == operation {
-            options.policy.limits.max_collection_items = limit.used + limit.additional - 1;
-            let repeated = SldprtCodec
-                .decode(&mut Cursor::new(source), &options)
-                .expect_err("one item below the target must refuse");
-            assert!(matches!(
-                repeated,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == operation
-            ));
-            return limit;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_collection_items);
-        options.policy.limits.max_collection_items = next;
-    }
-    panic!("target collection charge was not reached");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        source,
+        &mut options,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+    )
 }
 
 fn work_refusal_with_options(
@@ -98,37 +60,14 @@ fn work_refusal_with_options(
     mut options: DecodeOptions,
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    options.policy.limits.max_work_units = 0;
-    for _ in 0..65_536 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(source), &options)
-            .expect_err("work limit must refuse the decode");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a work-unit refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        if limit.operation == operation {
-            options.policy.limits.max_work_units = limit.used + limit.additional - 1;
-            let repeated = SldprtCodec
-                .decode(&mut Cursor::new(source), &options)
-                .expect_err("one work unit below the target must refuse");
-            assert!(matches!(
-                repeated,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::WorkUnits
-                        && refusal.operation == operation
-            ));
-            return limit;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_work_units);
-        options.policy.limits.max_work_units = next;
-    }
-    panic!("target work charge was not reached");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        source,
+        &mut options,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+    )
 }
 
 fn custom_property_source() -> Vec<u8> {

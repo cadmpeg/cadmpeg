@@ -182,6 +182,7 @@ def list_sites(relative: str, source: str, code: str, pattern: re.Pattern[str]) 
         print(f"{relative}:{line}\t{spelling}")
 
 
+@SOURCE_POLICY.analysis_session
 def census_pattern(pattern: re.Pattern[str], label: str, listing: bool = False) -> int:
     """Print the census of one spelling over the crate source scope."""
     kept, gated = production_files()
@@ -313,6 +314,7 @@ def test_only_reason(relative: str) -> str | None:
     return None
 
 
+@SOURCE_POLICY.analysis_session
 def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     """Print the ``.expect(`` and ``.unwrap(`` census."""
     kept, gated = production_files()
@@ -370,7 +372,7 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
 
 
 def main() -> int:
-    """Print the census and answer 0."""
+    """Print the census and return its status."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--pattern",
