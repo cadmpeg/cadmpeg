@@ -412,7 +412,9 @@ A search that can stop early (`any`, `all`, `find`, `find_map`, `position`,
 every visit. `any_by`, `all_by`, `find_by`, `find_map` and `position_by`
 step a fixed-step source and charge each step as it is made, including the
 end probe of a search that finds nothing; `rposition_by`
-searches a slice from the end the same way.
+searches a slice from the end the same way. Code whose errors are
+`ResourceLimit` uses `all_by_limit`, `partition_point_limit` and
+`equal_bytes_limit`, which charge the same way.
 
 The standard reflexive `From<T> for T` and its `Into<T>` forwarding move the
 value. They require no byte scan or allocation admission. A conversion between
