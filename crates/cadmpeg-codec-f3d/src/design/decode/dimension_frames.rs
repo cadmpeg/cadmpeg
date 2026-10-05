@@ -8,13 +8,13 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::meta::{decode_types, stream_types_by_entity};
+use crate::design::decode::meta::stream_types_by_entity;
 use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::{
     indexed_record_header_at, indexed_record_offsets, next_indexed_record_header,
     next_indexed_record_offset, sorted_distinct, IndexedRecordHeader, IndexedRecordOffsets,
-    RecordOffsetCache,
+    RecordOffsetCache, BULK_STREAM_FILE, META_STREAM_FILE,
 };
 use crate::design::decode::text::design_record_id_charged;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
@@ -25,7 +25,7 @@ use crate::records::{
         DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionPresentationFrame,
         DesignDimensionPresentationOperand, DesignDimensionRecipeRecord,
     },
-    entity_header::DesignEntityHeader,
+    entity_header::{DesignEntityHeader, SegmentType},
     feature::scope::DesignParameterScope,
     parameters::{
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
@@ -295,17 +295,12 @@ impl CompanionBoundaries {
             if !in_stream(ctx, owner.id(), stream)? {
                 continue;
             }
-            if !ctx.contains_key_hash_map(
-                &owner_scopes,
-                &owner.record_index(),
+            if let Entry::Vacant(slot) = ctx.entry_hash_map(
+                &mut owner_scopes,
+                owner.record_index(),
                 "f3d companion owner scopes",
             )? {
-                ctx.insert_hash_map(
-                    &mut owner_scopes,
-                    owner.record_index(),
-                    owner.scope_record_index(),
-                    "f3d companion owner scopes",
-                )?;
+                slot.insert(owner.scope_record_index());
             }
             ctx.push_vec(
                 &mut offsets,
@@ -550,6 +545,7 @@ impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
 /// after it, or the first record header after it that a scope other than the
 /// companion's own references. Each call builds the stream's boundaries; a
 /// pass over many companions holds a [`CompanionIntervals`].
+#[cfg(test)]
 pub(super) fn companion_owned_interval<'a>(
     ctx: &DecodeContext<'_>,
     companion: &DesignParameterCompanion,
@@ -1661,7 +1657,7 @@ fn companion_record_headers<'bytes, 'ctx>(
     let mut storage = ctx.reserve_scoped(0, "f3d dimension recipe headers")?;
     let mut headers = Vec::new();
     let mut cursor = start;
-    let window = bytes.get(..end.saturating_add(10)).unwrap_or(bytes);
+    let window = header_search_window(bytes, end);
     while let Some(header) = next_indexed_record_header(ctx, window, cursor, |_| true)? {
         ctx.push_scoped_vec(
             &mut storage,
@@ -1830,7 +1826,11 @@ fn only_frame_in<'ctx, T>(
     mut parse: impl FnMut(usize) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<(T, ScopedReservation<'ctx>)>, CodecError> {
     let mut candidate = parse_scoped(ctx, || parse(start))?;
-    for &at in records.headers_in(ctx, start.saturating_add(1), end)? {
+    let later = match start.checked_add(1) {
+        Some(after_start) => records.headers_in(ctx, after_start, end)?,
+        None => &[],
+    };
+    for &at in later {
         ctx.charge_work(1, "scan F3D dimension frame candidates")?;
         if let Some(frame) = parse_scoped(ctx, || parse(at))? {
             if candidate.is_some() {
@@ -2385,17 +2385,12 @@ fn annotation_intervals<'a, 'ctx>(
             if !in_stream(ctx, companion.id(), stream)? {
                 continue;
             }
-            if !ctx.contains_key_hash_map(
-                &companion_offsets,
-                &companion.record_index(),
+            if let Entry::Vacant(slot) = ctx.entry_hash_map(
+                &mut companion_offsets,
+                companion.record_index(),
                 "f3d dimension annotation companions",
             )? {
-                ctx.insert_hash_map(
-                    &mut companion_offsets,
-                    companion.record_index(),
-                    companion.byte_offset(),
-                    "f3d dimension annotation companions",
-                )?;
+                slot.insert(companion.byte_offset());
             }
             let Some((start, end)) =
                 intervals_by_stream.interval(ctx, stream, companion, stream_length)?
@@ -2482,16 +2477,42 @@ struct AnnotationFrameInputs<'a> {
     records: &'a IndexedRecordOffsets,
 }
 
-/// The ascending record indices of at most 64 operand or return members.
-fn sorted_members(members: impl Iterator<Item = u32>) -> ([u32; 64], usize) {
-    let mut sorted = [0u32; 64];
+/// The record indices of at most 64 operand or return members, in order, and
+/// their count.
+fn member_indices(members: impl Iterator<Item = u32>) -> ([u32; 64], usize) {
+    let mut indices = [0u32; 64];
     let mut count = 0usize;
-    for (slot, member) in sorted.iter_mut().zip(members) {
+    for (slot, member) in indices.iter_mut().zip(members) {
         *slot = member;
         count += 1;
     }
-    sorted[..count].sort_unstable();
-    (sorted, count)
+    (indices, count)
+}
+
+/// Whether the first `left_count` indices of `left` and the first
+/// `right_count` of `right` hold the same indices, each as often. Each index
+/// of `left` claims an unclaimed equal index of `right`. Both runs hold at most
+/// 64 indices, so the comparison is bounded by a constant.
+fn same_members(
+    (left, left_count): ([u32; 64], usize),
+    (right, right_count): ([u32; 64], usize),
+) -> bool {
+    if left_count != right_count {
+        return false;
+    }
+    let mut claimed = [false; 64];
+    left.iter().take(left_count).all(|index| {
+        let unclaimed = right
+            .iter()
+            .zip(claimed.iter_mut())
+            .take(right_count)
+            .find(|(candidate, claimed)| !**claimed && *candidate == index);
+        let Some((_, claimed)) = unclaimed else {
+            return false;
+        };
+        *claimed = true;
+        true
+    })
 }
 
 /// The annotation frame of the record header at `start`, if its paired header
@@ -2683,7 +2704,7 @@ fn annotation_tail(
             break;
         }
     }
-    let (operand_members, operand_count) = sorted_members(
+    let operand_members = member_indices(
         operands
             .iter()
             .filter_map(|operand| operand.geometry_record_index)
@@ -2725,13 +2746,10 @@ fn annotation_tail(
         if padding_from > after_members {
             continue;
         }
-        let (sorted_returned, returned_count) = sorted_members(
-            returned
-                .iter()
-                .take(return_count)
-                .map(|member| member.get()),
-        );
-        if operand_members[..operand_count] != sorted_returned[..returned_count] {
+        if !same_members(
+            operand_members,
+            (returned.map(NonZeroU32::get), return_count),
+        ) {
             continue;
         }
         if matched.is_some() {
@@ -2818,11 +2836,13 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 }
 
 /// Decode direct presentation frames that precede a dimension parameter's
-/// owner. The type table selects the primary and paired classes; no numeric
-/// class tag is treated as a cross-stream type identity.
+/// owner. The decoded Design type tables `types` select the primary and
+/// paired classes; no numeric class tag is treated as a cross-stream type
+/// identity.
 pub(crate) fn decode_dimension_presentation_frames(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
+    types: &[SegmentType],
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
     let &DimensionDecodeInputs {
@@ -2855,7 +2875,8 @@ pub(crate) fn decode_dimension_presentation_frames(
             }
             Ok::<_, CodecError>(sketch_scope_by_entity)
         })?;
-    let types = decode_types(ctx, scan)?;
+    let (presentation_streams, _presentation_streams_storage) =
+        presentation_stream_prefixes(ctx, types)?;
     let mut out = Vec::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D dimension presentation streams")?
@@ -2863,9 +2884,22 @@ pub(crate) fn decode_dimension_presentation_frames(
     {
         let (_stream_reservation, stream) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
+        let Some(prefix) = stream.strip_suffix(BULK_STREAM_FILE) else {
+            continue;
+        };
+        if ctx
+            .binary_search(
+                &presentation_streams,
+                &prefix,
+                "find F3D dimension presentation stream",
+            )?
+            .is_err()
+        {
+            continue;
+        }
         let (stream_types, _stream_types_storage) = ctx
             .with_scoped_storage("f3d dimension presentation stream types", || {
-                stream_types_by_entity(ctx, &types, &entry.name)
+                stream_types_by_entity(ctx, types, &entry.name)
             })?;
         let type_guid_of = |class_code: u32| -> Result<Option<&str>, CodecError> {
             Ok(ctx
@@ -2952,6 +2986,48 @@ pub(crate) fn decode_dimension_presentation_frames(
         "sort f3d design dimension_frames 11",
     )?;
     Ok(out)
+}
+
+/// The segment prefixes, ascending and distinct, whose type tables register
+/// both a dimension presentation type and the paired presentation type: the
+/// native scope of each such segment's type-table stream without its file
+/// name. Only the record stream of such a segment can hold a presentation
+/// frame.
+fn presentation_stream_prefixes<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    types: &'a [SegmentType],
+) -> Result<(Vec<&'a str>, ScopedReservation<'ctx>), CodecError> {
+    let operation = "f3d dimension presentation streams";
+    ctx.with_scoped_storage(operation, || {
+        let mut presentation = Vec::new();
+        let mut paired = Vec::new();
+        for design_type in ctx.admit_iter(types, "scan F3D dimension presentation types")? {
+            let type_guid = design_type.type_guid.as_str();
+            let prefixes = if is_dimension_presentation_type(type_guid) {
+                &mut presentation
+            } else if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
+                &mut paired
+            } else {
+                continue;
+            };
+            let Some(prefix) = record_stream(ctx, design_type.id())?
+                .and_then(|stream| stream.strip_suffix(META_STREAM_FILE))
+            else {
+                continue;
+            };
+            ctx.push_vec(prefixes, prefix, operation)?;
+        }
+        for prefixes in [&mut presentation, &mut paired] {
+            ctx.stable_sort_by(&mut prefixes[..], |prefix| *prefix, Ord::cmp, operation)?;
+            ctx.dedup_vec(prefixes, operation)?;
+        }
+        ctx.retain_vec(
+            &mut presentation,
+            |prefix| Ok(ctx.binary_search(&paired, prefix, operation)?.is_ok()),
+            operation,
+        )?;
+        Ok(presentation)
+    })
 }
 
 /// Per-stream tables for presentation frames, built when a stream's first
@@ -3206,26 +3282,18 @@ pub(crate) fn decode_dimension_locus_groups(
         let stream_sketch_entities = sketch_entities.get(ctx, scope, || {
             dimension_sketch_entities(ctx, scope, entities)
         })?;
-        let (candidates, _candidate_storage) = find_dimension_locus_groups(
+        find_dimension_locus_groups(
             ctx,
-            bytes,
-            start,
-            end,
+            LocusGroupStream {
+                name: &entry.name,
+                bytes,
+                geometry_indices,
+                sketch_entities: stream_sketch_entities,
+            },
+            (start, end),
             companion.record_index(),
-            geometry_indices,
-            stream_sketch_entities,
+            &mut out,
         )?;
-        for mut group in candidates {
-            group.id = design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-dimension-locus-group#",
-                group.byte_offset,
-                "f3d dimension locus group ID",
-            )?;
-
-            ctx.push_vec(&mut out, group, "f3d dimension locus groups")?;
-        }
     }
     ctx.stable_sort_by(
         &mut out[..],
@@ -3236,57 +3304,74 @@ pub(crate) fn decode_dimension_locus_groups(
     Ok(out)
 }
 
-/// The locus groups at `start` and at each record header after it that opens
-/// before `end`, whose run ends by `end`, in byte order. The candidate list is
-/// held under the returned reservation; each group's own storage is retained.
-fn find_dimension_locus_groups<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    end: usize,
+/// A record stream that locus groups are read from, with the stream's sketch
+/// geometry and sketch entity record indices.
+struct LocusGroupStream<'a> {
+    name: &'a str,
+    bytes: &'a [u8],
+    geometry_indices: &'a [u32],
+    sketch_entities: &'a [u32],
+}
+
+/// Append to `out` the locus groups at `start` and at each record header after
+/// it that opens before `end`, whose run ends by `end`, in byte order. A
+/// candidate's storage stays scoped until its group is kept.
+fn find_dimension_locus_groups(
+    ctx: &DecodeContext<'_>,
+    stream: LocusGroupStream<'_>,
+    (start, end): (usize, usize),
     companion_record_index: u32,
-    geometry_indices: &[u32],
-    sketch_entities: &[u32],
-) -> Result<(Vec<DesignDimensionLocusGroup>, ScopedReservation<'ctx>), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "f3d dimension locus group candidates")?;
-    let mut candidates = Vec::new();
+    out: &mut Vec<DesignDimensionLocusGroup>,
+) -> Result<(), CodecError> {
     let mut candidate_at = Some(start);
     while let Some(at) = candidate_at {
-        if let Some((group, group_storage)) = parse_scoped(ctx, || {
+        ctx.charge_work(1, "scan F3D dimension locus group candidates")?;
+        if let Some((mut group, group_storage)) = parse_scoped(ctx, || {
             Ok(parse_dimension_locus_group(
                 ctx,
-                bytes,
+                stream.bytes,
                 at,
                 companion_record_index,
-                geometry_indices,
-                sketch_entities,
+                stream.geometry_indices,
+                stream.sketch_entities,
             )?
             .filter(|group| group.next_byte_offset <= u64_from_index(end)))
         })? {
             group_storage.commit()?;
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut candidates,
-                group,
-                "f3d dimension locus group candidates",
+            group.id = design_record_id_charged(
+                ctx,
+                stream.name,
+                ":design-dimension-locus-group#",
+                group.byte_offset,
+                "f3d dimension locus group ID",
             )?;
+            ctx.push_vec(out, group, "f3d dimension locus groups")?;
         }
-        candidate_at = next_header_before(ctx, bytes, at + 1, end)?;
+        candidate_at = match at.checked_add(1) {
+            Some(after) => next_header_before(ctx, stream.bytes, after, end)?,
+            None => None,
+        };
     }
-    Ok((candidates, storage))
+    Ok(())
 }
 
 /// The first record header at or after `position` that opens before `end`.
-/// A header that opens before `end` ends by `end + 10`, so the search reads
-/// no byte past that.
 fn next_header_before(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
-    let window = bytes.get(..end.saturating_add(10)).unwrap_or(bytes);
-    next_indexed_record_offset(ctx, window, position)
+    next_indexed_record_offset(ctx, header_search_window(bytes, end), position)
+}
+
+/// The bytes a search for record headers that open before `end` reads. An
+/// eleven-byte header that opens before `end` ends by `end + 10`, so the
+/// window stops there, or at the stream end when that is nearer.
+fn header_search_window(bytes: &[u8], end: usize) -> &[u8] {
+    end.checked_add(10)
+        .and_then(|limit| bytes.get(..limit))
+        .unwrap_or(bytes)
 }
 
 fn parse_dimension_locus_group(
