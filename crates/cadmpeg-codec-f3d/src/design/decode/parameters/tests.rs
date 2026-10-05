@@ -27,6 +27,8 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod retention;
+
 impl ParsedParameterOwner {
     /// Locate this owner in a test stream through the decode path.
     pub(in crate::design) fn into_record(
