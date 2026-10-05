@@ -293,6 +293,7 @@ fn prune_incidence_choices_with_explicit_support(
         }
     }
     loop {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
         for edge in 0..choices.len() {
             if fixed[edge] {
@@ -828,6 +829,7 @@ fn order_incidence_components_by_constraints(
     );
     let mut local_ordered = 0usize;
     while let Some(edge) = local_ready.pop() {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         local_ordered += 1;
         for dependent in local_outgoing[edge].iter().copied() {
             local_incoming[dependent] -= 1;
@@ -1189,6 +1191,7 @@ impl FaceFactorGraph {
             ctx.push_back(&mut queue, arc, "catia face factor propagation queue")?;
         }
         while let Some(arc_index) = queue.pop_front() {
+            ctx.charge_work(1, "catia_incidence_iteration")?;
             let arc = &self.arcs[arc_index];
             let mut changed = false;
             for (configuration, supports) in arc.supports.iter().enumerate() {
@@ -1378,6 +1381,7 @@ fn prune_face_configuration_support(
         }
     }
     while let Some((left, right)) = queue.pop_front() {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         let word_count = domains[right].len().div_ceil(index_from_u32(u64::BITS));
         let mut present = HashMap::<usize, Vec<u64>>::new();
         let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
@@ -1483,6 +1487,7 @@ fn prune_face_configuration_singleton_support(
         None => return Ok(true),
     }
     loop {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
         let mut order = Vec::new();
         ctx.reserve_vec(
@@ -1576,6 +1581,7 @@ fn prune_ordered_face_endpoint_support(
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
     loop {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
         for domain in domains {
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
@@ -1679,6 +1685,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
     loop {
+        ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
         for domain in domains {
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
@@ -3725,6 +3732,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let mut states = copy_quotient_states(self.ctx, quotient_states)?;
         let mut domains = coordinate_domains.cloned();
         while let Some(applied) = self.apply_face_configuration(option, domains.as_ref())? {
+            self.ctx.charge_work(1, "catia_incidence_iteration")?;
             let applied_factor_checkpoint = applied.factor_checkpoint;
             let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)?
             else {
@@ -4631,6 +4639,7 @@ pub(super) fn partial_face_orientability_viable(
             let mut component = Vec::new();
             let mut points = HashSet::new();
             while let Some(edge) = stack.pop() {
+                ctx.charge_work(1, "catia_incidence_iteration")?;
                 if !unseen.remove(&edge) {
                     continue;
                 }

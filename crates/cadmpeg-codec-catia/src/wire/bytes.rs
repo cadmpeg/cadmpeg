@@ -40,13 +40,14 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
+    let mut values = Vec::new();
     let mut view = View::over_retained(bytes);
     while !view.is_empty() {
+        ctx.charge_work(1, operation)?;
         let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
             return Ok(None);
         };
-        values.push(value);
+        ctx.push_vec(&mut values, value, operation)?;
     }
     Ok(Some(values))
 }
@@ -184,6 +185,41 @@ pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{allocation_ref, allocation_reference, AllocationReferenceEncoding};
+
+    #[test]
+    fn finite_lane_preserves_values_and_rejects_nonfinite_scalars() {
+        let bytes = [1.0_f64.to_le_bytes(), (-2.0_f64).to_le_bytes()].concat();
+        let values = crate::test_support::with_service_context(|ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        })
+        .expect("lane admission")
+        .expect("finite lane");
+        assert_eq!(values.iter().map(|value| value.get()).collect::<Vec<_>>(), [1.0, -2.0]);
+        for bytes in [vec![0], f64::INFINITY.to_le_bytes().to_vec()] {
+            assert!(crate::test_support::with_service_context(|ctx| {
+                super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+            })
+            .expect("lane admission")
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn finite_lane_refuses_work_and_collection_growth() {
+        let bytes = 1.0_f64.to_le_bytes();
+        let work = crate::test_support::with_work_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        });
+        assert!(matches!(work, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_lane_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        let slots = crate::test_support::with_collection_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        });
+        assert!(matches!(slots, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_lane_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
 
     #[test]
     fn allocation_refs_strip_single_byte_dialect_bits() {

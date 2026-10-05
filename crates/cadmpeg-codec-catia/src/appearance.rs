@@ -252,7 +252,17 @@ fn insert_appearance(
         format_args!("catia:appearance:rgba#{}", LowerHex(&rgba)),
         "catia_appearance_id",
     )?;
-    let id = AppearanceId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
+    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
+        ctx.charge_work(work, "catia_appearance_asset_identity")
+    })? {
+        Ok(identity) => AppearanceId::from(identity),
+        Err(value) => {
+            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                format_args!("identity is invalid: {value:?}"),
+                "catia_appearance_asset_identity_error",
+            )?));
+        }
+    };
     if !ir
         .model
         .appearances
@@ -290,15 +300,24 @@ fn insert_binding(
     target: AppearanceTarget,
     index: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = appearance
-        .as_str()
-        .split_once('#')
+    let key = ctx
+        .split_once(appearance.as_str(), "#", "catia_appearance_binding_key")?
         .map_or("", |(_, key)| key);
     let id = ctx.format_retained(
         format_args!("catia:appearance:binding#{index}:{key}"),
         "catia_appearance_binding_id",
     )?;
-    let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
+    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
+        ctx.charge_work(work, "catia_appearance_binding_identity")
+    })? {
+        Ok(identity) => AppearanceBindingId::from(identity),
+        Err(value) => {
+            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                format_args!("identity is invalid: {value:?}"),
+                "catia_appearance_binding_identity_error",
+            )?));
+        }
+    };
     insert_binding_record(ctx, ir, appearance, target, id)
 }
 
@@ -309,9 +328,8 @@ fn insert_source_binding(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let appearance = insert_appearance(ctx, ir, packet.rgba())?;
     // Hex encoding preserves the source token while excluding key delimiters.
-    let key = appearance
-        .as_str()
-        .split_once('#')
+    let key = ctx
+        .split_once(appearance.as_str(), "#", "catia_appearance_source_binding_key")?
         .map_or("", |(_, key)| key);
     let id = ctx.format_retained(
         format_args!(
@@ -320,7 +338,17 @@ fn insert_source_binding(
         ),
         "catia_appearance_source_binding_id",
     )?;
-    let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
+    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
+        ctx.charge_work(work, "catia_appearance_source_binding_identity")
+    })? {
+        Ok(identity) => AppearanceBindingId::from(identity),
+        Err(value) => {
+            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                format_args!("identity is invalid: {value:?}"),
+                "catia_appearance_source_binding_identity_error",
+            )?));
+        }
+    };
     insert_binding_record(
         ctx,
         ir,
@@ -371,6 +399,78 @@ mod tests {
     use cadmpeg_ir::ids::{BodyId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Body, BodyKind, Face, Sense};
     use cadmpeg_ir::CadIr;
+
+    fn assert_identity_grammar_refusal(
+        operation: &'static str,
+        mut construct: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+    ) {
+        let mut observed = false;
+        for work in 0..1024 {
+            let (result, original) = crate::test_support::with_work_limit(work, |ctx| {
+                (construct(ctx), ctx.resource_refusal())
+            });
+            match result {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(original, Some(limit));
+                    if limit.operation == operation {
+                        observed = true;
+                        break;
+                    }
+                }
+                Ok(()) => assert_eq!(original, None),
+                Err(error) => panic!("unexpected identity error: {error}"),
+            }
+        }
+        assert!(observed, "{operation}");
+    }
+
+    #[test]
+    fn appearance_asset_identity_refuses_grammar_work() {
+        assert_identity_grammar_refusal("catia_appearance_asset_identity", |ctx| {
+            let mut ir = model(0);
+            let result = super::insert_appearance(ctx, &mut ir, [1, 2, 3, 4]);
+            if result.is_err() {
+                assert!(ir.model.appearances.is_empty());
+            }
+            result.map(|_| ())
+        });
+    }
+
+    #[test]
+    fn appearance_binding_identity_refuses_grammar_work() {
+        assert_identity_grammar_refusal("catia_appearance_binding_identity", |ctx| {
+            let mut ir = model(0);
+            let appearance = cadmpeg_ir::ids::AppearanceId::mint("catia:appearance:rgba#01020304")
+                .expect("fixture identity");
+            let result = super::insert_binding(
+                ctx,
+                &mut ir,
+                &appearance,
+                AppearanceTarget::Source { source_id: "catia:test:source#0".into() },
+                0,
+            );
+            if result.is_err() {
+                assert!(ir.model.appearance_bindings.is_empty());
+            }
+            result
+        });
+    }
+
+    #[test]
+    fn appearance_source_binding_identity_refuses_grammar_work() {
+        assert_identity_grammar_refusal("catia_appearance_source_binding_identity", |ctx| {
+            let mut ir = model(0);
+            let packet = SourcedPacket {
+                packet: Packet::Body([1, 2, 3, 4]),
+                source_id: "catia:test:source#nested:field#0".into(),
+            };
+            let result = insert_source_binding(ctx, &mut ir, &packet);
+            if result.is_err() {
+                assert!(ir.model.appearance_bindings.is_empty());
+            }
+            result
+        });
+    }
 
     #[test]
     fn appearance_entity_limit_refuses_before_asset() {

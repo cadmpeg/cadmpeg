@@ -797,6 +797,7 @@ where
             )?;
         }
         loop {
+            ctx.charge_work(1, "catia_records_iteration")?;
             let mut added = Vec::new();
             let mut source_ends = HashSet::new();
             ctx.charge_work(

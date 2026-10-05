@@ -686,6 +686,7 @@ fn coherent_e5_record_count(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<usiz
     let mut best = 0;
     let mut search = 0;
     while search < data.len() {
+        ctx.charge_work(1, "catia_container_iteration")?;
         ctx.charge_work(u64_from_index(data.len() - search), "catia_e5_marker_scan")?;
         let Some(relative) = data[search..]
             .windows(E5_MARKER.len())
@@ -995,13 +996,14 @@ pub(crate) fn fbb_run_ranges(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
-    ctx.charge_work(u64_from_index(body.len()), "catia_fbb_scan")?;
     let mut ranges = Vec::new();
     let mut position = 0;
     while position + fbb_row::LEN <= body.len() {
+        ctx.charge_work(1, "catia_fbb_scan")?;
         if is_fbb_row(&body[position..]) {
             let start = position;
             while position + fbb_row::LEN <= body.len() && is_fbb_row(&body[position..]) {
+                ctx.charge_work(1, "catia_fbb_scan")?;
                 position += fbb_row::LEN;
             }
             ctx.push_vec(&mut ranges, start..position, "catia_fbb_run_ranges")?;
@@ -1344,6 +1346,7 @@ fn descriptor_name(
         if dirbuf.get(tail_start..ds) == Some(&[0, 0, 0]) {
             let mut name_start = tail_start;
             while name_start >= 2 {
+                ctx.charge_work(1, "catia_container_iteration")?;
                 let pair_start = name_start - 2;
                 if (0x20..0x7f).contains(&dirbuf[pair_start]) && dirbuf[pair_start + 1] == 0 {
                     name_start = pair_start;
@@ -1378,6 +1381,7 @@ fn descriptor_name(
         && (0x20..0x7f).contains(&header_name[name_len])
         && header_name[name_len + 1] == 0
     {
+        ctx.charge_work(1, "catia_container_iteration")?;
         name_len += 2;
     }
     if name_len < 6

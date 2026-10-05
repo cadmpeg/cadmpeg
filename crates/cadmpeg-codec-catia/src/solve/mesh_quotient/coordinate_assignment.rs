@@ -806,6 +806,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         let mut propagated = Vec::new();
         let mut pending_roots = None::<HashSet<usize>>;
         let branch: Option<CoordinateBranch> = loop {
+            ctx.charge_work(1, "catia_coordinate_assignment_iteration")?;
             let mut scanned_roots = Vec::new();
             if let Some(roots) = pending_roots.take() {
                 for root in roots {
