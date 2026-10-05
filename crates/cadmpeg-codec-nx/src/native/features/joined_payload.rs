@@ -74,6 +74,15 @@ impl<'ctx> JoinedPayload<'ctx> {
         &self.bytes
     }
 
+    /// Map a joined-byte position to its source file offset.
+    pub(super) fn source_at(
+        &self,
+        ctx: &DecodeContext<'_>,
+        relative: usize,
+    ) -> Result<Option<u64>, CodecError> {
+        self.source_offset(ctx, u64_from_index(relative))
+    }
+
     /// Map a joined-byte offset to its source file offset.
     pub(super) fn source_offset(
         &self,
