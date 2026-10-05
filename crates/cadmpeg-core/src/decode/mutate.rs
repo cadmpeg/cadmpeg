@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged slice copies and stable in-place vector compaction.
 use super::cost::DecodeCost;
-use super::{u64_from_index, DecodeContext, ScopedReservation};
+use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,18 +25,6 @@ impl DecodeContext<'_> {
         self.admit_moves(&values[index..], 1, operation)?;
         values.insert(index, value);
         Ok(())
-    }
-
-    /// Inserts one value with scoped vector growth and retained child ownership.
-    pub fn insert_scoped_vec<T>(
-        &self,
-        reservation: &mut ScopedReservation<'_>,
-        values: &mut Vec<T>,
-        index: usize,
-        value: T,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        reservation.with_storage(|| self.insert_vec(values, index, value, operation))
     }
 
     /// Converts vector storage to a boxed slice after admitting a possible shrink copy.
@@ -1068,13 +1056,15 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (mut values, mut storage) = ctx.temporary_vec::<u8>(0, "temporary").expect("empty");
         assert!(matches!(
-            ctx.insert_scoped_vec(&mut storage, &mut values, 1, 1, "invalid"),
+            storage.with_storage(|| ctx.insert_vec(&mut values, 1, 1, "invalid")),
             Err(CodecError::Malformed(_))
         ));
         assert!(values.is_empty());
-        ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert")
+        storage
+            .with_storage(|| ctx.insert_vec(&mut values, 0, 1, "insert"))
             .expect("scoped growth");
-        ctx.insert_scoped_vec(&mut storage, &mut values, 1, 2, "end")
+        storage
+            .with_storage(|| ctx.insert_vec(&mut values, 1, 2, "end"))
             .expect("end insertion");
         assert_eq!(values, [1, 2]);
         drop((values, storage));
@@ -1095,7 +1085,7 @@ mod tests {
             let mut values = Vec::<u8>::new();
             let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
             let error = if scoped {
-                ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert")
+                storage.with_storage(|| ctx.insert_vec(&mut values, 0, 1, "insert"))
             } else {
                 ctx.insert_vec(&mut values, 0, 1, "insert")
             };

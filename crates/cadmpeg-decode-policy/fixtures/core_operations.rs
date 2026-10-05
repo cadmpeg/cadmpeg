@@ -11,7 +11,7 @@ pub fn vector_shapes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecE
     ctx.insert_vec(&mut values, 0, 0, "indexed value")?;
     let mut storage = ctx.reserve_scoped(0, "temporary vector")?;
     let mut temporary = Vec::new();
-    ctx.insert_scoped_vec(&mut storage, &mut temporary, 0, 1_u8, "temporary indexed value")?;
+    storage.with_storage(|| ctx.insert_vec(&mut temporary, 0, 1_u8, "temporary indexed value"))?;
     Ok(())
 }
 
