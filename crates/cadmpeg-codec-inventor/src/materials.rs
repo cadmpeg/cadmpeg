@@ -27,45 +27,64 @@ pub(crate) fn project_catalog(
     instances: &[ProteinInstanceRecords],
     admitted_entities: &mut u64,
 ) -> Result<MaterialCatalog, CodecError> {
-    let record_count = instances
-        .iter()
-        .try_fold(0_usize, |total, instance| {
-            total.checked_add(instance.records.len())
-        })
-        .ok_or_else(|| CodecError::Malformed("Protein record count overflows".into()))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(record_count),
-        "Inventor material record references",
-    )?;
-    let records = instances
-        .iter()
-        .flat_map(|instance| instance.records.iter())
-        .collect::<Vec<_>>();
+    let mut records_storage = ctx.reserve_scoped(0, "Inventor material record references")?;
+    let mut instances_iter = ctx.admit_iter(instances, "Inventor material instances")?;
+    let mut instance_records: Option<
+        cadmpeg_core::decode::scan::AdmittedIter<
+            std::slice::Iter<'_, cadmpeg_protein::DecodedRecord>,
+        >,
+    > = None;
+    let records = std::iter::from_fn(move || {
+        (|| -> Result<Option<&cadmpeg_protein::DecodedRecord>, CodecError> {
+            loop {
+                ctx.charge_work(1, "flatten Inventor material records")?;
+                if let Some(records) = instance_records.as_mut() {
+                    if let Some(record) = records.next() {
+                        return Ok(Some(record));
+                    }
+                }
+                instance_records = None;
+                let Some(instance) = instances_iter.next() else {
+                    return Ok(None);
+                };
+                instance_records =
+                    Some(ctx.admit_iter(&instance.records, "Inventor material instance records")?);
+            }
+        })()
+        .transpose()
+    });
+    let records = records_storage
+        .with_storage(|| ctx.try_collect_vec(records, "Inventor material record references"))?;
     let mut guid_counts: HashMap<&str, usize> = HashMap::new();
-    for record in &records {
+    let mut guid_counts_storage = ctx.reserve_scoped(0, "Inventor material GUID counts")?;
+    for record in ctx.admit_iter(&records, "Inventor material GUID count records")? {
         let guid = record.guid.as_str();
-        ctx.admit_hash_map_entry(&mut guid_counts, &guid, "Inventor material GUID counts")?;
-        match guid_counts.entry(guid) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = entry
-                    .get()
+        guid_counts_storage.with_storage(|| {
+            if let Some(count) =
+                ctx.get_mut_hash_map(&mut guid_counts, guid, "Inventor material GUID counts")?
+            {
+                *count = count
                     .checked_add(1)
                     .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
+            } else {
+                ctx.insert_hash_map(
+                    &mut guid_counts,
+                    guid,
+                    1_usize,
+                    "Inventor material GUID counts",
+                )?;
             }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(1_usize);
-            }
-        }
+            Ok::<_, CodecError>(())
+        })?;
     }
     let mut duplicate_guids = Vec::new();
-    for (guid, count) in &guid_counts {
+    for (guid, count) in ctx.admit_iter(&guid_counts, "Inventor duplicate material GUID scan")? {
         if *count > 1 {
-            ctx.charge_collection_items(1, "Inventor duplicate material GUIDs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(guid.len()),
-                "Inventor duplicate material GUID",
+            ctx.push_vec(
+                &mut duplicate_guids,
+                ctx.copy_retained_text(guid, "Inventor duplicate material GUID")?,
+                "Inventor duplicate material GUIDs",
             )?;
-            duplicate_guids.push((*guid).to_owned());
         }
     }
     ctx.stable_sort_by(
@@ -75,13 +94,19 @@ pub(crate) fn project_catalog(
         "Inventor duplicate material GUID sort",
     )?;
 
+    let mut textures_storage = ctx.reserve_scoped(0, "Inventor material texture catalog")?;
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0_usize;
-    for record in records
-        .iter()
-        .filter(|record| guid_counts.get(record.guid.as_str()) == Some(&1))
-    {
-        let texture = match texture_asset(ctx, record)? {
+    for record in ctx.admit_iter(&records, "Inventor material texture records")? {
+        if ctx.get_hash_map(
+            &guid_counts,
+            record.guid.as_str(),
+            "Inventor unique material GUID lookup",
+        )? != Some(&1)
+        {
+            continue;
+        }
+        let texture = match textures_storage.with_storage(|| texture_asset(ctx, record))? {
             TextureAssetResult::NotTexture => continue,
             TextureAssetResult::UnknownDistanceUnit { count } => {
                 untyped_distance_properties = untyped_distance_properties
@@ -95,46 +120,60 @@ pub(crate) fn project_catalog(
             }
             TextureAssetResult::Usable(texture) => texture,
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(texture.asset_guid.len()),
-            "Inventor material texture key",
-        )?;
-        ctx.insert_btree_map(
-            &mut textures,
-            texture.asset_guid.clone(),
-            texture,
-            "Inventor material texture catalog",
-        )?;
+        textures_storage.with_storage(|| {
+            let key =
+                ctx.copy_retained_text(&texture.asset_guid, "Inventor material texture key")?;
+            ctx.insert_btree_map(
+                &mut textures,
+                key,
+                texture,
+                "Inventor material texture catalog",
+            )?;
+            Ok::<_, CodecError>(())
+        })?;
     }
     let mut appearances = Vec::new();
-    for (instance_ordinal, instance) in instances.iter().enumerate() {
-        for record in &instance.records {
+    for (instance_ordinal, instance) in ctx
+        .admit_iter(instances, "Inventor appearance instances")?
+        .enumerate()
+    {
+        for record in ctx.admit_iter(&instance.records, "Inventor appearance records")? {
             if matches!(
                 record.schema.as_str(),
                 "UnifiedBitmapSchema" | "BumpMapSchema"
             ) {
                 continue;
             }
-            let mut properties = BTreeMap::new();
+            let mut property_values = BTreeMap::new();
+            let mut properties_storage = ctx.reserve_scoped(0, "Inventor appearance properties")?;
             let mut connected = Vec::new();
-            for (id, property) in &record.properties {
+            for (id, property) in
+                ctx.admit_iter(&record.properties, "Inventor appearance properties")?
+            {
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(neutral_property_name(id).len()),
-                        "Inventor appearance property name",
-                    )?;
-                    ctx.insert_btree_map(
-                        &mut properties,
-                        neutral_property_name(id).to_owned(),
-                        *value,
-                        "Inventor appearance properties",
-                    )?;
+                    properties_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut property_values,
+                            neutral_property_name(id),
+                            *value,
+                            "Inventor appearance properties",
+                        )
+                    })?;
                 }
-                for guid in property.connections() {
-                    if let Some(texture) = textures.get(guid) {
-                        connected.push(texture.to_ref(ctx, id)?);
+                for guid in ctx.admit_iter(
+                    property.connections(),
+                    "Inventor appearance texture connections",
+                )? {
+                    if let Some(texture) =
+                        ctx.get_btree_map(&textures, guid, "Inventor connected texture lookup")?
+                    {
+                        ctx.push_vec(
+                            &mut connected,
+                            texture.to_ref(ctx, id)?,
+                            "Inventor appearance connected textures",
+                        )?;
                     }
                 }
             }
@@ -150,15 +189,18 @@ pub(crate) fn project_catalog(
                 Ord::cmp,
                 "Inventor appearance texture sort",
             )?;
-            let base_color = [
+            let mut base_color = None;
+            for id in [
                 "generic_diffuse",
                 "opaque_albedo",
                 "surface_albedo",
                 "common_Tint_color",
-            ]
-            .into_iter()
-            .find_map(|id| color_property(record, id));
-            ctx.charge_collection_items(1, "Inventor neutral appearances")?;
+            ] {
+                base_color = color_property(ctx, record, id)?;
+                if base_color.is_some() {
+                    break;
+                }
+            }
             let next_entity = admitted_entities
                 .checked_add(1)
                 .ok_or_else(|| CodecError::Malformed("Inventor entity count overflows".into()))?;
@@ -167,44 +209,59 @@ pub(crate) fn project_catalog(
                 admitted_entities,
                 "Inventor neutral appearance",
             )?;
-            for value in [&record.base, &record.guid, &record.schema] {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "Inventor appearance field",
-                )?;
-            }
-            if !is_physical_schema(&record.schema) {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(record.guid.len()),
-                    "Inventor visual GUID",
-                )?;
-            }
-            if !record.asset_lib_id.is_empty() && record.asset_lib_id != NO_ASSET_LIB_ID {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(record.asset_lib_id.len()),
-                    "Inventor appearance library ID",
-                )?;
-            }
-            appearances.push(Appearance {
-                id: appearance_id(ctx, instance_ordinal, record.ordinal)?,
-                name: Some(record.base.clone()),
-                asset_guid: Some(record.guid.clone()),
-                library_id: library_id(&record.asset_lib_id),
-                visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
-                physical_token: None,
-                schema: Some(record.schema.clone()),
-                category: None,
-                base_color,
-                properties: cadmpeg_core::text::named_entries_for_decode(
+            let name = ctx.copy_retained_text(&record.base, "Inventor appearance field")?;
+            let asset_guid = ctx.copy_retained_text(&record.guid, "Inventor appearance field")?;
+            let schema = ctx.copy_retained_text(&record.schema, "Inventor appearance field")?;
+            let visual_guid = if is_physical_schema(&record.schema) {
+                None
+            } else {
+                Some(ctx.copy_retained_text(&record.guid, "Inventor visual GUID")?)
+            };
+            let library_id = library_id(ctx, &record.asset_lib_id)?;
+            let id = appearance_id(ctx, instance_ordinal, record.ordinal)?;
+            let named_properties = {
+                let (mut named_properties, mut named_properties_reservation) =
+                    ctx.temporary_vec(0, "Inventor appearance named property entries")?;
+                for (name, value) in ctx.admit_iter(
+                    &property_values,
+                    "Inventor appearance named property source",
+                )? {
+                    let name = ctx.copy_retained_text(name, "Inventor appearance property name")?;
+                    ctx.push_scoped_vec(
+                        &mut named_properties_reservation,
+                        &mut named_properties,
+                        (name, *value),
+                        "Inventor appearance named property entries",
+                    )?;
+                }
+                cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     format_args!(
                         "inventor:protein:appearance#{instance_ordinal}-{}",
                         record.ordinal
                     ),
-                    properties,
-                )?,
-                textures: connected,
-            });
+                    named_properties,
+                )?
+            };
+            drop(property_values);
+            drop(properties_storage);
+            ctx.push_vec(
+                &mut appearances,
+                Appearance {
+                    id,
+                    name: Some(name),
+                    asset_guid: Some(asset_guid),
+                    library_id,
+                    visual_guid,
+                    physical_token: None,
+                    schema: Some(schema),
+                    category: None,
+                    base_color,
+                    properties: named_properties,
+                    textures: connected,
+                },
+                "Inventor neutral appearances",
+            )?;
         }
     }
     Ok(MaterialCatalog {
@@ -219,57 +276,110 @@ fn appearance_id(
     instance_ordinal: usize,
     record_ordinal: u64,
 ) -> Result<AppearanceId, CodecError> {
-    ctx.charge_formatted_retained(
+    let (instance_key, instance_key_storage) = ctx.format_scoped(
         format_args!("{instance_ordinal}"),
         "retain Inventor appearance instance key",
     )?;
-    ctx.charge_formatted_retained(
+    let (record_key, record_key_storage) = ctx.format_scoped(
         format_args!("{record_ordinal}"),
         "retain Inventor appearance record key",
     )?;
-    let instance_key = cadmpeg_ir::ids::IdentityKey::from(instance_ordinal);
-    let record_key = cadmpeg_ir::ids::IdentityKey::from(record_ordinal);
     let key_len = instance_key
-        .as_str()
         .len()
-        .checked_add(record_key.as_str().len())
+        .checked_add(record_key.len())
         .and_then(|len| len.checked_add(1))
         .ok_or_else(|| {
             ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
         })?;
     let key_len = cadmpeg_core::decode::u64_from_index(key_len);
-    ctx.charge_retained(key_len, "retain Inventor appearance key")?;
-    let key = instance_key.dash(record_key);
+    let (key_text, key_storage) = ctx.format_scoped(
+        format_args!("{instance_key}-{record_key}"),
+        "retain Inventor appearance key",
+    )?;
+    let key_work = key_len.checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("validate Inventor appearance key", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(key_work, "validate Inventor appearance key")?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key_text)
+        .map_err(|_| CodecError::malformed("Inventor appearance key is invalid"))?;
+    drop(instance_key);
+    drop(instance_key_storage);
+    drop(record_key);
+    drop(record_key_storage);
     let namespace = cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance");
-    let id_len = namespace
+    let namespace_len = namespace
         .format()
         .len()
         .checked_add(namespace.scope().len())
         .and_then(|len| len.checked_add(namespace.kind().len()))
-        .and_then(|len| len.checked_add(key.as_str().len()))
-        .and_then(|len| len.checked_add(4))
+        .and_then(|len| len.checked_add(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "Inventor appearance namespace length",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    let id_len = namespace_len
+        .checked_add(key.as_str().len())
+        .and_then(|len| len.checked_add(1))
         .ok_or_else(|| {
             ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
         })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id_len),
+    let id_text = ctx.format_retained(
+        format_args!(
+            "{}:{}:{}#{}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+            key
+        ),
         "retain Inventor appearance id",
     )?;
-    Ok(AppearanceId::compose(&namespace, key))
+    let namespace_scan = cadmpeg_core::decode::u64_from_index(namespace_len);
+    let key_scan = cadmpeg_core::decode::u64_from_index(key.as_str().len());
+    let id_scan = cadmpeg_core::decode::u64_from_index(id_len);
+    let identity_work = namespace_scan
+        .checked_add(1)
+        .and_then(|work| work.checked_add(key_scan))
+        .and_then(|work| work.checked_add(id_scan))
+        .and_then(|work| work.checked_add(namespace_scan))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("validate Inventor appearance id", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(identity_work, "validate Inventor appearance id")?;
+    let appearance_id = AppearanceId::mint(id_text)
+        .map_err(|_| CodecError::malformed("Inventor appearance id is invalid"))?;
+    drop(key);
+    drop(key_storage);
+    Ok(appearance_id)
 }
 
-fn library_id(value: &str) -> Option<String> {
-    (!value.is_empty() && value != NO_ASSET_LIB_ID).then(|| value.to_owned())
+fn library_id(ctx: &DecodeContext<'_>, value: &str) -> Result<Option<String>, CodecError> {
+    if !value.is_empty() && value != NO_ASSET_LIB_ID {
+        Ok(Some(ctx.copy_retained_text(
+            value,
+            "Inventor appearance library ID",
+        )?))
+    } else {
+        Ok(None)
+    }
 }
 
-fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
-    let cadmpeg_protein::property::PropertyValue::Color([r, g, b, a]) =
-        record
-            .properties
-            .get(id)
-            .and_then(|property| property.value())?
+fn color_property(
+    ctx: &DecodeContext<'_>,
+    record: &cadmpeg_protein::DecodedRecord,
+    id: &str,
+) -> Result<Option<Color>, CodecError> {
+    let Some(cadmpeg_protein::property::PropertyValue::Color([r, g, b, a])) = ctx
+        .get_btree_map(
+            &record.properties,
+            id,
+            "Inventor appearance color property lookup",
+        )?
+        .and_then(|property| property.value())
     else {
-        return None;
+        return Ok(None);
     };
     let components = [r.get(), g.get(), b.get(), a.get()].map(|value| {
         if (0.0..=1.0).contains(&value) {
@@ -280,9 +390,9 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
         }
     });
     let [Some(r), Some(g), Some(b), Some(a)] = components else {
-        return None;
+        return Ok(None);
     };
-    Some(Color::from_unit_binary32([r, g, b, a]))
+    Ok(Some(Color::from_unit_binary32([r, g, b, a])))
 }
 
 #[cfg(test)]
@@ -296,33 +406,41 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn appearance_identity_refuses_retained_limits_before_each_copy() {
+    fn appearance_identity_refuses_scoped_keys_and_retained_id() {
         let arena = DecodeArena::new();
         let bytes = b"fixture";
         let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("service context");
         let id = appearance_id(&service, 0, 1).expect("identity admitted");
         assert_eq!(id.as_str(), "inventor:protein:appearance#0-1");
+        // Temporary key strings use scoped bytes; only the composed ID remains retained.
         for (cap, operation) in [
             (0, "retain Inventor appearance instance key"),
             (1, "retain Inventor appearance record key"),
             (3, "retain Inventor appearance key"),
-            (
-                4 + cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1,
-                "retain Inventor appearance id",
-            ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (limited, _) =
                 DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
             assert!(matches!(
                 appearance_id(&limited, 0, 1),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
+                    if limit.dimension == ResourceDimension::MaterializedBytes
                         && limit.operation == operation
             ));
         }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            appearance_id(&limited, 0, 1),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor appearance id"
+        ));
     }
 
     fn project_fixture(
@@ -403,8 +521,11 @@ mod tests {
     #[test]
     fn protein_color_admits_source_range_before_binary32_narrowing() {
         let mut record = one_connected_texture()[0].records[0].clone();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"fixture", &arena, &DecodePolicy::service())
+            .expect("service context");
         assert_eq!(
-            super::color_property(&record, "generic_diffuse"),
+            super::color_property(&ctx, &record, "generic_diffuse").expect("color lookup admitted"),
             cadmpeg_ir::topology::Color::new(0.0, 0.25, 1.0, 1.0)
         );
         for invalid in [1.0 + f64::EPSILON, -f64::EPSILON, f64::NAN, f64::INFINITY] {
@@ -430,7 +551,9 @@ mod tests {
                 cadmpeg_ir::scalar::FiniteReal::ONE,
                 cadmpeg_ir::scalar::FiniteReal::ONE,
             ]);
-            assert!(super::color_property(&record, "generic_diffuse").is_none());
+            assert!(super::color_property(&ctx, &record, "generic_diffuse")
+                .expect("color lookup admitted")
+                .is_none());
         }
     }
 
