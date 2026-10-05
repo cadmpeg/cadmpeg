@@ -248,29 +248,20 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    let unresolved_intersection_lanes = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter_map(|procedural| {
-            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                procedural.definition()
-            else {
-                return None;
-            };
-            Some(
-                context
-                    .sides()
-                    .iter()
-                    .filter(|side| {
-                        pcurve_requires_completion(
-                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                        )
-                    })
-                    .count(),
-            )
-        })
-        .sum::<usize>();
+    let mut unresolved_intersection_lanes = 0usize;
+    for procedural in &ir.model.procedural_curves {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+            procedural.definition()
+        else {
+            continue;
+        };
+        for side in context.sides() {
+            if pcurve_requires_completion(ctx, side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))?
+            {
+                unresolved_intersection_lanes += 1;
+            }
+        }
+    }
     if unresolved_intersection_lanes > 0
         && (completion_budget.pcurves.exact_boundary_exhausted
             || completion_budget.pcurves.transfer_exhausted
