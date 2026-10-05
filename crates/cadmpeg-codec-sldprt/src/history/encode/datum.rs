@@ -65,7 +65,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             }
-            require_same_family(self.ctx, existing, &feature.id, &["ReferencePlane"])?;
+            require_same_family(existing, &feature.id, &["ReferencePlane"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
@@ -99,7 +99,10 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let existing = self.existing;
         let parent_sources = self.parent_sources;
         Ok({
-            if match existing { Some(record) => !is_offset_plane(self.ctx, record)?, None => false } {
+            if match existing {
+                Some(record) => !is_offset_plane(self.ctx, record)?,
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
@@ -184,7 +187,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             };
-            require_same_family(self.ctx, existing, &feature.id, &["ReferenceAxis"])?;
+            require_same_family(existing, &feature.id, &["ReferenceAxis"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
@@ -217,7 +220,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             };
-            require_same_family(self.ctx, existing, &feature.id, &["ReferencePoint"])?;
+            require_same_family(existing, &feature.id, &["ReferencePoint"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Position"),
@@ -241,7 +244,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            require_same_family(self.ctx, 
+            require_same_family(
                 existing,
                 &feature.id,
                 &["CoordinateSystem", "ReferenceCoordinateSystem"],

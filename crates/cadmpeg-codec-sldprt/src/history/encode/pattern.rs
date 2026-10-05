@@ -26,7 +26,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
-            require_same_family(self.ctx, existing, &feature.id, &["Rib"])?;
+            require_same_family(existing, &feature.id, &["Rib"])?;
             if existing.is_none()
                 && (construction.profile.is_none()
                     || construction.direction.is_none()

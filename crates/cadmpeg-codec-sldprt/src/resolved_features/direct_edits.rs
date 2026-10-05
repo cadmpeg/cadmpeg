@@ -178,7 +178,10 @@ pub(crate) fn enrich_history_move_face_translations(
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
         let mut starts = Vec::new();
-        for (history_index, history) in ctx.admit_iter(histories, "scan SLDPRT direct-edit histories")?.enumerate() {
+        for (history_index, history) in ctx
+            .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
+            .enumerate()
+        {
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-face feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
@@ -193,9 +196,12 @@ pub(crate) fn enrich_history_move_face_translations(
             Ord::cmp,
             "sort SLDPRT move-face feature starts",
         )?;
-        for (index, &(start, history_index, feature_index)) in ctx.admit_iter(&starts, "scan SLDPRT direct-edit feature starts")?.enumerate() {
+        for (index, &(start, history_index, feature_index)) in ctx
+            .admit_iter(&starts, "scan SLDPRT direct-edit feature starts")?
+            .enumerate()
+        {
             let feature = &histories[history_index].features[feature_index];
-            if classify(ctx, feature)? != Some(FeatureClass::MoveFace)
+            if classify(feature) != Some(FeatureClass::MoveFace)
                 || feature.properties.contains_key("Mode")
                 || feature.properties.contains_key("Direction")
             {
@@ -247,42 +253,55 @@ pub(crate) fn enrich_history_move_face_translations(
             let Some(line_ref) = line_ref else {
                 continue;
             };
-            let mut direction_storage = ctx.reserve_scoped(0, "hold SLDPRT move-face directions")?;
-            let mut directions = direction_storage.with_storage(|| declared_line_reference_directions(
-                ctx,
-                &lane.native_payload,
-                line_ref.offset,
-                end,
-            ))?;
-            let mut excluded_storage = ctx.reserve_scoped(0, "hold SLDPRT move-face excluded handles")?;
+            let mut direction_storage =
+                ctx.reserve_scoped(0, "hold SLDPRT move-face directions")?;
+            let mut directions = direction_storage.with_storage(|| {
+                declared_line_reference_directions(ctx, &lane.native_payload, line_ref.offset, end)
+            })?;
+            let mut excluded_storage =
+                ctx.reserve_scoped(0, "hold SLDPRT move-face excluded handles")?;
             let excluded_handles = match usize::try_from(line_ref.offset) {
                 Ok(offset) => {
-                    let handle = |relative| offset.checked_add(relative).ok_or_else(|| {
-                        ctx.refuse_codec_limit(
+                    let handle = |relative| {
+                        offset.checked_add(relative).ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "collect SLDPRT move-face excluded handles",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })
+                    };
+                    excluded_storage.with_storage(|| {
+                        ctx.collect_vec(
+                            [handle(136)?, handle(144)?],
                             "collect SLDPRT move-face excluded handles",
-                            u64::MAX - 1,
-                            u64::MAX,
                         )
-                    });
-                    excluded_storage.with_storage(|| ctx.collect_vec(
-                        [handle(136)?, handle(144)?],
-                        "collect SLDPRT move-face excluded handles",
-                    ))?
+                    })?
                 }
                 Err(_) => Vec::new(),
             };
-            let mut compact_storage = ctx.reserve_scoped(0, "hold SLDPRT compact move-face directions")?;
-            let compact = compact_storage.with_storage(|| compact_line_reference_directions(
-                ctx,
-                &lane.native_payload,
-                start,
-                end,
-                &excluded_handles,
-            ))?;
-            direction_storage.with_storage(|| ctx.extend_vec(&mut directions, compact, "merge SLDPRT move-face directions"))?;
+            let mut compact_storage =
+                ctx.reserve_scoped(0, "hold SLDPRT compact move-face directions")?;
+            let compact = compact_storage.with_storage(|| {
+                compact_line_reference_directions(
+                    ctx,
+                    &lane.native_payload,
+                    start,
+                    end,
+                    &excluded_handles,
+                )
+            })?;
+            direction_storage.with_storage(|| {
+                ctx.extend_vec(
+                    &mut directions,
+                    compact,
+                    "merge SLDPRT move-face directions",
+                )
+            })?;
             drop(compact_storage);
             let mut unique = Vec::new();
-            for direction in ctx.admit_iter(&directions, "scan SLDPRT unique move-face directions")?
+            for direction in ctx
+                .admit_iter(&directions, "scan SLDPRT unique move-face directions")?
                 .copied()
                 .map(FeatureDirection3::from_unit_without_small_components)
             {
@@ -302,7 +321,9 @@ pub(crate) fn enrich_history_move_face_translations(
             )?;
         }
     }
-    for (&(history_index, feature_index), candidates) in ctx.admit_iter(&candidates, "scan SLDPRT direct-edit candidates")? {
+    for (&(history_index, feature_index), candidates) in
+        ctx.admit_iter(&candidates, "scan SLDPRT direct-edit candidates")?
+    {
         let Some((&Some(first), rest)) = candidates.split_first() else {
             continue;
         };
@@ -350,7 +371,10 @@ pub(crate) fn enrich_history_move_body_translations(
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
         let mut starts = Vec::new();
-        for (history_index, history) in ctx.admit_iter(histories, "scan SLDPRT direct-edit histories")?.enumerate() {
+        for (history_index, history) in ctx
+            .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
+            .enumerate()
+        {
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
@@ -365,9 +389,12 @@ pub(crate) fn enrich_history_move_body_translations(
             Ord::cmp,
             "sort SLDPRT move-body feature starts",
         )?;
-        for (index, &(start, history_index, feature_index)) in ctx.admit_iter(&starts, "scan SLDPRT direct-edit feature starts")?.enumerate() {
+        for (index, &(start, history_index, feature_index)) in ctx
+            .admit_iter(&starts, "scan SLDPRT direct-edit feature starts")?
+            .enumerate()
+        {
             let feature = &histories[history_index].features[feature_index];
-            if classify(ctx, feature)? != Some(FeatureClass::MoveBody)
+            if classify(feature) != Some(FeatureClass::MoveBody)
                 || feature.properties.contains_key("Translation")
             {
                 continue;
@@ -410,7 +437,9 @@ pub(crate) fn enrich_history_move_body_translations(
             )?;
         }
     }
-    for (&(history_index, feature_index), candidates) in ctx.admit_iter(&candidates, "scan SLDPRT direct-edit candidates")? {
+    for (&(history_index, feature_index), candidates) in
+        ctx.admit_iter(&candidates, "scan SLDPRT direct-edit candidates")?
+    {
         let Some((&Some(first), rest)) = candidates.split_first() else {
             continue;
         };
@@ -844,10 +873,15 @@ mod tests {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
                 let mut histories = vec![move_face_history()];
-                let result = super::enrich_history_move_face_translations(&ctx, &mut histories,
-                    std::slice::from_ref(&lane));
+                let result = super::enrich_history_move_face_translations(
+                    &ctx,
+                    &mut histories,
+                    std::slice::from_ref(&lane),
+                );
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                 }
@@ -855,5 +889,4 @@ mod tests {
             },
         );
     }
-
 }

@@ -5,7 +5,7 @@
 //! magnitudes define a circular rolling-ball envelope; their signs and two unit
 //! scalars select the support-normal sides.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, View};
 
@@ -148,8 +148,8 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
 }
 
 pub(super) struct BlendCarriers {
-    pub blends: HashMap<u16, BlendCarrier>,
-    pub pairs: HashMap<u16, SupportPairCarrier>,
+    pub blends: BTreeMap<u16, BlendCarrier>,
+    pub pairs: BTreeMap<u16, SupportPairCarrier>,
 }
 
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
@@ -158,14 +158,14 @@ pub(super) fn scan(
     bytes: &[u8],
 ) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
     ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT blend carriers")?;
-    let mut blends = HashMap::new();
-    let mut pairs = HashMap::new();
+    let mut blends = BTreeMap::new();
+    let mut pairs = BTreeMap::new();
     let Some(last_offset) = bytes.len().checked_sub(57) else {
         return Ok(BlendCarriers { blends, pairs });
     };
     for offset in 0..last_offset {
         if let Some(carrier) = parse_blend(bytes, offset) {
-            ctx.admit_hash_map_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
+            ctx.admit_btree_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
             blends.entry(carrier.attr).or_insert(carrier);
         }
         if let Some(raw) = parse_raw(bytes, offset) {
@@ -173,11 +173,7 @@ pub(super) fn scan(
                 && raw.values[0].abs() <= f64::EPSILON
                 && raw.values[1].abs() <= f64::EPSILON
             {
-                ctx.admit_hash_map_entry(
-                    &mut pairs,
-                    &raw.attr,
-                    "index SLDPRT blend support pairs",
-                )?;
+                ctx.admit_btree_entry(&mut pairs, &raw.attr, "index SLDPRT blend support pairs")?;
                 pairs.entry(raw.attr).or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
                     intersection: raw.references[2],
@@ -191,11 +187,14 @@ pub(super) fn scan(
 #[cfg(test)]
 mod tests {
     use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn scan_with_service_context(
         bytes: &[u8],
-    ) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+    ) -> (
+        BTreeMap<u16, BlendCarrier>,
+        BTreeMap<u16, SupportPairCarrier>,
+    ) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             bytes,

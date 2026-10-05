@@ -247,12 +247,15 @@ fn native_extrusion_edit_without_source_image_is_refused() {
 #[test]
 fn parameter_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition =
-        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
-            .unwrap()
-            .section
-            .payload()
-            .to_vec();
+    let source_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::test_support::container::scan(&source),
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload()
+    .to_vec();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -262,22 +265,29 @@ fn parameter_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
-        .unwrap()
-        .section
-        .payload();
+    let output_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &output_scan,
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload();
     assert_eq!(output_partition, source_partition);
 }
 
 #[test]
 fn feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition =
-        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
-            .unwrap()
-            .section
-            .payload()
-            .to_vec();
+    let source_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::test_support::container::scan(&source),
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload()
+    .to_vec();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -287,22 +297,29 @@ fn feature_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
-        .unwrap()
-        .section
-        .payload();
+    let output_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &output_scan,
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload();
     assert_eq!(output_partition, source_partition);
 }
 
 #[test]
 fn native_feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition =
-        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
-            .unwrap()
-            .section
-            .payload()
-            .to_vec();
+    let source_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::test_support::container::scan(&source),
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload()
+    .to_vec();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -314,9 +331,13 @@ fn native_feature_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
-        .unwrap()
-        .section
-        .payload();
+    let output_partition = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &output_scan,
+    )
+    .unwrap()
+    .unwrap()
+    .section
+    .payload();
     assert_eq!(output_partition, source_partition);
 }

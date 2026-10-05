@@ -474,7 +474,8 @@ pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {
     })
 }
 
-pub(super) fn restore_equivalent_parameter_expressions(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(super) fn restore_equivalent_parameter_expressions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     original_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
     evaluated_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
@@ -496,7 +497,8 @@ pub(super) fn restore_equivalent_parameter_expressions(ctx: &cadmpeg_core::decod
         let Some(evaluated) = evaluated.get(name) else {
             continue;
         };
-        let Some(desired_value) = parse_native_parameter_literal(ctx, feature, name.as_str(), desired)?
+        let Some(desired_value) =
+            parse_native_parameter_literal(ctx, feature, name.as_str(), desired)?
         else {
             continue;
         };

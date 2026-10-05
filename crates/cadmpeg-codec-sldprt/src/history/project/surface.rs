@@ -73,7 +73,9 @@ pub(super) fn project_filled_surface(
     let continuity = feature
         .properties
         .get("Continuity")
-        .map(|value| crate::feature_schema::parse_surface_continuity(ctx, value)).transpose()?.flatten();
+        .map(|value| crate::feature_schema::parse_surface_continuity(ctx, value))
+        .transpose()?
+        .flatten();
     Ok(FeatureDefinition::Operation(
         FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
@@ -114,9 +116,13 @@ pub(super) fn project_trim_surface(
         )?),
         Some(tool) => PathRef::Native(copy_projected_feature_text(
             ctx,
-            ctx.get_hash_map(&(native_by_source), tool.as_str(), "look up SLDPRT hash key")?
-                .copied()
-                .unwrap_or(tool.as_str()),
+            ctx.get_hash_map(
+                &(native_by_source),
+                tool.as_str(),
+                "look up SLDPRT hash key",
+            )?
+            .copied()
+            .unwrap_or(tool.as_str()),
         )?),
     };
     Ok(FeatureDefinition::Operation(
@@ -131,7 +137,9 @@ pub(super) fn project_trim_surface(
             keep: feature
                 .properties
                 .get("Keep")
-                .map(|value| crate::feature_schema::parse_trim_region(ctx, value)).transpose()?.flatten()
+                .map(|value| crate::feature_schema::parse_trim_region(ctx, value))
+                .transpose()?
+                .flatten()
                 .unwrap_or(TrimRegion::Unresolved),
         },
     ))
@@ -157,7 +165,9 @@ pub(super) fn project_extend_surface(
             method: feature
                 .properties
                 .get("Method")
-                .map(|value| crate::feature_schema::parse_surface_extension(ctx, value)).transpose()?.flatten()
+                .map(|value| crate::feature_schema::parse_surface_extension(ctx, value))
+                .transpose()?
+                .flatten()
                 .unwrap_or(SurfaceExtension::Unresolved),
         },
     ))

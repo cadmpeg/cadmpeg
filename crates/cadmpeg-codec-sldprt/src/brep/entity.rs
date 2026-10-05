@@ -4,7 +4,7 @@
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::topology::Color;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use crate::layout::entity_common_header as entity_hdr;
 
@@ -206,14 +206,23 @@ fn linked_colors(
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
     for parent in ctx.admit_iter(entities, "scan SLDPRT linked_colors values")? {
         let mut linked_faces_storage = ctx.reserve_scoped(0, "Parasolid temporary linked faces")?;
-        let mut linked_faces = HashSet::new();
-        linked_faces_storage.with_storage(|| ctx.reserve_set(
-            &mut linked_faces,
-            parent.refs.len(),
-            "collect Parasolid linked face references",
-        ))?;
-        linked_faces.extend(parent.refs.iter().copied());
-        linked_faces_storage.with_storage(|| ctx.insert_hash_set(&mut linked_faces, parent.attr, "collect Parasolid parent face reference"))?;
+        let mut linked_faces = BTreeSet::new();
+        for &face in ctx.admit_iter(&parent.refs, "collect Parasolid linked face references")? {
+            linked_faces_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut linked_faces,
+                    face,
+                    "collect Parasolid linked face references",
+                )
+            })?;
+        }
+        linked_faces_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut linked_faces,
+                parent.attr,
+                "collect Parasolid parent face reference",
+            )
+        })?;
         let mut at = parent.end;
         while let Some((color_attr, color, end)) = color_record(body, at) {
             ctx.charge_work(1, "scan Parasolid linked colors")?;
@@ -222,7 +231,11 @@ fn linked_colors(
                 offset: at,
                 parent_seq: parent.seq,
             };
-            for face_attr in ctx.admit_iter(&linked_faces, "scan SLDPRT linked_colors values")?.copied().filter(|attr| *attr > 1) {
+            for face_attr in ctx
+                .admit_iter(&linked_faces, "scan SLDPRT linked_colors values")?
+                .copied()
+                .filter(|attr| *attr > 1)
+            {
                 let key = (face_attr, color_attr);
                 ctx.push_hash_group(
                     &mut colors,
@@ -245,10 +258,12 @@ fn current_linked_color(
     let Some(current_seq) = candidates
         .iter()
         .map(|candidate| candidate.parent_seq)
-        .max() else {
+        .max()
+    else {
         return Ok(None);
     };
-    let mut current = ctx.admit_iter(candidates, "scan current Parasolid linked colors")?
+    let mut current = ctx
+        .admit_iter(candidates, "scan current Parasolid linked colors")?
         .copied()
         .filter(|candidate| candidate.parent_seq == current_seq);
     let Some(first) = current.next() else {

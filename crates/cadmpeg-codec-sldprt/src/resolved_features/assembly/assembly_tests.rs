@@ -59,8 +59,11 @@ fn feature_input_parent_identity_propagates_format_work_refusal() {
     ));
     let lane = super::feature_input_lane(
         &cadmpeg_test_support::service_decode_context(),
-        crate::container::Section::Compound(&stream), "Contents/ResolvedFeatures",
-        "resolved-features", &mut cadmpeg_ir::annotations::Annotations::default(),
-    ).unwrap();
+        crate::container::Section::Compound(&stream),
+        "Contents/ResolvedFeatures",
+        "resolved-features",
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+    )
+    .unwrap();
     assert_eq!(lane.id, "sldprt:feature-input:resolved-features#12");
 }

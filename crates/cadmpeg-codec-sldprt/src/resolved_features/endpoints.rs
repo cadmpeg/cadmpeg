@@ -1828,7 +1828,7 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
         charge_endpoint_work(ctx, span, 1024, OPERATION)?;
     }
     for candidate in first..=last {
-        let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(ctx, payload, candidate)?
+        let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(payload, candidate)
         else {
             continue;
         };
@@ -2137,7 +2137,8 @@ pub(super) fn inferred_point_coordinates_by_index(
         else {
             continue;
         };
-        candidates_storage.with_storage(|| ctx.push_vec(&mut candidates, point, POINT_SOLVER_OPERATION))?;
+        candidates_storage
+            .with_storage(|| ctx.push_vec(&mut candidates, point, POINT_SOLVER_OPERATION))?;
     }
     ctx.sort_unstable_by_key(
         &mut candidates,
@@ -2150,9 +2151,16 @@ pub(super) fn inferred_point_coordinates_by_index(
         "sldprt point solver candidates sort",
     )?;
 
-    ctx.dedup_by(&mut candidates, |left, right| {
-        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
-    }, "deduplicate SLDPRT inferred point coordinates")?;
+    ctx.dedup_by(
+        &mut candidates,
+        |left, right| {
+            Ok(
+                same_dimension_length(left[0], right[0])
+                    && same_dimension_length(left[1], right[1]),
+            )
+        },
+        "deduplicate SLDPRT inferred point coordinates",
+    )?;
 
     let mut constraints_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut constraints = Vec::new();
@@ -2170,13 +2178,19 @@ pub(super) fn inferred_point_coordinates_by_index(
         };
         if scalar.feature_ref.as_deref() != Some(feature) || scalar.role != FeatureInputScalarRole::Driving || scalar.value.get() < 0.0
             || ![first, second].iter().all(|operand| matches!(operand.kind, FeatureInputOperandKind::Native(tag) if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value()))) { continue; }
-        constraints_storage.with_storage(|| ctx.push_vec(&mut constraints, (
-            [
-                u32::from(first.entity_index),
-                u32::from(second.entity_index),
-            ],
-            scalar.value.get(),
-        ), POINT_SOLVER_OPERATION))?;
+        constraints_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut constraints,
+                (
+                    [
+                        u32::from(first.entity_index),
+                        u32::from(second.entity_index),
+                    ],
+                    scalar.value.get(),
+                ),
+                POINT_SOLVER_OPERATION,
+            )
+        })?;
     }
     let mut indices = HashSet::new();
     for (endpoints, _) in &constraints {
@@ -2285,7 +2299,9 @@ fn point_distance_component_has_solution(
             }
             for endpoint in endpoints {
                 if insert_point_solver_index(ctx, &mut component, *endpoint)? {
-                    pending_storage.with_storage(|| ctx.push_vec(&mut pending, *endpoint, POINT_SOLVER_OPERATION))?;
+                    pending_storage.with_storage(|| {
+                        ctx.push_vec(&mut pending, *endpoint, POINT_SOLVER_OPERATION)
+                    })?;
                 }
             }
         }
@@ -2577,7 +2593,8 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             continue;
         }
         for (endpoint, coordinates) in [(*first, coordinates[0]), (*second, coordinates[1])] {
-            let entry = ctx.entry_hash_map(&mut degrees, endpoint.id(), OPERATION)?
+            let entry = ctx
+                .entry_hash_map(&mut degrees, endpoint.id(), OPERATION)?
                 .or_insert((0, coordinates, endpoint.offset()));
             if entry.1 != coordinates {
                 return Ok(None);
@@ -3043,9 +3060,16 @@ pub(super) fn legacy_marker104_arc_center(
         });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    ctx.dedup_by(&mut centers, |left, right| {
-        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
-    }, "deduplicate SLDPRT marker104 arc centers")?;
+    ctx.dedup_by(
+        &mut centers,
+        |left, right| {
+            Ok(
+                same_dimension_length(left[0], right[0])
+                    && same_dimension_length(left[1], right[1]),
+            )
+        },
+        "deduplicate SLDPRT marker104 arc centers",
+    )?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3970,9 +3994,16 @@ pub(super) fn compact_profile_full_circle(
         },
         "sldprt ellipse radial points sort",
     )?;
-    ctx.dedup_by(&mut radials, |left, right| {
-        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
-    }, "deduplicate SLDPRT ellipse radial coordinates")?;
+    ctx.dedup_by(
+        &mut radials,
+        |left, right| {
+            Ok(
+                same_dimension_length(left[0], right[0])
+                    && same_dimension_length(left[1], right[1]),
+            )
+        },
+        "deduplicate SLDPRT ellipse radial coordinates",
+    )?;
     Ok((|| {
         let [radial] = radials.as_slice() else {
             return None;
@@ -6062,7 +6093,11 @@ pub(super) fn unique_arc_center_marker(
     });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     ctx.sort_unstable_by(&mut centers, |value| &value.0, Ord::cmp, OPERATION)?;
-    ctx.dedup_by_key(&mut centers, |(center, _)| Ok(*center), "deduplicate SLDPRT unique arc center cells")?;
+    ctx.dedup_by_key(
+        &mut centers,
+        |(center, _)| Ok(*center),
+        "deduplicate SLDPRT unique arc center cells",
+    )?;
     let [(_, center)] = centers.as_slice() else {
         return Ok(None);
     };

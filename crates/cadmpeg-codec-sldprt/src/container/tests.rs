@@ -383,8 +383,17 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
     let source = sldprt_with_colliding_sites();
     let scan = crate::test_support::container::scan(&source);
 
-    assert!(container::has_parasolid_body_stream(&cadmpeg_test_support::service_decode_context(), &scan).unwrap());
-    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
+    assert!(container::has_parasolid_body_stream(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan
+    )
+    .unwrap());
+    assert!(container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -413,7 +422,12 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
     )
     .unwrap();
 
-    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("compound partition");
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("compound partition");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
     assert_eq!(site.site_key(), "compound@7");
     assert!(matches!(site.section, container::Section::Compound(_)));
@@ -434,7 +448,12 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("explicit active partition");
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("explicit active partition");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
     assert!(site.header.description.contains("partition"));
 }
@@ -462,8 +481,20 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         container::active_configuration_name_ref(&scan),
         Some("Second")
     );
-    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(1));
-    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("manifest selects a site");
+    assert_eq!(
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        Some(1)
+    );
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("manifest selects a site");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
@@ -478,8 +509,20 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     source.extend(make_block(0x43, "Contents/Features", &payload));
     let scan = crate::test_support::container::scan(&source);
 
-    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(1));
-    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("UTF-16 manifest");
+    assert_eq!(
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        Some(1)
+    );
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("UTF-16 manifest");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
@@ -498,8 +541,20 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), Some(0));
-    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("explicit source index");
+    assert_eq!(
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        Some(0)
+    );
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("explicit source index");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
 
@@ -529,8 +584,20 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
     let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
-    assert_eq!(container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(), None);
-    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
+    assert_eq!(
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        None
+    );
+    assert!(container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -543,8 +610,17 @@ fn parasolid_partition_selection_never_uses_a_deltas_section() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    assert!(container::has_parasolid_body_stream(&cadmpeg_test_support::service_decode_context(), &scan).unwrap());
-    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
+    assert!(container::has_parasolid_body_stream(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan
+    )
+    .unwrap());
+    assert!(container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -848,7 +924,10 @@ fn specified_empty_native_block_remains_a_named_semantic_section() {
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.blocks[0].comp_sz, 2);
     assert!(scan.blocks[0].payload.is_empty());
-    let sections: Vec<_> = scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().collect();
+    let sections: Vec<_> = scan
+        .sections(&cadmpeg_test_support::service_decode_context())
+        .unwrap()
+        .collect();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].name(), Some("Contents/Empty"));
     assert!(sections[0].payload().is_empty());
@@ -925,22 +1004,29 @@ fn first_solidworks_envelope_propagates_resource_refusal() {
     let error = container::first_solidworks_envelope(
         &ctx,
         [b"<swSolidWorks swVersion=\"34000\"/>".as_slice()],
-    ).unwrap_err();
+    )
+    .unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected the caller's resource refusal");
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-
 #[test]
 fn configuration_attribute_map_scoped_refusal_preserves_replacement_semantics() {
     let payload = b"<swSolidWorks><swConfiguration swID=\"0\" swConfigurationFlags=\"first\"/><swConfiguration swID=\"0\" swConfigurationFlags=\"last\"/></swSolidWorks>";
     let service = cadmpeg_test_support::service_decode_context();
     let envelope = container::first_solidworks_envelope(&service, [payload.as_slice()])
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert_eq!(envelope.configuration_attributes.len(), 1);
-    assert_eq!(envelope.configuration_attributes.get("sw_configuration_0_flags").unwrap(), "last");
+    assert_eq!(
+        envelope
+            .configuration_attributes
+            .get("sw_configuration_0_flags")
+            .unwrap(),
+        "last"
+    );
     let arena = DecodeArena::new();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,

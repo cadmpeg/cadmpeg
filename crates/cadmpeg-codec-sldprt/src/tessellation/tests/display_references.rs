@@ -143,10 +143,16 @@ fn opaque_surface_suffix_remains_source_only() {
         surface_references: references,
     };
     assert_eq!(
-        face.feature_source_id(&cadmpeg_test_support::service_decode_context()).unwrap().map(FeatureSourceId::value),
+        face.feature_source_id(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context()).unwrap(), None);
+    assert_eq!(
+        face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
+        None
+    );
 }
 
 #[test]

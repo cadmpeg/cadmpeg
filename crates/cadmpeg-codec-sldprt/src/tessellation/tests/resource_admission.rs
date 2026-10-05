@@ -278,6 +278,12 @@ fn planar_polygon_construction_refuses_boundary_comparison_work() {
         vertices: &vertices,
         points: &points,
         curves: &curves,
+        coordinate_scale: model
+            .points
+            .iter()
+            .map(|entry| entry.position().get())
+            .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+            .fold(1.0_f64, f64::max),
     };
     let face = model.faces.iter().find(|face| face.id == face_id).unwrap();
     let surface = &model

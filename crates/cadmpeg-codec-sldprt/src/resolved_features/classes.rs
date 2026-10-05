@@ -61,9 +61,10 @@ pub(crate) fn bind_history_classes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT history class workspace")?;
-    for history_index in
-        ctx.admit_iter(&(0..histories.len()), "clear SLDPRT history feature classes")?
-    {
+    for history_index in ctx.admit_iter(
+        &(0..histories.len()),
+        "clear SLDPRT history feature classes",
+    )? {
         let history = &mut histories[history_index];
         for feature_index in ctx.admit_iter(
             &(0..history.features.len()),
@@ -102,9 +103,10 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    for history_index in
-        ctx.admit_iter(&(0..histories.len()), "bind SLDPRT object classes to history features")?
-    {
+    for history_index in ctx.admit_iter(
+        &(0..histories.len()),
+        "bind SLDPRT object classes to history features",
+    )? {
         let history = &mut histories[history_index];
         for feature_index in ctx.admit_iter(
             &(0..history.features.len()),
@@ -181,7 +183,7 @@ pub(crate) fn bind_history_classes(
         ctx.dedup_vec(classes, "deduplicate SLDPRT history class names")?;
     }
     let mut history_name_counts = HashMap::<String, usize>::new();
-    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+    for history in ctx.admit_iter(&*histories, "scan SLDPRT feature histories")? {
         for feature in ctx.admit_iter(&history.features, "count SLDPRT history feature names")? {
             if !feature.name.is_empty() {
                 let name = temporary.with_storage(|| copy_class_text(ctx, &feature.name))?;
@@ -270,7 +272,7 @@ pub(crate) fn bind_history_classes(
             )
         })?;
         let mut groups = BTreeMap::<u16, Vec<&crate::records::Feature>>::new();
-        for history in ctx.admit_iter(histories, "scan SLDPRT cosmetic thread histories")? {
+        for history in ctx.admit_iter(&*histories, "scan SLDPRT cosmetic thread histories")? {
             for feature in
                 ctx.admit_iter(&history.features, "scan SLDPRT cosmetic thread features")?
             {
@@ -303,7 +305,7 @@ pub(crate) fn bind_history_classes(
                         feature,
                         "bind SLDPRT history classes",
                         "bind SLDPRT history classes",
-                        )
+                    )
                 })?;
             }
         }
@@ -342,10 +344,9 @@ pub(crate) fn bind_history_classes(
         )?;
         ctx.dedup_vec(classes, "deduplicate SLDPRT bound classes")?;
     }
-    for history_index in ctx.admit_iter(
-        &(0..histories.len()),
-        "bind SLDPRT cosmetic thread classes",
-    )? {
+    for history_index in
+        ctx.admit_iter(&(0..histories.len()), "bind SLDPRT cosmetic thread classes")?
+    {
         let history = &mut histories[history_index];
         for feature_index in ctx.admit_iter(
             &(0..history.features.len()),
@@ -418,9 +419,10 @@ pub(crate) fn bind_history_classes(
     )?;
     ctx.dedup_vec(&mut native_startups, "deduplicate SLDPRT startup classes")?;
     if let [classes] = native_startups.as_slice() {
-        for history_index in ctx
-            .admit_iter(&(0..histories.len()), "scan SLDPRT idless startup histories")?
-        {
+        for history_index in ctx.admit_iter(
+            &(0..histories.len()),
+            "scan SLDPRT idless startup histories",
+        )? {
             let history = &mut histories[history_index];
             let window_size = std::num::NonZeroUsize::new(6).ok_or_else(|| {
                 ctx.refuse_codec_limit("scan SLDPRT idless startup features", 1, 0)
@@ -442,20 +444,18 @@ pub(crate) fn bind_history_classes(
             }
             if let Some(index) = first.filter(|_| !multiple) {
                 for (feature_index, class) in ctx
-                    .admit_iter(
-                        &(index..index + 6),
-                        "bind SLDPRT idless startup features",
-                    )?
+                    .admit_iter(&(index..index + 6), "bind SLDPRT idless startup features")?
                     .zip(ctx.admit_iter(classes, "bind SLDPRT idless startup classes")?)
                 {
-                    history.features[feature_index].input_class = Some(copy_class_text(ctx, class)?);
+                    history.features[feature_index].input_class =
+                        Some(copy_class_text(ctx, class)?);
                 }
             }
         }
     }
 
     let mut classes_by_type = BTreeMap::<String, Vec<String>>::new();
-    for history in ctx.admit_iter(histories, "scan SLDPRT class-by-type histories")? {
+    for history in ctx.admit_iter(&*histories, "scan SLDPRT class-by-type histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT class-by-type features")? {
             if let Some(class) = &feature.input_class {
                 let kind = temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?;
@@ -481,10 +481,9 @@ pub(crate) fn bind_history_classes(
         )?;
         ctx.dedup_vec(classes, "deduplicate SLDPRT classes by type")?;
     }
-    for history_index in ctx.admit_iter(
-        &(0..histories.len()),
-        "bind SLDPRT class-by-type features",
-    )? {
+    for history_index in
+        ctx.admit_iter(&(0..histories.len()), "bind SLDPRT class-by-type features")?
+    {
         let history = &mut histories[history_index];
         for feature_index in ctx.admit_iter(
             &(0..history.features.len()),
@@ -521,7 +520,7 @@ pub(crate) fn bind_history_classes(
         }
     }
     let mut classes_by_token = BTreeMap::<(&str, u16), Vec<String>>::new();
-    for history in ctx.admit_iter(histories, "scan SLDPRT token-binding histories")? {
+    for history in ctx.admit_iter(&*histories, "scan SLDPRT token-binding histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT token-binding features")? {
             let Some(class) = &feature.input_class else {
                 continue;
@@ -611,9 +610,7 @@ pub(crate) fn bind_history_classes(
         )?;
         ctx.dedup_vec(classes, "deduplicate SLDPRT token classes")?;
     }
-    for history_index in
-        ctx.admit_iter(&(0..histories.len()), "bind SLDPRT token classes")?
-    {
+    for history_index in ctx.admit_iter(&(0..histories.len()), "bind SLDPRT token classes")? {
         let history = &mut histories[history_index];
         for feature_index in
             ctx.admit_iter(&(0..history.features.len()), "bind SLDPRT token classes")?
@@ -633,9 +630,7 @@ pub(crate) fn bind_history_classes(
             let mut duplicate_name = false;
             if name_is_unique {
                 'lanes: for lane in ctx.admit_iter(lanes, "scan SLDPRT fallback name lanes")? {
-                    for name in
-                        ctx.admit_iter(&lane.names, "scan SLDPRT fallback feature names")?
-                    {
+                    for name in ctx.admit_iter(&lane.names, "scan SLDPRT fallback feature names")? {
                         if name.object_id.and_then(ObjectId::value).is_some()
                             && ctx.equal(
                                 &name.value,
@@ -713,13 +708,12 @@ pub(crate) fn bind_history_classes(
 
     let legacy_hole_bindings =
         temporary.with_storage(|| legacy_repeated_hole_wizard_classes(ctx, histories, lanes))?;
-    for history_index in
-        ctx.admit_iter(&(0..histories.len()), "bind SLDPRT legacy hole classes")?
-    {
+    for history_index in ctx.admit_iter(&(0..histories.len()), "bind SLDPRT legacy hole classes")? {
         let history = &mut histories[history_index];
-        for feature_index in
-            ctx.admit_iter(&(0..history.features.len()), "bind SLDPRT legacy hole classes")?
-        {
+        for feature_index in ctx.admit_iter(
+            &(0..history.features.len()),
+            "bind SLDPRT legacy hole classes",
+        )? {
             let feature = &mut history.features[feature_index];
             if feature.input_class.is_some() {
                 continue;
@@ -868,7 +862,7 @@ fn legacy_repeated_hole_wizard_classes(
                     feature,
                     "bind SLDPRT history classes",
                     "bind SLDPRT history classes",
-                    )
+                )
             }?;
         }
         for (_, features) in ctx.admit_iter(&groups, "scan SLDPRT legacy hole groups")? {

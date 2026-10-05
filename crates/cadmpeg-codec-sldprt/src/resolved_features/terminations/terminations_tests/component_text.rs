@@ -43,9 +43,7 @@ fn charged_surface_component_text_refuses_retained_limit() {
 
 #[test]
 fn component_local_ids_preserves_text_and_zero_cap_refusals() {
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     const OPERATION: &str = "test component local IDs";
     let components = [None, Some(0), Some(u32::MAX)].map(|local_id| {
@@ -69,8 +67,8 @@ fn component_local_ids_preserves_text_and_zero_cap_refusals() {
 
     let mut work_policy = DecodePolicy::service();
     work_policy.limits.max_work_units = 0;
-    let (work_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &work_policy)
-        .expect("work-limited context");
+    let (work_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &work_policy).expect("work-limited context");
     let work_error = component_local_ids(&work_ctx, &components, OPERATION)
         .expect_err("component local IDs exceed the work limit");
     assert!(matches!(
@@ -96,18 +94,14 @@ fn component_local_ids_preserves_text_and_zero_cap_refusals() {
 
 #[test]
 fn compact_surface_selection_value_propagates_first_component_char_work_refusal() {
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     const PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
     const OPERATION: &str = "format SLDPRT surface component selection";
-    let components = [None, None].map(|local_id| {
-        crate::records::FeatureInputComponentPathEntry {
-            instance: None,
-            type_signature: [0; 12],
-            local_id,
-        }
+    let components = [None, None].map(|local_id| crate::records::FeatureInputComponentPathEntry {
+        instance: None,
+        type_signature: [0; 12],
+        local_id,
     });
     let prefix_work = u64::try_from(PREFIX.len()).expect("prefix length fits u64");
     let visit_work = u64::try_from(components.len()).expect("component count fits u64");
@@ -119,8 +113,8 @@ fn compact_surface_selection_value_propagates_first_component_char_work_refusal(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("work-limited context");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("work-limited context");
     let error = compact_surface_selection_value(&ctx, &components)
         .expect_err("first component character exceeds the work limit");
     assert!(matches!(

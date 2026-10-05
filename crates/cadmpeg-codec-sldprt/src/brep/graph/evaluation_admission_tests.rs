@@ -54,7 +54,12 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
 fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
     let header = crate::parasolid::StreamHeader {
         description: String::from("test partition"),
-        schema: cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999").unwrap(),
+        schema: cadmpeg_parasolid::OwnedSchemaToken::parse(
+            &cadmpeg_test_support::service_decode_context(),
+            "SCH_TEST_1_9999".into(),
+        )
+        .expect("service token admission")
+        .expect("the fixture text is a schema token"),
         body_offset: 0,
     };
     let bodies = [(&[][..], &header)];
@@ -62,8 +67,16 @@ fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("test-stream-index")) else { panic!("temporary stream index refusal"); };
-    let CodecError::ResourceLimit(limit) = error else { panic!("temporary stream index refusal"); };
+    let Err(error) = super::decode_bodies(
+        &ctx,
+        &bodies,
+        &cadmpeg_ir::stream_name!("test-stream-index"),
+    ) else {
+        panic!("temporary stream index refusal");
+    };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("temporary stream index refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.operation, "order Parasolid body streams");
     assert!(limit.additional > 0);
@@ -74,13 +87,19 @@ fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
 #[test]
 fn reference_qualifier_character_refusal_preserves_the_resource_limit() {
     let arena = DecodeArena::new();
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(super::qualified_reference(&service, "test#1", "scope").unwrap(), "test#1@scope");
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::qualified_reference(&service, "test#1", "scope").unwrap(),
+        "test#1@scope"
+    );
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::qualified_reference(&ctx, "test#1", "scope").unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("character copy refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("character copy refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "append SLDPRT reference qualifier");
     assert_eq!(limit.additional, 1);

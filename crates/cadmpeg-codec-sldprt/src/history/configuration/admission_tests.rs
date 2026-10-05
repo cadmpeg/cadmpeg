@@ -388,15 +388,11 @@ fn configuration_design_projection_refuses_work_limit() {
 
 fn assert_configuration_values_refusal(dimension: ResourceDimension) {
     const OPERATION: &str = "collect SLDPRT configuration values";
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        dimension,
-        OPERATION,
-        |limit| {
-            let mut policy = DecodePolicy::service();
-            set_limit(&mut policy, dimension, limit);
-            run_design(&policy)
-        },
-    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, OPERATION, |limit| {
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, dimension, limit);
+        run_design(&policy)
+    });
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected configuration value resource refusal")
     };

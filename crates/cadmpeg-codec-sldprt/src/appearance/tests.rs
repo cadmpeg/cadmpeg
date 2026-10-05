@@ -589,7 +589,11 @@ fn appearance_searches_refuse_marker_free_ranges() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "ThirdPtyStore/VisualStates", &[0; 64]));
     let scan = crate::test_support::container::scan(&source);
-    let section = scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().next().unwrap();
+    let section = scan
+        .sections(&cadmpeg_test_support::service_decode_context())
+        .unwrap()
+        .next()
+        .unwrap();
     // Whole-scan routes count one section visit before payload work.
     for (work, operation, route) in [
         (1, "scan SLDPRT appearance definitions", 0),
@@ -625,17 +629,28 @@ fn appearance_face_class_search_refuses_without_assignments() {
     let display_scan = crate::test_support::container::scan(&display_source);
     let faces = crate::tessellation::section_display_faces(
         &cadmpeg_test_support::service_decode_context(),
-        display_scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().next().unwrap(),
+        display_scan
+            .sections(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .next()
+            .unwrap(),
     )
     .unwrap();
 
     let mut policy = DecodePolicy::service();
     // Payload scan, one validated and copied name byte, 64 source bytes and each face.
-policy.limits.max_work_units = u64::try_from(payload.len() + 66 + faces.len()).unwrap();
+    policy.limits.max_work_units = u64::try_from(payload.len() + 66 + faces.len()).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::display_assignments(&ctx, scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().next().unwrap(), &faces).unwrap_err();
+    let error = super::display_assignments(
+        &ctx,
+        scan.sections(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .next()
+            .unwrap(),
+        &faces,
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "match SLDPRT face appearance classes")
     );

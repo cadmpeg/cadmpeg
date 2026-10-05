@@ -1,17 +1,24 @@
 //! Locus identity for reused point handles.
 
 use super::super::marker;
-use crate::records::{FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputRelationFamily, FeatureInputRelationInstance};
-use crate::resolved_features::relation_geometry::{project_relation_point_geometry,
-    project_relation_solved_point_geometry};
+use crate::records::{
+    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputRelationInstance,
+};
+use crate::resolved_features::relation_geometry::{
+    project_relation_point_geometry, project_relation_solved_point_geometry,
+};
 use crate::resolved_features::relation_loci::{profile_loci_by_marker, typed_relation_definition};
-use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, FeatureId,
-    FeatureOperation, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{
+    DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    ParameterValue,
+};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Length;
-use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
+};
 use std::collections::{BTreeMap, HashMap};
 
 #[test]

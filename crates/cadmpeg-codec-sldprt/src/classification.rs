@@ -348,21 +348,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeClassKind {
 }
 
 /// Classify a feature from serialized object identity, never its display name.
-pub(crate) fn classify(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<Option<FeatureClass>, cadmpeg_core::CodecError> {
+///
+/// Each source of evidence is a match against literal names, so the work is
+/// bounded by the literal table, not by the feature's text.
+pub(crate) fn classify(feature: &Feature) -> Option<FeatureClass> {
     let evidence = [
         classify_input_class(feature.input_class.as_deref()),
         classify_xml_element(&feature.xml_tag),
         classify_type_token(&feature.kind),
     ];
-    let mut first = None;
-    for class in ctx.admit_iter(&evidence, "scan SLDPRT feature classification evidence")? {
-        let Some(class) = *class else { continue; };
-        if first.is_some_and(|known| known != class) {
-            return Ok(None);
-        }
-        first = Some(class);
-    }
-    Ok(first)
+    let mut classes = evidence.into_iter().flatten();
+    let first = classes.next()?;
+    classes.all(|class| class == first).then_some(first)
 }
 
 /// Classify a built-in principal plane from its native class and reserved identity.
@@ -381,38 +378,77 @@ pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
     }
 }
 
+/// Where one history's built-in planes take their reserved identities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrincipalPlaneLayout {
+    /// Built-in planes hold sources 2, 3 and 4.
+    Reserved,
+    /// Built-in planes hold sources 3, 4 and 5, so no source names a principal plane.
+    Shifted,
+    /// No complete triplet: only a plane's native class can name it.
+    Unreserved,
+}
+
+fn is_builtin_plane(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::ReferencePlane)
+        && feature.parameters.is_empty()
+        && feature.properties.is_empty()
+}
+
+/// Find the reserved triplet the built-in planes among `siblings` occupy, in one pass.
+pub(crate) fn principal_plane_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    siblings: &[Feature],
+) -> Result<PrincipalPlaneLayout, cadmpeg_core::CodecError> {
+    let mut present = [false; 4];
+    for sibling in ctx.admit_iter(siblings, "scan SLDPRT principal plane siblings")? {
+        if let Some(slot) = sibling
+            .source_value()
+            .and_then(|source| source.checked_sub(2))
+            .and_then(|slot| present.get_mut(usize::try_from(slot).ok()?))
+        {
+            *slot |= is_builtin_plane(sibling);
+        }
+    }
+    Ok(match present {
+        [true, true, true, _] => PrincipalPlaneLayout::Reserved,
+        [_, true, true, true] => PrincipalPlaneLayout::Shifted,
+        _ => PrincipalPlaneLayout::Unreserved,
+    })
+}
+
+/// Classify a built-in principal plane under its history's reserved-identity layout.
+pub(crate) fn principal_plane_in_layout(
+    layout: PrincipalPlaneLayout,
+    feature: &Feature,
+) -> Option<PrincipalPlane> {
+    match layout {
+        PrincipalPlaneLayout::Shifted => None,
+        PrincipalPlaneLayout::Unreserved => principal_plane(feature),
+        PrincipalPlaneLayout::Reserved => {
+            if !is_builtin_plane(feature) {
+                return None;
+            }
+            match feature.source_value()? {
+                2 => Some(PrincipalPlane::Front),
+                3 => Some(PrincipalPlane::Top),
+                4 => Some(PrincipalPlane::Right),
+                _ => None,
+            }
+        }
+    }
+}
+
 /// Classify a built-in principal plane from a complete reserved-identity triplet.
-pub(crate) fn principal_plane_with_siblings(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn principal_plane_with_siblings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     siblings: &[Feature],
 ) -> Result<Option<PrincipalPlane>, cadmpeg_core::CodecError> {
-    let is_builtin_plane = |candidate: &Feature| {
-        Ok::<_, cadmpeg_core::CodecError>(classify(ctx, candidate)? == Some(FeatureClass::ReferencePlane)
-            && candidate.parameters.is_empty()
-            && candidate.properties.is_empty())
-    };
-    let complete_triplet = |start: u32| {
-        (start..start + 3).try_fold(true, |complete, source| {
-            Ok::<_, cadmpeg_core::CodecError>(complete && ctx.admit_iter(siblings, "scan SLDPRT principal plane siblings")?
-                .try_fold(false, |found, candidate| Ok::<_, cadmpeg_core::CodecError>(found || candidate.source_value() == Some(source) && is_builtin_plane(candidate)?))?)
-        })
-    };
-    let start = if complete_triplet(2)? {
-        2
-    } else if complete_triplet(3)? {
-        return Ok(None);
-    } else {
-        return Ok(principal_plane(feature));
-    };
-    if !is_builtin_plane(feature)? {
-        return Ok(None);
-    }
-    Ok(match match match feature.source_value() { Some(value) => value, None => return Ok(None) }.checked_sub(start) { Some(value) => value, None => return Ok(None) } {
-        0 => Some(PrincipalPlane::Front),
-        1 => Some(PrincipalPlane::Top),
-        2 => Some(PrincipalPlane::Right),
-        _ => None,
-    })
+    Ok(principal_plane_in_layout(
+        principal_plane_layout(ctx, siblings)?,
+        feature,
+    ))
 }
 
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
@@ -531,39 +567,28 @@ mod tests {
     }
 
     #[test]
-    fn classification_refusal_does_not_become_unknown_class() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = classify(&ctx, &feature("Feature", "arbitrary", "Custom", Some("moRefPlane_c"))).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    }
-
-    #[test]
     fn display_name_does_not_classify_an_object() {
-        assert_eq!(classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "Plane", "Custom", None)).unwrap(), None);
-        assert_eq!(classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "Plano", "Custom", None)).unwrap(), None);
+        assert_eq!(classify(&feature("Feature", "Plane", "Custom", None)), None);
+        assert_eq!(classify(&feature("Feature", "Plano", "Custom", None)), None);
     }
 
     #[test]
     fn native_identity_is_independent_of_display_name() {
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), &feature(
+            classify(&feature(
                 "Feature",
                 "arbitrary",
                 "Custom",
                 Some("moRefPlane_c")
-            )).unwrap(),
+            )),
             Some(FeatureClass::ReferencePlane)
         );
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), &feature("Extrusion", "arbitrary", "Custom", None)).unwrap(),
+            classify(&feature("Extrusion", "arbitrary", "Custom", None)),
             Some(FeatureClass::Extrude)
         );
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "arbitrary", "Plane", None)).unwrap(),
+            classify(&feature("Feature", "arbitrary", "Plane", None)),
             Some(FeatureClass::ReferencePlane)
         );
     }
@@ -580,15 +605,30 @@ mod tests {
         }
 
         assert_eq!(
-            principal_plane_with_siblings(&cadmpeg_test_support::service_decode_context(), &planes[0], &planes).unwrap(),
+            principal_plane_with_siblings(
+                &cadmpeg_test_support::service_decode_context(),
+                &planes[0],
+                &planes
+            )
+            .unwrap(),
             Some(PrincipalPlane::Front)
         );
         assert_eq!(
-            principal_plane_with_siblings(&cadmpeg_test_support::service_decode_context(), &planes[1], &planes).unwrap(),
+            principal_plane_with_siblings(
+                &cadmpeg_test_support::service_decode_context(),
+                &planes[1],
+                &planes
+            )
+            .unwrap(),
             Some(PrincipalPlane::Top)
         );
         assert_eq!(
-            principal_plane_with_siblings(&cadmpeg_test_support::service_decode_context(), &planes[2], &planes).unwrap(),
+            principal_plane_with_siblings(
+                &cadmpeg_test_support::service_decode_context(),
+                &planes[2],
+                &planes
+            )
+            .unwrap(),
             Some(PrincipalPlane::Right)
         );
     }
@@ -611,7 +651,7 @@ mod tests {
             ("moPLine_c", FeatureClass::SplitFace),
         ] {
             assert_eq!(
-                classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "localized", "localized", Some(class))).unwrap(),
+                classify(&feature("Feature", "localized", "localized", Some(class))),
                 Some(expected),
                 "{class}"
             );
@@ -635,7 +675,7 @@ mod tests {
             ("Split Line", FeatureClass::SplitFace),
         ] {
             assert_eq!(
-                classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "localized", kind, None)).unwrap(),
+                classify(&feature("Feature", "localized", kind, None)),
                 Some(expected),
                 "{kind}"
             );
@@ -694,7 +734,7 @@ mod tests {
             ("Thicken", FeatureClass::Thicken),
         ] {
             assert_eq!(
-                classify(&cadmpeg_test_support::service_decode_context(), &feature("Feature", "localized display name", kind, None)).unwrap(),
+                classify(&feature("Feature", "localized display name", kind, None)),
                 Some(class),
                 "{kind}"
             );
@@ -704,7 +744,7 @@ mod tests {
     #[test]
     fn hole_wizard_element_is_a_hole_independent_of_display_language() {
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), &feature("HoleWizard", "localized", "localized", None)).unwrap(),
+            classify(&feature("HoleWizard", "localized", "localized", None)),
             Some(FeatureClass::Hole)
         );
     }
@@ -712,12 +752,12 @@ mod tests {
     #[test]
     fn conflicting_native_identities_are_not_classified() {
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), &feature(
+            classify(&feature(
                 "Extrusion",
                 "arbitrary",
                 "BossExtrude",
                 Some("moSweep_c")
-            )).unwrap(),
+            )),
             None
         );
     }

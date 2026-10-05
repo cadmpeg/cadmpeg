@@ -108,7 +108,8 @@ pub(super) fn compact_body_selections(
 ) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact body selections";
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+    let lane_key = ctx
+        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let state_token = compact_body_state_token(lane);
@@ -386,7 +387,8 @@ pub(super) fn compact_edge_selections(
     const OPERATION: &str = "decode SLDPRT compact edge selections";
     let history_features = history_features_with_object_sources(ctx, histories, lane)?;
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+    let lane_key = ctx
+        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
@@ -448,7 +450,11 @@ pub(super) fn compact_edge_selections(
             Ord::cmp,
             "sort SLDPRT compact edge selections",
         )?;
-        ctx.dedup_by_key(&mut selections, |selection| Ok(selection.0), "deduplicate SLDPRT compact edge selection offsets")?;
+        ctx.dedup_by_key(
+            &mut selections,
+            |selection| Ok(selection.0),
+            "deduplicate SLDPRT compact edge selection offsets",
+        )?;
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in selections {
             ctx.charge_work(1, OPERATION)?;
@@ -656,7 +662,8 @@ pub(super) fn compact_surface_selections(
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
-    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+    let lane_key = ctx
+        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     for (index, &(name, feature, _)) in objects.iter().enumerate() {
@@ -1016,7 +1023,10 @@ fn fillet_face_selection_candidates(
         Ord::cmp,
         "sort SLDPRT full round fillet class bodies",
     )?;
-    ctx.dedup_vec(&mut class_bodies, "deduplicate SLDPRT full round fillet class bodies")?;
+    ctx.dedup_vec(
+        &mut class_bodies,
+        "deduplicate SLDPRT full round fillet class bodies",
+    )?;
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(6) {
         for (body, token) in class_bodies {
@@ -1173,16 +1183,18 @@ fn order_surface_candidates(
 ) -> Result<(), CodecError> {
     let mut indexed_storage = ctx.reserve_scoped(0, operation)?;
     let mut indexed = Vec::new();
-    indexed_storage.with_storage(|| ctx.reserve_capacity(&mut indexed, candidates.len(), operation))?;
+    indexed_storage
+        .with_storage(|| ctx.reserve_capacity(&mut indexed, candidates.len(), operation))?;
     {
         const DRAIN_OPERATION: &str = "drain SLDPRT surface selection candidates";
         let mut drain_reservation = ctx.reserve_scoped(0, DRAIN_OPERATION)?;
         let count = candidates.len();
-        let drained = drain_reservation.with_storage(|| {
-            ctx.drain_vec(candidates, 0..count, DRAIN_OPERATION)
-        })?;
+        let drained = drain_reservation
+            .with_storage(|| ctx.drain_vec(candidates, 0..count, DRAIN_OPERATION))?;
         for (index, (offset, components)) in drained.into_iter().enumerate() {
-            indexed_storage.with_storage(|| ctx.push_vec(&mut indexed, (offset, components, index), operation))?;
+            indexed_storage.with_storage(|| {
+                ctx.push_vec(&mut indexed, (offset, components, index), operation)
+            })?;
         }
     }
     ctx.sort_unstable_by_key(
@@ -1521,7 +1533,10 @@ fn cosmetic_thread_cylinder_references(
         Ord::cmp,
         "sort SLDPRT cosmetic thread cylinder offsets",
     )?;
-    ctx.dedup_vec(&mut offsets, "deduplicate SLDPRT cosmetic thread cylinder offsets")?;
+    ctx.dedup_vec(
+        &mut offsets,
+        "deduplicate SLDPRT cosmetic thread cylinder offsets",
+    )?;
     let mut references = Vec::new();
     for offset in offsets {
         ctx.charge_work(1, OPERATION)?;
@@ -1739,17 +1754,24 @@ impl cadmpeg_core::decode::cost::DecodeCost for CylinderMarkerReference {
         operation: &'static str,
     ) -> Result<u64, CodecError> {
         let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(self.0, self.1.is_some()), ctx, operation,
+            &(self.0, self.1.is_some()),
+            ctx,
+            operation,
         )?;
         if let Some(components) = &self.1 {
             for component in ctx.admit_iter(components, operation)? {
                 let child = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                    &(&component.instance, &component.type_signature, &component.local_id),
-                    ctx, operation,
+                    &(
+                        &component.instance,
+                        &component.type_signature,
+                        &component.local_id,
+                    ),
+                    ctx,
+                    operation,
                 )?;
-                bytes = bytes.checked_add(child).ok_or_else(|| {
-                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-                })?;
+                bytes = bytes
+                    .checked_add(child)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             }
         }
         Ok(bytes)
@@ -1791,7 +1813,10 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         Ord::cmp,
         "sort SLDPRT cosmetic thread cylinder markers",
     )?;
-    ctx.dedup_vec(&mut markers, "deduplicate SLDPRT cosmetic thread cylinder markers")?;
+    ctx.dedup_vec(
+        &mut markers,
+        "deduplicate SLDPRT cosmetic thread cylinder markers",
+    )?;
     let mut references = Vec::new();
     ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
     for marker in markers {
@@ -2595,32 +2620,33 @@ pub(super) fn compact_mixed_component_path(
     ctx.charge_work(work, OPERATION)?;
     let mut components = Vec::new();
     ctx.reserve_capacity(&mut components, count, reserve_operation)?;
-        for index in 0..count {
-            let Some((component, len)) = compact_mixed_component_at(payload, cursor, count - index) else {
-                return Ok(None);
-            };
-            ctx.push_vec(&mut components, component, reserve_operation)?;
-            cursor += len;
-            if index + 1 == count {
-                continue;
-            }
-            let Some(gap) = component_path_gaps(root_separators)
-                .iter()
-                .copied()
-                .find(|gap| {
-                    let root_separator = root_separators
-                        && *gap == 10
-                        && payload.get(cursor..cursor + 10)
-                            == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-                    (compact_component_separator(payload, cursor, *gap) || root_separator)
-                        && compact_mixed_component_at(payload, cursor + *gap, count - index - 1)
-                            .is_some()
-                }) else {
-                    return Ok(None);
-                };
-            cursor += gap;
+    for index in 0..count {
+        let Some((component, len)) = compact_mixed_component_at(payload, cursor, count - index)
+        else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut components, component, reserve_operation)?;
+        cursor += len;
+        if index + 1 == count {
+            continue;
         }
-        Ok(Some((components, cursor)))
+        let Some(gap) = component_path_gaps(root_separators)
+            .iter()
+            .copied()
+            .find(|gap| {
+                let root_separator = root_separators
+                    && *gap == 10
+                    && payload.get(cursor..cursor + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                (compact_component_separator(payload, cursor, *gap) || root_separator)
+                    && compact_mixed_component_at(payload, cursor + *gap, count - index - 1)
+                        .is_some()
+            })
+        else {
+            return Ok(None);
+        };
+        cursor += gap;
+    }
+    Ok(Some((components, cursor)))
 }
 
 fn counted_surface_component_path_at(
@@ -3040,7 +3066,8 @@ pub(crate) fn generated_surface_identities(
         Ord::cmp,
         "sort SLDPRT generated surface identities",
     )?;
-    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+    let lane_key = ctx
+        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut identities = Vec::new();
     ctx.reserve_vec(&mut identities, result.len(), OPERATION)?;
@@ -3444,7 +3471,9 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
     if suffix.starts_with('0') || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
     }
-    Ok(ctx.parse_text(suffix, "parse SLDPRT variable fillet dimension index")?.ok())
+    Ok(ctx
+        .parse_text(suffix, "parse SLDPRT variable fillet dimension index")?
+        .ok())
 }
 
 pub(super) fn compact_component_path_end_at(
@@ -3801,37 +3830,48 @@ fn compact_homogeneous_edge_ids(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-        for index in 0..count {
-            let Some(entry_signature) = payload.get(cursor + 4..cursor + 16) else {
-                return Ok(None);
-            };
-            if entry_signature != signature {
-                return Ok(None);
-            }
-            let Some(id) = View::u32_le_at(payload, cursor + 16) else {
-                return Ok(None);
-            };
-            ctx.push_vec(&mut ids, id, OPERATION)?;
-            cursor += 20;
-            if index + 1 < count && match payload.get(cursor + 4..cursor + 16) { Some(bytes) => bytes, None => return Ok(None) } != signature {
-                if match payload.get(cursor..cursor + 4) { Some(bytes) => bytes, None => return Ok(None) } == [0; 4]
-                    && match payload.get(cursor + 8..cursor + 20) { Some(bytes) => bytes, None => return Ok(None) } == signature
-                {
-                    cursor += 4;
-                } else {
-                    let Some(separator) = payload.get(cursor..cursor + 8) else {
-                        return Ok(None);
-                    };
-                    match separator {
-                        [0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] => {
-                            cursor += 8;
-                        }
-                        _ => return Ok(None),
+    for index in 0..count {
+        let Some(entry_signature) = payload.get(cursor + 4..cursor + 16) else {
+            return Ok(None);
+        };
+        if entry_signature != signature {
+            return Ok(None);
+        }
+        let Some(id) = View::u32_le_at(payload, cursor + 16) else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut ids, id, OPERATION)?;
+        cursor += 20;
+        if index + 1 < count
+            && match payload.get(cursor + 4..cursor + 16) {
+                Some(bytes) => bytes,
+                None => return Ok(None),
+            } != signature
+        {
+            if match payload.get(cursor..cursor + 4) {
+                Some(bytes) => bytes,
+                None => return Ok(None),
+            } == [0; 4]
+                && match payload.get(cursor + 8..cursor + 20) {
+                    Some(bytes) => bytes,
+                    None => return Ok(None),
+                } == signature
+            {
+                cursor += 4;
+            } else {
+                let Some(separator) = payload.get(cursor..cursor + 8) else {
+                    return Ok(None);
+                };
+                match separator {
+                    [0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] => {
+                        cursor += 8;
                     }
+                    _ => return Ok(None),
                 }
             }
         }
-        Ok(Some(ids))
+    }
+    Ok(Some(ids))
 }
 
 pub(super) fn compact_heterogeneous_component_path(
@@ -3904,31 +3944,33 @@ fn compact_component_path_with_layout(
     )?;
     let mut entries = Vec::new();
     ctx.reserve_capacity(&mut entries, count, reserve_operation)?;
-        for index in 0..count {
-            if compact_component_entry_at(payload, cursor, wide).is_none() {
-                return Ok(None);
-            }
-            let Some(entry) = (|| Some(FeatureInputComponentPathEntry {
+    for index in 0..count {
+        if compact_component_entry_at(payload, cursor, wide).is_none() {
+            return Ok(None);
+        }
+        let Some(entry) = (|| {
+            Some(FeatureInputComponentPathEntry {
                 instance: Some(View::u16_le_at(payload, cursor)?),
                 type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
                 local_id: Some(View::u32_le_at(payload, cursor + local_id_offset)?),
-            }))() else {
-                return Ok(None);
-            };
-            ctx.push_vec(&mut entries, entry, reserve_operation)?;
-            cursor += entry_length;
-            if index + 1 == count {
-                continue;
-            }
-            let Some(gap) = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
-                compact_component_separator(payload, cursor, *gap)
-                    && compact_component_entry_at(payload, cursor + *gap, wide).is_some()
-            }) else {
-                return Ok(None);
-            };
-            cursor += gap;
+            })
+        })() else {
+            return Ok(None);
+        };
+        ctx.push_vec(&mut entries, entry, reserve_operation)?;
+        cursor += entry_length;
+        if index + 1 == count {
+            continue;
         }
-        Ok(Some((entries, cursor)))
+        let Some(gap) = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
+            compact_component_separator(payload, cursor, *gap)
+                && compact_component_entry_at(payload, cursor + *gap, wide).is_some()
+        }) else {
+            return Ok(None);
+        };
+        cursor += gap;
+    }
+    Ok(Some((entries, cursor)))
 }
 
 fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> bool {
@@ -4513,37 +4555,37 @@ pub(super) fn coordinate_marker_local_links(
         };
         Some(([links[0].1, links[1].1], 2, selector))
     } else {
-        if marker_coordinates(ctx, payload, offset)?.is_none()
+        if marker_coordinates(payload, offset).is_none()
             && !counted_legacy_profile_line_layout(payload, offset)
         {
             return Ok(None);
         }
         (|| {
-        let mut links = [0; 2];
-        let mut selector = None;
-        for index in 0..=2 {
-            let start = offset.checked_add(86 + index * 12)?;
-            if payload.get(start..start + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff] {
-                return (index != 0).then_some((links, index, selector?));
+            let mut links = [0; 2];
+            let mut selector = None;
+            for index in 0..=2 {
+                let start = offset.checked_add(86 + index * 12)?;
+                if payload.get(start..start + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff] {
+                    return (index != 0).then_some((links, index, selector?));
+                }
+                if index == 2 {
+                    return None;
+                }
+                let cell = payload.get(start..start + 12)?;
+                let tag = View::u16_le_at(cell, 0)?;
+                let kind = operand_kind([cell[0], cell[1]])?;
+                if !operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
+                    || !operand_accepts_marker(kind, SketchInputKind::Arc)
+                    || selector.is_some_and(|selector| selector != tag)
+                    || cell[4..8] != [0xff; 4]
+                    || cell[8..12] != [0; 4]
+                {
+                    return None;
+                }
+                selector = Some(tag);
+                links[index] = View::u16_le_at(cell, 2)?;
             }
-            if index == 2 {
-                return None;
-            }
-            let cell = payload.get(start..start + 12)?;
-            let tag = View::u16_le_at(cell, 0)?;
-            let kind = operand_kind([cell[0], cell[1]])?;
-            if !operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
-                || !operand_accepts_marker(kind, SketchInputKind::Arc)
-                || selector.is_some_and(|selector| selector != tag)
-                || cell[4..8] != [0xff; 4]
-                || cell[8..12] != [0; 4]
-            {
-                return None;
-            }
-            selector = Some(tag);
-            links[index] = View::u16_le_at(cell, 2)?;
-        }
-        None
+            None
         })()
     };
     let Some((local_ids, count, selector)) = parsed else {

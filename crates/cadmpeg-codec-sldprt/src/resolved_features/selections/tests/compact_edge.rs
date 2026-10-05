@@ -1419,8 +1419,11 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
     };
     let index = |feature: &Feature, name: &str| {
         crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
-            &cadmpeg_test_support::service_decode_context(), feature, name,
-        ).unwrap()
+            &cadmpeg_test_support::service_decode_context(),
+            feature,
+            name,
+        )
+        .unwrap()
     };
     for (name, expected) in [("D0", 0), ("D01", 1), ("D012", 12), ("D1", 1)] {
         assert_eq!(index(&feature, name), Some(expected), "{name}");
@@ -1465,15 +1468,43 @@ fn component_parser_pushes_propagate_slot_refusals() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (result, operation) = match parser {
-            0 => (super::super::compact_mixed_component_path(&ctx, &payload, 0, 1, false, "collect test components").map(|_| ()), "collect test components"),
-            1 => (super::super::compact_component_path_with_layout(&ctx, &payload, 0, 1, false, "collect test components").map(|_| ()), "collect test components"),
-            _ => (super::super::compact_homogeneous_edge_ids(&ctx, &payload, 0, 1).map(|_| ()), "decode SLDPRT homogeneous edge identities"),
+            0 => (
+                super::super::compact_mixed_component_path(
+                    &ctx,
+                    &payload,
+                    0,
+                    1,
+                    false,
+                    "collect test components",
+                )
+                .map(|_| ()),
+                "collect test components",
+            ),
+            1 => (
+                super::super::compact_component_path_with_layout(
+                    &ctx,
+                    &payload,
+                    0,
+                    1,
+                    false,
+                    "collect test components",
+                )
+                .map(|_| ()),
+                "collect test components",
+            ),
+            _ => (
+                super::super::compact_homogeneous_edge_ids(&ctx, &payload, 0, 1).map(|_| ()),
+                "decode SLDPRT homogeneous edge identities",
+            ),
         };
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == operation && ctx.resource_refusal() == Some(limit)));
+                && limit.operation == operation && ctx.resource_refusal() == Some(limit))
+        );
     }
     let service = cadmpeg_test_support::service_decode_context();
     let expected = vec![FeatureInputComponentPathEntry {
@@ -1481,11 +1512,32 @@ fn component_parser_pushes_propagate_slot_refusals() {
         type_signature: [0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0],
         local_id: Some(9),
     }];
-    assert_eq!(super::super::compact_mixed_component_path(
-        &service, &payload, 0, 1, false, "collect test components",
-    ).unwrap(), Some((expected.clone(), 20)));
-    assert_eq!(super::super::compact_component_path_with_layout(
-        &service, &payload, 0, 1, false, "collect test components",
-    ).unwrap(), Some((expected, 20)));
-    assert_eq!(super::super::compact_homogeneous_edge_ids(&service, &payload, 0, 1).unwrap(), Some(vec![9]));
+    assert_eq!(
+        super::super::compact_mixed_component_path(
+            &service,
+            &payload,
+            0,
+            1,
+            false,
+            "collect test components",
+        )
+        .unwrap(),
+        Some((expected.clone(), 20))
+    );
+    assert_eq!(
+        super::super::compact_component_path_with_layout(
+            &service,
+            &payload,
+            0,
+            1,
+            false,
+            "collect test components",
+        )
+        .unwrap(),
+        Some((expected, 20))
+    );
+    assert_eq!(
+        super::super::compact_homogeneous_edge_ids(&service, &payload, 0, 1).unwrap(),
+        Some(vec![9])
+    );
 }

@@ -82,7 +82,12 @@ impl cadmpeg_core::decode::cost::DecodeCost for SketchPlaneFrame {
         operation: &'static str,
     ) -> Result<u64, CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(&self.origin, &self.normal, &self.u_axis, &self.u_axis_source),
+            &(
+                &self.origin,
+                &self.normal,
+                &self.u_axis,
+                &self.u_axis_source,
+            ),
             ctx,
             operation,
         )
@@ -393,7 +398,8 @@ pub(super) fn resolve_two_center_semicircle_profile(
     second_entity.construction = false;
     second_entity.endpoint_refs = second_endpoint_refs;
     second_entity.geometry = second_geometry;
-    let sketch_key = ctx.rsplit_once(sketch.as_str(), "#", "split SLDPRT semicircle sketch key")?
+    let sketch_key = ctx
+        .rsplit_once(sketch.as_str(), "#", "split SLDPRT semicircle sketch key")?
         .map_or(sketch.as_str(), |(_, key)| key);
     for (index, (start_ref, end_ref, start, end)) in [
         (
@@ -1189,7 +1195,10 @@ pub(super) fn resolve_connected_marker_arcs(
             Ord::cmp,
             "sort SLDPRT connected arc endpoints",
         )?;
-        ctx.dedup_vec(&mut endpoint_refs, "deduplicate SLDPRT connected arc endpoints")?;
+        ctx.dedup_vec(
+            &mut endpoint_refs,
+            "deduplicate SLDPRT connected arc endpoints",
+        )?;
         let mut component_points = Vec::new();
         let mut missing_point = false;
         for endpoint in &endpoint_refs {
@@ -1234,7 +1243,11 @@ pub(super) fn resolve_connected_marker_arcs(
             component_replacements.push((index, geometry));
         }
         if component_replacements.len() >= 2 {
-            ctx.extend_vec(&mut replacements, component_replacements, "collect SLDPRT connected arc replacements")?;
+            ctx.extend_vec(
+                &mut replacements,
+                component_replacements,
+                "collect SLDPRT connected arc replacements",
+            )?;
         }
     }
     for (index, geometry) in replacements {
@@ -1329,7 +1342,13 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
     for index in &curves {
         let entity = entities[*index].borrow();
         for endpoint in &entity.endpoint_refs {
-            let adjacent = ctx.entry_hash_map(&mut incidence, endpoint.as_str(), "index SLDPRT closed curve endpoints")?.or_default();
+            let adjacent = ctx
+                .entry_hash_map(
+                    &mut incidence,
+                    endpoint.as_str(),
+                    "index SLDPRT closed curve endpoints",
+                )?
+                .or_default();
             ctx.reserve_vec(adjacent, 1, "collect SLDPRT endpoint incidence")?;
             adjacent.push(*index);
         }
@@ -1649,7 +1668,11 @@ pub(super) fn lane_sketch_plane_frames(
             Ord::cmp,
             "sort SLDPRT sketch plane frames",
         )?;
-        ctx.dedup_by_key(&mut candidates, |frame| Ok(reference_plane_frame_key(&frame.as_tuple())), "deduplicate SLDPRT sketch plane frames")?;
+        ctx.dedup_by_key(
+            &mut candidates,
+            |frame| Ok(reference_plane_frame_key(&frame.as_tuple())),
+            "deduplicate SLDPRT sketch plane frames",
+        )?;
         if let [frame] = candidates.as_slice() {
             ctx.admit_hash_map_entry(
                 &mut frames,
@@ -1670,10 +1693,12 @@ pub(super) fn ordered_rectangle_corners(
         return Ok(None);
     };
     let mut storage = ctx.reserve_scoped(0, "hold SLDPRT rectangle coordinates")?;
-    let mut u = storage.with_storage(|| ctx.collect_vec(
-        points.iter().map(|point| point.u),
-        "collect SLDPRT rectangle u coordinates",
-    ))?;
+    let mut u = storage.with_storage(|| {
+        ctx.collect_vec(
+            points.iter().map(|point| point.u),
+            "collect SLDPRT rectangle u coordinates",
+        )
+    })?;
     ctx.stable_sort_by(
         &mut u,
         |value| value,
@@ -1681,10 +1706,12 @@ pub(super) fn ordered_rectangle_corners(
         "sldprt rectangle u sort",
     )?;
     ctx.dedup_vec(&mut u, "deduplicate SLDPRT rectangle u coordinates")?;
-    let mut v = storage.with_storage(|| ctx.collect_vec(
-        points.iter().map(|point| point.v),
-        "collect SLDPRT rectangle v coordinates",
-    ))?;
+    let mut v = storage.with_storage(|| {
+        ctx.collect_vec(
+            points.iter().map(|point| point.v),
+            "collect SLDPRT rectangle v coordinates",
+        )
+    })?;
     ctx.stable_sort_by(
         &mut v,
         |value| value,
@@ -1715,28 +1742,40 @@ fn ordered_tolerant_rectangle_corners(
         return Ok(None);
     };
     let mut storage = ctx.reserve_scoped(0, "hold SLDPRT tolerant rectangle coordinates")?;
-    let mut u = storage.with_storage(|| ctx.collect_vec(
-        points.iter().map(|point| point.u),
-        "collect SLDPRT tolerant rectangle u coordinates",
-    ))?;
+    let mut u = storage.with_storage(|| {
+        ctx.collect_vec(
+            points.iter().map(|point| point.u),
+            "collect SLDPRT tolerant rectangle u coordinates",
+        )
+    })?;
     ctx.stable_sort_by(
         &mut u,
         |value| value,
         f64::total_cmp,
         "sldprt tolerant rectangle u sort",
     )?;
-    ctx.dedup_by(&mut u, |left, right| Ok(same_dimension_length(*left, *right)), "deduplicate SLDPRT tolerant rectangle u coordinates")?;
-    let mut v = storage.with_storage(|| ctx.collect_vec(
-        points.iter().map(|point| point.v),
-        "collect SLDPRT tolerant rectangle v coordinates",
-    ))?;
+    ctx.dedup_by(
+        &mut u,
+        |left, right| Ok(same_dimension_length(*left, *right)),
+        "deduplicate SLDPRT tolerant rectangle u coordinates",
+    )?;
+    let mut v = storage.with_storage(|| {
+        ctx.collect_vec(
+            points.iter().map(|point| point.v),
+            "collect SLDPRT tolerant rectangle v coordinates",
+        )
+    })?;
     ctx.stable_sort_by(
         &mut v,
         |value| value,
         f64::total_cmp,
         "sldprt tolerant rectangle v sort",
     )?;
-    ctx.dedup_by(&mut v, |left, right| Ok(same_dimension_length(*left, *right)), "deduplicate SLDPRT tolerant rectangle v coordinates")?;
+    ctx.dedup_by(
+        &mut v,
+        |left, right| Ok(same_dimension_length(*left, *right)),
+        "deduplicate SLDPRT tolerant rectangle v coordinates",
+    )?;
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
         return Ok(None);
     };
@@ -1794,7 +1833,11 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     }
 
     let mut roster = Vec::new();
-    ctx.extend_from_slice(&mut roster, markers, "collect SLDPRT rectangle marker roster")?;
+    ctx.extend_from_slice(
+        &mut roster,
+        markers,
+        "collect SLDPRT rectangle marker roster",
+    )?;
     ctx.sort_unstable_by_key(
         &mut roster,
         |value| value.offset(),
@@ -2388,7 +2431,10 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
         Ord::cmp,
         "sldprt rectangle cells u sort",
     )?;
-    ctx.dedup_vec(&mut u, "deduplicate SLDPRT dimensioned rectangle u coordinates")?;
+    ctx.dedup_vec(
+        &mut u,
+        "deduplicate SLDPRT dimensioned rectangle u coordinates",
+    )?;
     ctx.sort_unstable_by(
         &mut v,
         |value| value,
@@ -2489,14 +2535,18 @@ fn ordered_compact_line_profile(
         return Ok(None);
     };
     used[0] = true;
-    ctx.push_vec(&mut profile, SketchEntityUse {
-        entity: super::transforms::copy_sketch_entity_identity(
-            ctx,
-            &first.0,
-            "SLDPRT compact line profile",
-        )?,
-        reversed: false,
-    }, "SLDPRT compact line profile")?;
+    ctx.push_vec(
+        &mut profile,
+        SketchEntityUse {
+            entity: super::transforms::copy_sketch_entity_identity(
+                ctx,
+                &first.0,
+                "SLDPRT compact line profile",
+            )?,
+            reversed: false,
+        },
+        "SLDPRT compact line profile",
+    )?;
     let origin = first.3;
     let mut current = first.4;
     while profile.len() < lines.len() {
@@ -2522,14 +2572,18 @@ fn ordered_compact_line_profile(
             return Ok(None);
         }
         used[candidate.0] = true;
-        ctx.push_vec(&mut profile, SketchEntityUse {
-            entity: super::transforms::copy_sketch_entity_identity(
-                ctx,
-                &lines[candidate.0].0,
-                "SLDPRT compact line profile",
-            )?,
-            reversed: candidate.1,
-        }, "SLDPRT compact line profile")?;
+        ctx.push_vec(
+            &mut profile,
+            SketchEntityUse {
+                entity: super::transforms::copy_sketch_entity_identity(
+                    ctx,
+                    &lines[candidate.0].0,
+                    "SLDPRT compact line profile",
+                )?,
+                reversed: candidate.1,
+            },
+            "SLDPRT compact line profile",
+        )?;
         current = candidate.2;
     }
     Ok((current == origin).then_some(profile))

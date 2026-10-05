@@ -25,8 +25,7 @@ fn property_text(
     feature: &Feature,
     name: &str,
 ) -> Result<Option<String>, CodecError> {
-    ctx.get_btree_map(&(feature
-        .properties), name, "look up SLDPRT ordered key")?
+    ctx.get_btree_map(&(feature.properties), name, "look up SLDPRT ordered key")?
         .map(|value| {
             ctx.format_retained(
                 format_args!("{value}"),
@@ -69,11 +68,15 @@ pub(super) fn project_fillet(
                 continue;
             };
             let mut parameter = None;
-            for (name, value) in ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")? {
+            for (name, value) in
+                ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")?
+            {
                 let Some(suffix) = name.as_str().strip_prefix("Position") else {
                     continue;
                 };
-                if ctx.admit_iter(suffix.as_bytes(), "scan SLDPRT fillet position digits")?.all(|byte| byte.is_ascii_digit())
+                if ctx
+                    .admit_iter(suffix.as_bytes(), "scan SLDPRT fillet position digits")?
+                    .all(|byte| byte.is_ascii_digit())
                     && (suffix.len() == 1 || !suffix.starts_with('0'))
                     && suffix.parse::<usize>().ok() == Some(index)
                 {
@@ -109,7 +112,8 @@ pub(super) fn project_fillet(
         )?;
         let points = if valid
             && points.len() >= 2
-            && ctx.admit_iter(&points[..], "scan SLDPRT project_fillet values")?
+            && ctx
+                .admit_iter(&points[..], "scan SLDPRT project_fillet values")?
                 .enumerate()
                 .all(|(expected, (actual, _))| expected == *actual)
         {
@@ -130,12 +134,21 @@ pub(super) fn project_fillet(
         };
         match points {
             None => {
-                if ctx.admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?.map(|(key, _)| key).try_fold(false, |found, name| { Ok::<_, cadmpeg_core::CodecError>(found || ( indexed_name(ctx, name.as_str(), "Radius")? )) })?
+                if ctx
+                    .admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?
+                    .map(|(key, _)| key)
+                    .try_fold(false, |found, name| {
+                        Ok::<_, cadmpeg_core::CodecError>(
+                            found || (indexed_name(ctx, name.as_str(), "Radius")?),
+                        )
+                    })?
                 {
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
-                } else if ctx.admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?.map(|(key, _)| key)
+                } else if ctx
+                    .admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?
+                    .map(|(key, _)| key)
                     .any(|name| matches!(name.as_str(), "Radius" | "D1"))
                 {
                     RadiusSpec::Unresolved {
@@ -144,7 +157,7 @@ pub(super) fn project_fillet(
                 } else {
                     RadiusSpec::Unresolved { form: None }
                 }
-            },
+            }
             Some(points) => RadiusSpec::Variable { points },
         }
     };
@@ -160,12 +173,13 @@ pub(super) fn project_fillet(
     }))
 }
 
-pub(crate) fn fillet_radius_parameter_has_native_display(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn fillet_radius_parameter_has_native_display(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     name: &str,
     expression: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(is_fillet(ctx, feature)?
+    Ok(is_fillet(feature)
         && if variable_fillet(feature) {
             crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
                 ctx, feature, name,
@@ -601,10 +615,11 @@ pub(super) fn project_scale(
         Some(_) => None,
     };
     let factor = |name| {
-        Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(&(feature
-            .parameters), name, "look up SLDPRT ordered key")?
-            .and_then(|value| value.trim().parse::<f64>().ok())
-            .and_then(cadmpeg_ir::scalar::NonZeroReal::new))
+        Ok::<_, cadmpeg_core::CodecError>(
+            ctx.get_btree_map(&(feature.parameters), name, "look up SLDPRT ordered key")?
+                .and_then(|value| value.trim().parse::<f64>().ok())
+                .and_then(cadmpeg_ir::scalar::NonZeroReal::new),
+        )
     };
     let factors = match (
         factor("Factor")?,
@@ -629,11 +644,17 @@ pub(super) fn project_chamfer(
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
     let length = |name, positional| {
-        let value = ctx.get_btree_map(&feature.parameters, name, "look up SLDPRT ordered key")?
+        let value = ctx
+            .get_btree_map(&feature.parameters, name, "look up SLDPRT ordered key")?
             .and_then(|value| parse_positive_length_mm(value));
         match value {
             Some(value) => Ok::<_, CodecError>(Some(value)),
-            None => Ok(ctx.get_btree_map(&feature.parameters, positional, "look up SLDPRT ordered key")?
+            None => Ok(ctx
+                .get_btree_map(
+                    &feature.parameters,
+                    positional,
+                    "look up SLDPRT ordered key",
+                )?
                 .and_then(|value| parse_positive_dimension_length_mm(value))),
         }
     };
@@ -645,10 +666,20 @@ pub(super) fn project_chamfer(
         cadmpeg_core::decode::u64_from_index(feature.content.len()),
         "scan SLDPRT chamfer dimension order",
     )?;
-    let mut ordered_dimensions = feature.content.iter().map(|content| Ok::<_, CodecError>(match content {
-        FeatureContent::Dimension(name) => ctx.get_btree_map(&(feature.parameters), name.as_str(), "look up SLDPRT ordered key")?,
-        FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-    })).filter_map(Result::transpose);
+    let mut ordered_dimensions = feature
+        .content
+        .iter()
+        .map(|content| {
+            Ok::<_, CodecError>(match content {
+                FeatureContent::Dimension(name) => ctx.get_btree_map(
+                    &(feature.parameters),
+                    name.as_str(),
+                    "look up SLDPRT ordered key",
+                )?,
+                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+            })
+        })
+        .filter_map(Result::transpose);
     let ordered_dimensions = (
         ordered_dimensions.next().transpose()?,
         ordered_dimensions.next().transpose()?,
@@ -680,8 +711,14 @@ pub(super) fn project_chamfer(
         Ok::<_, cadmpeg_core::CodecError>(Some(
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
-                    distance: match length("Distance", "D1")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
-                    angle: match parse_bounded_angle_rad(value) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                    distance: match length("Distance", "D1")? {
+                        Some(value) => value,
+                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                    },
+                    angle: match parse_bounded_angle_rad(value) {
+                        Some(value) => value,
+                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                    },
                 }
             } else if let (Some(first), Some(second)) =
                 (length("Distance1", "D1")?, length("Distance2", "D2")?)
@@ -689,7 +726,10 @@ pub(super) fn project_chamfer(
                 ChamferSpec::TwoDistances { first, second }
             } else {
                 ChamferSpec::Distance {
-                    distance: match length("Distance", "D1")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                    distance: match length("Distance", "D1")? {
+                        Some(value) => value,
+                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                    },
                 }
             },
         ))

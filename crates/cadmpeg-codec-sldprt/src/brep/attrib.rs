@@ -14,7 +14,7 @@
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
@@ -80,7 +80,7 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
 }
 
 /// Stream-local attribute definitions with unique names or withheld conflicts.
-type DefinitionTable = HashMap<u16, Option<String>>;
+type DefinitionTable = BTreeMap<u16, Option<String>>;
 
 fn charge_scan(
     ctx: &DecodeContext<'_>,
@@ -96,8 +96,8 @@ fn charge_scan(
 fn definition_candidates(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
-) -> Result<HashMap<u16, Option<Vec<u8>>>, cadmpeg_core::CodecError> {
-    let mut found = HashMap::<u16, Option<Vec<u8>>>::new();
+) -> Result<BTreeMap<u16, Option<Vec<u8>>>, cadmpeg_core::CodecError> {
+    let mut found = BTreeMap::<u16, Option<Vec<u8>>>::new();
     charge_scan(ctx, buf, "scan Parasolid attribute definitions")?;
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x4f) else {
@@ -129,7 +129,8 @@ fn definition_candidates(
             continue;
         };
         if text.is_empty()
-            || ctx.admit_iter(&text[..], "scan SLDPRT definition_candidates values")?
+            || ctx
+                .admit_iter(&text[..], "scan SLDPRT definition_candidates values")?
                 .any(|byte| !byte.is_ascii() || !byte.is_ascii_graphic())
         {
             continue;
@@ -141,25 +142,20 @@ fn definition_candidates(
             continue;
         };
         let family = ctx.copy_retained(text, "copy Parasolid attribute family")?;
-        ctx.admit_hash_map_entry(
+        ctx.entry_btree_map(
             &mut found,
-            &definition,
+            definition,
             "collect Parasolid attribute definitions",
-        )?;
-        match found.entry(definition) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(family));
+        )?
+        .and_modify(|existing| {
+            if existing
+                .as_ref()
+                .is_some_and(|previous| previous != &family)
+            {
+                *existing = None;
             }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous != &family)
-                {
-                    *entry.get_mut() = None;
-                }
-            }
-        }
+        })
+        .or_insert(Some(family));
     }
     Ok(found)
 }
@@ -170,17 +166,24 @@ pub(super) fn definition_table(
     buf: &[u8],
 ) -> Result<DefinitionTable, cadmpeg_core::CodecError> {
     let candidates = definition_candidates(ctx, buf)?;
-    let mut resolved = HashMap::new();
-    ctx.reserve_map(
-        &mut resolved,
-        candidates.len(),
-        "resolve Parasolid attribute definitions",
-    )?;
-    for (node, family) in candidates {
-        resolved.insert(
+    let mut resolved = BTreeMap::new();
+    for (node, family) in ctx.admit_iter(candidates, "resolve Parasolid attribute definitions")? {
+        let family = match family {
+            Some(family) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(family.len()),
+                    "resolve Parasolid attribute definitions",
+                )?;
+                String::from_utf8(family).ok()
+            }
+            None => None,
+        };
+        ctx.insert_btree_map(
+            &mut resolved,
             node,
-            family.and_then(|family| String::from_utf8(family).ok()),
-        );
+            family,
+            "resolve Parasolid attribute definitions",
+        )?;
     }
     Ok(resolved)
 }
@@ -190,16 +193,12 @@ pub(super) fn definition_table(
 fn definitions(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
-) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
+) -> Result<BTreeMap<u16, &'static str>, cadmpeg_core::CodecError> {
     let definitions = definition_table(ctx, buf)?;
-    let admitted = ctx.admit_iter(&definitions, "scan SLDPRT definitions map values")?.map(|(_, value)| value).filter(|name| name.is_some()).count();
-    let mut supported = HashMap::new();
-    ctx.reserve_map(
-        &mut supported,
-        admitted,
-        "collect Parasolid supported definitions",
-    )?;
-    for (&node, family) in ctx.admit_iter(&definitions, "scan Parasolid attribute definition families")? {
+    let mut supported = BTreeMap::new();
+    for (&node, family) in
+        ctx.admit_iter(&definitions, "scan Parasolid attribute definition families")?
+    {
         let Some(family) = family else {
             continue;
         };
@@ -208,7 +207,12 @@ fn definitions(
             LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
             _ => continue,
         };
-        supported.insert(node, family);
+        ctx.insert_btree_map(
+            &mut supported,
+            node,
+            family,
+            "collect Parasolid supported definitions",
+        )?;
     }
     Ok(supported)
 }
@@ -217,8 +221,8 @@ fn definitions(
 fn integer_lists(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
-) -> Result<HashMap<u16, Vec<u32>>, cadmpeg_core::CodecError> {
-    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
+) -> Result<BTreeMap<u16, Vec<u32>>, cadmpeg_core::CodecError> {
+    let mut found = BTreeMap::<u16, Option<Vec<u32>>>::new();
     charge_scan(ctx, buf, "scan Parasolid attribute value lists")?;
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x52) else {
@@ -257,32 +261,27 @@ fn integer_lists(
             ctx.push_vec(&mut (values), value, "decode Parasolid attribute values")?;
         }
         if values.len() == count {
-            ctx.admit_hash_map_entry(&mut found, &node, "collect Parasolid attribute value lists")?;
-            match found.entry(node) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(values));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if entry
-                        .get()
+            ctx.entry_btree_map(&mut found, node, "collect Parasolid attribute value lists")?
+                .and_modify(|existing| {
+                    if existing
                         .as_ref()
                         .is_some_and(|previous| *previous != values)
                     {
-                        *entry.get_mut() = None;
+                        *existing = None;
                     }
-                }
-            }
+                })
+                .or_insert(Some(values));
         }
     }
-    let mut retained = HashMap::new();
-    ctx.reserve_map(
-        &mut retained,
-        found.len(),
-        "retain Parasolid attribute value lists",
-    )?;
-    for (node, values) in found {
+    let mut retained = BTreeMap::new();
+    for (node, values) in ctx.admit_iter(found, "retain Parasolid attribute value lists")? {
         if let Some(values) = values {
-            retained.insert(node, values);
+            ctx.insert_btree_map(
+                &mut retained,
+                node,
+                values,
+                "retain Parasolid attribute value lists",
+            )?;
         }
     }
     Ok(retained)
@@ -293,7 +292,7 @@ fn referenced_payload<'a, F>(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
     from: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
+    lists: &'a BTreeMap<u16, Vec<u32>>,
     accepts: F,
 ) -> Result<Option<&'a [u32]>, cadmpeg_core::CodecError>
 where
@@ -330,7 +329,7 @@ fn atom_payload<'a>(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
     from: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
+    lists: &'a BTreeMap<u16, Vec<u32>>,
 ) -> Result<Option<AtomPayload<'a>>, cadmpeg_core::CodecError> {
     Ok(referenced_payload(ctx, buf, from, lists, |values| {
         ATOM_WIDTHS.contains(&values.len()) && values.get(ATOM_GUARD) == Some(&0)
@@ -348,11 +347,15 @@ pub(super) fn scan(
     buf: &[u8],
 ) -> Result<Vec<RawFaceAtom>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
-    if !ctx.admit_iter(&definitions, "scan SLDPRT scan map values")?.map(|(_, value)| value).any(|name| *name == ATOM_ID) {
+    if !ctx.any_by(
+        definitions.values(),
+        |name| Ok(*name == ATOM_ID),
+        "find Parasolid face atom definitions",
+    )? {
         return Ok(Vec::new());
     }
     let lists = integer_lists(ctx, buf)?;
-    let mut found = HashMap::<u16, Option<RawFaceAtom>>::new();
+    let mut found = BTreeMap::<u16, Option<RawFaceAtom>>::new();
     charge_scan(ctx, buf, "scan Parasolid face atoms")?;
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
@@ -402,32 +405,23 @@ pub(super) fn scan(
             face_attr,
             identity,
         };
-        ctx.admit_hash_map_entry(&mut found, &face_attr, "collect Parasolid face atoms")?;
-        match found.entry(face_attr) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(atom));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
+        ctx.entry_btree_map(&mut found, face_attr, "collect Parasolid face atoms")?
+            .and_modify(|existing| {
+                if existing
                     .as_ref()
                     .is_some_and(|previous| previous.identity != atom.identity)
                 {
-                    *entry.get_mut() = None;
+                    *existing = None;
                 }
-            }
-        }
+            })
+            .or_insert(Some(atom));
     }
-    let mut out = Vec::new();
-    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
-    out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(
-        &mut out,
-        |value| &value.face_attr,
-        Ord::cmp,
-        "sort Parasolid face atoms",
-    )?;
-    Ok(out)
+    // The map orders atoms by face attribute.
+    ctx.collect_vec(
+        ctx.admit_iter(found, "retain Parasolid face atoms")?
+            .filter_map(|(_, atom)| atom),
+        "retain Parasolid face atoms",
+    )
 }
 
 /// Decode every body-level last-modifier binding carried by one stream body.
@@ -436,11 +430,15 @@ pub(super) fn scan_body_modifiers(
     buf: &[u8],
 ) -> Result<Vec<BodyModifier>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
-    if !ctx.admit_iter(&definitions, "scan SLDPRT scan_body_modifiers map values")?.map(|(_, value)| value).any(|name| *name == LAST_BODY_MODIFIER) {
+    if !ctx.any_by(
+        definitions.values(),
+        |name| Ok(*name == LAST_BODY_MODIFIER),
+        "find Parasolid body modifier definitions",
+    )? {
         return Ok(Vec::new());
     }
     let lists = integer_lists(ctx, buf)?;
-    let mut found = HashMap::<u16, Option<BodyModifier>>::new();
+    let mut found = BTreeMap::<u16, Option<BodyModifier>>::new();
     charge_scan(ctx, buf, "scan Parasolid body modifiers")?;
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
@@ -464,8 +462,12 @@ pub(super) fn scan_body_modifiers(
             values.len() == 1 && values[0] > 0
         })?
         else {
-            ctx.admit_hash_map_entry(&mut found, &body_attr, "collect Parasolid body modifiers")?;
-            found.insert(body_attr, None);
+            ctx.insert_btree_map(
+                &mut found,
+                body_attr,
+                None,
+                "collect Parasolid body modifiers",
+            )?;
             continue;
         };
         let modifier = BodyModifier {
@@ -473,36 +475,23 @@ pub(super) fn scan_body_modifiers(
             history_ordinal: values[0],
             target: None,
         };
-        match found.get_mut(&body_attr) {
-            Some(slot)
-                if slot.as_ref().is_some_and(|previous| {
-                    previous.history_ordinal != modifier.history_ordinal
-                }) =>
-            {
-                *slot = None;
-            }
-            Some(None) => {}
-            Some(Some(_)) => {}
-            None => {
-                ctx.admit_hash_map_entry(
-                    &mut found,
-                    &body_attr,
-                    "collect Parasolid body modifiers",
-                )?;
-                found.insert(body_attr, Some(modifier));
-            }
-        }
+        ctx.entry_btree_map(&mut found, body_attr, "collect Parasolid body modifiers")?
+            .and_modify(|existing| {
+                if existing
+                    .as_ref()
+                    .is_some_and(|previous| previous.history_ordinal != modifier.history_ordinal)
+                {
+                    *existing = None;
+                }
+            })
+            .or_insert(Some(modifier));
     }
-    let mut out = Vec::new();
-    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
-    out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(
-        &mut out,
-        |value| &value.body_attr,
-        Ord::cmp,
-        "sort Parasolid body modifiers",
-    )?;
-    Ok(out)
+    // The map orders modifiers by body attribute.
+    ctx.collect_vec(
+        ctx.admit_iter(found, "retain Parasolid body modifiers")?
+            .filter_map(|(_, modifier)| modifier),
+        "retain Parasolid body modifiers",
+    )
 }
 
 #[cfg(test)]

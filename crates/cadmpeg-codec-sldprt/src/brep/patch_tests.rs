@@ -71,7 +71,9 @@ fn analytic_marker_candidate_refusal_preserves_the_resource_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
     let error = super::analytic_marker_candidates(&ctx, &body, 0).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("candidate slot refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("candidate slot refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "collect SLDPRT decoded vector items");
     assert_eq!(limit.additional, 1);

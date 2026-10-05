@@ -103,9 +103,12 @@ fn first_solidworks_envelope_selects_the_written_dialect() {
             br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"/>"#.as_slice(),
         ),
     ];
-    let declaration =
-        crate::container::first_solidworks_envelope(&cadmpeg_test_support::service_decode_context(), sections.iter().map(|(_, payload)| *payload)).unwrap()
-            .and_then(|envelope| envelope.sw_version);
+    let declaration = crate::container::first_solidworks_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        sections.iter().map(|(_, payload)| *payload),
+    )
+    .unwrap()
+    .and_then(|envelope| envelope.sw_version);
     let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
 
     assert_eq!(dialect, crate::dialect::SldprtDialect::SwVersionPre12000);

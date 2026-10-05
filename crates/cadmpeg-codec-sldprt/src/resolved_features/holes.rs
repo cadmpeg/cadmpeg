@@ -34,7 +34,7 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HOLE_POSITION: f64 = 1.0e-8;
 const EPS_HOLE_GEOMETRY: f64 = 1.0e-9;
@@ -825,12 +825,12 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
     for history in histories {
         ctx.charge_work(1, OPERATION)?;
         let mut features_by_id = HashMap::new();
-        let mut features_by_source = HashMap::new();
+        let mut features_by_source = BTreeMap::new();
         for feature in &history.features {
             ctx.charge_work(1, OPERATION)?;
             ctx.insert_hash_map(&mut features_by_id, feature.id.as_str(), feature, OPERATION)?;
             if let Some(source) = feature.source_id {
-                ctx.insert_hash_map(&mut features_by_source, source, feature, OPERATION)?;
+                ctx.insert_btree_map(&mut features_by_source, source, feature, OPERATION)?;
             }
         }
         let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
@@ -1654,15 +1654,12 @@ pub(crate) fn project_profiled_hole_constructions(
                 ctx.charge_work(
                     u64_from_index(native.len())
                         .checked_add(u64_from_index(sketch.as_str().len()))
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                        })?,
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     OPERATION,
                 )?;
                 model_sketch_storage.with_storage(|| {
                     let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                    let identity_text =
-                        ctx.format_retained(format_args!("{sketch}"), OPERATION)?;
+                    let identity_text = ctx.format_retained(format_args!("{sketch}"), OPERATION)?;
                     ctx.charge_work(
                         cadmpeg_core::decode::u64_from_index(identity_text.len()),
                         "validate SLDPRT holes identity",
@@ -5437,9 +5434,9 @@ fn match_marker_loci_to_bore_axes(
     }
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let quantize_scalar = |value: f64| GridCoordinate::new(value, QUANTUM);
-    let mut grouped = HashMap::<
+    let mut grouped = BTreeMap::<
         [GridCoordinate; 3],
-        HashMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>,
+        BTreeMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>,
     >::new();
     for surface in surfaces {
         ctx.charge_work(1, OPERATION)?;
@@ -5473,14 +5470,12 @@ fn match_marker_loci_to_bore_axes(
             quantize_scalar(closest.y),
             quantize_scalar(closest.z),
         ];
-        ctx.admit_hash_map_entry(&mut grouped, &axis_key, OPERATION)?;
-        let lines = grouped.entry(axis_key).or_default();
-        ctx.admit_hash_map_entry(lines, &point_key, OPERATION)?;
-        let origins = lines.entry(point_key).or_default();
-        ctx.reserve_vec(origins, 1, OPERATION)?;
-        origins.push((origin, axis));
+        let lines = ctx
+            .entry_btree_map(&mut grouped, axis_key, OPERATION)?
+            .or_default();
+        ctx.push_btree_group(lines, point_key, (origin, axis), OPERATION, OPERATION)?;
     }
-    let mut solutions = HashMap::new();
+    let mut solutions = BTreeMap::new();
     'lines: for (_, lines) in ctx.admit_iter(&grouped, OPERATION)? {
         let mut candidates = Vec::new();
         for (point, origins) in ctx.admit_iter(lines, OPERATION)? {
@@ -5534,7 +5529,7 @@ fn match_marker_loci_to_bore_axes(
             }
             continue;
         }
-        let mut subsets = HashSet::new();
+        let mut subsets = BTreeSet::new();
         if (BoreSubsetSearch {
             ctx,
             marker_loci,
@@ -5554,7 +5549,9 @@ fn match_marker_loci_to_bore_axes(
             }
         }
     }
-    let mut solutions = solutions.into_values();
+    let mut solutions = ctx
+        .admit_iter(solutions, OPERATION)?
+        .map(|(_, solution)| solution);
     Ok(match (solutions.next(), solutions.next()) {
         (Some(solution), None) => Some(solution),
         _ => None,
@@ -5565,7 +5562,7 @@ fn retain_bore_solution(
     ctx: &DecodeContext<'_>,
     candidates: &[([GridCoordinate; 3], FinitePoint3, FeatureDirection3)],
     indices: impl Iterator<Item = usize>,
-    solutions: &mut HashMap<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>,
+    solutions: &mut BTreeMap<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>,
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "retain SLDPRT bore pattern solution";
     let quantize_scalar = |value: f64| GridCoordinate::new(value, EPS_HOLE_POSITION);
@@ -5586,7 +5583,7 @@ fn retain_bore_solution(
         ]);
     }
     ctx.charge_work(u64_from_index(key.len()), OPERATION)?;
-    ctx.insert_hash_map(solutions, key, placements, OPERATION)?;
+    ctx.insert_btree_map(solutions, key, placements, OPERATION)?;
     Ok(solutions.len() > 1)
 }
 
@@ -5628,7 +5625,7 @@ impl BoreSubsetSearch<'_, '_> {
         index: usize,
         assigned: &mut Vec<usize>,
         used: &mut HashSet<usize>,
-        subsets: &mut HashSet<Vec<usize>>,
+        subsets: &mut BTreeSet<Vec<usize>>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "search SLDPRT congruent bore subsets";
         let _depth = self.ctx.enter_nested(OPERATION)?;
@@ -5646,7 +5643,7 @@ impl BoreSubsetSearch<'_, '_> {
                 .sort_unstable_by(&mut subset, |value| value, Ord::cmp, OPERATION)?;
             self.ctx
                 .charge_work(u64_from_index(subset.len()), OPERATION)?;
-            self.ctx.insert_hash_set(subsets, subset, OPERATION)?;
+            self.ctx.insert_btree_set(subsets, subset, OPERATION)?;
             return Ok(subsets.len() > 1);
         }
         for choice in 0..choices {
@@ -5709,7 +5706,7 @@ fn has_unique_marker_loci_subset(
     if candidate_loci.is_empty() || candidate_loci.len() > marker_loci.len() {
         return Ok(false);
     }
-    let mut subsets = HashSet::new();
+    let mut subsets = BTreeSet::new();
     (BoreSubsetSearch {
         ctx,
         marker_loci,

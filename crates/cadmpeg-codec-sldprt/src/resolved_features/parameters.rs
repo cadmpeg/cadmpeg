@@ -314,7 +314,8 @@ pub(crate) fn enrich_history_parameters<'a>(
                 name.as_str(),
                 "lookup existing SLDPRT parameter",
             )? {
-                if !native_scalar_matches_discrete_parameter(feature, name, expression, first) {
+                if !native_scalar_matches_discrete_parameter(ctx, feature, name, expression, first)?
+                {
                     continue;
                 }
             }
@@ -328,7 +329,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                         "lookup existing SLDPRT parameter",
                     )?
                     .map(String::as_str);
-                crate::history::parameters::format_native_scalar(feature, name, first, previous)
+                crate::history::parameters::format_native_scalar(
+                    ctx, feature, name, first, previous,
+                )?
             }
             ScalarUnit::Length => {
                 let previous = ctx
@@ -341,7 +344,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                 if previous.is_some_and(|expression| {
                     crate::history::literals::strip_diameter_modifier(expression).is_some()
                 }) {
-                    crate::history::parameters::format_native_scalar(feature, name, first, previous)
+                    crate::history::parameters::format_native_scalar(
+                        ctx, feature, name, first, previous,
+                    )?
                 } else {
                     cadmpeg_ir::scalar::Length::new(first * 1000.0)
                         .map(crate::history::literals::format_length_mm)
@@ -429,14 +434,14 @@ fn scalar_unit_from_feature_parameter(
             Ok(Some(ScalarUnit::Angle))
         } else {
             Ok(
-                crate::history::literals::parse_dimension_display_length(expression)
+                crate::history::literals::parse_dimension_display_length(ctx, expression)?
                     .map(|_| ScalarUnit::Length),
             )
         };
     }
     if crate::history::project::modify::fillet_radius_parameter_has_native_display(
-        feature, name, expression,
-    ) {
+        ctx, feature, name, expression,
+    )? {
         return Ok(Some(ScalarUnit::Length));
     }
     Ok(None)
@@ -475,20 +480,25 @@ pub(super) fn value_only_scalar_offset(
 }
 
 fn native_scalar_matches_discrete_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &crate::records::Feature,
     name: &str,
     expression: &str,
     value: f64,
-) -> bool {
-    match crate::history::parameters::parse_native_parameter_literal(feature, name, expression) {
-        Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-            crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
-        }
-        Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
-            value == if expected { 1.0 } else { 0.0 }
-        }
-        _ => true,
-    }
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(
+        match crate::history::parameters::parse_native_parameter_literal(
+            ctx, feature, name, expression,
+        )? {
+            Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+                crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
+            }
+            Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
+                value == if expected { 1.0 } else { 0.0 }
+            }
+            _ => true,
+        },
+    )
 }
 
 pub(crate) fn sync_changed_feature_scalars(
@@ -553,10 +563,11 @@ pub(crate) fn sync_changed_feature_scalars(
                     continue;
                 };
                 let value = match crate::history::parameters::parse_native_parameter_literal(
+                    ctx,
                     feature,
                     name.as_str(),
                     expression,
-                ) {
+                )? {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
                     Some(ParameterValue::Real(value)) => value.get(),

@@ -13,7 +13,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn scalar_name_value<'a>(
     ctx: &DecodeContext<'_>,
@@ -1275,7 +1275,7 @@ pub(super) fn bind_detached_relation_drivers(
             )
         })?;
     }
-    let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
+    let mut candidates = BTreeMap::<(String, String), Vec<usize>>::new();
     for (index, relation) in ctx
         .admit_iter(&*relations, "match SLDPRT detached relation candidates")?
         .enumerate()
@@ -1323,7 +1323,7 @@ pub(super) fn bind_detached_relation_drivers(
             ))
         })?;
         temporary.with_storage(|| {
-            ctx.push_hash_group(
+            ctx.push_btree_group(
                 &mut candidates,
                 key,
                 index,

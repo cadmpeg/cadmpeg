@@ -7,70 +7,38 @@ use super::terminal_wide_geometry_locus_profile_vertex;
 use cadmpeg_ir::units::FiniteVector;
 
 fn marker_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
-    super::standard_marker_result(super::marker_coordinates(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::marker_coordinates(payload, offset)
 }
 
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::math::Point3> {
-    super::standard_marker_result(super::marker_spatial_coordinates(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::marker_spatial_coordinates(payload, offset)
 }
 
 fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
-    super::standard_marker_result(super::marker_spatial_coordinate_offset(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::marker_spatial_coordinate_offset(payload, offset)
 }
 
 fn spatial_relation_marker_coordinates(
     payload: &[u8],
     offset: usize,
 ) -> Option<cadmpeg_ir::math::Point3> {
-    super::standard_marker_result(super::spatial_relation_marker_coordinates(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::spatial_relation_marker_coordinates(payload, offset)
 }
 
 fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    super::standard_marker_result(super::marker_local_id(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::marker_local_id(payload, offset)
 }
 
 fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    super::standard_marker_result(super::compact_legacy_profile_vertex(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::compact_legacy_profile_vertex(payload, offset)
 }
 
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    super::standard_marker_result(super::linked_profile_vertex(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::linked_profile_vertex(payload, offset)
 }
 
 fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    super::standard_marker_result(super::geometry_locus_profile_vertex(
-        &super::StandardMarkerAdmission,
-        payload,
-        offset,
-    ))
+    super::geometry_locus_profile_vertex(payload, offset)
 }
 
 fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {

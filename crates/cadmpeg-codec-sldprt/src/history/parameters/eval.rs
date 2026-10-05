@@ -43,13 +43,17 @@ enum ParameterAliasMap<'a> {
 }
 
 impl ParameterAliasMap<'_> {
-    fn get(&self, ctx: &DecodeContext<'_>, alias: &str) -> Result<Option<&Option<ParameterId>>, CodecError> {
-    match self {
-        Self::Layered(aliases) => aliases.get(ctx, alias),
-        #[cfg(test)]
-        Self::Flat(aliases) => ctx.get_hash_map(aliases, alias, "look up SLDPRT hash key"),
+    fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        alias: &str,
+    ) -> Result<Option<&Option<ParameterId>>, CodecError> {
+        match self {
+            Self::Layered(aliases) => aliases.get(ctx, alias),
+            #[cfg(test)]
+            Self::Flat(aliases) => ctx.get_hash_map(aliases, alias, "look up SLDPRT hash key"),
+        }
     }
-}
 }
 
 impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
@@ -207,7 +211,11 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                             return Err(ExpressionFailure::NoValue);
                         }
                     }
-                    self.ctx.push_vec(&mut (arguments), self.comparison()?, "collect SLDPRT decoded vector items")?;
+                    self.ctx.push_vec(
+                        &mut (arguments),
+                        self.comparison()?,
+                        "collect SLDPRT decoded vector items",
+                    )?;
                 }
                 self.skip_space()?;
                 if !self.take(')') {
@@ -222,9 +230,14 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             }
         }
         let referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
-            let id = self.aliases.get(self.ctx, token)?.and_then(Option::as_ref)
+            let id = self
+                .aliases
+                .get(self.ctx, token)?
+                .and_then(Option::as_ref)
                 .ok_or(ExpressionFailure::NoValue)?;
-            let value = self.ctx.get_hash_map(self.values, id, "look up SLDPRT hash key")?
+            let value = self
+                .ctx
+                .get_hash_map(self.values, id, "look up SLDPRT hash key")?
                 .ok_or(ExpressionFailure::NoValue)?;
             Ok(value.try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
         };
@@ -311,11 +324,19 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             while cursor < end {
                 let rest = &self.input[cursor..end];
                 if rest.starts_with("\"\"") {
-                    self.ctx.push_retained_char(&mut value, '"', "append SLDPRT decoded character")?;
+                    self.ctx.push_retained_char(
+                        &mut value,
+                        '"',
+                        "append SLDPRT decoded character",
+                    )?;
                     cursor += 2;
                 } else {
                     let character = rest.chars().next().ok_or(ExpressionFailure::NoValue)?;
-                    self.ctx.push_retained_char(&mut value, character, "append SLDPRT decoded character")?;
+                    self.ctx.push_retained_char(
+                        &mut value,
+                        character,
+                        "append SLDPRT decoded character",
+                    )?;
                     cursor += character.len_utf8();
                 }
             }

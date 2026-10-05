@@ -72,7 +72,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["TrimSurface", "SurfaceTrim"])?;
+            require_same_family(existing, &feature.id, &["TrimSurface", "SurfaceTrim"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             properties.insert(cadmpeg_core::nonblank_literal!("Tool"), tool);
@@ -102,7 +102,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
+            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
             let distance = distance.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved surface extension distance",
@@ -164,7 +164,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["RuledSurface", "SurfaceRuled"])?;
+            require_same_family(existing, &feature.id, &["RuledSurface", "SurfaceRuled"])?;
             let (mode_name, direction, distance) = match mode {
                 RuledSurfaceMode::Normal { distance } => ("Normal", None, *distance),
                 RuledSurfaceMode::Tangent { distance } => ("Tangent", None, *distance),
@@ -243,7 +243,10 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             }
-            if match existing { Some(record) => !feature_family(self.ctx, record, "Shell")?, None => false } {
+            if match existing {
+                Some(record) => !feature_family(record, "Shell"),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
@@ -312,11 +315,14 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
             let selection = face_selection_value(faces);
             if selection.is_none()
                 && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
-                || match existing { Some(record) => {
-                    !feature_family(self.ctx, record, "Thicken")?
-                        && !feature_family(self.ctx, record, "Thickness")?
-                        && !feature_input_class(record, NativeClassKind::Thicken)
-                }, None => false }
+                || match existing {
+                    Some(record) => {
+                        !feature_family(record, "Thicken")
+                            && !feature_family(record, "Thickness")
+                            && !feature_input_class(record, NativeClassKind::Thicken)
+                    }
+                    None => false,
+                }
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported thicken semantics",
@@ -396,7 +402,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["OffsetSurface"])?;
+            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
             let distance = distance.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved surface offset",
@@ -448,7 +454,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["KnitSurface", "Knit"])?;
+            require_same_family(existing, &feature.id, &["KnitSurface", "Knit"])?;
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
@@ -527,7 +533,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(self.ctx, existing, &feature.id, &["FilledSurface", "FillSurface"])?;
+            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), boundary);
             properties.insert(
@@ -581,8 +587,10 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                 native.is_some()
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
-            if match existing { Some(record) => !feature_family(self.ctx, record, "Draft")?, None => false }
-                || pull_plane.is_some()
+            if match existing {
+                Some(record) => !feature_family(record, "Draft"),
+                None => false,
+            } || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())
                 || existing.is_none()

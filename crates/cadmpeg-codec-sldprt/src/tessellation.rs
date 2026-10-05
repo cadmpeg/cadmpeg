@@ -245,22 +245,42 @@ pub(crate) struct PersistentFaceBinding {
 
 impl DisplayFace {
     /// Return the source ID only when all duplicated references agree.
-    pub(crate) fn feature_source_id(&self, ctx: &DecodeContext<'_>) -> Result<Option<FeatureSourceId>, cadmpeg_core::CodecError> {
-        let mut sources = ctx.admit_iter(&self.surface_references, "scan SLDPRT display feature source references")?
+    pub(crate) fn feature_source_id(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<FeatureSourceId>, cadmpeg_core::CodecError> {
+        let mut sources = ctx
+            .admit_iter(
+                &self.surface_references,
+                "scan SLDPRT display feature source references",
+            )?
             .map(PersistentSurfaceReference::feature_source_id);
         let Some(source) = sources.next() else {
             return Ok(None);
         };
-        Ok(sources.all(|candidate| candidate == source).then_some(source))
+        Ok(sources
+            .all(|candidate| candidate == source)
+            .then_some(source))
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
-    pub(crate) fn persistent_surface_identity(&self, ctx: &DecodeContext<'_>) -> Result<Option<&PersistentFaceIdentity>, cadmpeg_core::CodecError> {
-        let mut references = ctx.admit_iter(&self.surface_references, "scan SLDPRT display persistent surface references")?;
-        let Some(first) = references.next().and_then(PersistentSurfaceReference::complete_identity) else {
+    pub(crate) fn persistent_surface_identity(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<&PersistentFaceIdentity>, cadmpeg_core::CodecError> {
+        let mut references = ctx.admit_iter(
+            &self.surface_references,
+            "scan SLDPRT display persistent surface references",
+        )?;
+        let Some(first) = references
+            .next()
+            .and_then(PersistentSurfaceReference::complete_identity)
+        else {
             return Ok(None);
         };
-        Ok(references.all(|reference| reference.complete_identity() == Some(first)).then_some(first))
+        Ok(references
+            .all(|reference| reference.complete_identity() == Some(first))
+            .then_some(first))
     }
 }
 
@@ -294,7 +314,8 @@ pub(crate) fn class_intervals(
         let Some(name_bytes) = payload.get(offset + 6..offset + 6 + length) else {
             continue;
         };
-        if !ctx.admit_iter(&name_bytes[..], "scan SLDPRT class_intervals values")?
+        if !ctx
+            .admit_iter(&name_bytes[..], "scan SLDPRT class_intervals values")?
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
         {
             continue;
@@ -371,7 +392,10 @@ fn scene_classes(
         ) {
             continue;
         }
-        for source in ctx.admit_iter(&class.source_ids, "scan SLDPRT scene class source ids")?.copied() {
+        for source in ctx
+            .admit_iter(&class.source_ids, "scan SLDPRT scene class source ids")?
+            .copied()
+        {
             let name = ctx.copy_retained_text(&class.name, "retain SLDPRT scene class name")?;
             ctx.push_vec(&mut classes, (source, name), "collect SLDPRT scene classes")?;
         }
@@ -416,36 +440,69 @@ pub(crate) fn auxiliary_channels_are_consistent(
     strips: &[usize],
     channels: &[TessellationChannel],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let [b, c, d] = channels else { return Ok(false) };
+    let [b, c, d] = channels else {
+        return Ok(false);
+    };
     if (b.item_size(), b.kind(), b.flags()) != (4, 8, 2)
         || (c.item_size(), c.kind(), c.flags()) != (4, 8, 2)
         || (d.item_size(), d.kind(), d.flags()) != (1, 8, 2)
     {
         return Ok(false);
     }
-    let Some(endpoint_count) = ctx.admit_iter(strips, "sum SLDPRT auxiliary channel endpoints")?.try_fold(0usize, |total, length| {
-        total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
-    }) else {
+    let Some(endpoint_count) = ctx
+        .admit_iter(strips, "sum SLDPRT auxiliary channel endpoints")?
+        .try_fold(0usize, |total, length| {
+            total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
+        })
+    else {
         return Ok(false);
     };
-    let width = std::num::NonZeroUsize::new(4).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero auxiliary channel width"))?;
-    let c_len = c.data().len().checked_sub(c.data().len() % 4).ok_or_else(|| ctx.refuse_codec_limit("bound SLDPRT auxiliary endpoint bytes", u64::MAX - 1, u64::MAX))?;
-    let b_len = b.data().len().checked_sub(b.data().len() % 4).ok_or_else(|| ctx.refuse_codec_limit("bound SLDPRT auxiliary channel bytes", u64::MAX - 1, u64::MAX))?;
+    let width = std::num::NonZeroUsize::new(4)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero auxiliary channel width"))?;
+    let c_len = c
+        .data()
+        .len()
+        .checked_sub(c.data().len() % 4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "bound SLDPRT auxiliary endpoint bytes",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    let b_len = b
+        .data()
+        .len()
+        .checked_sub(b.data().len() % 4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "bound SLDPRT auxiliary channel bytes",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
     let stored_list_c_matches = c_len / 4 == strips.len()
-        && ctx.admit_iter(&c.data()[..c_len], "scan SLDPRT auxiliary endpoint bytes")?.chunks(width).zip(ctx.admit_iter(strips, "scan SLDPRT auxiliary endpoint lengths")?).all(|(bytes, length)| {
-            length.checked_mul(2).and_then(|count| count.checked_sub(2))
-                == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
-        });
+        && ctx
+            .admit_iter(&c.data()[..c_len], "scan SLDPRT auxiliary endpoint bytes")?
+            .chunks(width)
+            .zip(ctx.admit_iter(strips, "scan SLDPRT auxiliary endpoint lengths")?)
+            .all(|(bytes, length)| {
+                length.checked_mul(2).and_then(|count| count.checked_sub(2))
+                    == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
+            });
     let counts = (
         usize::try_from(b.count()).ok(),
         usize::try_from(d.count()).ok(),
     );
-    Ok((counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
-        && usize::try_from(c.count()).ok() == Some(strips.len())
-        && stored_list_c_matches
-        && ctx.admit_iter(&b.data()[..b_len], "scan SLDPRT auxiliary channel scalars")?
-            .chunks(width)
-            .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite)))
+    Ok(
+        (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
+            && usize::try_from(c.count()).ok() == Some(strips.len())
+            && stored_list_c_matches
+            && ctx
+                .admit_iter(&b.data()[..b_len], "scan SLDPRT auxiliary channel scalars")?
+                .chunks(width)
+                .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite)),
+    )
 }
 
 /// The six descriptor channels of one display-list table, read as lanes.
@@ -511,7 +568,11 @@ fn probe_table(
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
-                ctx.push_vec(&mut (strips), cadmpeg_core::decode::index_from_u32(length), "decode display-list strips")?;
+                ctx.push_vec(
+                    &mut (strips),
+                    cadmpeg_core::decode::index_from_u32(length),
+                    "decode display-list strips",
+                )?;
             }
         } else if index == 1 && item_size == 12 && kind == 100 {
             ctx.reserve_capacity(&mut vertices, count, "decode display-list vertices")?;
@@ -525,7 +586,11 @@ fn probe_table(
                 let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
                     return Ok(None);
                 };
-                ctx.push_vec(&mut (vertices), Point3::new(x * 1000.0, y * 1000.0, z * 1000.0), "decode display-list vertices")?;
+                ctx.push_vec(
+                    &mut (vertices),
+                    Point3::new(x * 1000.0, y * 1000.0, z * 1000.0),
+                    "decode display-list vertices",
+                )?;
             }
         } else if index == 2 && item_size == 12 && kind == 100 {
             ctx.reserve_capacity(&mut normals, count, "decode display-list normals")?;
@@ -539,7 +604,11 @@ fn probe_table(
                 let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
                     return Ok(None);
                 };
-                ctx.push_vec(&mut (normals), Vector3::new(x, y, z), "decode display-list normals")?;
+                ctx.push_vec(
+                    &mut (normals),
+                    Vector3::new(x, y, z),
+                    "decode display-list normals",
+                )?;
             }
         }
         at = end;
@@ -722,13 +791,19 @@ pub(crate) fn section_display_faces(
 /// Both forms begin with two u32 cells. The extended form then carries a
 /// fixed 32-byte extension. A compact table begins with item
 /// size 4 at the same position, so it cannot satisfy the extension grammar.
-fn descriptor_table_offset(ctx: &DecodeContext<'_>, payload: &[u8], at: usize) -> Result<usize, cadmpeg_core::CodecError> {
+fn descriptor_table_offset(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    at: usize,
+) -> Result<usize, cadmpeg_core::CodecError> {
     let extended = View::u32_le_at(payload, at + extended_face::FORM) == Some(1)
         && View::u32_le_at(payload, at + extended_face::ZERO_AT_12) == Some(0)
         && View::u32_le_at(payload, at + extended_face::ZERO_AT_16) == Some(0)
         && View::u32_le_at(payload, at + extended_face::FORM_TOKEN).is_some_and(|token| token != 0)
         && match payload.get(at + extended_face::ZERO_TAIL..at + extended_face::LEN) {
-            Some(tail) => ctx.admit_iter(tail, "scan SLDPRT extended display descriptor tail")?.all(|byte| *byte == 0),
+            Some(tail) => ctx
+                .admit_iter(tail, "scan SLDPRT extended display descriptor tail")?
+                .all(|byte| *byte == 0),
             None => false,
         };
     Ok(if extended {
@@ -761,7 +836,12 @@ fn parse_table_sequence(
     ctx.reserve_vec(&mut meshes, 1, "collect display-list tables")?;
     meshes.push((first_start, at, mesh));
     while at + 16 <= limit {
-        let Some(relative) = ctx.admit_iter(&payload[at..limit], "scan SLDPRT subsequent display table")?.windows(std::num::NonZeroUsize::new(4).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
+        let Some(relative) = ctx
+            .admit_iter(&payload[at..limit], "scan SLDPRT subsequent display table")?
+            .windows(
+                std::num::NonZeroUsize::new(4)
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
+            )
             .position(|window| window == [4, 0, 0, 0])
         else {
             break;
@@ -868,7 +948,10 @@ fn persistent_surface_references(
             trailing_fields.pop();
         }
         let mut numeric_fields = Some(Vec::new());
-        for field in ctx.admit_iter(&trailing_fields, "scan SLDPRT trailing_fields values")?.copied() {
+        for field in ctx
+            .admit_iter(&trailing_fields, "scan SLDPRT trailing_fields values")?
+            .copied()
+        {
             let Ok(value) = field.parse::<i32>() else {
                 numeric_fields = None;
                 break;
@@ -895,14 +978,30 @@ fn persistent_surface_references(
     Ok(references)
 }
 
-pub(crate) fn summary_for_faces(ctx: &DecodeContext<'_>, faces: &[DisplayFace]) -> Result<Summary, cadmpeg_core::CodecError> {
-    let vertices = ctx.admit_iter(faces, "sum SLDPRT display face vertices")?
-        .try_fold(0_usize, |total, face| total.checked_add(face.mesh.vertex_count()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sum SLDPRT display face vertices", u64::MAX - 1, u64::MAX))?;
-    let triangles = ctx.admit_iter(faces, "sum SLDPRT display face triangles")?
-        .try_fold(0_usize, |total, face| total.checked_add(face.mesh.triangle_count()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sum SLDPRT display face triangles", u64::MAX - 1, u64::MAX))?;
-    Ok(Summary { vertices, triangles })
+pub(crate) fn summary_for_faces(
+    ctx: &DecodeContext<'_>,
+    faces: &[DisplayFace],
+) -> Result<Summary, cadmpeg_core::CodecError> {
+    let vertices = ctx
+        .admit_iter(faces, "sum SLDPRT display face vertices")?
+        .try_fold(0_usize, |total, face| {
+            total.checked_add(face.mesh.vertex_count())
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("sum SLDPRT display face vertices", u64::MAX - 1, u64::MAX)
+        })?;
+    let triangles = ctx
+        .admit_iter(faces, "sum SLDPRT display face triangles")?
+        .try_fold(0_usize, |total, face| {
+            total.checked_add(face.mesh.triangle_count())
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("sum SLDPRT display face triangles", u64::MAX - 1, u64::MAX)
+        })?;
+    Ok(Summary {
+        vertices,
+        triangles,
+    })
 }
 
 struct SurfaceCandidate<'a> {
@@ -926,7 +1025,10 @@ pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    for face in ctx.admit_iter(&model.faces, "scan SLDPRT assign_unique_surface_owners values")? {
+    for face in ctx.admit_iter(
+        &model.faces,
+        "scan SLDPRT assign_unique_surface_owners values",
+    )? {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -957,7 +1059,12 @@ pub(crate) fn assign_unique_surface_owners(
     let mut shell_bodies = HashMap::new();
     for shell in ctx.admit_iter(&model.shells, "index SLDPRT tessellation shells")? {
         if let Some(body) = ctx.get_hash_map(&regions, &shell.region, "look up SLDPRT hash key")? {
-            ctx.insert_hash_map(&mut shell_bodies, &shell.id, *body, "index SLDPRT tessellation shells")?;
+            ctx.insert_hash_map(
+                &mut shell_bodies,
+                &shell.id,
+                *body,
+                "index SLDPRT tessellation shells",
+            )?;
         }
     }
     let body_transforms = collect_index(
@@ -1001,6 +1108,11 @@ pub(crate) fn assign_unique_surface_owners(
             .map(|curve| (&curve.id, &curve.geometry)),
         "index SLDPRT tessellation curves",
     )?;
+    let coordinate_scale = ctx
+        .admit_iter(&model.points, "measure SLDPRT tessellation coordinates")?
+        .map(|point| point.position().get())
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(1.0_f64, f64::max);
     let topology = TrimTopology {
         loops: &loops,
         coedges: &coedges,
@@ -1008,15 +1120,27 @@ pub(crate) fn assign_unique_surface_owners(
         vertices: &vertices,
         points: &points,
         curves: &curves,
+        coordinate_scale,
     };
     let mut candidates = Vec::new();
     for face in &model.faces {
         ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
         let candidate = (|| -> Result<_, cadmpeg_core::CodecError> {
-            let body = *match ctx.get_hash_map(&(shell_bodies), &face.shell, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-            let inverse = match ctx.get_hash_map(&(body_transforms), body, "look up SLDPRT hash key")?.copied().flatten() {
+            let body =
+                *match ctx.get_hash_map(&(shell_bodies), &face.shell, "look up SLDPRT hash key")? {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                };
+            let inverse = match ctx
+                .get_hash_map(&(body_transforms), body, "look up SLDPRT hash key")?
+                .copied()
+                .flatten()
+            {
                 Some(transform) if transform.is_proper_rigid() => {
-                    match transform.try_inverse_affine().ok() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }
+                    match transform.try_inverse_affine().ok() {
+                        Some(value) => value,
+                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                    }
                 }
                 Some(_) => return Ok::<_, cadmpeg_core::CodecError>(None),
                 None => cadmpeg_ir::transform::Transform::identity(),
@@ -1024,7 +1148,14 @@ pub(crate) fn assign_unique_surface_owners(
             Ok::<_, cadmpeg_core::CodecError>(Some(SurfaceCandidate {
                 face: &face.id,
                 body,
-                surface: *match ctx.get_hash_map(&(surfaces), &face.surface, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                surface: *match ctx.get_hash_map(
+                    &(surfaces),
+                    &face.surface,
+                    "look up SLDPRT hash key",
+                )? {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                },
                 tolerance: face
                     .tolerance
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
@@ -1048,7 +1179,11 @@ pub(crate) fn assign_unique_surface_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertex_count() == 0 {
             continue;
         }
-        let coordinate_scale = ctx.admit_iter(&mesh.vertices(), "scan SLDPRT assign_unique_surface_owners values")?
+        let coordinate_scale = ctx
+            .admit_iter(
+                &mesh.vertices(),
+                "scan SLDPRT assign_unique_surface_owners values",
+            )?
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
         let quantization_tolerance =
@@ -1092,12 +1227,18 @@ pub(crate) fn assign_unique_surface_owners(
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
             _ => {
-                if ctx.admit_iter(&owners[..], "scan SLDPRT assign_unique_surface_owners values")?.any(|candidate| {
-                    candidate
-                        .surface
-                        .solved()
-                        .is_some_and(contains_nurbs_surface)
-                }) {
+                if ctx
+                    .admit_iter(
+                        &owners[..],
+                        "scan SLDPRT assign_unique_surface_owners values",
+                    )?
+                    .any(|candidate| {
+                        candidate
+                            .surface
+                            .solved()
+                            .is_some_and(contains_nurbs_surface)
+                    })
+                {
                     continue;
                 }
                 let Some((index, deflection)) =
@@ -1151,12 +1292,14 @@ fn approximate_surface_owner(
     }
 
     let mut fits = Vec::new();
-    for outcome in ctx.admit_iter(candidates, "scan SLDPRT surface fit candidates")?
+    for outcome in ctx
+        .admit_iter(candidates, "scan SLDPRT surface fit candidates")?
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
             let mesh_vertices = mesh.vertices();
-            let vertices = match ctx.admit_iter(&mesh_vertices, "scan SLDPRT surface fit vertices") {
+            let vertices = match ctx.admit_iter(&mesh_vertices, "scan SLDPRT surface fit vertices")
+            {
                 Ok(vertices) => vertices,
                 Err(limit) => return Some(Err(cadmpeg_core::CodecError::from(limit))),
             };
@@ -1240,15 +1383,16 @@ fn approximate_trimmed_surface_owner(
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
-
     let mut fits = Vec::new();
-    for outcome in ctx.admit_iter(candidates, "scan SLDPRT surface fit candidates")?
+    for outcome in ctx
+        .admit_iter(candidates, "scan SLDPRT surface fit candidates")?
         .enumerate()
         .filter_map(|(index, candidate)| {
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
             let mesh_vertices = mesh.vertices();
-            let vertices = match ctx.admit_iter(&mesh_vertices, "scan SLDPRT trimmed fit vertices") {
+            let vertices = match ctx.admit_iter(&mesh_vertices, "scan SLDPRT trimmed fit vertices")
+            {
                 Ok(vertices) => vertices,
                 Err(limit) => return Some(Err(cadmpeg_core::CodecError::from(limit))),
             };
@@ -1356,13 +1500,25 @@ pub(crate) fn assign_persistent_owners(
     let mut shell_bodies = HashMap::new();
     for shell in ctx.admit_iter(&model.shells, "index SLDPRT tessellation shells")? {
         if let Some(body) = ctx.get_hash_map(&regions, &shell.region, "look up SLDPRT hash key")? {
-            ctx.insert_hash_map(&mut shell_bodies, &shell.id, *body, "index SLDPRT tessellation shells")?;
+            ctx.insert_hash_map(
+                &mut shell_bodies,
+                &shell.id,
+                *body,
+                "index SLDPRT tessellation shells",
+            )?;
         }
     }
     let mut face_bodies = HashMap::new();
     for face in ctx.admit_iter(&model.faces, "index SLDPRT tessellation faces")? {
-        if let Some(body) = ctx.get_hash_map(&shell_bodies, &face.shell, "look up SLDPRT hash key")? {
-            ctx.insert_hash_map(&mut face_bodies, &face.id, *body, "index SLDPRT tessellation faces")?;
+        if let Some(body) =
+            ctx.get_hash_map(&shell_bodies, &face.shell, "look up SLDPRT hash key")?
+        {
+            ctx.insert_hash_map(
+                &mut face_bodies,
+                &face.id,
+                *body,
+                "index SLDPRT tessellation faces",
+            )?;
         }
     }
 
@@ -1393,10 +1549,17 @@ pub(crate) fn assign_persistent_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
-        let Some(Some(identity)) = ctx.get_hash_map(&(bindings_by_mesh), mesh.id.as_str(), "look up SLDPRT hash key")? else {
+        let Some(Some(identity)) = ctx.get_hash_map(
+            &(bindings_by_mesh),
+            mesh.id.as_str(),
+            "look up SLDPRT hash key",
+        )?
+        else {
             continue;
         };
-        let Some(Some(face)) = ctx.get_hash_map(&(faces_by_identity), identity, "look up SLDPRT hash key")? else {
+        let Some(Some(face)) =
+            ctx.get_hash_map(&(faces_by_identity), identity, "look up SLDPRT hash key")?
+        else {
             continue;
         };
         let Some(body) = ctx.get_hash_map(&(face_bodies), face, "look up SLDPRT hash key")? else {
@@ -1564,28 +1727,33 @@ impl CylindricalTrim {
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        Ok(ctx.admit_iter(&mesh.vertices(), "scan SLDPRT CylindricalTrim mesh vertices")?.all(|point| {
-            let Some(point) = inverse_body.apply_point(point.get()) else {
-                return false;
-            };
-            let point = point.get();
-            let axial = point
-                .vector_from(self.origin)
-                .dot(*self.frame.axis().as_raw());
-            let angular = cylinder_angle(point, self.origin, &self.frame);
-            axial.is_finite()
-                && axial >= self.min_axial - tolerance
-                && axial <= self.max_axial + tolerance
-                && angular.is_some_and(|angular| {
-                    self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
-                        || circular_interval_contains(
-                            self.angular_start,
-                            self.angular_span,
-                            angular,
-                            tolerance / self.radius,
-                        )
-                })
-        }))
+        Ok(ctx
+            .admit_iter(
+                &mesh.vertices(),
+                "scan SLDPRT CylindricalTrim mesh vertices",
+            )?
+            .all(|point| {
+                let Some(point) = inverse_body.apply_point(point.get()) else {
+                    return false;
+                };
+                let point = point.get();
+                let axial = point
+                    .vector_from(self.origin)
+                    .dot(*self.frame.axis().as_raw());
+                let angular = cylinder_angle(point, self.origin, &self.frame);
+                axial.is_finite()
+                    && axial >= self.min_axial - tolerance
+                    && axial <= self.max_axial + tolerance
+                    && angular.is_some_and(|angular| {
+                        self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
+                            || circular_interval_contains(
+                                self.angular_start,
+                                self.angular_span,
+                                angular,
+                                tolerance / self.radius,
+                            )
+                    })
+            }))
     }
 }
 
@@ -1597,32 +1765,34 @@ impl ConicalTrim {
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        Ok(ctx.admit_iter(&mesh.vertices(), "scan SLDPRT ConicalTrim mesh vertices")?.all(|point| {
-            let Some(point) = inverse_body.apply_point(point.get()) else {
-                return false;
-            };
-            let point = point.get();
-            let axial = point
-                .vector_from(self.origin)
-                .dot(*self.frame.axis().as_raw());
-            let local_radius = self.radius + axial * self.slope;
-            let angular = cone_angle(point, self.origin, &self.frame, self.ratio);
-            axial.is_finite()
-                && local_radius.is_finite()
-                && axial >= self.min_axial - tolerance
-                && axial <= self.max_axial + tolerance
-                && angular.is_some_and(|angular| {
-                    self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
-                        || circular_interval_contains(
-                            self.angular_start,
-                            self.angular_span,
-                            angular,
-                            tolerance
-                                / (local_radius.abs() * self.ratio.get().min(1.0))
-                                    .max(EPS_DISPLAY_QUANTIZATION),
-                        )
-                })
-        }))
+        Ok(ctx
+            .admit_iter(&mesh.vertices(), "scan SLDPRT ConicalTrim mesh vertices")?
+            .all(|point| {
+                let Some(point) = inverse_body.apply_point(point.get()) else {
+                    return false;
+                };
+                let point = point.get();
+                let axial = point
+                    .vector_from(self.origin)
+                    .dot(*self.frame.axis().as_raw());
+                let local_radius = self.radius + axial * self.slope;
+                let angular = cone_angle(point, self.origin, &self.frame, self.ratio);
+                axial.is_finite()
+                    && local_radius.is_finite()
+                    && axial >= self.min_axial - tolerance
+                    && axial <= self.max_axial + tolerance
+                    && angular.is_some_and(|angular| {
+                        self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
+                            || circular_interval_contains(
+                                self.angular_start,
+                                self.angular_span,
+                                angular,
+                                tolerance
+                                    / (local_radius.abs() * self.ratio.get().min(1.0))
+                                        .max(EPS_DISPLAY_QUANTIZATION),
+                            )
+                    })
+            }))
     }
 }
 
@@ -1668,15 +1838,35 @@ impl PlanarTrim {
             ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar trim constraints")?;
             holes.push(constraint);
         }
-        if ctx.admit_iter(&projected[..], "test SLDPRT planar trim points")?.try_fold(false, |found, point| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-            (match self.outer.as_ref() { Some(outer) => !match outer {
-                PlanarOuter::Polygon(outer) => polygon_contains(ctx, outer, *point, tolerance)?,
-                PlanarOuter::Circle(outer) => {
-                    point_distance(*point, outer.center) <= outer.radius + tolerance
-                }
-            }, None => false }) || ctx.admit_iter(&holes, "scan SLDPRT interior planar trim holes")?
-                .try_fold(false, |found, hole| { Ok::<_, cadmpeg_core::CodecError>(found || ( hole.contains_interior(ctx, *point, tolerance)? )) })?
-        } )) })? {
+        if ctx
+            .admit_iter(&projected[..], "test SLDPRT planar trim points")?
+            .try_fold(false, |found, point| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found
+                        || ({
+                            (match self.outer.as_ref() {
+                                Some(outer) => !match outer {
+                                    PlanarOuter::Polygon(outer) => {
+                                        polygon_contains(ctx, outer, *point, tolerance)?
+                                    }
+                                    PlanarOuter::Circle(outer) => {
+                                        point_distance(*point, outer.center)
+                                            <= outer.radius + tolerance
+                                    }
+                                },
+                                None => false,
+                            }) || ctx
+                                .admit_iter(&holes, "scan SLDPRT interior planar trim holes")?
+                                .try_fold(false, |found, hole| {
+                                    Ok::<_, cadmpeg_core::CodecError>(
+                                        found
+                                            || (hole.contains_interior(ctx, *point, tolerance)?),
+                                    )
+                                })?
+                        }),
+                )
+            })?
+        {
             return Ok(false);
         }
         for triangle in ctx.admit_iter(&mesh.triangles(), "scan SLDPRT topology members")? {
@@ -1692,7 +1882,13 @@ impl PlanarTrim {
                     return Ok(false);
                 }
             }
-            if ctx.admit_iter(&holes[..], "test SLDPRT planar trim points")?.try_fold(false, |found, hole| { Ok::<_, cadmpeg_core::CodecError>(found || ( hole.crosses_triangle(ctx, [a, b, c], tolerance)? )) })?
+            if ctx
+                .admit_iter(&holes[..], "test SLDPRT planar trim points")?
+                .try_fold(false, |found, hole| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found || (hole.crosses_triangle(ctx, [a, b, c], tolerance)?),
+                    )
+                })?
             {
                 return Ok(false);
             }
@@ -1702,20 +1898,34 @@ impl PlanarTrim {
 }
 
 impl HoleConstraint<'_> {
-    fn contains_interior(&self, ctx: &DecodeContext<'_>, point: Point2, tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+    fn contains_interior(
+        &self,
+        ctx: &DecodeContext<'_>,
+        point: Point2,
+        tolerance: f64,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         Ok(match self {
-            Self::Polygon { boundary, .. } => polygon_strictly_contains(ctx, boundary, point, tolerance)?,
+            Self::Polygon { boundary, .. } => {
+                polygon_strictly_contains(ctx, boundary, point, tolerance)?
+            }
             Self::Circle { exclusion, .. } => {
                 point_distance(point, exclusion.center) < exclusion.radius - tolerance
             }
         })
     }
 
-    fn crosses_triangle(&self, ctx: &DecodeContext<'_>, triangle: [Point2; 3], tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+    fn crosses_triangle(
+        &self,
+        ctx: &DecodeContext<'_>,
+        triangle: [Point2; 3],
+        tolerance: f64,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         Ok(match self {
-            Self::Polygon { triangles, .. } => ctx.admit_iter(*triangles, "test SLDPRT planar trim triangles")?.any(|hole_triangle| {
-                triangles_have_positive_overlap(triangle, *hole_triangle, tolerance)
-            }),
+            Self::Polygon { triangles, .. } => ctx
+                .admit_iter(*triangles, "test SLDPRT planar trim triangles")?
+                .any(|hole_triangle| {
+                    triangles_have_positive_overlap(triangle, *hole_triangle, tolerance)
+                }),
             Self::Circle {
                 exclusion,
                 boundary,
@@ -1733,6 +1943,8 @@ struct TrimTopology<'a> {
     vertices: &'a HashMap<&'a cadmpeg_ir::ids::VertexId, &'a cadmpeg_ir::topology::Vertex>,
     points: &'a HashMap<&'a cadmpeg_ir::ids::PointId, Point3>,
     curves: &'a HashMap<&'a cadmpeg_ir::ids::CurveId, &'a CurveGeometry>,
+    /// The largest point coordinate magnitude in the model, at least one.
+    coordinate_scale: f64,
 }
 
 fn closed_planar_circle(
@@ -1743,26 +1955,64 @@ fn closed_planar_circle(
     tolerance: f64,
     topology: &TrimTopology<'_>,
 ) -> Result<Option<CircularHole>, cadmpeg_core::CodecError> {
-    let TrimTopology { coedges, edges, vertices, points, curves, .. } = *topology;
-    let coedge = *require_some!(ctx.get_hash_map(coedges, &loop_.coedges()[0], "look up SLDPRT hash key")?);
+    let TrimTopology {
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+        ..
+    } = *topology;
+    let coedge = *require_some!(ctx.get_hash_map(
+        coedges,
+        &loop_.coedges()[0],
+        "look up SLDPRT hash key"
+    )?);
     let edge = *require_some!(ctx.get_hash_map(edges, &coedge.edge, "look up SLDPRT hash key")?);
-    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 { return Ok(None); }
-    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        *require_some!(ctx.get_hash_map(curves, require_some!(edge.curve()), "look up SLDPRT hash key")?)
-    else { return Ok(None); };
+    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
+        return Ok(None);
+    }
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = *require_some!(ctx
+        .get_hash_map(
+            curves,
+            require_some!(edge.curve()),
+            "look up SLDPRT hash key"
+        )?)
+    else {
+        return Ok(None);
+    };
     let center = circle_curve.center().get();
     let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let boundary_point = *require_some!(ctx.get_hash_map(points, &require_some!(ctx.get_hash_map(vertices, &edge.start, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
-    let end_point = *require_some!(ctx.get_hash_map(points, &require_some!(ctx.get_hash_map(vertices, &edge.end, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
+    let boundary_point = *require_some!(ctx.get_hash_map(
+        points,
+        &require_some!(ctx.get_hash_map(vertices, &edge.start, "look up SLDPRT hash key")?).point,
+        "look up SLDPRT hash key"
+    )?);
+    let end_point = *require_some!(ctx.get_hash_map(
+        points,
+        &require_some!(ctx.get_hash_map(vertices, &edge.end, "look up SLDPRT hash key")?).point,
+        "look up SLDPRT hash key"
+    )?);
     if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-        || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
-        || require_some!(analytic_surface_residual(require_some!(surface.solved()), boundary_point)) > tolerance
+        || require_some!(analytic_surface_residual(
+            require_some!(surface.solved()),
+            center
+        )) > tolerance
+        || require_some!(analytic_surface_residual(
+            require_some!(surface.solved()),
+            boundary_point
+        )) > tolerance
         || boundary_point.distance(end_point) > tolerance
         || (boundary_point.distance(center) - radius).abs() > tolerance
-    { return Ok(None); }
-    Ok(Some(CircularHole { center: frame.project(center), radius }))
+    {
+        return Ok(None);
+    }
+    Ok(Some(CircularHole {
+        center: frame.project(center),
+        radius,
+    }))
 }
 
 #[derive(Clone, Copy)]
@@ -2035,12 +2285,10 @@ fn planar_trim(
         vertices,
         points,
         curves,
+        coordinate_scale,
     } = *topology;
     let frame = require_some!(plane_frame(require_some!(surface.solved())));
     let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
-    let coordinate_scale = ctx.admit_iter(points, "scan SLDPRT planar_trim map values")?.map(|(_, value)| value)
-        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
-        .fold(1.0_f64, f64::max);
     let sampling_tolerance = tolerance.max(
         coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
             + EPS_DISPLAY_QUANTIZATION,
@@ -2050,11 +2298,16 @@ fn planar_trim(
     let mut boundary_tolerance = 0.0_f64;
     let (outer_loop, inner_loops) = match &face.loops {
         cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => (&[][..], loops.as_slice()),
-        cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => (std::slice::from_ref(outer), inner.as_slice()),
+        cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+            (std::slice::from_ref(outer), inner.as_slice())
+        }
     };
-    for loop_id in ctx.admit_iter(outer_loop, "scan SLDPRT planar trim loop")?
-        .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar trim loop")?) {
-        let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+    for loop_id in ctx
+        .admit_iter(outer_loop, "scan SLDPRT planar trim loop")?
+        .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar trim loop")?)
+    {
+        let loop_ =
+            *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
         {
             return Ok(None);
@@ -2073,8 +2326,16 @@ fn planar_trim(
         let mut previous_end = None;
         for coedge_id in loop_.coedges() {
             ctx.charge_work(1, "scan SLDPRT planar trim coedge")?;
-            let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
-            let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+            let coedge = *require_some!(ctx.get_hash_map(
+                &(coedges),
+                coedge_id,
+                "look up SLDPRT hash key"
+            )?);
+            let edge = *require_some!(ctx.get_hash_map(
+                &(edges),
+                &coedge.edge,
+                "look up SLDPRT hash key"
+            )?);
             if coedge.owner_loop != loop_.id {
                 return Ok(None);
             }
@@ -2082,8 +2343,18 @@ fn planar_trim(
                 Sense::Forward => (&edge.start, &edge.end),
                 Sense::Reversed => (&edge.end, &edge.start),
             };
-            let start = *require_some!(ctx.get_hash_map(&(points), &require_some!(ctx.get_hash_map(&(vertices), start, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
-            let end = *require_some!(ctx.get_hash_map(&(points), &require_some!(ctx.get_hash_map(&(vertices), end, "look up SLDPRT hash key")?).point, "look up SLDPRT hash key")?);
+            let start = *require_some!(ctx.get_hash_map(
+                &(points),
+                &require_some!(ctx.get_hash_map(&(vertices), start, "look up SLDPRT hash key")?)
+                    .point,
+                "look up SLDPRT hash key"
+            )?);
+            let end = *require_some!(ctx.get_hash_map(
+                &(points),
+                &require_some!(ctx.get_hash_map(&(vertices), end, "look up SLDPRT hash key")?)
+                    .point,
+                "look up SLDPRT hash key"
+            )?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 start
@@ -2098,7 +2369,11 @@ fn planar_trim(
             }
             let (samples, sample_tolerance) = require_some!(planar_boundary_samples(
                 ctx,
-                require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?),
+                require_some!(ctx.get_hash_map(
+                    &(curves),
+                    require_some!(edge.curve()),
+                    "look up SLDPRT hash key"
+                )?),
                 start,
                 end,
                 surface,
@@ -2136,7 +2411,8 @@ fn planar_trim(
         }
         (PlanarOuter::Circle(outer), planar_holes)
     } else {
-        let boundary_count = ctx.admit_iter(&polygons[..], "scan SLDPRT planar_trim values")?
+        let boundary_count = ctx
+            .admit_iter(&polygons[..], "scan SLDPRT planar_trim values")?
             .try_fold(
                 cadmpeg_core::decode::u64_from_index(circles.len()),
                 |count, polygon| {
@@ -2159,11 +2435,32 @@ fn planar_trim(
             })?;
         ctx.charge_work(work, "compare SLDPRT planar trim boundaries")?;
         let mut outer_index = None;
-        for (index, outer) in ctx.admit_iter(&polygons, "scan SLDPRT planar_trim values")?.enumerate() {
-            if ctx.admit_iter(&polygons[..], "scan SLDPRT planar_trim values")?
+        for (index, outer) in ctx
+            .admit_iter(&polygons, "scan SLDPRT planar_trim values")?
+            .enumerate()
+        {
+            if ctx
+                .admit_iter(&polygons[..], "scan SLDPRT planar_trim values")?
                 .enumerate()
-                .filter(|(inner_index, _)| index != *inner_index).try_fold(true, |found, (_, inner)| { Ok::<_, cadmpeg_core::CodecError>(found && ( polygon_inside_polygon(ctx, inner, outer, sampling_tolerance)? )) })?
-                && ctx.admit_iter(&circles[..], "scan SLDPRT planar_trim values")?.try_fold(true, |found, circle| { Ok::<_, cadmpeg_core::CodecError>(found && ( circle_inside_polygon(ctx, outer, *circle, sampling_tolerance)? )) })?
+                .filter(|(inner_index, _)| index != *inner_index)
+                .try_fold(true, |found, (_, inner)| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found && (polygon_inside_polygon(ctx, inner, outer, sampling_tolerance)?),
+                    )
+                })?
+                && ctx
+                    .admit_iter(&circles[..], "scan SLDPRT planar_trim values")?
+                    .try_fold(true, |found, circle| {
+                        Ok::<_, cadmpeg_core::CodecError>(
+                            found
+                                && (circle_inside_polygon(
+                                    ctx,
+                                    outer,
+                                    *circle,
+                                    sampling_tolerance,
+                                )?),
+                        )
+                    })?
                 && outer_index.replace(index).is_some()
             {
                 return Ok(None);
@@ -2172,34 +2469,99 @@ fn planar_trim(
         let outer_index = require_some!(outer_index);
         let outer_polygon = &polygons[outer_index];
         let mut polygon_holes = Vec::new();
-        for (index, polygon) in ctx.admit_iter(&polygons, "scan SLDPRT planar_trim values")?.enumerate() {
+        for (index, polygon) in ctx
+            .admit_iter(&polygons, "scan SLDPRT planar_trim values")?
+            .enumerate()
+        {
             if index != outer_index {
                 ctx.reserve_vec(&mut polygon_holes, 1, "collect SLDPRT planar polygon holes")?;
                 polygon_holes.push(polygon);
             }
         }
-        if ctx.admit_iter(&polygon_holes[..], "scan SLDPRT planar_trim values")?.try_fold(false, |found, hole| { Ok::<_, cadmpeg_core::CodecError>(found || ( !polygon_inside_polygon(ctx, hole, outer_polygon, sampling_tolerance)? )) })?
-            || ctx.admit_iter(&polygon_holes, "scan SLDPRT polygon hole pairs")?.enumerate().try_fold(false, |found, (index, left)| {
-                Ok::<_, cadmpeg_core::CodecError>(found || ctx.admit_iter(&polygon_holes[index + 1..], "scan SLDPRT subsequent polygon holes")?.try_fold(false, |found, right| { Ok::<_, cadmpeg_core::CodecError>(found || ( polygons_overlap(ctx, left, right, sampling_tolerance)? )) })?)
+        if ctx
+            .admit_iter(&polygon_holes[..], "scan SLDPRT planar_trim values")?
+            .try_fold(false, |found, hole| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found
+                        || (!polygon_inside_polygon(ctx, hole, outer_polygon, sampling_tolerance)?),
+                )
             })?
-            || ctx.admit_iter(&polygon_holes, "scan SLDPRT polygon circular holes")?.try_fold(false, |found, polygon| {
-                Ok::<_, cadmpeg_core::CodecError>(found || ctx.admit_iter(&circles, "scan SLDPRT circles against polygon holes")?.try_fold(false, |found, circle| { Ok::<_, cadmpeg_core::CodecError>(found || ( circle_overlaps_polygon(ctx, *circle, polygon, sampling_tolerance)? )) })?)
-            })?
-            || ctx.admit_iter(&circles, "scan SLDPRT circular hole pairs")?.enumerate().try_fold(false, |found, (index, left)| {
-                Ok::<_, cadmpeg_core::CodecError>(found || ctx.admit_iter(&circles[index + 1..], "scan SLDPRT subsequent circular holes")?.any(|right| {
-                    point_distance(left.center, right.center)
-                        < left.radius + right.radius - sampling_tolerance
-                }))
-            })?
+            || ctx
+                .admit_iter(&polygon_holes, "scan SLDPRT polygon hole pairs")?
+                .enumerate()
+                .try_fold(false, |found, (index, left)| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found
+                            || ctx
+                                .admit_iter(
+                                    &polygon_holes[index + 1..],
+                                    "scan SLDPRT subsequent polygon holes",
+                                )?
+                                .try_fold(false, |found, right| {
+                                    Ok::<_, cadmpeg_core::CodecError>(
+                                        found
+                                            || (polygons_overlap(
+                                                ctx,
+                                                left,
+                                                right,
+                                                sampling_tolerance,
+                                            )?),
+                                    )
+                                })?,
+                    )
+                })?
+            || ctx
+                .admit_iter(&polygon_holes, "scan SLDPRT polygon circular holes")?
+                .try_fold(false, |found, polygon| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found
+                            || ctx
+                                .admit_iter(&circles, "scan SLDPRT circles against polygon holes")?
+                                .try_fold(false, |found, circle| {
+                                    Ok::<_, cadmpeg_core::CodecError>(
+                                        found
+                                            || (circle_overlaps_polygon(
+                                                ctx,
+                                                *circle,
+                                                polygon,
+                                                sampling_tolerance,
+                                            )?),
+                                    )
+                                })?,
+                    )
+                })?
+            || ctx
+                .admit_iter(&circles, "scan SLDPRT circular hole pairs")?
+                .enumerate()
+                .try_fold(false, |found, (index, left)| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found
+                            || ctx
+                                .admit_iter(
+                                    &circles[index + 1..],
+                                    "scan SLDPRT subsequent circular holes",
+                                )?
+                                .any(|right| {
+                                    point_distance(left.center, right.center)
+                                        < left.radius + right.radius - sampling_tolerance
+                                }),
+                    )
+                })?
         {
             return Ok(None);
         }
         let mut holes = Vec::new();
-        for circle in ctx.admit_iter(&circles, "scan SLDPRT circles values")?.copied() {
+        for circle in ctx
+            .admit_iter(&circles, "scan SLDPRT circles values")?
+            .copied()
+        {
             ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
             holes.push(PlanarHole::Circle(circle));
         }
-        for polygon in ctx.admit_iter(&polygon_holes, "scan SLDPRT polygon_holes values")?.copied() {
+        for polygon in ctx
+            .admit_iter(&polygon_holes, "scan SLDPRT polygon_holes values")?
+            .copied()
+        {
             let mut boundary = Vec::new();
             ctx.reserve_vec(
                 &mut boundary,
@@ -2240,23 +2602,33 @@ fn planar_hole_trim(
     let mut has_polygon_loop = false;
     let (outer_loop, inner_loops) = match &face.loops {
         cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => (&[][..], loops.as_slice()),
-        cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => (std::slice::from_ref(outer), inner.as_slice()),
+        cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+            (std::slice::from_ref(outer), inner.as_slice())
+        }
     };
-    for loop_id in ctx.admit_iter(outer_loop, "scan SLDPRT planar hole loop")?
-        .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar hole loop")?) {
-        let loop_ = require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+    for loop_id in ctx
+        .admit_iter(outer_loop, "scan SLDPRT planar hole loop")?
+        .chain(ctx.admit_iter(inner_loops, "scan SLDPRT planar hole loop")?)
+    {
+        let loop_ =
+            require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         has_polygon_loop |= loop_.coedges().len() > 1;
     }
     if !has_polygon_loop {
         return Ok(None);
     }
     let mut holes = Vec::new();
-    for loop_id in ctx.admit_iter(outer_loop, "test SLDPRT planar hole loop")?
-        .chain(ctx.admit_iter(inner_loops, "test SLDPRT planar hole loop")?) {
-        let loop_ = require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+    for loop_id in ctx
+        .admit_iter(outer_loop, "test SLDPRT planar hole loop")?
+        .chain(ctx.admit_iter(inner_loops, "test SLDPRT planar hole loop")?)
+    {
+        let loop_ =
+            require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
         if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
         {
-            if let Some(circle) = closed_planar_circle(ctx, loop_, surface, frame, tolerance, topology)? {
+            if let Some(circle) =
+                closed_planar_circle(ctx, loop_, surface, frame, tolerance, topology)?
+            {
                 ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
                 holes.push(PlanarHole::Circle(circle));
             }
@@ -2283,6 +2655,7 @@ fn cylindrical_trim(
         vertices,
         points,
         curves,
+        ..
     } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         return Ok(None);
@@ -2306,12 +2679,18 @@ fn cylindrical_trim(
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
-        let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+        let coedge =
+            *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
         if coedge.owner_loop != loop_.id {
             return Ok(None);
         }
-        let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
-        let curve = require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?);
+        let edge =
+            *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+        let curve = require_some!(ctx.get_hash_map(
+            &(curves),
+            require_some!(edge.curve()),
+            "look up SLDPRT hash key"
+        )?);
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
@@ -2332,8 +2711,16 @@ fn cylindrical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
-            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
-            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
+            let vertex = require_some!(ctx.get_hash_map(
+                &(vertices),
+                vertex_id,
+                "look up SLDPRT hash key"
+            )?);
+            let point = *require_some!(ctx.get_hash_map(
+                &(points),
+                &vertex.point,
+                "look up SLDPRT hash key"
+            )?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 point
@@ -2355,11 +2742,21 @@ fn cylindrical_trim(
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim angles")?;
-        let coedge = require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
-        let edge = require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+        let coedge =
+            require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+        let edge =
+            require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
         for vertex_id in [&edge.start, &edge.end] {
-            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
-            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
+            let vertex = require_some!(ctx.get_hash_map(
+                &(vertices),
+                vertex_id,
+                "look up SLDPRT hash key"
+            )?);
+            let point = *require_some!(ctx.get_hash_map(
+                &(points),
+                &vertex.point,
+                "look up SLDPRT hash key"
+            )?);
             let angle = require_some!(cylinder_angle(point, origin, &frame));
             ctx.reserve_vec(&mut angles, 1, "collect SLDPRT cylindrical trim angles")?;
             angles.push(angle);
@@ -2392,6 +2789,7 @@ fn conical_trim(
         vertices,
         points,
         curves,
+        ..
     } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
         return Ok(None);
@@ -2419,12 +2817,18 @@ fn conical_trim(
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
-        let coedge = *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+        let coedge =
+            *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
         if coedge.owner_loop != loop_.id {
             return Ok(None);
         }
-        let edge = *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
-        let curve = require_some!(ctx.get_hash_map(&(curves), require_some!(edge.curve()), "look up SLDPRT hash key")?);
+        let edge =
+            *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+        let curve = require_some!(ctx.get_hash_map(
+            &(curves),
+            require_some!(edge.curve()),
+            "look up SLDPRT hash key"
+        )?);
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
@@ -2436,12 +2840,14 @@ fn conical_trim(
                 if nurbs.degree() != 1
                     || nurbs.periodic()
                     || nurbs.pole_rows().count() != 2
-                    || ctx.admit_iter(&nurbs.control_points(), "scan SLDPRT conical_trim values")?.any(|point| {
-                        surface.solved().is_none_or(|surface| {
-                            analytic_surface_residual(surface, point.get())
-                                .is_none_or(|residual| residual > tolerance)
+                    || ctx
+                        .admit_iter(&nurbs.control_points(), "scan SLDPRT conical_trim values")?
+                        .any(|point| {
+                            surface.solved().is_none_or(|surface| {
+                                analytic_surface_residual(surface, point.get())
+                                    .is_none_or(|residual| residual > tolerance)
+                            })
                         })
-                    })
                 {
                     return Ok(None);
                 }
@@ -2500,8 +2906,16 @@ fn conical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
-            let vertex = require_some!(ctx.get_hash_map(&(vertices), vertex_id, "look up SLDPRT hash key")?);
-            let point = *require_some!(ctx.get_hash_map(&(points), &vertex.point, "look up SLDPRT hash key")?);
+            let vertex = require_some!(ctx.get_hash_map(
+                &(vertices),
+                vertex_id,
+                "look up SLDPRT hash key"
+            )?);
+            let point = *require_some!(ctx.get_hash_map(
+                &(points),
+                &vertex.point,
+                "look up SLDPRT hash key"
+            )?);
             if require_some!(analytic_surface_residual(
                 require_some!(surface.solved()),
                 point
@@ -2756,46 +3170,69 @@ fn triangulate_polygon(
                 ctx.refuse_codec_limit("triangulate SLDPRT planar polygon", u64::MAX, u64::MAX)
             })?;
         ctx.charge_work(work, "triangulate SLDPRT planar polygon")?;
-        let ear_position = (0..remaining.len()).try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let position = &candidate; Ok(( {
-            let previous_position = (position + remaining.len() - 1) % remaining.len();
-            let next_position = (position + 1) % remaining.len();
-            let previous = polygon[remaining[previous_position]];
-            let current = polygon[remaining[*position]];
-            let next = polygon[remaining[next_position]];
-            let scale = point_distance(previous, current).max(point_distance(current, next));
-            let cross = signed_area_twice(previous, current, next);
-            if !cross.is_finite() || orientation * cross <= tolerance * scale {
-                return Ok(None);
+        let ear_position = (0..remaining.len()).try_fold(None, |found, candidate| {
+            if found.is_some() {
+                return Ok::<_, cadmpeg_core::CodecError>(found);
             }
-            if ctx.admit_iter(&remaining[..], "scan SLDPRT triangulate_polygon values")?.enumerate().any(|(edge_position, _)| {
-                let edge_next_position = (edge_position + 1) % remaining.len();
-                if edge_position == previous_position
-                    || edge_position == *position
-                    || edge_position == next_position
-                    || edge_next_position == previous_position
-                    || edge_next_position == *position
-                    || edge_next_position == next_position
-                {
-                    return false;
+            let position = &candidate;
+            Ok(({
+                let previous_position = (position + remaining.len() - 1) % remaining.len();
+                let next_position = (position + 1) % remaining.len();
+                let previous = polygon[remaining[previous_position]];
+                let current = polygon[remaining[*position]];
+                let next = polygon[remaining[next_position]];
+                let scale = point_distance(previous, current).max(point_distance(current, next));
+                let cross = signed_area_twice(previous, current, next);
+                if !cross.is_finite() || orientation * cross <= tolerance * scale {
+                    return Ok(None);
                 }
-                segments_intersect(
-                    previous,
-                    next,
-                    polygon[remaining[edge_position]],
-                    polygon[remaining[edge_next_position]],
-                    tolerance,
-                )
-            }) {
-                return Ok(None);
-            }
-            let triangle = [previous, current, next];
-            !ctx.admit_iter(&remaining[..], "scan SLDPRT triangulate_polygon values")?.enumerate().try_fold(false, |found, (other_position, index)| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-                other_position != previous_position
-                    && other_position != *position
-                    && other_position != next_position
-                    && polygon_strictly_contains(ctx, &triangle, polygon[*index], tolerance)?
-            } )) })?
-        } ).then_some(candidate)) })?;
+                if ctx
+                    .admit_iter(&remaining[..], "scan SLDPRT triangulate_polygon values")?
+                    .enumerate()
+                    .any(|(edge_position, _)| {
+                        let edge_next_position = (edge_position + 1) % remaining.len();
+                        if edge_position == previous_position
+                            || edge_position == *position
+                            || edge_position == next_position
+                            || edge_next_position == previous_position
+                            || edge_next_position == *position
+                            || edge_next_position == next_position
+                        {
+                            return false;
+                        }
+                        segments_intersect(
+                            previous,
+                            next,
+                            polygon[remaining[edge_position]],
+                            polygon[remaining[edge_next_position]],
+                            tolerance,
+                        )
+                    })
+                {
+                    return Ok(None);
+                }
+                let triangle = [previous, current, next];
+                !ctx.admit_iter(&remaining[..], "scan SLDPRT triangulate_polygon values")?
+                    .enumerate()
+                    .try_fold(false, |found, (other_position, index)| {
+                        Ok::<_, cadmpeg_core::CodecError>(
+                            found
+                                || ({
+                                    other_position != previous_position
+                                        && other_position != *position
+                                        && other_position != next_position
+                                        && polygon_strictly_contains(
+                                            ctx,
+                                            &triangle,
+                                            polygon[*index],
+                                            tolerance,
+                                        )?
+                                }),
+                        )
+                    })?
+            })
+            .then_some(candidate))
+        })?;
         let position = require_some!(ear_position);
         let previous_position = (position + remaining.len() - 1) % remaining.len();
         let next_position = (position + 1) % remaining.len();
@@ -2826,20 +3263,32 @@ fn triangulate_polygon(
     Ok(Some(triangles))
 }
 
-fn polygon_contains(ctx: &DecodeContext<'_>, polygon: &[Point2], point: Point2, tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+fn polygon_contains(
+    ctx: &DecodeContext<'_>,
+    polygon: &[Point2],
+    point: Point2,
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
     // A point or edge end that is not finite has no distance to measure.
-    if ctx.admit_iter(polygon, "scan SLDPRT planar polygon boundary")?.enumerate().any(|(index, start)| {
-        match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
-            [Some(point), Some(start), Some(end)] => {
-                point_segment_distance(point, start, end) <= tolerance
+    if ctx
+        .admit_iter(polygon, "scan SLDPRT planar polygon boundary")?
+        .enumerate()
+        .any(|(index, start)| {
+            match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) <= tolerance
+                }
+                _ => false,
             }
-            _ => false,
-        }
-    }) {
+        })
+    {
         return Ok(true);
     }
     let mut inside = false;
-    for (index, start) in ctx.admit_iter(polygon, "scan SLDPRT planar polygon boundary")?.enumerate() {
+    for (index, start) in ctx
+        .admit_iter(polygon, "scan SLDPRT planar polygon boundary")?
+        .enumerate()
+    {
         let end = polygon[(index + 1) % polygon.len()];
         if (start.v > point.v) == (end.v > point.v) {
             continue;
@@ -2911,7 +3360,9 @@ fn polygon_contains_triangle(
                 return Ok(false);
             }
             if (0.0..=1.0).contains(&projected) {
-                reservation.with_storage(|| ctx.push_vec(&mut cuts, projected, "collect SLDPRT decoded vector items"))?;
+                reservation.with_storage(|| {
+                    ctx.push_vec(&mut cuts, projected, "collect SLDPRT decoded vector items")
+                })?;
             }
             let eu = next.u - point.u;
             let ev = next.v - point.v;
@@ -2928,7 +3379,13 @@ fn polygon_contains_triangle(
                 return Ok(false);
             }
             if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) {
-                reservation.with_storage(|| ctx.push_vec(&mut cuts, along_triangle, "collect SLDPRT decoded vector items"))?;
+                reservation.with_storage(|| {
+                    ctx.push_vec(
+                        &mut cuts,
+                        along_triangle,
+                        "collect SLDPRT decoded vector items",
+                    )
+                })?;
             }
         }
         ctx.stable_sort_by(
@@ -2937,9 +3394,16 @@ fn polygon_contains_triangle(
             f64::total_cmp,
             "sort SLDPRT triangle boundary cuts",
         )?;
-        for interval in ctx.admit_iter(&cuts, "scan SLDPRT triangle boundary cuts")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?) {
+        for interval in ctx
+            .admit_iter(&cuts, "scan SLDPRT triangle boundary cuts")?
+            .windows(
+                std::num::NonZeroUsize::new(2)
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
+            )
+        {
             let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
-            if !polygon_contains(ctx, 
+            if !polygon_contains(
+                ctx,
                 boundary,
                 Point2::new(start.u + parameter * du, start.v + parameter * dv),
                 tolerance,
@@ -2951,50 +3415,105 @@ fn polygon_contains_triangle(
     Ok(true)
 }
 
-fn polygon_strictly_contains(ctx: &DecodeContext<'_>, polygon: &[Point2], point: Point2, tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+fn polygon_strictly_contains(
+    ctx: &DecodeContext<'_>,
+    polygon: &[Point2],
+    point: Point2,
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
     Ok(polygon_contains(ctx, polygon, point, tolerance)?
-        && !ctx.admit_iter(polygon, "scan SLDPRT planar polygon boundary")?.enumerate().any(|(index, start)| {
-            match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
-                [Some(point), Some(start), Some(end)] => {
-                    point_segment_distance(point, start, end) <= tolerance
+        && !ctx
+            .admit_iter(polygon, "scan SLDPRT planar polygon boundary")?
+            .enumerate()
+            .any(|(index, start)| {
+                match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+                    [Some(point), Some(start), Some(end)] => {
+                        point_segment_distance(point, start, end) <= tolerance
+                    }
+                    _ => false,
                 }
-                _ => false,
-            }
-        }))
+            }))
 }
 
-fn polygon_inside_polygon(ctx: &DecodeContext<'_>, inner: &[Point2], outer: &[Point2], tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+fn polygon_inside_polygon(
+    ctx: &DecodeContext<'_>,
+    inner: &[Point2],
+    outer: &[Point2],
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
     Ok(is_simple_polygon(inner, tolerance)
         && is_simple_polygon(outer, tolerance)
-        && ctx.admit_iter(inner, "scan SLDPRT planar inner boundary")?.try_fold(true, |found, point| { Ok::<_, cadmpeg_core::CodecError>(found && ( polygon_contains(ctx, outer, *point, tolerance)? )) })?
-        && !ctx.admit_iter(inner, "scan SLDPRT planar inner boundary")?.enumerate().try_fold(false, |found, (left_index, left)| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-            ctx.admit_iter(outer, "scan SLDPRT planar outer boundary")?.enumerate().any(|(right_index, right)| {
-                segments_intersect(
-                    *left,
-                    inner[(left_index + 1) % inner.len()],
-                    *right,
-                    outer[(right_index + 1) % outer.len()],
-                    tolerance,
+        && ctx
+            .admit_iter(inner, "scan SLDPRT planar inner boundary")?
+            .try_fold(true, |found, point| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found && (polygon_contains(ctx, outer, *point, tolerance)?),
                 )
-            })
-        } )) })?)
+            })?
+        && !ctx
+            .admit_iter(inner, "scan SLDPRT planar inner boundary")?
+            .enumerate()
+            .try_fold(false, |found, (left_index, left)| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found
+                        || ({
+                            ctx.admit_iter(outer, "scan SLDPRT planar outer boundary")?
+                                .enumerate()
+                                .any(|(right_index, right)| {
+                                    segments_intersect(
+                                        *left,
+                                        inner[(left_index + 1) % inner.len()],
+                                        *right,
+                                        outer[(right_index + 1) % outer.len()],
+                                        tolerance,
+                                    )
+                                })
+                        }),
+                )
+            })?)
 }
 
-fn polygons_overlap(ctx: &DecodeContext<'_>, first: &[Point2], second: &[Point2], tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx.admit_iter(first, "scan SLDPRT planar first boundary")?.enumerate().try_fold(false, |found, (first_index, first_start)| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-        ctx.admit_iter(second, "scan SLDPRT planar second boundary")?
-            .enumerate()
-            .any(|(second_index, second_start)| {
-                segments_intersect(
-                    *first_start,
-                    first[(first_index + 1) % first.len()],
-                    *second_start,
-                    second[(second_index + 1) % second.len()],
-                    tolerance,
+fn polygons_overlap(
+    ctx: &DecodeContext<'_>,
+    first: &[Point2],
+    second: &[Point2],
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(ctx
+        .admit_iter(first, "scan SLDPRT planar first boundary")?
+        .enumerate()
+        .try_fold(false, |found, (first_index, first_start)| {
+            Ok::<_, cadmpeg_core::CodecError>(
+                found
+                    || ({
+                        ctx.admit_iter(second, "scan SLDPRT planar second boundary")?
+                            .enumerate()
+                            .any(|(second_index, second_start)| {
+                                segments_intersect(
+                                    *first_start,
+                                    first[(first_index + 1) % first.len()],
+                                    *second_start,
+                                    second[(second_index + 1) % second.len()],
+                                    tolerance,
+                                )
+                            })
+                    }),
+            )
+        })?
+        || ctx
+            .admit_iter(first, "scan SLDPRT planar first boundary")?
+            .try_fold(false, |found, point| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found || (polygon_strictly_contains(ctx, second, *point, tolerance)?),
                 )
-            })
-    } )) })? || ctx.admit_iter(first, "scan SLDPRT planar first boundary")?.try_fold(false, |found, point| { Ok::<_, cadmpeg_core::CodecError>(found || ( polygon_strictly_contains(ctx, second, *point, tolerance)? )) })?
-        || ctx.admit_iter(second, "scan SLDPRT planar second boundary")?.try_fold(false, |found, point| { Ok::<_, cadmpeg_core::CodecError>(found || ( polygon_strictly_contains(ctx, first, *point, tolerance)? )) })?)
+            })?
+        || ctx
+            .admit_iter(second, "scan SLDPRT planar second boundary")?
+            .try_fold(false, |found, point| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    found || (polygon_strictly_contains(ctx, first, *point, tolerance)?),
+                )
+            })?)
 }
 
 fn triangles_have_positive_overlap(
@@ -3056,7 +3575,12 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
     true
 }
 
-fn circle_inside_polygon(ctx: &DecodeContext<'_>, polygon: &[Point2], hole: CircularHole, tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
+fn circle_inside_polygon(
+    ctx: &DecodeContext<'_>,
+    polygon: &[Point2],
+    hole: CircularHole,
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
     Ok(polygon_contains(ctx, polygon, hole.center, tolerance)?
         && (0..polygon.len()).all(|index| {
             match [
@@ -3084,10 +3608,17 @@ fn circular_outer_and_holes(
     tolerance: f64,
 ) -> Result<Option<(CircularHole, Vec<CircularHole>)>, cadmpeg_core::CodecError> {
     let mut outer_index = None;
-    for (index, outer) in ctx.admit_iter(circles, "compare SLDPRT circular trim boundaries")?.enumerate() {
-        if ctx.admit_iter(circles, "scan SLDPRT contained circular holes")?.enumerate().all(|(inner_index, inner)| {
-            index == inner_index || circle_inside_circle(*outer, *inner, tolerance)
-        }) && outer_index.replace(index).is_some()
+    for (index, outer) in ctx
+        .admit_iter(circles, "compare SLDPRT circular trim boundaries")?
+        .enumerate()
+    {
+        if ctx
+            .admit_iter(circles, "scan SLDPRT contained circular holes")?
+            .enumerate()
+            .all(|(inner_index, inner)| {
+                index == inner_index || circle_inside_circle(*outer, *inner, tolerance)
+            })
+            && outer_index.replace(index).is_some()
         {
             return Ok(None);
         }
@@ -3096,17 +3627,33 @@ fn circular_outer_and_holes(
         return Ok(None);
     };
     let mut holes = Vec::new();
-    for (index, hole) in ctx.admit_iter(circles, "compare SLDPRT circular trim boundaries")?.enumerate() {
+    for (index, hole) in ctx
+        .admit_iter(circles, "compare SLDPRT circular trim boundaries")?
+        .enumerate()
+    {
         if index != outer_index {
             ctx.reserve_vec(&mut holes, 1, "collect SLDPRT circular trim holes")?;
             holes.push(*hole);
         }
     }
-    if ctx.admit_iter(&holes, "scan SLDPRT circular trim hole pairs")?.enumerate().try_fold(false, |found, (index, left)| {
-        Ok::<_, cadmpeg_core::CodecError>(found || ctx.admit_iter(&holes[index + 1..], "scan SLDPRT subsequent circular trim holes")?.any(|right| {
-            point_distance(left.center, right.center) < left.radius + right.radius - tolerance
-        }))
-    })? {
+    if ctx
+        .admit_iter(&holes, "scan SLDPRT circular trim hole pairs")?
+        .enumerate()
+        .try_fold(false, |found, (index, left)| {
+            Ok::<_, cadmpeg_core::CodecError>(
+                found
+                    || ctx
+                        .admit_iter(
+                            &holes[index + 1..],
+                            "scan SLDPRT subsequent circular trim holes",
+                        )?
+                        .any(|right| {
+                            point_distance(left.center, right.center)
+                                < left.radius + right.radius - tolerance
+                        }),
+            )
+        })?
+    {
         return Ok(None);
     }
     Ok(Some((circles[outer_index], holes)))
@@ -3156,7 +3703,15 @@ fn chordal_hole_constraint(
         return Ok(None);
     };
     let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *last;
-    let maximum_gap = ctx.admit_iter(&boundary_angles, "scan SLDPRT adjacent circular trim angles")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
+    let maximum_gap = ctx
+        .admit_iter(
+            &boundary_angles,
+            "scan SLDPRT adjacent circular trim angles",
+        )?
+        .windows(
+            std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
+        )
         .map(|pair| pair[1] - pair[0])
         .chain(std::iter::once(wrap_gap))
         .reduce(f64::max);
@@ -3204,24 +3759,32 @@ fn triangle_crosses_hole(
     })
 }
 
-fn circle_overlaps_polygon(ctx: &DecodeContext<'_>, circle: CircularHole, polygon: &[Point2], tolerance: f64) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(polygon_strictly_contains(ctx, polygon, circle.center, tolerance)?
-        || ctx.admit_iter(polygon, "scan SLDPRT planar polygon boundary")?
-            .any(|point| point_distance(*point, circle.center) < circle.radius + tolerance)
-        || (0..polygon.len()).any(|index| {
-            match [
-                circle.center,
-                polygon[index],
-                polygon[(index + 1) % polygon.len()],
-            ]
-            .map(FinitePoint2::new)
-            {
-                [Some(point), Some(start), Some(end)] => {
-                    point_segment_distance(point, start, end) < circle.radius + tolerance
+fn circle_overlaps_polygon(
+    ctx: &DecodeContext<'_>,
+    circle: CircularHole,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(
+        polygon_strictly_contains(ctx, polygon, circle.center, tolerance)?
+            || ctx
+                .admit_iter(polygon, "scan SLDPRT planar polygon boundary")?
+                .any(|point| point_distance(*point, circle.center) < circle.radius + tolerance)
+            || (0..polygon.len()).any(|index| {
+                match [
+                    circle.center,
+                    polygon[index],
+                    polygon[(index + 1) % polygon.len()],
+                ]
+                .map(FinitePoint2::new)
+                {
+                    [Some(point), Some(start), Some(end)] => {
+                        point_segment_distance(point, start, end) < circle.radius + tolerance
+                    }
+                    _ => false,
                 }
-                _ => false,
-            }
-        }))
+            }),
+    )
 }
 
 fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Option<Vector3> {

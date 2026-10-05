@@ -45,12 +45,12 @@ pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str 
 /// Reject a neutral edit that retargets an existing native record to an
 /// operation family it did not originate in. A missing record (a freshly
 /// synthesized feature) always passes.
-pub(super) fn require_same_family(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(super) fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,
-    families: &[&str],
+    families: &[&'static str],
 ) -> Result<(), CodecError> {
-    if match existing { Some(record) => !families.iter().try_fold(false, |found, family| { Ok::<_, cadmpeg_core::CodecError>(found || ( feature_family(ctx, record, family)? )) })?, None => false }
+    if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
     {
         return Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {feature_id} changes operation family"
@@ -59,20 +59,20 @@ pub(super) fn require_same_family(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     Ok(())
 }
 
-pub(super) fn is_revolve(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(classify(ctx, feature)? == Some(FeatureClass::Revolve))
+pub(super) fn is_revolve(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::Revolve)
 }
 
-pub(super) fn is_loft(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(classify(ctx, feature)? == Some(FeatureClass::Loft))
+pub(super) fn is_loft(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::Loft)
 }
 
-pub(super) fn is_sweep(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(classify(ctx, feature)? == Some(FeatureClass::Sweep))
+pub(super) fn is_sweep(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::Sweep)
 }
 
-pub(super) fn is_helix(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(classify(ctx, feature)? == Some(FeatureClass::Helix))
+pub(super) fn is_helix(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::Helix)
 }
 
 pub(super) fn write_native_selection(

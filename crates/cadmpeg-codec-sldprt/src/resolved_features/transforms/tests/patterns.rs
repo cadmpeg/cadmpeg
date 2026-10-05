@@ -34,7 +34,13 @@ use cadmpeg_ir::{
 use std::collections::{BTreeMap, HashSet};
 
 fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
-    typed_line_reference_direction(&cadmpeg_test_support::service_decode_context(), payload, class_offset).unwrap().map(|direction| *direction.as_raw())
+    typed_line_reference_direction(
+        &cadmpeg_test_support::service_decode_context(),
+        payload,
+        class_offset,
+    )
+    .unwrap()
+    .map(|direction| *direction.as_raw())
 }
 
 fn declared_line_reference_directions(
@@ -718,22 +724,35 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ]);
     let second_count_solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut candidates = features.clone();
-        candidates[0].evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::new(PatternTransform::Linear {
-                direction: None, spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-                count: 3, second: None,
-            }).unwrap(),
-        }));
-        crate::resolved_features::bindings::bind_pattern_inputs(ctx, &mut candidates,
-            std::slice::from_ref(&second_direction_history), std::slice::from_ref(&lane))
-            .map(|()| candidates)
+        candidates[0]
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::new(PatternTransform::Linear {
+                    direction: None,
+                    spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    count: 3,
+                    second: None,
+                })
+                .unwrap(),
+            }));
+        crate::resolved_features::bindings::bind_pattern_inputs(
+            ctx,
+            &mut candidates,
+            std::slice::from_ref(&second_direction_history),
+            std::slice::from_ref(&lane),
+        )
+        .map(|()| candidates)
     };
-    let admitted_second_count = second_count_solve(&cadmpeg_test_support::service_decode_context()).unwrap();
+    let admitted_second_count =
+        second_count_solve(&cadmpeg_test_support::service_decode_context()).unwrap();
     assert!(matches!(admitted_second_count[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })
             if matches!(pattern.definition(), PatternTransform::Linear { direction: Some(_), count: 3, second: None, .. })));
-    crate::test_support::work_refusal_at("parse SLDPRT second linear pattern count", second_count_solve);
+    crate::test_support::work_refusal_at(
+        "parse SLDPRT second linear pattern count",
+        second_count_solve,
+    );
 
     let updated_features_evaluation = &mut features[0].evaluation;
     let mut updated_features_definition = updated_features_evaluation.definition().clone();

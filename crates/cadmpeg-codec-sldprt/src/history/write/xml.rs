@@ -8,9 +8,14 @@ use cadmpeg_ir::features::{
 
 use crate::history::classify::extrude_op;
 
-pub(super) fn feature_xml_tag(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &cadmpeg_ir::features::Feature) -> Result<String, cadmpeg_core::CodecError> {
+pub(super) fn feature_xml_tag(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+) -> Result<String, cadmpeg_core::CodecError> {
     if let Some(tag) = feature.source_tag.as_ref() {
-        if valid_xml_name(ctx, tag)? { return Ok(tag.clone()); }
+        if valid_xml_name(ctx, tag)? {
+            return Ok(tag.clone());
+        }
     }
     let tag = match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::TreeNode { .. }) => "Feature",
@@ -157,8 +162,13 @@ pub(super) fn feature_xml_tag(ctx: &cadmpeg_core::decode::DecodeContext<'_>, fea
     Ok(tag.into())
 }
 
-pub(crate) fn valid_xml_name(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut bytes = ctx.admit_iter(name.as_bytes(), "scan SLDPRT XML name bytes")?.copied();
+pub(crate) fn valid_xml_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut bytes = ctx
+        .admit_iter(name.as_bytes(), "scan SLDPRT XML name bytes")?
+        .copied();
     Ok(bytes
         .next()
         .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))

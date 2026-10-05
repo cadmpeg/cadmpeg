@@ -62,8 +62,12 @@ fn scan_transformed_reference_plane(
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
     const PREFIX: &[u8] = &trans_plane::PREFIX_VALUE;
     let payload = section.payload();
-    for offset in ctx.admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(std::num::NonZeroUsize::new(TOKEN.len()).ok_or_else(|| CodecError::malformed("zero metadata token width"))?)
+    for offset in ctx
+        .admit_iter(payload, "scan SLDPRT metadata token markers")?
+        .windows(
+            std::num::NonZeroUsize::new(TOKEN.len())
+                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
+        )
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -117,8 +121,12 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    for offset in ctx.admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(std::num::NonZeroUsize::new(TOKEN.len()).ok_or_else(|| CodecError::malformed("zero metadata token width"))?)
+    for offset in ctx
+        .admit_iter(payload, "scan SLDPRT metadata token markers")?
+        .windows(
+            std::num::NonZeroUsize::new(TOKEN.len())
+                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
+        )
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -143,10 +151,17 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        let units = ctx.admit_iter(bytes, "validate SLDPRT linear unit name")?
-            .chunks(std::num::NonZeroUsize::new(2).ok_or_else(|| CodecError::malformed("zero UTF-16 unit width"))?)
+        let units = ctx
+            .admit_iter(bytes, "validate SLDPRT linear unit name")?
+            .chunks(
+                std::num::NonZeroUsize::new(2)
+                    .ok_or_else(|| CodecError::malformed("zero UTF-16 unit width"))?,
+            )
             .filter_map(|unit| View::u16_le_at(unit, 0));
-        if char::decode_utf16(units).map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER)).all(char::is_whitespace) {
+        if char::decode_utf16(units)
+            .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .all(char::is_whitespace)
+        {
             continue;
         }
         let value = ctx.utf16le_lossy_text(
@@ -240,8 +255,12 @@ fn scan_vectors(
         all_lengths,
     } = *scan;
     let payload = section.payload();
-    for offset in ctx.admit_iter(payload, "scan SLDPRT metadata vector markers")?
-        .windows(std::num::NonZeroUsize::new(token.len()).ok_or_else(|| CodecError::malformed("zero metadata token width"))?)
+    for offset in ctx
+        .admit_iter(payload, "scan SLDPRT metadata vector markers")?
+        .windows(
+            std::num::NonZeroUsize::new(token.len())
+                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
+        )
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == token).then_some(at))
     {
@@ -286,8 +305,12 @@ fn scan_part(
 ) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moPart_c";
     let payload = section.payload();
-    for offset in ctx.admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(std::num::NonZeroUsize::new(TOKEN.len()).ok_or_else(|| CodecError::malformed("zero metadata token width"))?)
+    for offset in ctx
+        .admit_iter(payload, "scan SLDPRT metadata token markers")?
+        .windows(
+            std::num::NonZeroUsize::new(TOKEN.len())
+                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
+        )
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -323,8 +346,12 @@ fn scan_configuration_manager(
 ) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moConfigurationMgr_c";
     let payload = section.payload();
-    for offset in ctx.admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(std::num::NonZeroUsize::new(TOKEN.len()).ok_or_else(|| CodecError::malformed("zero metadata token width"))?)
+    for offset in ctx
+        .admit_iter(payload, "scan SLDPRT metadata token markers")?
+        .windows(
+            std::num::NonZeroUsize::new(TOKEN.len())
+                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
+        )
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {

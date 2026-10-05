@@ -205,10 +205,7 @@ fn projected_sketch_nurbs_poles_refuse_collection_limit() {
     );
     assert_eq!(limit.used, 4);
     assert_eq!(limit.additional, 2);
-    assert_eq!(
-        limit.operation,
-        "project SLDPRT sketch NURBS edge"
-    );
+    assert_eq!(limit.operation, "project SLDPRT sketch NURBS edge");
 }
 
 #[test]
@@ -273,8 +270,7 @@ fn projected_sketch_nurbs_poles_refuse_work_limit() {
     assert_eq!(knot_count, 4);
     assert_eq!(prefix_work, 141);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units =
-        u64::try_from(prefix_work).expect("fixture work count fits u64");
+    policy.limits.max_work_units = u64::try_from(prefix_work).expect("fixture work count fits u64");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits work policy");
@@ -295,10 +291,7 @@ fn projected_sketch_nurbs_poles_refuse_work_limit() {
     );
     assert_eq!(limit.used, 141);
     assert_eq!(limit.additional, 1);
-    assert_eq!(
-        limit.operation,
-        "project SLDPRT sketch NURBS edge"
-    );
+    assert_eq!(limit.operation, "project SLDPRT sketch NURBS edge");
 }
 
 #[test]
@@ -469,7 +462,10 @@ fn projected_rational_sketch_nurbs_preserves_pole_order_weights_and_knots() {
     assert!(!curve.periodic());
     assert_eq!(
         curve.weights().map(|weights| {
-            weights.into_iter().map(|weight| weight.get()).collect::<Vec<_>>()
+            weights
+                .into_iter()
+                .map(|weight| weight.get())
+                .collect::<Vec<_>>()
         }),
         Some(vec![2.0, 3.0, 5.0])
     );
@@ -477,7 +473,10 @@ fn projected_rational_sketch_nurbs_preserves_pole_order_weights_and_knots() {
         panic!("rational source poles remain rational")
     };
     assert_eq!(
-        points.iter().map(|point| point.point.get()).collect::<Vec<_>>(),
+        points
+            .iter()
+            .map(|point| point.point.get())
+            .collect::<Vec<_>>(),
         vec![
             Point2::new(9.0, 6.0),
             Point2::new(2.0, -1.0),
@@ -551,8 +550,7 @@ fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
     });
     assert_eq!(prefix_work, 146);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units =
-        u64::try_from(prefix_work).expect("fixture work count fits u64");
+    policy.limits.max_work_units = u64::try_from(prefix_work).expect("fixture work count fits u64");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits work policy");
@@ -564,11 +562,13 @@ fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
         &curves,
         frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    else {
+    ) else {
         panic!("first projected weight exceeds the remaining work units")
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.used, 146);
     assert_eq!(limit.additional, 1);
     assert_eq!(limit.operation, "project SLDPRT sketch NURBS edge");

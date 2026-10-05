@@ -14,7 +14,7 @@
 //! spun surface).
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -121,15 +121,15 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 pub(super) fn scan_sweep_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<HashMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
+) -> Result<BTreeMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
     ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT sweep carriers")?;
-    let mut out = HashMap::new();
+    let mut out = BTreeMap::new();
     let Some(last_offset) = bytes.len().checked_sub(20) else {
         return Ok(out);
     };
     for off in 0..last_offset {
         if let Some(carrier) = parse_sweep(bytes, off) {
-            ctx.admit_hash_map_entry(&mut out, &carrier.attr, "index SLDPRT sweep carriers")?;
+            ctx.admit_btree_entry(&mut out, &carrier.attr, "index SLDPRT sweep carriers")?;
             out.entry(carrier.attr).or_insert(carrier);
         }
     }
@@ -181,10 +181,18 @@ pub(super) fn profile_nurbs<'a>(
         } else {
             std::f64::consts::SQRT_2
         };
-        ctx.push_vec(&mut (control_points), center
+        ctx.push_vec(
+            &mut (control_points),
+            center
                 .translated(major, tangent_scale * major_radius * cos)
-                .translated(minor, tangent_scale * minor_radius * sin), "collect SLDPRT decoded vector items")?;
-        ctx.push_vec(&mut (weights), if index % 2 == 0 { 1.0 } else { half_sqrt2 }, "collect SLDPRT decoded vector items")?;
+                .translated(minor, tangent_scale * minor_radius * sin),
+            "collect SLDPRT decoded vector items",
+        )?;
+        ctx.push_vec(
+            &mut (weights),
+            if index % 2 == 0 { 1.0 } else { half_sqrt2 },
+            "collect SLDPRT decoded vector items",
+        )?;
     }
     match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx,
@@ -227,7 +235,10 @@ fn curve_rows<T: Copy>(
 ) -> Result<Vec<Vec<T>>, CodecError> {
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, values.len() / width, operation)?;
-    for values in ctx.admit_iter(values, "scan Parasolid sweep rows")?.chunks(std::num::NonZeroUsize::new(width).ok_or_else(|| CodecError::malformed("zero sweep row width"))?) {
+    for values in ctx.admit_iter(values, "scan Parasolid sweep rows")?.chunks(
+        std::num::NonZeroUsize::new(width)
+            .ok_or_else(|| CodecError::malformed("zero sweep row width"))?,
+    ) {
         let mut row = Vec::new();
         ctx.reserve_vec(&mut row, values.len(), operation)?;
         row.extend_from_slice(values);
@@ -281,11 +292,15 @@ pub(super) fn swept_nurbs(
             NurbsPoles3::Rational { points } => (points[i].point.get(), Some(points[i].weight)),
         };
         for v in [v_start, v_end] {
-            ctx.push_vec(&mut (control), Point3::new(
-                pole.x + v * direction.x,
-                pole.y + v * direction.y,
-                pole.z + v * direction.z,
-            ), "construct swept surface poles")?;
+            ctx.push_vec(
+                &mut (control),
+                Point3::new(
+                    pole.x + v * direction.x,
+                    pole.y + v * direction.y,
+                    pole.z + v * direction.z,
+                ),
+                "construct swept surface poles",
+            )?;
             if let (Some(out), Some(weight)) = (&mut weights, weight) {
                 ctx.push_vec(&mut *out, weight, "construct swept surface weights")?;
             }
@@ -370,11 +385,15 @@ pub(super) fn spun_nurbs(
             // Degenerate ring: the pole sits on the axis.
             for k in 0..9 {
                 ctx.push_vec(&mut (control), center, "construct spun surface poles")?;
-                ctx.push_vec(&mut (weights), if k % 2 == 1 {
-                    pole_weight * half_sqrt2
-                } else {
-                    pole_weight
-                }, "construct spun surface weights")?;
+                ctx.push_vec(
+                    &mut (weights),
+                    if k % 2 == 1 {
+                        pole_weight * half_sqrt2
+                    } else {
+                        pole_weight
+                    },
+                    "construct spun surface weights",
+                )?;
             }
             continue;
         }
@@ -408,7 +427,11 @@ pub(super) fn spun_nurbs(
                 };
                 *coordinate += offset;
             }
-            ctx.push_vec(&mut (control), Point3::new(coordinates[0], coordinates[1], coordinates[2]), "construct spun surface poles")?;
+            ctx.push_vec(
+                &mut (control),
+                Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+                "construct spun surface poles",
+            )?;
             ctx.push_vec(&mut (weights), weight, "construct spun surface weights")?;
         }
     }
@@ -466,7 +489,7 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::units::SumSquaresUnitVector3;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn with_service_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -479,7 +502,7 @@ mod tests {
         f(&ctx)
     }
 
-    fn scan_with_service_context(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+    fn scan_with_service_context(bytes: &[u8]) -> BTreeMap<u16, SweepCarrier> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             bytes,

@@ -48,25 +48,43 @@ pub(super) fn project_cosmetic_thread(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let diameter = match feature.parameters.get("D2").map(|value| parse_dimension_display_length(ctx, value)).transpose()?.flatten() {
+    let diameter = match feature
+        .parameters
+        .get("D2")
+        .map(|value| parse_dimension_display_length(ctx, value))
+        .transpose()?
+        .flatten()
+    {
         Some(diameter) => Some(diameter),
         None => {
-            let mut tagged = ctx.admit_iter(&feature.parameters, "scan SLDPRT cosmetic thread dimensions")?
+            let mut tagged = ctx
+                .admit_iter(
+                    &feature.parameters,
+                    "scan SLDPRT cosmetic thread dimensions",
+                )?
                 .map(|(_, value)| value)
                 .filter(|value| strip_diameter_modifier(value).is_some())
                 .filter_map(|value| parse_dimension_display_length(ctx, value).transpose());
             match tagged.next().transpose()? {
-                Some(diameter) => if tagged.next().transpose()?.is_none() { Some(diameter) } else { None },
+                Some(diameter) => {
+                    if tagged.next().transpose()?.is_none() {
+                        Some(diameter)
+                    } else {
+                        None
+                    }
+                }
                 None => None,
             }
         }
-    }.and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok());
+    }
+    .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok());
     let extent = match feature.parameters.get("D1") {
         Some(value) => match parse_positive_dimension_length_mm(value) {
             Some(length) => Some(CosmeticThreadExtent::Blind { length }),
             None => (parse_angle_rad(value).is_some()
-                || parse_dimension_display_length(ctx, value)? == Some(cadmpeg_ir::scalar::Length::ZERO))
-                .then_some(CosmeticThreadExtent::Through {}),
+                || parse_dimension_display_length(ctx, value)?
+                    == Some(cadmpeg_ir::scalar::Length::ZERO))
+            .then_some(CosmeticThreadExtent::Through {}),
         },
         None => Some(CosmeticThreadExtent::Through {}),
     };

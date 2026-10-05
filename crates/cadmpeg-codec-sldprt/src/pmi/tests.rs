@@ -1451,7 +1451,6 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     ));
 }
 
-
 fn pmi_guid_set_insertion_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -1473,7 +1472,9 @@ fn pmi_guid_set_insertion_refusal(dimension: cadmpeg_core::decode::ResourceDimen
     assert_eq!(records[0].value.get(), 0.025);
     let arena = DecodeArena::new();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        dimension, "index SLDPRT PMI candidate GUID", |cap| {
+        dimension,
+        "index SLDPRT PMI candidate GUID",
+        |cap| {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,

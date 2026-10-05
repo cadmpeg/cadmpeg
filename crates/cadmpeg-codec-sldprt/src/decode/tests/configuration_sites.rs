@@ -32,7 +32,11 @@ fn decode_preserves_unresolved_active_configuration() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
     ));
     assert_eq!(
-        container::active_configuration_index(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap(),
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &crate::test_support::container::scan(&source)
+        )
+        .unwrap(),
         None
     );
 

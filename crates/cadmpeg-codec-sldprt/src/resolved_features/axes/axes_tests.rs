@@ -1327,9 +1327,15 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
         profile_roster_principal_axis_endpoints(ctx, &lane, "profile-native", &markers)
     });
-    assert!(super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &markers)
-        .unwrap().is_none());
-    for operation in ["collect SLDPRT implicit axis curves", "collect SLDPRT implicit axis endpoints"] {
+    assert!(
+        super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+            .unwrap()
+            .is_none()
+    );
+    for operation in [
+        "collect SLDPRT implicit axis curves",
+        "collect SLDPRT implicit axis endpoints",
+    ] {
         crate::test_support::work_refusal_at(operation, |ctx| {
             super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
         });
@@ -1463,13 +1469,16 @@ fn linear_pattern_dimension_lookup_propagates_work_refusal() {
         classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
             .into_iter()
             .enumerate()
-            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
-                id: format!("class#{ordinal}"),
-                parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset,
-                name: name.into(),
-            }).collect(),
+            .map(
+                |(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                    id: format!("class#{ordinal}"),
+                    parent: "lane".into(),
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    offset,
+                    name: name.into(),
+                },
+            )
+            .collect(),
         names: [(50, "D1"), (250, "D2")]
             .into_iter()
             .enumerate()
@@ -1480,7 +1489,8 @@ fn linear_pattern_dimension_lookup_propagates_work_refusal() {
                 offset,
                 object_id: Some(ObjectId::Absent),
                 value: value.into(),
-            }).collect(),
+            })
+            .collect(),
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -1503,8 +1513,14 @@ fn linear_pattern_dimension_lookup_propagates_work_refusal() {
                 && limit.operation == "look up SLDPRT linear pattern dimensions"
     ));
     let (spacing, count) = super::typed_linear_pattern_dimensions(
-        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
-    ).unwrap().expect("two typed dimensions");
+        &cadmpeg_test_support::service_decode_context(),
+        feature,
+        &lane,
+        0,
+        400,
+    )
+    .unwrap()
+    .expect("two typed dimensions");
     assert_eq!(count, 3);
     assert_eq!(spacing.get(), 25.0);
 }
@@ -1515,16 +1531,23 @@ fn line_reference_direction_propagates_slot_refusal() {
     payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
     payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
     payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
-    for dimension in [cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    ] {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         match dimension {
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = 0
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = 0
+            }
             _ => panic!("test dimension"),
         }
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(super::line_reference_direction(&ctx, &payload, 0),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == dimension
@@ -1532,8 +1555,12 @@ fn line_reference_direction_propagates_slot_refusal() {
                     && ctx.resource_refusal() == Some(limit)));
     }
     let direction = super::line_reference_direction(
-        &cadmpeg_test_support::service_decode_context(), &payload, 0,
-    ).unwrap().expect("declared direction");
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        0,
+    )
+    .unwrap()
+    .expect("declared direction");
     assert_eq!(*direction.as_raw(), Vector3::new(1.0, 0.0, 0.0));
 }
 
@@ -1544,7 +1571,8 @@ fn existing_revolution_vote_lookup_propagates_work_refusal() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One visit precedes hashing the existing feature identity.
     policy.limits.max_work_units = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::push_revolution_vote(&ctx, &mut votes, "feature", 2, "lookup SLDPRT test revolution vote"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1553,9 +1581,13 @@ fn existing_revolution_vote_lookup_propagates_work_refusal() {
     ));
     assert_eq!(votes["feature"], [1]);
     super::push_revolution_vote(
-        &cadmpeg_test_support::service_decode_context(), &mut votes, "feature", 2,
+        &cadmpeg_test_support::service_decode_context(),
+        &mut votes,
+        "feature",
+        2,
         "lookup SLDPRT test revolution vote",
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(votes["feature"], [1, 2]);
 }
 
@@ -1573,8 +1605,11 @@ fn revolution_identity_lookups_propagate_work_refusal() {
     }
     let mut candidates = histories;
     super::enrich_history_revolution_inputs(
-        &cadmpeg_test_support::service_decode_context(), &mut candidates, &[],
-    ).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &mut candidates,
+        &[],
+    )
+    .unwrap();
     assert_eq!(candidates[0].features[0].id, "revolution");
     assert_eq!(candidates[0].features[0].name, "Revolution");
 }
@@ -1594,13 +1629,16 @@ fn linear_pattern_count_processing_propagates_work_refusal() {
         classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
             .into_iter()
             .enumerate()
-            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
-                id: format!("class#{ordinal}"),
-                parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset,
-                name: name.into(),
-            }).collect(),
+            .map(
+                |(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                    id: format!("class#{ordinal}"),
+                    parent: "lane".into(),
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    offset,
+                    name: name.into(),
+                },
+            )
+            .collect(),
         names: [(50, "D1"), (250, "D2")]
             .into_iter()
             .enumerate()
@@ -1611,7 +1649,8 @@ fn linear_pattern_count_processing_propagates_work_refusal() {
                 offset,
                 object_id: Some(ObjectId::Absent),
                 value: value.into(),
-            }).collect(),
+            })
+            .collect(),
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -1626,8 +1665,14 @@ fn linear_pattern_count_processing_propagates_work_refusal() {
         super::typed_linear_pattern_dimensions(ctx, feature, &lane, 0, 400)
     });
     let (spacing, count) = super::typed_linear_pattern_dimensions(
-        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
-    ).unwrap().expect("two typed dimensions");
+        &cadmpeg_test_support::service_decode_context(),
+        feature,
+        &lane,
+        0,
+        400,
+    )
+    .unwrap()
+    .expect("two typed dimensions");
     assert_eq!(count, 3);
     assert_eq!(spacing.get(), 25.0);
 }

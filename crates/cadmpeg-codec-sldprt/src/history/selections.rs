@@ -24,7 +24,9 @@ use crate::records::FeatureSource;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
-type SurfaceSelectionFaceBindings = HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
+/// Faces bound to surface selections, by owning feature and native selection value.
+type SurfaceSelectionFaceBindings =
+    HashMap<String, HashMap<String, Option<cadmpeg_ir::ids::FaceId>>>;
 
 struct FaceSelectionContext<'a> {
     ids: &'a HashMap<&'a str, Option<&'a cadmpeg_ir::ids::FaceId>>,
@@ -84,7 +86,10 @@ fn surface_selection_face_bindings<'a>(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> Result<SurfaceSelectionFaceBindings, CodecError> {
     let mut faces_by_identity = HashMap::new();
-    for (target, identity) in ctx.admit_iter(face_identities, "scan SLDPRT surface_selection_face_bindings values")? {
+    for (target, identity) in ctx.admit_iter(
+        face_identities,
+        "scan SLDPRT surface_selection_face_bindings values",
+    )? {
         reserve_selection_map(ctx, &mut faces_by_identity)?;
         let entry = faces_by_identity
             .entry((identity.feature_source_id, identity.local_id))
@@ -98,30 +103,67 @@ fn surface_selection_face_bindings<'a>(
         ctx.charge_work(1, "bind SLDPRT topology selections")?;
         let candidate = selection
             .components
-            .last().map(|component| {
+            .last()
+            .map(|component| {
                 let feature_source_id = match match selection.terminal_feature_ref.as_deref() {
-                    Some(terminal) => ctx.get_hash_map(&(feature_sources), terminal, "look up SLDPRT hash key")?.copied().flatten(),
+                    Some(terminal) => ctx
+                        .get_hash_map(&(feature_sources), terminal, "look up SLDPRT hash key")?
+                        .copied()
+                        .flatten(),
                     None => View::u32_le_at(&component.type_signature, 4)
                         .and_then(|source| FeatureSourceId::try_from(source).ok()),
-                } { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-                Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(faces_by_identity), &(feature_source_id, match component.local_id { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }), "look up SLDPRT hash key")?
+                } {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                };
+                Ok::<_, cadmpeg_core::CodecError>(
+                    ctx.get_hash_map(
+                        &(faces_by_identity),
+                        &(
+                            feature_source_id,
+                            match component.local_id {
+                                Some(value) => value,
+                                None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                            },
+                        ),
+                        "look up SLDPRT hash key",
+                    )?
                     .copied()
-                    .flatten())
-            }).transpose()?.flatten()
+                    .flatten(),
+                )
+            })
+            .transpose()?
+            .flatten()
             .map(|face| copy_selection_id(ctx, face.as_str()))
             .transpose()?;
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
             ctx,
             &selection.components,
         )?;
-        let key = (copy_selection_text(ctx, &selection.feature_ref)?, native);
-        reserve_selection_map(ctx, &mut bindings)?;
-        match bindings.entry(key) {
+        let owner_bindings = match ctx.get_mut_hash_map(
+            &mut bindings,
+            selection.feature_ref.as_str(),
+            "index SLDPRT topology selections",
+        )? {
+            Some(owner_bindings) => owner_bindings,
+            None => ctx
+                .entry_hash_map(
+                    &mut bindings,
+                    copy_selection_text(ctx, &selection.feature_ref)?,
+                    "index SLDPRT topology selections",
+                )?
+                .or_default(),
+        };
+        match ctx.entry_hash_map(owner_bindings, native, "index SLDPRT topology selections")? {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get() != &candidate {
+                if !ctx.equal(
+                    entry.get(),
+                    &candidate,
+                    "compare SLDPRT topology selections",
+                )? {
                     entry.insert(None);
                 }
             }
@@ -186,14 +228,25 @@ pub(crate) fn bind_topology_selections(
     )?;
     for feature in features {
         ctx.charge_work(1, "bind SLDPRT topology selections")?;
-        if let Some(scope) = feature.native_ref.as_deref().map(|native_ref| {
-            let mut found = None;
-            for history in ctx.admit_iter(histories, "scan SLDPRT topology selection histories")? {
-                found = ctx.admit_iter(&history.features, "scan SLDPRT topology selection records")?.find(|record| record.id == native_ref);
-                if found.is_some() { break; }
-            }
-            Ok::<_, CodecError>(found)
-        }).transpose()?.flatten()
+        if let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .map(|native_ref| {
+                let mut found = None;
+                for history in
+                    ctx.admit_iter(histories, "scan SLDPRT topology selection histories")?
+                {
+                    found = ctx
+                        .admit_iter(&history.features, "scan SLDPRT topology selection records")?
+                        .find(|record| record.id == native_ref);
+                    if found.is_some() {
+                        break;
+                    }
+                }
+                Ok::<_, CodecError>(found)
+            })
+            .transpose()?
+            .flatten()
             .and_then(|record| record.properties.get("Scope"))
         {
             if let Some(outputs) =
@@ -577,35 +630,44 @@ fn resolve_planar_face_selection(
         cadmpeg_core::decode::u64_from_index(faces.len()),
         "match SLDPRT planar selection faces",
     )?;
-    let candidates = faces.iter().map(|face| -> Result<_, cadmpeg_core::CodecError> {
-        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-            &match ctx.get_hash_map(&(surfaces), &face.surface, "look up SLDPRT hash key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.geometry
-        else {
-            return Ok::<_, cadmpeg_core::CodecError>(None);
-        };
-        let candidate_origin = plane_surface.origin();
-        let candidate_normal = plane_surface.frame().axis().as_raw();
-        let candidate_length = candidate_normal.norm();
-        if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-            return Ok::<_, cadmpeg_core::CodecError>(None);
-        }
-        let alignment = (normal.x * candidate_normal.x
-            + normal.y * candidate_normal.y
-            + normal.z * candidate_normal.z)
-            / (normal_length * candidate_length);
-        let displacement = Vector3::new(
-            origin.x - candidate_origin.x,
-            origin.y - candidate_origin.y,
-            origin.z - candidate_origin.z,
-        );
-        let separation = (displacement.x * candidate_normal.x
-            + displacement.y * candidate_normal.y
-            + displacement.z * candidate_normal.z)
-            / candidate_length;
-        Ok::<_, cadmpeg_core::CodecError>(((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
-            && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8)
-            .then_some(&face.id))
-    }).filter_map(Result::transpose);
+    let candidates = faces
+        .iter()
+        .map(|face| -> Result<_, cadmpeg_core::CodecError> {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                &match ctx.get_hash_map(&(surfaces), &face.surface, "look up SLDPRT hash key")? {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                }
+                .geometry
+            else {
+                return Ok::<_, cadmpeg_core::CodecError>(None);
+            };
+            let candidate_origin = plane_surface.origin();
+            let candidate_normal = plane_surface.frame().axis().as_raw();
+            let candidate_length = candidate_normal.norm();
+            if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
+                return Ok::<_, cadmpeg_core::CodecError>(None);
+            }
+            let alignment = (normal.x * candidate_normal.x
+                + normal.y * candidate_normal.y
+                + normal.z * candidate_normal.z)
+                / (normal_length * candidate_length);
+            let displacement = Vector3::new(
+                origin.x - candidate_origin.x,
+                origin.y - candidate_origin.y,
+                origin.z - candidate_origin.z,
+            );
+            let separation = (displacement.x * candidate_normal.x
+                + displacement.y * candidate_normal.y
+                + displacement.z * candidate_normal.z)
+                / candidate_length;
+            Ok::<_, cadmpeg_core::CodecError>(
+                ((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
+                    && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8)
+                    .then_some(&face.id),
+            )
+        })
+        .filter_map(Result::transpose);
     let mut matching = Vec::new();
     for face in candidates {
         let face = face?;
@@ -756,15 +818,21 @@ fn resolve_face_selection(
         let mut faces = resolve_ids(ctx, native, context.ids, cadmpeg_ir::ids::FaceId::as_str)?;
         if faces.is_none() {
             if let Some(feature_ref) = context.feature_ref {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(context.surface_selection_faces.len()),
-                    "resolve SLDPRT surface selection owner",
-                )?;
-                if let Some(Some(face)) =
-                    ctx.admit_iter(context.surface_selection_faces, "scan SLDPRT resolve_face_selection values")?
-                        .find_map(|((owner, key), value)| {
-                            (owner == feature_ref && key == native).then_some(value)
-                        })
+                if let Some(Some(face)) = ctx
+                    .get_hash_map(
+                        context.surface_selection_faces,
+                        feature_ref,
+                        "resolve SLDPRT surface selection owner",
+                    )?
+                    .map(|owner_bindings| {
+                        ctx.get_hash_map(
+                            owner_bindings,
+                            native.as_str(),
+                            "resolve SLDPRT surface selection owner",
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
                 {
                     let mut copied = Vec::new();
                     ctx.reserve_vec(
@@ -808,11 +876,14 @@ fn history_feature_sources<'a>(
             let mut source = feature.source_id;
             if source.is_none() {
                 let mut first = None;
-                for candidate in ctx.admit_iter(lanes, "resolve SLDPRT topology source candidates")?.filter_map(|lane| {
-                    crate::resolved_features::scalars::feature_object_name(feature, lane)?
-                        .object_id?
-                        .value()
-                }) {
+                for candidate in ctx
+                    .admit_iter(lanes, "resolve SLDPRT topology source candidates")?
+                    .filter_map(|lane| {
+                        crate::resolved_features::scalars::feature_object_name(feature, lane)?
+                            .object_id?
+                            .value()
+                    })
+                {
                     if first.is_some_and(|known| known != candidate) {
                         first = None;
                         break;
@@ -833,7 +904,7 @@ fn history_feature_sources<'a>(
                     }
                 }
             }
-            }
+        }
     }
     Ok(sources)
 }
@@ -992,12 +1063,12 @@ mod tests {
             ],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
-        );
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:8,5");
         assert_eq!(
-            bindings.get(&key).cloned(),
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
             Some(Some(
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar")
@@ -1035,11 +1106,14 @@ mod tests {
             ],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:5".to_string(),
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:5");
+        assert_eq!(
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
+            Some(None)
         );
-        assert_eq!(bindings.get(&key).cloned(), Some(None));
     }
 
     #[test]
@@ -1062,12 +1136,12 @@ mod tests {
             )],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
-        );
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:8,5");
         assert_eq!(
-            bindings.get(&key).cloned(),
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
             Some(Some(
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar")

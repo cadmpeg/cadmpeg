@@ -682,21 +682,35 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         ],
     };
     assert_eq!(
-        face.feature_source_id(&cadmpeg_test_support::service_decode_context()).unwrap().map(FeatureSourceId::value),
+        face.feature_source_id(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(FeatureSourceId::value),
         Some(7)
     );
     let expected = persistent_identity(7, 3, &[]);
-    assert_eq!(face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context()).unwrap(), Some(&expected));
+    assert_eq!(
+        face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
+        Some(&expected)
+    );
 
     let mut conflicting = face;
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
         identity.local_id = 4;
     }
     assert_eq!(
-        conflicting.feature_source_id(&cadmpeg_test_support::service_decode_context()).unwrap().map(FeatureSourceId::value),
+        conflicting
+            .feature_source_id(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(conflicting.persistent_surface_identity(&cadmpeg_test_support::service_decode_context()).unwrap(), None);
+    assert_eq!(
+        conflicting
+            .persistent_surface_identity(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -979,6 +993,7 @@ fn cylindrical_trim_angle_collection_refuses_caller_limit() {
             vertices: &vertices,
             points: &points,
             curves: &curves,
+            coordinate_scale: 1.0,
         },
     )
     .expect_err("angle collection exceeds the caller limit");
@@ -1063,6 +1078,7 @@ fn conical_trim_angle_collection_refuses_caller_limit() {
             vertices: &vertices,
             points: &points,
             curves: &curves,
+            coordinate_scale: 1.0,
         },
     )
     .expect_err("angle collection exceeds the caller limit");
@@ -1682,7 +1698,8 @@ fn mixed_planar_holes_reject_overlap() {
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ).unwrap());
+    )
+    .unwrap());
     assert!(!circle_overlaps_polygon(
         &ctx,
         CircularHole {
@@ -1691,7 +1708,8 @@ fn mixed_planar_holes_reject_overlap() {
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]

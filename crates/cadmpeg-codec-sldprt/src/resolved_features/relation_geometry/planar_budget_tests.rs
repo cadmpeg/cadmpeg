@@ -103,6 +103,88 @@ fn project_solved_line_with_policy(policy: DecodePolicy) -> Result<(), CodecErro
     Ok(())
 }
 
+const TWO_SOLVER_LINE_OPERANDS: usize = 2;
+
+fn two_solver_line_fixture() -> (
+    Sketch,
+    Feature,
+    FeatureInputLane,
+    cadmpeg_ir::features::DesignParameter,
+) {
+    use crate::records::{SketchInputEntity, SketchInputKind};
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::scalar::Length;
+
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances[0].family =
+        crate::records::FeatureInputRelationFamily::LineLineDistance;
+    lane.relation_instances[0].operands = (0..TWO_SOLVER_LINE_OPERANDS)
+        .map(|index| {
+            let entity_index = u16::try_from(index).unwrap();
+            FeatureInputOperand {
+                offset: u64::from(entity_index),
+                reference_ref: format!("line-reference-{entity_index}"),
+                kind: FeatureInputOperandKind::E1,
+                entity_index,
+                entity_ref: None,
+            }
+        })
+        .collect();
+    lane.sketch_entities = [
+        ("line-0-start", 0.0, 0.0),
+        ("line-0-end", 10.0, 0.0),
+        ("line-1-start", 0.0, 5.0),
+        ("line-1-end", 10.0, 5.0),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (id, u, v))| {
+        let mut marker = SketchInputEntity::new(
+            id,
+            "lane",
+            u32::try_from(index).unwrap(),
+            u64::try_from(index).unwrap(),
+            SketchInputKind::Point,
+        );
+        marker.feature_ref = Some("feature".into());
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u / 1000.0, v / 1000.0]);
+        marker
+    })
+    .collect();
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#line-distance").unwrap(),
+        owner: Some(feature.id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "5mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("scalar".into()),
+    };
+    (sketch, feature, lane, parameter)
+}
+
+fn project_two_solver_lines_with_policy(
+    policy: &DecodePolicy,
+) -> Result<Vec<cadmpeg_ir::sketches::SketchEntity>, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"two solved lines", &arena, policy)?;
+    let (sketch, feature, lane, parameter) = two_solver_line_fixture();
+    let mut entities = Vec::new();
+    project_relation_solved_line_geometry(
+        &ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )?;
+    Ok(entities)
+}
+
 fn project_relation_point_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"relation point", &arena, &policy)?;
@@ -256,6 +338,91 @@ fn relation_point_projection_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT relation-point sketches"));
+}
+
+#[test]
+fn solved_line_projection_materializes_two_operand_geometry() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let entities = project_two_solver_lines_with_policy(&DecodePolicy::service()).unwrap();
+    assert_eq!(entities.len(), TWO_SOLVER_LINE_OPERANDS);
+    let lines = entities
+        .iter()
+        .map(|entity| {
+            let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition()
+            else {
+                panic!("solved relation output is a line");
+            };
+            (entity.geometry_ref.as_deref(), start.get(), end.get())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        vec![
+            (
+                Some("feature:solver-line:0"),
+                Point2::new(0.0, 0.0),
+                Point2::new(10.0, 0.0),
+            ),
+            (
+                Some("feature:solver-line:1"),
+                Point2::new(0.0, 5.0),
+                Point2::new(10.0, 5.0),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn solved_line_projection_refuses_operand_vector_materialized_bytes() {
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let operand_count = lane.relation_instances[0].operands.len();
+    assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
+    let requested_bytes = u64::try_from(
+        operand_count
+            .checked_mul(std::mem::size_of::<(
+                &FeatureInputOperand,
+                [&crate::records::SketchInputEntity; 2],
+                cadmpeg_ir::sketches::SketchEntity,
+            )>())
+            .expect("fixture operand vector bytes fit usize"),
+    )
+    .expect("fixture operand vector bytes fit u64");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "collect SLDPRT relation operand lines",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            project_two_solver_lines_with_policy(&policy).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "collect SLDPRT relation operand lines"
+            && limit.additional == requested_bytes));
+}
+
+#[test]
+fn solved_line_projection_refuses_operand_vector_collection_items() {
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let operand_count = lane.relation_instances[0].operands.len();
+    assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
+    let requested_slots = u64::try_from(operand_count).expect("fixture operand slots fit u64");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT relation operand lines",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            project_two_solver_lines_with_policy(&policy).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT relation operand lines"
+            && limit.additional == requested_slots));
 }
 
 fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {

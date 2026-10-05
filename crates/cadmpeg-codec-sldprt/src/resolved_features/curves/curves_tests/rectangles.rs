@@ -1,7 +1,7 @@
 //! Rectangle coordinate selection and resource refusal tests.
 
-use super::rectangle_limit_markers;
 use super::super::{ordered_rectangle_corners, unique_dimensioned_rectangle_markers};
+use super::rectangle_limit_markers;
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -109,8 +109,10 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
     let marker_refs = markers.iter().collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    for operation in ["deduplicate SLDPRT dimensioned rectangle u coordinates",
-        "deduplicate SLDPRT rectangle v coordinates"] {
+    for operation in [
+        "deduplicate SLDPRT dimensioned rectangle u coordinates",
+        "deduplicate SLDPRT rectangle v coordinates",
+    ] {
         crate::test_support::work_refusal_at(operation, |ctx| {
             unique_dimensioned_rectangle_markers(ctx, &marker_refs, &[8.5, 5.5])
         });
@@ -146,4 +148,3 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         None
     );
 }
-

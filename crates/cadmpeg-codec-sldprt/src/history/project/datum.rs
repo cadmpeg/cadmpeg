@@ -79,7 +79,16 @@ pub(in crate::history) fn project_offset_plane(
     let reference = if let Some(reference) = feature
         .properties
         .get("Reference")
-        .or_else(|| feature.properties.get("Plane")).map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(by_source), source.as_str(), "look up SLDPRT hash key")?)}).transpose()?.flatten()
+        .or_else(|| feature.properties.get("Plane"))
+        .map(|source| {
+            Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(
+                &(by_source),
+                source.as_str(),
+                "look up SLDPRT hash key",
+            )?)
+        })
+        .transpose()?
+        .flatten()
     {
         Some(DatumPlaneReference::Feature {
             feature: copy_projected_feature_id(ctx, reference)?,
@@ -175,26 +184,46 @@ pub(super) fn project_projected_curve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((source, target_faces, direction, bidirectional)) = (|| -> Result<_, cadmpeg_core::CodecError> {
-        let source = match feature.properties.get("Source") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let source = ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?
-            .copied()
-            .unwrap_or(source);
-        let direction = match feature.properties.get("Direction") {
-            Some(value) => CurveProjectionDirection::Vector(match parse_valid_direction(value) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }),
-            None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
-        };
-        Ok::<_, cadmpeg_core::CodecError>(Some((
-            source,
-            match feature.properties.get("TargetFaces") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
-            direction,
-            feature
-                .properties
-                .get("Bidirectional")
-                .and_then(|value| parse_bool(value))
-                .unwrap_or(false),
-        )))
-    })()? else {
+    let Some((source, target_faces, direction, bidirectional)) =
+        (|| -> Result<_, cadmpeg_core::CodecError> {
+            let source = match feature.properties.get("Source") {
+                Some(value) => value,
+                None => return Ok::<_, cadmpeg_core::CodecError>(None),
+            };
+            let source = ctx
+                .get_hash_map(
+                    &(native_by_source),
+                    source.as_str(),
+                    "look up SLDPRT hash key",
+                )?
+                .copied()
+                .unwrap_or(source);
+            let direction = match feature.properties.get("Direction") {
+                Some(value) => {
+                    CurveProjectionDirection::Vector(match parse_valid_direction(value) {
+                        Some(value) => value,
+                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                    })
+                }
+                None => {
+                    CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal)
+                }
+            };
+            Ok::<_, cadmpeg_core::CodecError>(Some((
+                source,
+                match feature.properties.get("TargetFaces") {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                },
+                direction,
+                feature
+                    .properties
+                    .get("Bidirectional")
+                    .and_then(|value| parse_bool(value))
+                    .unwrap_or(false),
+            )))
+        })()?
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -222,7 +251,10 @@ pub(super) fn project_composite_curve(
         .filter(|value| !value.is_empty())
     {
         ctx.charge_work(1, "project SLDPRT composite curve segments")?;
-        let source = ctx.get_hash_map(&(native_by_source), source, "look up SLDPRT hash key")?.copied().unwrap_or(source);
+        let source = ctx
+            .get_hash_map(&(native_by_source), source, "look up SLDPRT hash key")?
+            .copied()
+            .unwrap_or(source);
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
         ctx.reserve_vec(&mut segments, 1, "project SLDPRT composite curve segments")?;
         segments.push(segment);
@@ -325,19 +357,45 @@ pub(super) fn project_wrap(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((profile, face, mode)) = (|| -> Result<_, cadmpeg_core::CodecError> {
-        let profile = match feature.properties.get("Profile") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let profile = ctx.get_hash_map(&(native_by_source), profile.as_str(), "look up SLDPRT hash key")?
+        let profile = match feature.properties.get("Profile") {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
+        let profile = ctx
+            .get_hash_map(
+                &(native_by_source),
+                profile.as_str(),
+                "look up SLDPRT hash key",
+            )?
             .copied()
             .unwrap_or(profile);
-        let face = match feature.properties.get("Face") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let mode_name = match feature.properties.get("Mode") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+        let face = match feature.properties.get("Face") {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
+        let mode_name = match feature.properties.get("Mode") {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
         let mode = if mode_name.eq_ignore_ascii_case("emboss") {
             WrapMode::Emboss {
-                depth: match parse_positive_length_mm(match feature.parameters.get("Depth") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                depth: match parse_positive_length_mm(match feature.parameters.get("Depth") {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                }) {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                },
             }
         } else if mode_name.eq_ignore_ascii_case("deboss") {
             WrapMode::Deboss {
-                depth: match parse_positive_length_mm(match feature.parameters.get("Depth") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+                depth: match parse_positive_length_mm(match feature.parameters.get("Depth") {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                }) {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                },
             }
         } else if mode_name.eq_ignore_ascii_case("scribe") {
             WrapMode::Scribe
@@ -345,7 +403,8 @@ pub(super) fn project_wrap(
             return Ok::<_, cadmpeg_core::CodecError>(None);
         };
         Ok::<_, cadmpeg_core::CodecError>(Some((profile, face, mode)))
-    })()? else {
+    })()?
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Wrap {

@@ -47,14 +47,14 @@ pub(crate) fn validate_native(
         }
         if !history.content.is_empty() {
             let configurations = temporary.with_storage(|| {
-                ctx.collect_hash_set(
+                ctx.collect_btree_set(
                     ctx.admit_iter(&history.configurations, "scan SLDPRT native configurations")?
                         .map(|configuration| configuration.id.as_str()),
                     "index SLDPRT native history content",
                 )
             })?;
             let root_features = temporary.with_storage(|| {
-                ctx.collect_hash_set(
+                ctx.collect_btree_set(
                     ctx.admit_iter(&history.features, "scan SLDPRT native features")?
                         .filter(|feature| feature.tree_parent.is_none())
                         .map(|feature| feature.id.as_str()),
@@ -73,7 +73,7 @@ pub(crate) fn validate_native(
             for item in ctx.admit_iter(&history.content, "scan SLDPRT native history content")? {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
-                        if !ctx.contains_hash_set(
+                        if !ctx.contains_btree_set(
                             &configurations,
                             id.as_str(),
                             "find SLDPRT native history content",
@@ -111,7 +111,7 @@ pub(crate) fn validate_native(
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !ctx.contains_hash_set(
+                        } else if !ctx.contains_btree_set(
                             &root_features,
                             id.as_str(),
                             "find SLDPRT native history content",

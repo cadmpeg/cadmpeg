@@ -30,12 +30,12 @@ impl CloneCharged for RelationScalars {
 impl RelationScalars {
     pub(crate) fn from_scalars<'a, S, F>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scalars: &'a S,
+        scalars: S,
         scalar_ref: F,
     ) -> Result<Self, cadmpeg_core::CodecError>
     where
-        S: cadmpeg_core::decode::iter_source::IterSource + ?Sized + 'a,
-        F: Fn(<S::Iter<'a> as Iterator>::Item) -> &'a FeatureInputScalar,
+        S: cadmpeg_core::decode::iter_source::IterSource,
+        F: Fn(<S::Iter as Iterator>::Item) -> &'a FeatureInputScalar,
     {
         let mut refs = Vec::new();
         let mut parameter = None;
@@ -179,7 +179,8 @@ fn admit_member(
     id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let length = cadmpeg_core::decode::u64_from_index(id.len());
-    let work = ctx.admit_iter(&refs[..], "scan SLDPRT admit_member values")?
+    let work = ctx
+        .admit_iter(&refs[..], "scan SLDPRT admit_member values")?
         .try_fold(length, |work, member| {
             work.checked_add(length)?
                 .checked_add(cadmpeg_core::decode::u64_from_index(member.len()))?
@@ -216,9 +217,12 @@ impl RelationScalarsWire {
     ) -> Result<RelationScalars, cadmpeg_core::CodecError> {
         const OPERATION: &str = "admit SLDPRT relation scalar membership";
         let count = cadmpeg_core::decode::u64_from_index(self.scalar_refs.len());
-        let total = ctx.admit_iter(&self.scalar_refs, OPERATION)?.try_fold(0u64, |sum, id| {
-            sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len()))
-        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
+        let total = ctx
+            .admit_iter(&self.scalar_refs, OPERATION)?
+            .try_fold(0u64, |sum, id| {
+                sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len()))
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
         let work = (|| {
             let mut work = count.checked_mul(total)?;
             if count != 0 {

@@ -1,8 +1,6 @@
 //! Generated sketch marker, relation and scalar emission.
 
-use super::markers::{
-    marker_coordinates, standard_marker_result, StandardMarkerAdmission,
-};
+use super::markers::marker_coordinates;
 use super::relation_geometry::is_reference_relation_parameter;
 use super::relation_loci::marker_accepts_locus;
 use super::selections::{operand_accepts_marker, operand_uses_compatible_ordinal};
@@ -789,14 +787,7 @@ pub(super) fn append_coordinate_marker_link(
         .windows(SKETCH_MARKER.len())
         .enumerate()
         .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
-        .filter(|offset| {
-            standard_marker_result(marker_coordinates(
-                &StandardMarkerAdmission,
-                payload,
-                *offset,
-            ))
-            .is_some()
-        })
+        .filter(|offset| marker_coordinates(payload, *offset).is_some())
         .filter(|offset| View::u32_le_at(payload, *offset + 138) == Some(u32::from(owner_local_id)))
         .collect::<Vec<_>>();
     let [offset] = offsets.as_slice() else {
