@@ -926,14 +926,10 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             }
         }
     }
-    let mut replacements = replacements.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..replacements.len()),
+    for (position, side, replacement) in ctx.admit_iter(
+        replacements,
         "nx serialized support UV replacement traversal",
     )? {
-        let Some((position, side, replacement)) = replacements.next() else {
-            break;
-        };
         let Some(context) = ir
             .model
             .procedural_curves
@@ -1911,16 +1907,9 @@ geometry_budget,
                 }
             }
         }
-        let mut replacements = replacements.into_iter();
-        for _ in ctx.admit_iter(
-            &(0..replacements.len()),
-            "nx support UV replacement traversal",
-        )? {
-            let Some((position, side, pcurve, effective_fit_tolerance, cache_backed)) =
-                replacements.next()
-            else {
-                break;
-            };
+        for (position, side, pcurve, effective_fit_tolerance, cache_backed) in
+            ctx.admit_iter(replacements, "nx support UV replacement traversal")?
+        {
             let Some(procedural) = ir.model.procedural_curves.get_mut(position) else {
                 continue;
             };
@@ -2404,14 +2393,9 @@ fn complete_coupled_support_uv(
             lane_geometry_exhausted |= child_exhausted || parent_exhausted;
         }
     }
-    let mut replacements = replacements.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..replacements.len()),
-        "nx coupled support UV replacement traversal",
-    )? {
-        let Some((position, side, pcurve)) = replacements.next() else {
-            break;
-        };
+    for (position, side, pcurve) in
+        ctx.admit_iter(replacements, "nx coupled support UV replacement traversal")?
+    {
         let Some(context) = ir
             .model
             .procedural_curves
@@ -3252,11 +3236,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             ir.model.pcurves.iter().map(|pcurve| pcurve.id.as_str()),
             "nx completion existing pcurve identities",
         )?;
-        let mut replacements = replacements.into_iter();
-        for _ in ctx.admit_iter(&(0..replacements.len()), "nx completion replacement naming")? {
-            let Some((coedge_index, source_index, completed)) = replacements.next() else {
-                break;
-            };
+        for (coedge_index, source_index, completed) in
+            ctx.admit_iter(replacements, "nx completion replacement naming")?
+        {
             let Some(coedge) = ir.model.coedges.get(coedge_index) else {
                 continue;
             };

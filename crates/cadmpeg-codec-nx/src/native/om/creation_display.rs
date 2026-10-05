@@ -159,15 +159,10 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + cadmpeg_core::decode::u64_from_index(record_area_offset);
         let index_rows = crate::om::column_row::scan::index_rows(ctx, record_area)?;
-        let index_rows_count = index_rows.len();
-        let mut index_rows = index_rows.into_iter();
-        for _index in ctx.admit_iter(
-            &(0..index_rows_count),
-            "NX creation display index rows visits",
-        )? {
-            let Some(row) = index_rows.next() else {
-                break;
-            };
+        for (_index, row) in ctx
+            .admit_iter(index_rows, "NX creation display index rows visits")?
+            .enumerate()
+        {
             if row.indices()[3].atom.value() != class_ordinal {
                 continue;
             }
@@ -184,15 +179,10 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             )?;
         }
         let linked_rows = crate::om::column_row::scan::linked_rows(ctx, record_area)?;
-        let linked_rows_count = linked_rows.len();
-        let mut linked_rows = linked_rows.into_iter();
-        for _index in ctx.admit_iter(
-            &(0..linked_rows_count),
-            "NX creation display linked rows visits",
-        )? {
-            let Some(row) = linked_rows.next() else {
-                break;
-            };
+        for (_index, row) in ctx
+            .admit_iter(linked_rows, "NX creation display linked rows visits")?
+            .enumerate()
+        {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
@@ -214,15 +204,10 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             )?;
         }
         let target_rows = crate::om::column_row::scan::target_rows(ctx, record_area)?;
-        let target_rows_count = target_rows.len();
-        let mut target_rows = target_rows.into_iter();
-        for _index in ctx.admit_iter(
-            &(0..target_rows_count),
-            "NX creation display target rows visits",
-        )? {
-            let Some(row) = target_rows.next() else {
-                break;
-            };
+        for (_index, row) in ctx
+            .admit_iter(target_rows, "NX creation display target rows visits")?
+            .enumerate()
+        {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }

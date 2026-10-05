@@ -54,11 +54,10 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         let mut index_storage = ctx.reserve_scoped(0, "NX feature history section index")?;
         let mut starts = Vec::new();
         let mut slots = Vec::new();
-        let mut framed = framed.into_iter();
-        for index in ctx.admit_iter(&(0..framed.len()), "index NX feature history sections")? {
-            let Some((entry, section)) = framed.next() else {
-                break;
-            };
+        for (index, (entry, section)) in ctx
+            .admit_iter(framed, "index NX feature history sections")?
+            .enumerate()
+        {
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             if let Some(start) = entry_offset.checked_add(u64_from_index(section.offset)) {
                 ctx.push_scoped_vec(
@@ -82,11 +81,10 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
             "sort NX feature history sections",
         )?;
         let mut sections = Vec::new();
-        let mut links = links.into_iter();
-        for ordinal in ctx.admit_iter(&(0..links.len()), "visit NX feature history links")? {
-            let Some(link) = links.next() else {
-                break;
-            };
+        for (ordinal, link) in ctx
+            .admit_iter(links, "visit NX feature history links")?
+            .enumerate()
+        {
             let target = link.location.section_offset();
             let at = ctx.partition_point(
                 &starts,

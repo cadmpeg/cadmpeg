@@ -695,12 +695,8 @@ fn owned_symbolic_thread(
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
 
     let mut text_frames = Vec::new();
-    let mut frames = frames.into_iter();
     let mut ordinal = 0usize;
-    for _ in ctx.admit_iter(&(0..frames.len()), "build NX symbolic-thread text frames")? {
-        let Some(frame) = frames.next() else {
-            return Err(ctx.refuse_codec_limit("build NX symbolic-thread text frames", 0, 1));
-        };
+    for frame in ctx.admit_iter(frames, "build NX symbolic-thread text frames")? {
         if frame.marker != crate::om::OperationTextMarker::Text {
             continue;
         }
@@ -1297,11 +1293,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         )?;
     }
     let mut groups = Vec::new();
-    let mut grouped = grouped.into_iter();
-    for _ in ctx.admit_iter(&(0..grouped.len()), "visit NX simple-hole groups")? {
-        let Some((key, candidates)) = grouped.next() else {
-            return Err(ctx.refuse_codec_limit("visit NX simple-hole groups", 0, 1));
-        };
+    for (key, candidates) in ctx.admit_iter(grouped, "visit NX simple-hole groups")? {
         if ctx.contains_key_btree_map(
             &ambiguous_groups,
             &key,
@@ -1312,18 +1304,10 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let mut positions_reservation = ctx.reserve_scoped(0, "NX simple hole group positions")?;
         let mut positioned = Vec::new();
         let mut missing = false;
-        let mut candidates = candidates.into_iter();
-        for index in ctx.admit_iter(
-            &(0..candidates.len()),
-            "position NX simple-hole group candidates",
-        )? {
-            let Some((reference, lane)) = candidates.next() else {
-                return Err(ctx.refuse_codec_limit(
-                    "position NX simple-hole group candidates",
-                    0,
-                    1,
-                ));
-            };
+        for (index, (reference, lane)) in ctx
+            .admit_iter(candidates, "position NX simple-hole group candidates")?
+            .enumerate()
+        {
             let Some(&position) = ctx.get_btree_map(
                 &position_of,
                 reference.operation_label.as_str(),
@@ -1598,11 +1582,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         "sort NX hole package groups",
     )?;
     let mut uses = Vec::new();
-    let mut matches = matches.into_iter();
-    for _ in ctx.admit_iter(&(0..matches.len()), "build NX hole package group uses")? {
-        let Some((group, lane)) = matches.next() else {
-            return Err(ctx.refuse_codec_limit("build NX hole package group uses", 0, 1));
-        };
+    for (group, lane) in ctx.admit_iter(matches, "build NX hole package group uses")? {
         let id = replace_operation_text(
             ctx,
             &lane.id,

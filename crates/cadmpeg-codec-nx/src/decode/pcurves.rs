@@ -1015,16 +1015,9 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         replacements
     };
 
-    let mut replacements = replacements.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..replacements.len()),
-        "nx serialized branch replacement traversal",
-    )? {
-        let Some((procedural_index, edge_index, edge_reversed, parameterization)) =
-            replacements.next()
-        else {
-            break;
-        };
+    for (procedural_index, edge_index, edge_reversed, parameterization) in
+        ctx.admit_iter(replacements, "nx serialized branch replacement traversal")?
+    {
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
@@ -1910,15 +1903,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         }
         replacements
     };
-    let mut replacements = replacements.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..replacements.len()),
-        "nx opposite chart replacement traversal",
-    )? {
-        let Some((procedural_index, side, pcurve, tolerance, cache_backed)) = replacements.next()
-        else {
-            break;
-        };
+    for (procedural_index, side, pcurve, tolerance, cache_backed) in
+        ctx.admit_iter(replacements, "nx opposite chart replacement traversal")?
+    {
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
@@ -2311,16 +2298,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         }
     }
     let mut bounded_tolerant_edges = Vec::new();
-    let mut replacements = replacements.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..replacements.len()),
-        "nx exact boundary replacement traversal",
-    )? {
-        let Some((procedural_index, pcurves, tolerance, cache_backed, edge_index, range)) =
-            replacements.next()
-        else {
-            break;
-        };
+    for (procedural_index, pcurves, tolerance, cache_backed, edge_index, range) in
+        ctx.admit_iter(replacements, "nx exact boundary replacement traversal")?
+    {
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
@@ -5172,12 +5152,9 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         candidates
     };
 
-    let mut candidates = candidates.into_iter();
-    for _ in ctx.admit_iter(&(0..candidates.len()), "nx tolerant edge attachment")? {
-        let Some((xmt, edge_id, edge_position, supports, endpoints, tolerance)) = candidates.next()
-        else {
-            break;
-        };
+    for (xmt, edge_id, edge_position, supports, endpoints, tolerance) in
+        ctx.admit_iter(candidates, "nx tolerant edge attachment")?
+    {
         let Ok(admitted_intersection) =
             cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
                 supports, endpoints, tolerance,

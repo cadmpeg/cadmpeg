@@ -168,11 +168,7 @@ pub(super) fn try_decode_geometry(
             let stream_bodies = selection_storage.with_storage(|| {
                 topology_body_node_ids(ctx, si, &parsed.stream(si).view_for_geometry().graph)
             })?;
-            let mut stream_bodies = stream_bodies.into_iter();
-            for _ in ctx.admit_iter(&(0..stream_bodies.len()), "nx geometry body node index")? {
-                let Some((body, nodes)) = stream_bodies.next() else {
-                    break;
-                };
+            for (body, nodes) in ctx.admit_iter(stream_bodies, "nx geometry body node index")? {
                 selection_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut body_node_ids,
@@ -491,11 +487,10 @@ pub(super) fn try_decode_geometry(
             ctx.push_vec(&mut ir.model.surfaces, surface, "nx geometry surfaces")?;
         }
         drop(surface_candidates);
-        let mut nurbs_surfaces = nurbs_surfaces.into_iter();
-        for fi in ctx.admit_iter(&(0..nurbs_surfaces.len()), "nx geometry NURBS surfaces")? {
-            let Some(surf) = nurbs_surfaces.next() else {
-                break;
-            };
+        for (fi, surf) in ctx
+            .admit_iter(nurbs_surfaces, "nx geometry NURBS surfaces")?
+            .enumerate()
+        {
             counts.nurbs_surfaces += 1;
             let id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
@@ -834,11 +829,7 @@ pub(super) fn try_decode_geometry(
             ctx.push_vec(&mut ir.model.curves, curve, "nx geometry curves")?;
         }
         drop(curve_candidates);
-        let mut nurbs_curves = nurbs_curves.into_iter();
-        for ci in ctx.admit_iter(&(0..nurbs_curves.len()), "nx NURBS curves")? {
-            let Some(crv) = nurbs_curves.next() else {
-                break;
-            };
+        for (ci, crv) in ctx.admit_iter(nurbs_curves, "nx NURBS curves")?.enumerate() {
             counts.nurbs_curves += 1;
             let id: CurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
@@ -864,11 +855,10 @@ pub(super) fn try_decode_geometry(
             ctx.push_vec(&mut ir.model.curves, curve, "nx NURBS curves")?;
         }
 
-        let mut nurbs_pcurves = nurbs_pcurves.into_iter();
-        for pi in ctx.admit_iter(&(0..nurbs_pcurves.len()), "nx NURBS pcurves")? {
-            let Some(pcurve) = nurbs_pcurves.next() else {
-                break;
-            };
+        for (pi, pcurve) in ctx
+            .admit_iter(nurbs_pcurves, "nx NURBS pcurves")?
+            .enumerate()
+        {
             let id: PcurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pcurve"), pi)?;
             annotations.note(
@@ -1944,11 +1934,7 @@ fn extend_endpoint_witnesses(
     target: &mut EndpointWitnesses,
     source: EndpointWitnesses,
 ) -> Result<(), CodecError> {
-    let mut source = source.into_iter();
-    for _ in ctx.admit_iter(&(0..source.len()), "nx endpoint witness merge")? {
-        let Some((key, witnesses)) = source.next() else {
-            break;
-        };
+    for (key, witnesses) in ctx.admit_iter(source, "nx endpoint witness merge")? {
         match ctx.get_mut_btree_map(target, &key, "nx endpoint witness index")? {
             Some(target_witnesses) => {
                 ctx.extend_vec(target_witnesses, witnesses, "nx endpoint witness merge")?;
@@ -2383,11 +2369,7 @@ pub(super) fn topology_body_node_ids(
         }
     }
     let mut topology_bodies = BTreeMap::new();
-    let mut bodies = bodies.into_iter();
-    for _ in ctx.admit_iter(&(0..bodies.len()), "nx topology body index")? {
-        let Some((body_xmt, body)) = bodies.next() else {
-            break;
-        };
+    for (body_xmt, body) in ctx.admit_iter(bodies, "nx topology body index")? {
         if !body.complete
             || body.edge_nodes != body.edges.len()
             || body.vertex_nodes != body.vertices.len()

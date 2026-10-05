@@ -6102,12 +6102,7 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         let instance_id =
             ctx.get_hash_map(&self.instance_ids, &object_id, "nx JT instance index")?;
         let mut results = Vec::new();
-        let path_count = parent_states.len();
-        let mut parent_states = parent_states.into_iter();
-        for _ in ctx.admit_iter(&(0..path_count), "resolve JT path states")? {
-            let Some(mut path) = parent_states.next() else {
-                break;
-            };
+        for mut path in ctx.admit_iter(parent_states, "resolve JT path states")? {
             for attribute_id in
                 ctx.admit_iter(&base.attribute_object_ids, "resolve JT path attributes")?
             {
@@ -6484,12 +6479,7 @@ fn display_jt_tessellation_rows(
         } else {
             None
         };
-        let path_count = paths.len();
-        let mut paths = paths.into_iter();
-        for _ in ctx.admit_iter(&(0..path_count), "nx JT tessellation paths")? {
-            let Some(path) = paths.next() else {
-                break;
-            };
+        for path in ctx.admit_iter(paths, "nx JT tessellation paths")? {
             let transform = path.matrix;
             let color = if color_array.is_none() || path.override_vertex_colors == Some(true) {
                 display_jt_path_color(&path)

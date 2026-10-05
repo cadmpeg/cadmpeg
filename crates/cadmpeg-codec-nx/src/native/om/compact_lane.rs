@@ -95,12 +95,10 @@ pub(in crate::native) fn data_block_counted_index_lanes(
             };
             let mut ordinal = 0usize;
             let lanes = counted_lanes(ctx, block.bytes)?;
-            let lanes_count = lanes.len();
-            let mut lanes = lanes.into_iter();
-            for _index in ctx.admit_iter(&(0..lanes_count), "NX compact lane lanes visits")? {
-                let Some(lane) = lanes.next() else {
-                    break;
-                };
+            for (_index, lane) in ctx
+                .admit_iter(lanes, "NX compact lane lanes visits")?
+                .enumerate()
+            {
                 let Some(lane) = lane.into_absolute(source_base) else {
                     continue;
                 };
@@ -162,12 +160,10 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
             .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane block count", 0, 1))?;
         let mut ordinal = 0usize;
         let lanes = abr_lanes(ctx, storage)?;
-        let lanes_count = lanes.len();
-        let mut lanes = lanes.into_iter();
-        for _index in ctx.admit_iter(&(0..lanes_count), "NX compact lane lanes visits")? {
-            let Some(lane) = lanes.next() else {
-                break;
-            };
+        for (_index, lane) in ctx
+            .admit_iter(lanes, "NX compact lane lanes visits")?
+            .enumerate()
+        {
             let Some(lane) = lane.into_absolute(source_base) else {
                 continue;
             };
