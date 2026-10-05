@@ -3642,10 +3642,11 @@ fn operation_header_block_identities<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     container: &Container,
 ) -> Result<(OperationBlockIdentities, ScopedReservation<'ctx>), CodecError> {
-    let blocks = data_blocks(ctx, container)?;
+    let mut blocks = data_blocks(ctx, container)?.into_iter();
+    let count = blocks.len();
     ctx.unique_index(
-        blocks
-            .into_iter()
+        ctx.admit_iter(&(0..count), "visit NX operation block identities")?
+            .filter_map(|_| blocks.next())
             .filter(|block| block.role == DataBlockRole::Column)
             .map(|block| (block.block_ordinal, block.stable_identity)),
         "index NX operation block identities",
@@ -3698,7 +3699,7 @@ fn unique_operation_header_identities<'ctx>(
     keys: &[Option<String>],
 ) -> Result<(Vec<Option<String>>, ScopedReservation<'ctx>), CodecError> {
     let (unique, _unique_storage) = ctx.unique_index(
-        keys.iter()
+        ctx.admit_iter(keys, "visit NX operation header keys")?
             .filter_map(|key| key.as_deref().map(|key| (key, ()))),
         "count NX operation header keys",
     )?;
@@ -4368,8 +4369,7 @@ fn plain_stream_bindings<'ctx, 'a>(
     bindings: &'a [SegmentBodyBinding],
 ) -> Result<(PlainStreamBindings<'a>, ScopedReservation<'ctx>), CodecError> {
     ctx.unique_index(
-        bindings
-            .iter()
+        ctx.admit_iter(bindings, "visit NX body-history stream bindings")?
             .filter(|binding| binding.stream_kind == crate::parasolid::StreamKind::Plain)
             .map(|binding| (binding.stream_ordinal, binding)),
         "index NX body-history stream bindings",
@@ -5021,12 +5021,20 @@ pub(super) fn feature_operation_state_journal_uses(
         labels.iter().map(|label| (label.id.as_str(), label)),
         "index NX operation journal labels",
     )?;
-    let (groups_by_section, _groups_storage) = ctx.collect_scoped_btree_groups(
-        journal_groups
-            .iter()
-            .map(|group| (group.section_link.as_str(), group)),
-        "index NX operation journal groups",
-    )?;
+    let (groups_by_section, _groups_storage) =
+        ctx.with_scoped_storage("NX operation journal group index", || {
+            let mut grouped = HashMap::<&str, Vec<&OmOperationStateJournalGroup>>::new();
+            for group in ctx.admit_iter(journal_groups, "index NX operation journal groups")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    group.section_link.as_str(),
+                    group,
+                    "NX operation journal group index",
+                    "NX operation journal group members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut uses = Vec::new();
     for frame in ctx.admit_iter(terminal_frames, "visit NX operation terminal frames")? {
         let Some(&Some(record)) = ctx.get_hash_map(
@@ -5048,7 +5056,7 @@ pub(super) fn feature_operation_state_journal_uses(
         let mut matching_row = None;
         let mut ambiguous = false;
         let section_groups = ctx
-            .get_btree_map(
+            .get_hash_map(
                 &groups_by_section,
                 &label.section_link.as_str(),
                 "match NX operation journal groups",
@@ -6165,7 +6173,7 @@ pub(super) fn feature_input_column_targets(
     target_rows: &[DataBlockTargetIndexRow],
 ) -> Result<Vec<FeatureInputColumnTarget>, CodecError> {
     let (target_uses, _target_uses_storage) = ctx.unique_index(
-        uses.iter()
+        ctx.admit_iter(uses, "visit NX input column target uses")?
             .filter(|use_| {
                 use_.row_slot == ColumnRowSlot::Zero
                     && use_.row_kind != ColumnIndexRowKind::Index
@@ -9367,12 +9375,13 @@ pub(super) fn feature_parameter_bindings(
             Ok::<_, CodecError>(grouped)
         })?;
     let (expressions_by_declaration, _expressions_storage) = ctx.unique_index(
-        expressions.iter().filter_map(|expression| {
-            expression
-                .declaration
-                .as_deref()
-                .map(|declaration| (declaration, expression))
-        }),
+        ctx.admit_iter(expressions, "visit NX parameter binding expressions")?
+            .filter_map(|expression| {
+                expression
+                    .declaration
+                    .as_deref()
+                    .map(|declaration| (declaration, expression))
+            }),
         "index NX parameter binding expressions",
     )?;
     let mut bindings = Vec::new();
