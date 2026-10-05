@@ -236,7 +236,6 @@ fn terminal_body_selection_refuses_identity_retention_limit() {
     );
 }
 
-
 #[test]
 fn terminal_body_selection_refuses_status_iteration_work_limit() {
     let (emitted, bindings, statuses) = one_terminal_body();

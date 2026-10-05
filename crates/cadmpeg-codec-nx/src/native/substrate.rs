@@ -312,10 +312,10 @@ impl StreamView {
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
             let mut replacement_streams = Vec::new();
-            let mut _replacement_reservation =
+            let mut replacement_reservation =
                 ctx.reserve_scoped(0, "nx auxiliary replacement views")?;
             for &delta in ctx.admit_iter(delta_indices, "nx auxiliary replacement views")? {
-                _replacement_reservation.with_storage(|| {
+                replacement_reservation.with_storage(|| {
                     ctx.push_vec(
                         &mut replacement_streams,
                         scan.streams[delta].inflated.as_slice(),

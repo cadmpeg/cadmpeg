@@ -70,11 +70,7 @@ mod tests {
     use std::convert::Infallible;
 
     fn version_from_text(text: String) -> Result<JtVersionField, &'static str> {
-        match JtVersionField::new(
-            text,
-            |text| Ok::<_, Infallible>(text),
-            |text, _| Ok(text.parse()),
-        ) {
+        match JtVersionField::new(text, Ok::<_, Infallible>, |text, _| Ok(text.parse())) {
             Ok(value) => value,
             Err(error) => match error {},
         }
@@ -105,22 +101,28 @@ mod tests {
         assert!(version_from_text("Version 9.5".into()).is_err());
     }
 
-
     #[test]
     fn version_major_and_minor_parse_refusals_propagate() {
         use cadmpeg_core::decode::ResourceDimension;
         for operation in ["NX JT version major", "NX JT version minor"] {
             let text = format!("{:<80}", "Version +0009.+0010 metadata");
             let error = crate::test_support::resource_refusal_at(
-                &[], ResourceDimension::WorkUnits, operation,
-                |ctx| JtVersionField::new(
-                    text.as_str(),
-                    |text| ctx.copy_retained_text(text, "retain DisplayJT version text"),
-                    |text, operation| ctx.parse_text(text, operation),
-                ).map(|_| ()),
+                &[],
+                ResourceDimension::WorkUnits,
+                operation,
+                |ctx| {
+                    JtVersionField::new(
+                        text.as_str(),
+                        |text| ctx.copy_retained_text(text, "retain DisplayJT version text"),
+                        |text, operation| ctx.parse_text(text, operation),
+                    )
+                    .map(|_| ())
+                },
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+            );
         }
     }
 }

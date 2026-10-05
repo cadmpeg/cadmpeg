@@ -925,14 +925,13 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                         ctx,
                         cadmpeg_core::decode::u64_from_index(usize::MAX),
                     );
-                let completion_source =
-                    crate::decode::support_uv::IntersectionCompletionSource {
-                        scope: crate::decode::ids::IdScope::stream(0),
-                        graph: &graph,
-                        source_stream: source_stream.clone(),
-                        coedge_start: 0,
-                        procedural_start: 0,
-                    };
+                let completion_source = crate::decode::support_uv::IntersectionCompletionSource {
+                    scope: crate::decode::ids::IdScope::stream(0),
+                    graph: &graph,
+                    source_stream: source_stream.clone(),
+                    coedge_start: 0,
+                    procedural_start: 0,
+                };
                 crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
                     ctx,
                     &mut completion_ir,

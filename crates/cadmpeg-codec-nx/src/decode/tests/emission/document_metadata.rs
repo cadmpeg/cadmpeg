@@ -123,9 +123,11 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
 
     let mut malformed = preview;
     malformed[10..12].copy_from_slice(&16u16.to_be_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| jpeg_dimensions(ctx, &malformed))
-        .unwrap()
-        .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| jpeg_dimensions(ctx, &malformed))
+            .unwrap()
+            .is_none()
+    );
     let malformed_file = prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
         ("/Root/images/preview", malformed.to_vec()),
