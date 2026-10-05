@@ -54,18 +54,6 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         let mut index_storage = ctx.reserve_scoped(0, "NX feature history section index")?;
         let mut starts = Vec::new();
         let mut slots = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut index_storage,
-            &mut starts,
-            framed.len(),
-            "NX feature history section starts",
-        )?;
-        ctx.reserve_scoped_vec(
-            &mut index_storage,
-            &mut slots,
-            framed.len(),
-            "NX feature history section slots",
-        )?;
         let mut framed = framed.into_iter();
         for index in ctx.admit_iter(&(0..framed.len()), "index NX feature history sections")? {
             let Some((entry, section)) = framed.next() else {
@@ -73,9 +61,19 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             if let Some(start) = entry_offset.checked_add(u64_from_index(section.offset)) {
-                starts.push((start, index));
+                ctx.push_scoped_vec(
+                    &mut index_storage,
+                    &mut starts,
+                    (start, index),
+                    "NX feature history section starts",
+                )?;
             }
-            slots.push(Some((entry, entry_offset, section)));
+            ctx.push_scoped_vec(
+                &mut index_storage,
+                &mut slots,
+                Some((entry, entry_offset, section)),
+                "NX feature history section slots",
+            )?;
         }
         ctx.stable_sort_by_key(
             &mut starts,
@@ -85,12 +83,6 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         )?;
         let mut storage = ctx.reserve_scoped(0, "NX feature history")?;
         let mut sections = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut storage,
-            &mut sections,
-            links.len(),
-            "NX feature history sections",
-        )?;
         let mut links = links.into_iter();
         for ordinal in ctx.admit_iter(&(0..links.len()), "visit NX feature history links")? {
             let Some(link) = links.next() else {
@@ -118,16 +110,21 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
                 "NX feature history section key",
             )?;
             let records = section.operation_records_with_label_ordinals(ctx)?;
-            sections.push(FeatureHistorySection {
-                link,
-                ordinal,
-                key,
-                entry,
-                section,
-                entry_offset,
-                records,
-                unlabeled: OnceCell::new(),
-            });
+            ctx.push_scoped_vec(
+                &mut storage,
+                &mut sections,
+                FeatureHistorySection {
+                    link,
+                    ordinal,
+                    key,
+                    entry,
+                    section,
+                    entry_offset,
+                    records,
+                    unlabeled: OnceCell::new(),
+                },
+                "NX feature history sections",
+            )?;
         }
         Ok(Self {
             container,
