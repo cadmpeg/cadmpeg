@@ -459,3 +459,53 @@ fn native_scope_kind_retains_its_name_and_known_kinds_retain_nothing() {
         .expect("known scope");
     assert_eq!(scope.kind_name(), "CylinderPrimitive");
 }
+
+/// `named_scope_frame("WidgetFeature")` with record index 3 on both headers
+/// and a third index-3 header at offset 7, inside the opening header's span.
+fn scope_frame_with_overlapping_header() -> Vec<u8> {
+    let mut bytes = named_scope_frame("WidgetFeature");
+    bytes[7..11].copy_from_slice(&3u32.to_le_bytes());
+    bytes[11..14].copy_from_slice(b"500");
+    bytes[14..18].copy_from_slice(&3u32.to_le_bytes());
+    let closing = bytes.len() - 4;
+    bytes[closing..].copy_from_slice(&3u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn both_scope_entry_points_pair_a_header_with_the_first_one_a_header_length_later() {
+    let bytes = scope_frame_with_overlapping_header();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = super::parse_parameter_scope(
+        &ctx,
+        &bytes,
+        &records,
+        3,
+        &crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
+        0,
+    )
+    .unwrap()
+    .expect("scope opened by the first header");
+    assert_eq!(
+        parsed.paired_byte_offset(),
+        u64_from_index(bytes.len() - 11)
+    );
+
+    let archive = crate::test_support::zip_test::f3d_with_configuration(
+        &[],
+        "FusionAssetName[Active]/Design1/BulkStream.dat",
+        &bytes,
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let scopes =
+            super::decode_parameter_scopes(&ctx, scan, &crate::native::F3dNative::default())
+                .unwrap();
+        let decoded = scopes
+            .iter()
+            .find(|scope| scope.byte_offset() == 0)
+            .expect("decoded scope opened by the first header");
+        assert_eq!(decoded.paired_byte_offset(), parsed.paired_byte_offset());
+        assert_eq!(decoded.kind_name(), "WidgetFeature");
+    });
+}
