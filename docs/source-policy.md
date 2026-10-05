@@ -590,6 +590,7 @@ or exhausted bound retains an unproven finding.
 | `external operation missing summary: annotations::_::_serde::Serialize::serialize` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `generic instantiation contains an indirect call` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `from_utf8_lossy` | `copy_retained_lossy_utf8` |
+| `decode` (`encoding_rs`) | `charge_work` for the source bytes, then `decode_to_string_without_replacement` into `retained_string` output; it writes only within the admitted capacity and reports when the output is full |
 | `ends_with` | `ends_with` |
 | `last` | `admit_iter` |
 | `get_key_value` | `get_key_value_hash_map` or `get_key_value_btree_map` |
