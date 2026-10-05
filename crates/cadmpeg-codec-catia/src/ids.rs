@@ -10,10 +10,13 @@ pub(crate) fn neutral_history_id(
     native_id: &str,
     kind: &IdentityComponent,
 ) -> Result<Identity, CodecError> {
-    let native = match Identity::admit_text(
-        ctx.copy_retained_text(native_id, "catia_neutral_history_source")?,
-        |work| ctx.charge_work(work, "catia_neutral_history_validate_source"),
-    )? {
+    // The validated native identity is only split; it is dropped before return.
+    let mut source_storage = ctx.reserve_scoped(0, "catia_neutral_history_source")?;
+    let source = source_storage
+        .with_storage(|| ctx.copy_retained_text(native_id, "catia_neutral_history_source"))?;
+    let native = match Identity::admit_text(source, |work| {
+        ctx.charge_work(work, "catia_neutral_history_validate_source")
+    })? {
         Ok(native) => native,
         Err(value) => {
             return Err(CodecError::Malformed(ctx.format_retained(
@@ -90,6 +93,15 @@ mod tests {
             )
         });
         assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_neutral_history_derived"));
+        let scoped = crate::test_support::with_materialized_limit(0, |ctx| {
+            neutral_history_id(
+                ctx,
+                "catia:graph:object#owner:child",
+                &cadmpeg_ir::identity_component!("feature"),
+            )
+        });
+        assert!(matches!(scoped, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "catia_neutral_history_source"));
         let admitted = crate::test_support::with_service_context(|ctx| {
             neutral_history_id(
@@ -159,7 +171,9 @@ mod tests {
             };
             assert_eq!(actual, expected);
         }
-        let (result, original) = crate::test_support::with_retained_limit(5, |ctx| {
+        // The native source copy is scoped, so the first retained charge is
+        // the formatted error text.
+        let (result, original) = crate::test_support::with_retained_limit(0, |ctx| {
             let result =
                 neutral_history_id(ctx, "short", &cadmpeg_ir::identity_component!("feature"));
             (result, ctx.resource_refusal())

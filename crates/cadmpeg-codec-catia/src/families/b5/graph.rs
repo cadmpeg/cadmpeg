@@ -217,16 +217,10 @@ pub(in crate::families) fn canonical_surface_id(
     aliases: &BTreeMap<u32, u32>,
     mut object_id: u32,
 ) -> Result<Option<u32>, CodecError> {
-    let terminal_step = [()];
-    for _ in ctx
-        .admit_iter(aliases, "catia_b5_surface_alias_traversal")?
-        .map(|_| ())
-        .chain(
-            ctx.admit_iter(&terminal_step, "catia_b5_surface_alias_terminal_step")?
-                .copied(),
-        )
-    {
-        match aliases.get(&object_id) {
+    // A chain with more steps than aliases revisits one, so it is a cycle.
+    // Each step charges its own lookup, so a chain pays only for its length.
+    for _ in 0..=aliases.len() {
+        match ctx.get_btree_map(aliases, &object_id, "catia_b5_surface_alias_step")? {
             Some(&target) => object_id = target,
             None => return Ok(Some(object_id)),
         }

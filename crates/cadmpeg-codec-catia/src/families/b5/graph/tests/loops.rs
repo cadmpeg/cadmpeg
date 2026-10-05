@@ -1033,7 +1033,7 @@ fn canonical_surface_identity_follows_unbounded_aliases_and_rejects_cycles() {
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_surface_alias_traversal"
+            if error.operation == "catia_b5_surface_alias_step"
     ));
 }
 
