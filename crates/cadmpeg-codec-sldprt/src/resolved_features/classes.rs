@@ -9,6 +9,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::ObjectId;
@@ -131,13 +132,14 @@ struct TokenNames<'lanes> {
 }
 
 impl<'lanes> TokenNames<'lanes> {
-    fn new(
+    fn new<L: Borrow<FeatureInputLane>>(
         ctx: &DecodeContext<'_>,
         temporary: &mut ScopedReservation<'_>,
-        lanes: &'lanes [FeatureInputLane],
+        lanes: &'lanes [L],
     ) -> Result<Self, CodecError> {
         let mut direct_name_offsets = HashSet::new();
         for lane in ctx.admit_iter(lanes, "scan SLDPRT direct class lanes")? {
+            let lane = lane.borrow();
             for class in ctx.admit_iter(&lane.classes, "index SLDPRT direct class names")? {
                 let Some(offset) = direct_name_offset(class) else {
                     continue;
@@ -155,6 +157,7 @@ impl<'lanes> TokenNames<'lanes> {
         let mut by_text = HashMap::new();
         let mut single_object_text = HashMap::<&str, Option<()>>::new();
         for lane in ctx.admit_iter(lanes, "scan SLDPRT token-binding lanes")? {
+            let lane = lane.borrow();
             for name in ctx.admit_iter(&lane.names, "index SLDPRT token-binding names")? {
                 let object_id = name.object_id.and_then(ObjectId::value);
                 if object_id.is_some() {
@@ -258,10 +261,10 @@ impl<'lanes> TokenNames<'lanes> {
 }
 
 /// Bind Keywords history records to their serialized feature-input object classes.
-pub(crate) fn bind_history_classes(
+pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
     ctx: &DecodeContext<'_>,
     histories: &mut [FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: &[L],
 ) -> Result<(), CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT history class workspace")?;
     for history in ctx.admit_iter(&mut *histories, "clear SLDPRT history feature classes")? {
@@ -276,6 +279,7 @@ pub(crate) fn bind_history_classes(
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     let mut direct_classes_by_name = BTreeMap::<&str, Vec<&str>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT input class lanes")? {
+        let lane = lane.borrow();
         let names_by_offset = temporary.with_storage(|| {
             ctx.collect_hash_map(
                 lane.names.iter().map(|name| (name.offset, name)),
@@ -385,6 +389,7 @@ pub(crate) fn bind_history_classes(
 
     let mut cosmetic_thread_classes = BTreeMap::<String, Vec<&str>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT cosmetic thread lanes")? {
+        let lane = lane.borrow();
         let mut declared = temporary.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT cosmetic thread classes")?;
             ctx.collect_vec(
@@ -505,6 +510,7 @@ pub(crate) fn bind_history_classes(
 
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT native startup lanes")? {
+        let lane = lane.borrow();
         let resolved = temporary.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT native startup classes")?;
             ctx.collect_vec(
@@ -732,11 +738,11 @@ pub(crate) fn bind_history_classes(
     Ok(())
 }
 
-fn legacy_repeated_hole_wizard_classes<'lanes>(
+fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
     ctx: &DecodeContext<'_>,
     temporary: &mut ScopedReservation<'_>,
     histories: &[FeatureHistory],
-    lanes: &'lanes [FeatureInputLane],
+    lanes: &'lanes [L],
 ) -> Result<HashMap<String, &'lanes str>, CodecError> {
     let mut by_name = HashMap::<&str, Option<&Feature>>::new();
     let mut hole_shapes = HashSet::<&str>::new();
@@ -790,6 +796,7 @@ fn legacy_repeated_hole_wizard_classes<'lanes>(
 
     let mut bindings = HashMap::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT legacy hole lanes")? {
+        let lane = lane.borrow();
         let mut declared = temporary.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT hole wizard classes")?;
             ctx.collect_vec(

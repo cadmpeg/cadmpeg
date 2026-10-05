@@ -30,21 +30,11 @@ fn compact_reference_plane_index_refuses_collection_limit() {
 
 #[test]
 fn compact_reference_plane_index_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let payload = b"moCompRefPlane_c";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::try_from(payload.len()).expect("fixture length") * 3 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
-    let error = CompactReferencePlaneIndex::new(&ctx, payload)
-        .err()
-        .expect("index scan exceeds work limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "index compact reference planes"
-    ));
+    let error = crate::test_support::work_refusal_at("index compact reference planes", |ctx| {
+        CompactReferencePlaneIndex::new(ctx, payload).map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -256,26 +246,10 @@ fn compact_component_matrix_places_a_sketch_plane() {
 
 #[test]
 fn compact_profile_component_plane_frame_refuses_window_scan_work_limit() {
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
-    };
-
     let payload = vec![0; 138];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The scan admits all 138 byte-source slots before window filtering.
-    policy.limits.max_work_units = u64::try_from(payload.len()).expect("fixture length") - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("context");
-    let error = compact_profile_component_plane_frame(&ctx, &payload, 0, 0, payload.len())
-        .expect_err("window scan exceeds work limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.reason == ResourceFailure::BudgetExceeded
-                && limit.limit == 137
-                && limit.used == 0
-                && limit.additional == 138
-                && limit.operation == "scan compact component plane frames"
-    ));
+    let error =
+        crate::test_support::work_refusal_at("scan compact component plane frames", |ctx| {
+            compact_profile_component_plane_frame(ctx, &payload, 0, 0, payload.len())
+        });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
