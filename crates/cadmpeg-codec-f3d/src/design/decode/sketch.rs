@@ -1278,8 +1278,6 @@ fn decode_lost_edge_references_from_stream(
         let Some(next) = indexed_record_header_at(bytes, offset + MARKER.len()) else {
             continue;
         };
-
-        ctx.reserve_vec(out, 1, "f3d lost edge reference output")?;
         let id = design_record_id_charged(
             ctx,
             entry_name,
@@ -1299,7 +1297,7 @@ fn decode_lost_edge_references_from_stream(
         ) else {
             continue;
         };
-        out.push(reference);
+        ctx.push_vec(out, reference, "f3d lost edge reference output")?;
     }
     Ok(())
 }
@@ -1417,7 +1415,8 @@ fn lp_ascii_matches<const N: usize>(bytes: &[u8], at: usize, expected: &[u8; N])
 /// The run of marked member references `entries` in record order, each a
 /// `1` byte, a u32 record index at `run_at + 11 * ordinal + 1` and six zero
 /// bytes, after the `first` member. A malformed entry rejects the run; each
-/// visited entry is charged before it is read.
+/// visited entry is charged before it is read. The run's storage stays scoped
+/// until the whole run reads, and is retained only then.
 fn collect_member_run(
     ctx: &DecodeContext<'_>,
     entries: &[[u8; 11]],
@@ -1425,37 +1424,45 @@ fn collect_member_run(
     first: Option<crate::records::identity::Located<u32>>,
     operation: &'static str,
 ) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
-    let mut members = Vec::new();
-    ctx.reserve_capacity(
-        &mut members,
-        entries.len() + usize::from(first.is_some()),
-        operation,
-    )?;
-    if let Some(first) = first {
-        ctx.push_vec(&mut members, first, operation)?;
+    let ((members, malformed), storage) = ctx.with_scoped_storage(operation, || {
+        let mut members = Vec::new();
+        ctx.reserve_capacity(
+            &mut members,
+            entries.len() + usize::from(first.is_some()),
+            operation,
+        )?;
+        if let Some(first) = first {
+            ctx.push_vec(&mut members, first, operation)?;
+        }
+        let mut at = run_at;
+        let malformed = ctx.position_by(
+            entries,
+            |entry| {
+                let record_index = View::u32_le_at(entry, 1);
+                let (1, true, Some(value)) = (entry[0], zeros_at::<6>(entry, 5), record_index)
+                else {
+                    return Ok(true);
+                };
+                ctx.push_vec(
+                    &mut members,
+                    crate::records::identity::Located {
+                        value,
+                        offset: u64_from_index(at + 1),
+                    },
+                    operation,
+                )?;
+                at += 11;
+                Ok(false)
+            },
+            operation,
+        )?;
+        Ok::<_, CodecError>((members, malformed))
+    })?;
+    if malformed.is_some() {
+        return Ok(None);
     }
-    let mut at = run_at;
-    let malformed = ctx.position_by(
-        entries,
-        |entry| {
-            let record_index = View::u32_le_at(entry, 1);
-            let (1, true, Some(value)) = (entry[0], zeros_at::<6>(entry, 5), record_index) else {
-                return Ok(true);
-            };
-            ctx.push_vec(
-                &mut members,
-                crate::records::identity::Located {
-                    value,
-                    offset: u64_from_index(at + 1),
-                },
-                operation,
-            )?;
-            at += 11;
-            Ok(false)
-        },
-        operation,
-    )?;
-    Ok(malformed.is_none().then_some(members))
+    storage.commit()?;
+    Ok(Some(members))
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -2139,7 +2146,7 @@ pub(crate) fn decode_sketch_relations(
             .with_scoped_storage("f3d sketch relation parse", || {
                 parse_classed_sketch_relation(ctx, payload, class)
             })?;
-        let Some(mut parsed) = parsed else {
+        let Some(parsed) = parsed else {
             continue;
         };
         let Some(padding) = payload.get(parsed.parsed_end..) else {
@@ -2152,7 +2159,7 @@ pub(crate) fn decode_sketch_relations(
         )? {
             continue;
         }
-        let pattern = decode_pattern_definition(ctx, payload, &mut parsed)?;
+        let pattern = decode_pattern_definition(ctx, payload, &parsed)?;
         let Ok(definition) =
             crate::records::sketch_relations::SketchRelationDefinition::new(parsed.state, pattern)
         else {
@@ -2290,7 +2297,7 @@ fn admit_sketch_relation(
 fn decode_pattern_definition(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
-    parsed: &mut ParsedSketchRelation,
+    parsed: &ParsedSketchRelation,
 ) -> Result<Option<crate::records::sketch_relations::SketchPatternDefinition>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     let text_reference = match parsed.auxiliary_references.as_slice() {
@@ -2325,16 +2332,13 @@ fn decode_pattern_definition(
             }
             Ok(Some(SketchPatternDefinition::TextFrame { text_reference }))
         }
-        RelationClassMembers::TextPath { .. } => {
+        RelationClassMembers::TextPath { glyph_transforms } => {
             let Some(text_reference) = text_reference else {
                 return Ok(None);
             };
             if parsed.state != 0x200_0000_0000 || !names_text_member(parsed)? {
                 return Ok(None);
             }
-            let RelationClassMembers::TextPath { glyph_transforms } = &parsed.class_members else {
-                return Ok(None);
-            };
             Ok(Some(SketchPatternDefinition::TextPath {
                 text_reference,
                 glyph_transforms: ctx
@@ -2932,7 +2936,8 @@ fn read_sketch_text_leading_block(
                 return Ok(None);
             };
             *cursor += 5;
-            for _ in ctx.admit_iter(&(0..count), "scan F3D sketch text leading block")? {
+            for _ in 0..count {
+                ctx.charge_work(1, "scan F3D sketch text leading block")?;
                 if take_reference(payload, cursor).is_none()
                     || View::u32_le_at(payload, *cursor).is_none()
                 {
@@ -3294,7 +3299,8 @@ fn decode_txt_tag_sketch_text_tail<'ctx>(
         return Ok(None);
     };
     cursor += 4;
-    for _ in ctx.admit_iter(&(0..references), "scan F3D sketch text reference run")? {
+    for _ in 0..references {
+        ctx.charge_work(1, "scan F3D sketch text reference run")?;
         if take_reference(payload, &mut cursor).is_none() {
             return Ok(None);
         }
@@ -3639,19 +3645,15 @@ fn decode_sketch_point_record(
     let Some((first, second)) = properties.first_two() else {
         return Ok(None);
     };
-    let is_key = |property: SketchProperty<'_>, key: &str| {
-        ctx.equal_bytes(
-            property.name.as_bytes(),
-            key.as_bytes(),
-            "match F3D sketch point property key",
-        )
-    };
+    // Property names are compared with fixed keys.
+    let is_key =
+        |property: SketchProperty<'_>, key: &str| property.name.as_bytes() == key.as_bytes();
     let (entity_genesis, persistent_id) = match second {
-        None if is_key(first, "pt_tag")? => (None, first.value),
+        None if is_key(first, "pt_tag") => (None, first.value),
         Some(second)
             if class_version == 11
-                && is_key(first, "EntityGenesis")?
-                && is_key(second, "pt_tag")? =>
+                && is_key(first, "EntityGenesis")
+                && is_key(second, "pt_tag") =>
         {
             (Some(first.value), second.value)
         }
@@ -3903,7 +3905,8 @@ fn decode_sketch_point_companion<'t>(
         count,
         "f3d sketch point incident curves",
     )?;
-    for _ in ctx.admit_iter(&(0..count), "scan F3D sketch point incident curves")? {
+    for _ in 0..count {
+        ctx.charge_work(1, "scan F3D sketch point incident curves")?;
         let Some((target, type_guid)) = take_local_sketch_reference(payload, &mut cursor) else {
             return Ok(None);
         };
@@ -4045,15 +4048,24 @@ fn decode_sketch_curve_identities_from_stream(
             frame.design_type.version,
             &frame.design_type.module,
         );
+        // Geometry that does not decode is dropped, so its storage stays
+        // scoped until it is kept.
         let parsed_geometry = if let Some(curve_class) = curve_class {
-            decode_sketch_curve_geometry(
-                ctx,
-                payload,
-                geometry_shift,
-                record_index,
-                curve_class,
-                frame.start,
-            )?
+            let (parsed, geometry_storage) =
+                ctx.with_scoped_storage("f3d sketch curve geometry", || {
+                    decode_sketch_curve_geometry(
+                        ctx,
+                        payload,
+                        geometry_shift,
+                        record_index,
+                        curve_class,
+                        frame.start,
+                    )
+                })?;
+            if parsed.is_some() {
+                geometry_storage.commit()?;
+            }
+            parsed
         } else {
             None
         };
@@ -4218,14 +4230,19 @@ fn parse_sketch_surface(
     let Some(frame) = parse_sketch_surface_frame(payload) else {
         return Ok(None);
     };
-    let Some(coordinates) = charged_sketch_scalar_values(
-        ctx,
-        payload,
-        131,
-        frame.coordinate_count,
-        "f3d sketch surface scalar values",
-    )?
-    else {
+    // The source coordinates and scaled points are temporaries; the knots
+    // and control-point rows are the surface's own storage.
+    let (coordinates, _coordinate_storage) =
+        ctx.with_scoped_storage("f3d sketch surface coordinates", || {
+            charged_sketch_scalar_values(
+                ctx,
+                payload,
+                131,
+                frame.coordinate_count,
+                "f3d sketch surface scalar values",
+            )
+        })?;
+    let Some(coordinates) = coordinates else {
         return Ok(None);
     };
     let Some(u_knots) = charged_sketch_scalar_values(
@@ -4248,17 +4265,10 @@ fn parse_sketch_surface(
     else {
         return Ok(None);
     };
-    let point_count = frame.coordinate_count / 3;
-
     let mut points = Vec::new();
-    ctx.reserve_capacity(&mut points, point_count, "f3d sketch surface scaled points")?;
-    let point_width = std::num::NonZeroUsize::new(3)
-        .ok_or_else(|| CodecError::malformed("F3D coordinate width is zero"))?;
-    for (ordinal, values) in ctx
-        .admit_iter(&coordinates, "scan F3D sketch surface coordinates")?
-        .chunks(point_width)
-        .enumerate()
-    {
+    let mut points_storage = ctx.reserve_scoped(0, "f3d sketch surface scaled points")?;
+    for (ordinal, values) in coordinates.chunks(3).enumerate() {
+        ctx.charge_work(1, "scan F3D sketch surface coordinates")?;
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
             return Ok(None);
         };
@@ -4267,7 +4277,12 @@ fn parse_sketch_surface(
                 "F3D sketch surface at byte {record_at} control point {ordinal} overflows millimetres"
             ))
         })?;
-        ctx.push_vec(&mut points, point, "f3d sketch surface scaled points")?;
+        ctx.push_scoped_vec(
+            &mut points_storage,
+            &mut points,
+            point,
+            "f3d sketch surface scaled points",
+        )?;
     }
 
     let mut control_points = Vec::new();
@@ -4320,9 +4335,16 @@ pub(crate) fn decode_sketch_surfaces(
         for header in indexed_record_offsets(ctx, bytes)? {
             let record_at = header.offset;
             let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(ctx, payload, record_at)? else {
+            // A record that does not form a surface drops what its parse
+            // built, so that storage stays scoped until the surface is kept.
+            let (surface, surface_storage) = ctx
+                .with_scoped_storage("f3d sketch surface parse", || {
+                    parse_sketch_surface(ctx, payload, record_at)
+                })?;
+            let Some(surface) = surface else {
                 continue;
             };
+            surface_storage.commit()?;
 
             ctx.reserve_vec(&mut out, 1, "f3d sketch surface output")?;
             out.push(SketchSurface {
@@ -4704,8 +4726,10 @@ pub(crate) fn bind_sketch_graph(
         .iter_mut()
         .zip(ctx.admit_iter(&relation_scopes, "resolve F3D sketch relation operands")?)
     {
-        // `resolve_members` visits the members, then the return members,
-        // each in run order; resolve them in that order first.
+        // `resolve_members` takes an infallible resolver, so each operand is
+        // looked up beforehand, in the order it visits them: the members, then
+        // the return members, each in run order. Each looked-up operand keeps
+        // its record index, and a visit in another order is refused.
         let mut resolved_storage = ctx.reserve_scoped(0, "f3d sketch relation operands")?;
         let mut resolved = Vec::new();
         let record_indices = ctx
@@ -4730,16 +4754,24 @@ pub(crate) fn bind_sketch_graph(
             ctx.push_scoped_vec(
                 &mut resolved_storage,
                 &mut resolved,
-                operand,
+                (record_index, operand),
                 "f3d sketch relation operands",
             )?;
         }
         let mut resolved = resolved.into_iter();
-        relation.resolve_members(ctx, |record_index| {
-            resolved
-                .next()
-                .unwrap_or(SketchRelationOperand::Record { record_index })
+        let mut in_order = true;
+        relation.resolve_members(ctx, |record_index| match resolved.next() {
+            Some((resolved_index, operand)) if resolved_index == record_index => operand,
+            _ => {
+                in_order = false;
+                SketchRelationOperand::Record { record_index }
+            }
         })?;
+        if !in_order {
+            return Err(CodecError::malformed(
+                "F3D sketch relation members were resolved out of run order",
+            ));
+        }
     }
     Ok(())
 }
@@ -5047,9 +5079,19 @@ fn decode_nurbs_lanes(
     else {
         return Ok(None);
     };
-    let Some(coordinates) =
-        charged_sketch_scalar_values(ctx, payload, points.values_at, point_coordinates, operation)?
-    else {
+    // The source coordinates are a temporary; the control points are the
+    // curve's own storage.
+    let (coordinates, _coordinate_storage) =
+        ctx.with_scoped_storage("f3d sketch NURBS coordinates", || {
+            charged_sketch_scalar_values(
+                ctx,
+                payload,
+                points.values_at,
+                point_coordinates,
+                operation,
+            )
+        })?;
+    let Some(coordinates) = coordinates else {
         return Ok(None);
     };
     let Some(geometry) = admit_source_sketch_nurbs(
@@ -5225,14 +5267,8 @@ fn admit_source_sketch_nurbs(
         point_count,
         "f3d sketch NURBS control points",
     )?;
-    for point in ctx
-        .admit_iter(coordinates, "scan F3D sketch NURBS coordinates")?
-        .chunks(
-            std::num::NonZeroUsize::new(3)
-                .ok_or_else(|| CodecError::malformed("F3D coordinate width is zero"))?,
-        )
-        .filter(|point| point.len() == 3)
-    {
+    for point in coordinates.chunks_exact(3) {
+        ctx.charge_work(1, "scan F3D sketch NURBS coordinates")?;
         let Some(source) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
         };

@@ -494,7 +494,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
         0x1000_0000,
         &[300, 301],
     );
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
             .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
@@ -511,7 +511,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(SketchPatternDefinition::Circular {
@@ -542,7 +542,7 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
     class_members.extend_from_slice(&2u32.to_le_bytes());
     class_members.push(0);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
             .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
@@ -552,7 +552,7 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         None
@@ -574,7 +574,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         0x2000_0000,
         &[300, 301],
     );
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
@@ -605,7 +605,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(SketchPatternDefinition::Rectangular {
@@ -639,7 +639,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
     push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .expect("the classed parse reads the record");
     assert_eq!(
@@ -668,7 +668,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     let Some(SketchPatternDefinition::Rectangular { directions }) = decode_pattern_definition(
         &cadmpeg_test_support::service_decode_context(),
         &record,
-        &mut parsed,
+        &parsed,
     )
     .unwrap() else {
         panic!("expected a rectangular pattern definition");
@@ -686,7 +686,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     push_direction_clause(&mut class_members, 2, 464, [1.0, 0.0, 0.0], 1.5, 470);
     push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.0, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .expect("the classed parse reads the absent run member");
 
@@ -716,7 +716,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(SketchPatternDefinition::Rectangular { .. })
@@ -749,7 +749,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
 
     push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .expect("the classed parse retains the incomplete relation");
 
@@ -776,7 +776,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         None
@@ -795,7 +795,7 @@ fn text_frame_relation_reads_its_two_references() {
         0x100_0000_0000,
         &[2403],
     );
-    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
     assert_eq!(
         parsed
@@ -810,7 +810,7 @@ fn text_frame_relation_reads_its_two_references() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(SketchPatternDefinition::TextFrame {
@@ -856,7 +856,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
             0x200_0000_0000,
             &[1],
         );
-        let mut parsed = tested_parse_classed_sketch_relation(
+        let parsed = tested_parse_classed_sketch_relation(
             &record,
             SketchRelationClass::TextPath { leading_flag },
         )
@@ -876,7 +876,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         }) = decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed,
+            &parsed,
         )
         .unwrap()
         else {
@@ -943,14 +943,14 @@ fn text_pattern_definition_preserves_member_work_refusal() {
             },
         ),
     ] {
-        let mut parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
+        let parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
             "scan F3D sketch pattern text references",
             0,
             |ctx| {
-                let mut parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
-                decode_pattern_definition(ctx, record, &mut parsed)
+                let parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
+                decode_pattern_definition(ctx, record, &parsed)
             },
         );
         assert!(matches!(error,
@@ -961,7 +961,7 @@ fn text_pattern_definition_preserves_member_work_refusal() {
         assert!(decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             record,
-            &mut parsed
+            &parsed
         )
         .unwrap()
         .is_some());

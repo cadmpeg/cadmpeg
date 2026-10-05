@@ -538,6 +538,92 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
 }
 
 #[test]
+fn member_run_placement_decodes_in_a_stream_whose_name_is_escaped() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    // The asset folder name holds a space, which the native scope escapes.
+    // The entity's stream is found through its escaped scope.
+    const ASSET_GUID: &str = "00000000-0000-4000-8000-000000000003";
+    const STREAM: &str = "Fusion Asset[Active]/Design1/BulkStream.dat";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"281");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.resize(80, 0);
+    let head_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"283");
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    for value in crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+        .rows()
+        .into_iter()
+        .flatten()
+    {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.resize(
+        head_at + crate::design::decode::sketch::MEMBER_RUN_HEAD_FRAME,
+        0,
+    );
+
+    let scope = crate::ids::native_scope(STREAM);
+    assert!(scope.contains("%20"));
+    let entity = DesignEntityHeader {
+        id: format!("{scope}:design-entity-header#0"),
+        byte_offset: 0,
+
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
+    };
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(&crate::manifest::encode_top_level(ASSET_GUID, &["Fusion Asset"]).unwrap())
+        .unwrap();
+    zip.start_file("Fusion Asset[Active]/Manifest.dat", stored)
+        .unwrap();
+    zip.write_all(&crate::manifest::encode_design_asset("Fusion Asset", ASSET_GUID).unwrap())
+        .unwrap();
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let placements = crate::design::decode::sketch::decode_sketch_placements(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &[],
+            std::slice::from_ref(&entity),
+        )
+        .expect("placements decode");
+        let [placement] = placements.as_slice() else {
+            panic!("one member-run placement, got {}", placements.len());
+        };
+        assert_eq!(placement.record_index, 200);
+        assert_eq!(placement.byte_offset(), u64_from_index(head_at));
+        assert!(placement.id.starts_with(&scope));
+    });
+}
+
+#[test]
 fn legacy_sketch_pair_decodes_its_complete_member_run() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

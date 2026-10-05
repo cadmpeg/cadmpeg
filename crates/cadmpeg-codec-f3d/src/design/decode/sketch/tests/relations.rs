@@ -141,7 +141,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
@@ -186,7 +186,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(
@@ -231,7 +231,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let mut parsed = tested_parse_classed_sketch_relation(
+    let parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -292,7 +292,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(
@@ -330,7 +330,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
             .unwrap();
     assert_eq!(
@@ -354,7 +354,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed
+            &parsed
         )
         .unwrap(),
         Some(
@@ -399,7 +399,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let mut parsed =
+    let parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .unwrap();
     assert_eq!(
@@ -430,7 +430,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             &record,
-            &mut parsed,
+            &parsed,
         )
         .unwrap()
     else {
