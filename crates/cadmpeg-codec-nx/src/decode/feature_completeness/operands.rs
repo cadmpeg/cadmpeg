@@ -369,39 +369,35 @@ pub(crate) fn pattern_occurrence_count<
         PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
         PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
         PatternTransform::Composite { stages } => {
+            // The occurrence product so far; `None` before the first stage.
             let mut occurrences = None::<usize>;
-            let mut complete = true;
-            let mut first = true;
-            admission.any_by(
+            let incomplete = admission.any_by(
                 stages.stages(),
                 |stage| {
                     let Some(stage_count) = pattern_occurrence_count(admission, &stage.pattern)?
                     else {
-                        complete = false;
                         return Ok(true);
                     };
-                    let combined = if first {
-                        first = false;
-                        occurrences.is_none().then_some(stage_count)
-                    } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
-                        occurrences
-                            .filter(|occurrences| occurrences.checked_rem(stage_count) == Some(0))
-                    } else {
-                        occurrences.and_then(|occurrences| occurrences.checked_mul(stage_count))
+                    occurrences = match occurrences {
+                        None => Some(stage_count),
+                        Some(current)
+                            if matches!(
+                                stage.pattern.definition(),
+                                PatternTransform::Scale { .. }
+                            ) =>
+                        {
+                            (current.checked_rem(stage_count) == Some(0)).then_some(current)
+                        }
+                        Some(current) => current.checked_mul(stage_count),
                     };
-                    let Some(combined) = combined else {
-                        complete = false;
-                        return Ok(true);
-                    };
-                    occurrences = Some(combined);
-                    Ok(false)
+                    Ok(occurrences.is_none())
                 },
                 "nx pattern stage occurrences",
             )?;
-            if complete {
-                occurrences
-            } else {
+            if incomplete {
                 None
+            } else {
+                occurrences
             }
         }
         PatternTransform::Unresolved { .. } => None,
