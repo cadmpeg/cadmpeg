@@ -11,6 +11,7 @@ use super::blend::{
     spine_contact_pcurve_with_index, BlendContactSeedCache, BlendParameterGridCache,
     BoundaryInverseTarget, CircularBlendDefinition,
 };
+use super::emit::procedural_curve_owners;
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
@@ -61,40 +62,15 @@ const EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8: f64 = 1.0e-8;
 pub(super) type EndpointWitnesses =
     BTreeMap<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], [Point3; 2])>>;
 
-/// Each procedural curve's owning model curve, by procedural identity. A
-/// construction that more than one curve names has no owner, as
-/// `procedural_curve_owner` states; one table answers every lookup.
-pub(super) fn procedural_curve_owners<'ir, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    ir: &'ir CadIr,
-) -> Result<
-    (
-        std::collections::HashMap<&'ir str, Option<&'ir CurveId>>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ),
-    cadmpeg_core::CodecError,
-> {
-    ctx.unique_index(
-        ctx.admit_iter(&ir.model.curves, "nx procedural owner curve scan")?
-            .filter_map(|curve| {
-                curve
-                    .geometry
-                    .procedural_construction()
-                    .map(|construction| (construction.as_str(), &curve.id))
-            }),
-        "nx procedural curve owners",
-    )
-}
-
 /// The owning model curve of `procedural` in a table from
 /// [`procedural_curve_owners`].
 pub(super) fn procedural_curve_owner<'ir>(
     ctx: &DecodeContext<'_>,
-    owners: &std::collections::HashMap<&str, Option<&'ir CurveId>>,
+    owners: &std::collections::HashMap<&ProceduralCurveId, Option<&'ir CurveId>>,
     procedural: &ProceduralCurveId,
 ) -> Result<Option<&'ir CurveId>, cadmpeg_core::CodecError> {
     Ok(ctx
-        .get_hash_map(owners, procedural.as_str(), "nx procedural owner lookup")?
+        .get_hash_map(owners, procedural, "nx procedural owner lookup")?
         .copied()
         .flatten())
 }
@@ -355,7 +331,7 @@ impl IntersectionIncidenceIndex {
             .get(starts.procedural_curves..)
             .unwrap_or_default();
         if !new_procedurals.is_empty() {
-            let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+            let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
             for (offset, procedural) in ctx
                 .admit_iter(new_procedurals, "nx incidence procedural traversal")?
                 .enumerate()
@@ -858,7 +834,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 .map(|(index, pcurve)| (pcurve.id.as_str(), index)),
             "nx serialized branch pcurve index",
         )?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut replacements = Vec::new();
         for (offset, procedural) in ctx
@@ -1692,7 +1668,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             }
         }
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let mut blend_contacts = BTreeMap::new();
         let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
         let mut candidates = Vec::new();
@@ -2086,7 +2062,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let vertex_points = VertexPositions::new(ctx, ir)?;
         let (edge_by_curve, _edge_curve_storage) = edge_index_by_curve(ctx, ir)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
         for (offset, procedural) in ctx
             .admit_iter(
