@@ -38,11 +38,7 @@ fn unique_model_curve<'a>(
 ) -> Result<Option<&'a Curve>, cadmpeg_core::CodecError> {
     let mut matching_curve = None;
     for curve in ctx.admit_iter(&ir.model.curves, "creo unique model curve search")? {
-        if ctx.equal(
-            &curve.id,
-            id,
-            "creo unique model curve identity comparison",
-        )? {
+        if ctx.equal(&curve.id, id, "creo unique model curve identity comparison")? {
             if matching_curve.replace(curve).is_some() {
                 return Ok(None);
             }
@@ -101,10 +97,7 @@ fn pcurve_endpoint_is_ambiguous(
         return Ok(false);
     };
     Ok(ctx
-        .admit_iter(
-            &candidates[1..],
-            "creo pcurve endpoint ambiguity search",
-        )?
+        .admit_iter(&candidates[1..], "creo pcurve endpoint ambiguity search")?
         .any(|candidate| {
             !finite_model_point(*first)
                 .zip(finite_model_point(*candidate))
@@ -437,16 +430,14 @@ fn incident_analytic_vertex_domain(
         .admit_iter(curves, "creo incident analytic curve pairs")?
         .enumerate()
     {
-        for second_curve in ctx.admit_iter(
-            &curves[first + 1..],
-            "creo incident analytic curve pairs",
-        )? {
+        for second_curve in
+            ctx.admit_iter(&curves[first + 1..], "creo incident analytic curve pairs")?
+        {
             let first_curve = *first_curve;
             let second_curve = *second_curve;
             let conic_points = conic_conic_intersections(ctx, first_curve, second_curve)?;
             let line_line_point = line_line_intersection(first_curve, second_curve);
-            let first_line_conic_points =
-                line_conic_intersections(ctx, first_curve, second_curve)?;
+            let first_line_conic_points = line_conic_intersections(ctx, first_curve, second_curve)?;
             let second_line_conic_points =
                 line_conic_intersections(ctx, second_curve, first_curve)?;
             if let Some(point) = line_line_point {
@@ -486,11 +477,14 @@ fn incident_analytic_vertex_domain(
     for point in ctx.admit_iter(&candidates, "creo incident analytic candidates")? {
         // A candidate outside the finite range agrees with no other
         // candidate.
-        if !ctx.admit_iter(&unique, "creo unique analytic candidate search")?.any(|candidate| {
-            finite_model_point(*candidate)
-                .zip(finite_model_point(*point))
-                .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
-        }) {
+        if !ctx
+            .admit_iter(&unique, "creo unique analytic candidate search")?
+            .any(|candidate| {
+                finite_model_point(*candidate)
+                    .zip(finite_model_point(*point))
+                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
+            })
+        {
             ctx.reserve_vec(&mut unique, 1, "creo unique analytic candidates")?;
             unique.push(*point);
         }
@@ -695,7 +689,11 @@ pub(in crate::decode) fn solve_topological_vertices(
         let ordered = directed_pcurve_points(row.directions, points);
         if let Some(ordered) = ordered {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
-                match ctx.entry_btree_map(&mut pcurve_endpoint_candidates, vertex, "creo vertex pcurve candidate nodes")? {
+                match ctx.entry_btree_map(
+                    &mut pcurve_endpoint_candidates,
+                    vertex,
+                    "creo vertex pcurve candidate nodes",
+                )? {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         ctx.reserve_vec(entry.get_mut(), 1, "creo vertex pcurve candidate points")?;
                         entry.get_mut().push(point);
@@ -713,9 +711,10 @@ pub(in crate::decode) fn solve_topological_vertices(
         pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
     let mut ambiguous_pcurve_vertices = BTreeSet::new();
-    for (vertex, candidates) in
-        ctx.admit_iter(&pcurve_endpoint_candidates, "creo pcurve endpoint candidates")?
-    {
+    for (vertex, candidates) in ctx.admit_iter(
+        &pcurve_endpoint_candidates,
+        "creo pcurve endpoint candidates",
+    )? {
         if pcurve_endpoint_is_ambiguous(ctx, candidates)? {
             ctx.insert_btree_set(
                 &mut ambiguous_pcurve_vertices,
@@ -776,7 +775,11 @@ pub(in crate::decode) fn solve_topological_vertices(
             row.id,
             "creo vertex curve lookup identity",
         )?;
-        if !ctx.contains_btree_set(&nurbs_endpoint_witnesses, &id, "creo NURBS endpoint witness membership")? {
+        if !ctx.contains_btree_set(
+            &nurbs_endpoint_witnesses,
+            &id,
+            "creo NURBS endpoint witness membership",
+        )? {
             continue;
         }
         let Some(geometry) = unique_model_curve(ctx, ir, &id)? else {
@@ -1256,11 +1259,13 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root admitted");
 
-        let error = unique_model_curve(&ctx, &ir, &id)
-            .expect_err("the first curve exceeds the work limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        let error =
+            unique_model_curve(&ctx, &ir, &id).expect_err("the first curve exceeds the work limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "creo unique model curve search"));
+                && refusal.operation == "creo unique model curve search")
+        );
     }
 
     #[test]
@@ -1283,14 +1288,14 @@ mod tests {
         const EPS_TEST_POINT_AGREE: f64 = 1.0e-12;
         crate::decode::with_test_decode_ctx(|ctx| {
             assert!(!pcurve_endpoint_is_ambiguous(ctx, &[[1.0, 2.0, 3.0]])?);
-            assert!(!pcurve_endpoint_is_ambiguous(ctx, &[
-                [1.0, 2.0, 3.0],
-                [1.0 + EPS_TEST_POINT_AGREE, 2.0, 3.0],
-            ])?);
-            assert!(pcurve_endpoint_is_ambiguous(ctx, &[
-                [1.0, 2.0, 3.0],
-                [1.1, 2.0, 3.0],
-            ])?);
+            assert!(!pcurve_endpoint_is_ambiguous(
+                ctx,
+                &[[1.0, 2.0, 3.0], [1.0 + EPS_TEST_POINT_AGREE, 2.0, 3.0],]
+            )?);
+            assert!(pcurve_endpoint_is_ambiguous(
+                ctx,
+                &[[1.0, 2.0, 3.0], [1.1, 2.0, 3.0],]
+            )?);
             Ok::<(), cadmpeg_core::CodecError>(())
         })
         .expect("pcurve endpoint comparison is admitted");
@@ -1306,8 +1311,10 @@ mod tests {
 
         let error = pcurve_endpoint_is_ambiguous(&ctx, &[[1.0, 2.0, 3.0], [1.1, 2.0, 3.0]])
             .expect_err("the second point exceeds the work limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "creo pcurve endpoint ambiguity search"));
+                && refusal.operation == "creo pcurve endpoint ambiguity search")
+        );
     }
 }

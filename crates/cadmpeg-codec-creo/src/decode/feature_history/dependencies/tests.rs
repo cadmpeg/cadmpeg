@@ -328,15 +328,18 @@ fn unemitted_native_dependency_skips_duplicate_membership_at_work_limit() {
     let limit = match refusal {
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "creo native dependency emission lookup" => limit,
+                && limit.operation == "creo native dependency emission lookup" =>
+        {
+            limit
+        }
         error => panic!("expected native emission membership refusal, got {error:?}"),
     };
     let cap = limit.used.checked_add(limit.additional).expect("work cap");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     assert_eq!(
         reconciled_dependencies(
             &ctx,
@@ -990,15 +993,7 @@ fn feature_dependency_identity_validation_refuses_at_work_boundary() {
         IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
     let dependencies = crate::test_support::assert_work_boundaries(
         &["creo feature dependency identity validation"],
-        |ctx| {
-            feature_dependencies(
-                ctx,
-                &scan,
-                &ir,
-                17,
-                &BTreeMap::from([(17, vec![3])]),
-            )
-        },
+        |ctx| feature_dependencies(ctx, &scan, &ir, 17, &BTreeMap::from([(17, vec![3])])),
     );
     assert_eq!(
         dependencies,
@@ -1097,11 +1092,11 @@ fn remaining_feature_order_removal_charges_only_suffix_bytes() {
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(ref resource)
-            if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo remaining feature order removal shifts"
-                && resource.additional == cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<usize>(),
-                )),
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo remaining feature order removal shifts"
+            && resource.additional == cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<usize>(),
+            )),
         "{error:?}"
     );
 

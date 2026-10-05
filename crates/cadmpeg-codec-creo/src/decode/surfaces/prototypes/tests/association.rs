@@ -22,8 +22,16 @@ fn prototype_uses_the_preceding_same_family_row() {
     ];
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 150, crate::surface::SurfaceKind::Plane)).expect("prototype row selection")
-            .map(|row| row.id),
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(
+            ctx,
+            &rows,
+            100,
+            300,
+            150,
+            crate::surface::SurfaceKind::Plane
+        ))
+        .expect("prototype row selection")
+        .map(|row| row.id),
         Some(10)
     );
 }
@@ -33,8 +41,16 @@ fn prototype_before_frame_rows_uses_the_following_same_family_row() {
     let rows = [row(100, 10, crate::surface::SurfaceKind::Plane)];
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 50, crate::surface::SurfaceKind::Plane)).expect("prototype row selection")
-            .map(|row| row.id),
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(
+            ctx,
+            &rows,
+            100,
+            300,
+            50,
+            crate::surface::SurfaceKind::Plane
+        ))
+        .expect("prototype row selection")
+        .map(|row| row.id),
         Some(10)
     );
 }
@@ -47,7 +63,15 @@ fn prototype_after_a_different_family_uses_the_following_family_row() {
     ];
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 150, crate::surface::SurfaceKind::Plane)).expect("prototype row selection"),
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(
+            ctx,
+            &rows,
+            100,
+            300,
+            150,
+            crate::surface::SurfaceKind::Plane
+        ))
+        .expect("prototype row selection"),
         Some(&rows[1])
     );
 }
@@ -134,10 +158,12 @@ fn prototype_association_retention_refuses_work_and_preserves_result() {
     let associated_rows = crate::test_support::assert_work_boundaries(
         &["creo unique surface prototype associations retention"],
         |ctx| {
-            Ok(super::super::unique_surface_prototype_associations(ctx, &scan)?
-                .iter()
-                .map(|(_, row, _)| row.id)
-                .collect::<Vec<_>>())
+            Ok(
+                super::super::unique_surface_prototype_associations(ctx, &scan)?
+                    .iter()
+                    .map(|(_, row, _)| row.id)
+                    .collect::<Vec<_>>(),
+            )
         },
     );
     assert_eq!(associated_rows, [7]);

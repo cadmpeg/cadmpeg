@@ -830,8 +830,16 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     assert_eq!(order.rows[0].external_id, 283);
     assert_eq!(order.rows[0].internal_id, 8);
     assert_eq!(order.rows[0].bitmask, 0);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 12)).expect("admitted order identity"), Some(310));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 283)).expect("admitted order identity"), Some(8));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 12))
+            .expect("admitted order identity"),
+        Some(310)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 283))
+            .expect("admitted order identity"),
+        Some(8)
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

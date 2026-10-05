@@ -720,7 +720,9 @@ fn normalized_name_range(
         return Ok(0..base_end);
     };
     let start = "ND:".len() + first_colon + 1;
-    let end = base[start..].find(':').map_or(base_end, |length| start + length);
+    let end = base[start..]
+        .find(':')
+        .map_or(base_end, |length| start + length);
     Ok(start..end)
 }
 
@@ -1223,8 +1225,7 @@ fn expanded_sections(
         let Some(expanded) = crate::compress::decode(ctx, payload, expected_length)? else {
             continue;
         };
-        let name =
-            ctx.copy_retained_text(section.section.name(), "creo expanded section names")?;
+        let name = ctx.copy_retained_text(section.section.name(), "creo expanded section names")?;
         ctx.reserve_vec(&mut expanded_sections, 1, "creo expanded sections")?;
         expanded_sections.push(ExpandedSection {
             name,
@@ -2730,8 +2731,7 @@ fn feature_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections {
-        if !(section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA")
-        {
+        if !(section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA") {
             continue;
         }
         let payload = section.region;

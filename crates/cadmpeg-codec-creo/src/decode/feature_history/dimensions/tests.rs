@@ -290,8 +290,9 @@ fn dimension_property_refuses_before_btree_node() {
         .reserve_scoped(0, "creo dimension property nodes")
         .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-        .expect_err("one property needs one BTreeMap node");
+    let error =
+        insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
+            .expect_err("one property needs one BTreeMap node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -310,8 +311,9 @@ fn dimension_property_refuses_before_key_copy() {
         .reserve_scoped(0, "creo dimension property nodes")
         .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-        .expect_err("property key exceeds retained limit");
+    let error =
+        insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
+            .expect_err("property key exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -330,8 +332,9 @@ fn dimension_property_refuses_before_value_copy() {
         .reserve_scoped(0, "creo dimension property nodes")
         .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-        .expect_err("property value exceeds retained limit");
+    let error =
+        insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
+            .expect_err("property value exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -350,14 +353,9 @@ fn dimension_property_staging_node_refuses_materialized_storage() {
         .reserve_scoped(0, "creo dimension property nodes")
         .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "external_id",
-        7,
-    )
-    .expect_err("one staging node exceeds materialized storage");
+    let error =
+        insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
+            .expect_err("one staging node exceeds materialized storage");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -369,23 +367,16 @@ fn dimension_property_staging_node_refuses_materialized_storage() {
 fn dimension_property_named_output_node_remains_retained() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        "external_id".len() + "7".len(),
-    );
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("external_id".len() + "7".len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
         .reserve_scoped(0, "creo dimension property nodes")
         .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    insert_dimension_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "external_id",
-        7,
-    )
-    .expect("staging node uses scoped storage");
+    insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
+        .expect("staging node uses scoped storage");
     let error = cadmpeg_core::text::named_entries_for_decode(&ctx, "dimension", properties)
         .expect_err("the decoded output node needs retained storage");
     assert!(

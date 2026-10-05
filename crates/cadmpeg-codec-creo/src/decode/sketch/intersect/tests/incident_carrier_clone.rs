@@ -2,8 +2,8 @@
 
 use super::super::resolved_trim_vertex_coordinates;
 use crate::feature::definitions::{
-    DefinitionIdentity, FeatureDefinition, FeatureSegment, FeatureSegmentKind,
-    FeatureSegmentTable, FeatureTrimEntity, FeatureTrimEntityTable, TrimEntityKind,
+    DefinitionIdentity, FeatureDefinition, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable,
+    FeatureTrimEntity, FeatureTrimEntityTable, TrimEntityKind,
 };
 use std::collections::BTreeMap;
 
@@ -79,16 +79,10 @@ fn incident_line_fixture() -> (FeatureDefinition, BTreeMap<u32, [f64; 2]>) {
 fn incident_carrier_geometry_clones_admit_work_and_preserve_service_result() {
     let (definition, points) = incident_line_fixture();
     // The shared endpoint fixes vertex 10; each incident line fixes its other endpoint.
-    let expected = BTreeMap::from([
-        (10, [1.0, 0.0]),
-        (11, [0.0, 0.0]),
-        (12, [1.0, 1.0]),
-    ]);
+    let expected = BTreeMap::from([(10, [1.0, 0.0]), (11, [0.0, 0.0]), (12, [1.0, 1.0])]);
     let coordinates = crate::test_support::assert_work_boundaries(
         &["creo sketch incident carrier clone"],
-        |ctx| {
-            resolved_trim_vertex_coordinates(ctx, &definition, &points, &BTreeMap::new())
-        },
+        |ctx| resolved_trim_vertex_coordinates(ctx, &definition, &points, &BTreeMap::new()),
     );
     assert_eq!(coordinates, expected);
 }

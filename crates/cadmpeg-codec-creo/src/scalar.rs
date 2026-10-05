@@ -313,7 +313,11 @@ impl ScalarCache {
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
-            match ctx.entry_btree_map(&mut paired_byte_1_by_tail, tail, "creo scalar cache paired tails")? {
+            match ctx.entry_btree_map(
+                &mut paired_byte_1_by_tail,
+                tail,
+                "creo scalar cache paired tails",
+            )? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(raw[1]));
                 }
@@ -1362,7 +1366,9 @@ pub(crate) fn decode_plane_support_local_system(
         return Ok(None);
     };
     let primary_frame = match finite_local_system_slots(values) {
-        Some(frame) if plane_support_values_have_valid_frame(ctx, frame.as_raw(), layout)? => Some(frame),
+        Some(frame) if plane_support_values_have_valid_frame(ctx, frame.as_raw(), layout)? => {
+            Some(frame)
+        }
         _ => None,
     };
     if let Some(frame) = primary_frame {
@@ -1422,7 +1428,11 @@ fn plane_support_values_have_valid_frame(
         [values[3], values[4], values[5]],
         [values[6], values[7], values[8]],
     ];
-    Ok(ctx.admit_iter(&[(0usize, 1usize), (0, 2), (1, 2)], "creo plane support frame pair count")?
+    Ok(ctx
+        .admit_iter(
+            &[(0usize, 1usize), (0, 2), (1, 2)],
+            "creo plane support frame pair count",
+        )?
         .filter(|(first, second)| {
             valid_equal_scale_orthogonal_directions(supports[*first], supports[*second])
         })

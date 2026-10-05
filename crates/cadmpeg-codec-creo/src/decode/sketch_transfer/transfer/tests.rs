@@ -535,10 +535,9 @@ fn equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality
             .expect("one typed source offset"),
     );
     let (scalar_equalities, equation_annotation_offsets) =
-        crate::test_support::assert_work_boundaries(
-            &["creo equation offset source"],
-            |ctx| scalar_equality_transfer_result(ctx, &scan),
-        );
+        crate::test_support::assert_work_boundaries(&["creo equation offset source"], |ctx| {
+            scalar_equality_transfer_result(ctx, &scan)
+        });
     assert_eq!(scalar_equalities, vec![(10, 11)]);
     assert_eq!(equation_annotation_offsets, vec![expected_offset]);
 }
@@ -634,26 +633,25 @@ fn definition_body_position_refuses_out_of_bounds_and_source_overflow() {
     ));
 }
 
-
-
 #[test]
 fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() {
     let mut scan = empty_section_scan();
     let definition = &mut scan.features.definitions[0];
-    let variable = |variable_type: crate::feature::definitions::VariableType,
-                    key: u32,
-                    value: f64| crate::feature::definitions::FeatureVariableRow {
-        variable_type,
-        key,
-        value: crate::feature::definitions::ScalarLane::Value(value),
-        value_body: Vec::new(),
-        guess: crate::feature::definitions::ScalarLane::Undefined,
-        guess_body: Vec::new(),
-        known: None,
-        homogeneity: None,
-        uvar_id: None,
-        offset: usize::try_from(key).expect("fixture index fits usize"),
-    };
+    let variable =
+        |variable_type: crate::feature::definitions::VariableType, key: u32, value: f64| {
+            crate::feature::definitions::FeatureVariableRow {
+                variable_type,
+                key,
+                value: crate::feature::definitions::ScalarLane::Value(value),
+                value_body: Vec::new(),
+                guess: crate::feature::definitions::ScalarLane::Undefined,
+                guess_body: Vec::new(),
+                known: None,
+                homogeneity: None,
+                uvar_id: None,
+                offset: usize::try_from(key).expect("fixture index fits usize"),
+            }
+        };
     definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
         declared_count: 6,
         entity_ref: None,
@@ -667,8 +665,8 @@ fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() 
         ],
         offset: 0,
     });
-    let segment = |external_id: u32, point_ids: [u32; 2]| {
-        crate::feature::definitions::FeatureSegment {
+    let segment =
+        |external_id: u32, point_ids: [u32; 2]| crate::feature::definitions::FeatureSegment {
             kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
             center_id: None,
@@ -679,16 +677,19 @@ fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() 
             external_id,
             body: Vec::new(),
             offset: usize::try_from(external_id).expect("fixture index fits usize"),
-        }
-    };
+        };
     definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 3,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [segment(10, [1, 2]), segment(11, [2, 3]), segment(12, [3, 1])]
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
+        rows: [
+            segment(10, [1, 2]),
+            segment(11, [2, 3]),
+            segment(12, [3, 1]),
+        ]
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     });
 

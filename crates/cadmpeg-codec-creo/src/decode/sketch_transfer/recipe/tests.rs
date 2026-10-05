@@ -84,9 +84,11 @@ fn feature_schema_class_refuses_before_row_selection() {
         .rows
         .push(row(crate::feature::schema::SchemaClass::Round));
     let error = feature_schema_class(&ctx, &scan, 40).expect_err("row scan exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo feature schema rows"));
+            && resource.operation == "creo feature schema rows")
+    );
 }
 
 #[test]
@@ -101,7 +103,9 @@ fn revolution_extent_lookup_refuses_before_search() {
     }];
     let error = unique_feature_revolution_extent(&ctx, &records, 40)
         .expect_err("extent search exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo feature revolution extent rows"));
+            && resource.operation == "creo feature revolution extent rows")
+    );
 }

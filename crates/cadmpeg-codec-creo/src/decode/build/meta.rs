@@ -46,10 +46,22 @@ pub(super) fn source_meta(
         &scan.framing.version_line,
     )?;
     if let Some(name) = &scan.framing.model_name {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "model_name", &name.name)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "model_name",
+            &name.name,
+        )?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "legacy_ascii_schema", &legacy.schema)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "legacy_ascii_schema",
+            &legacy.schema,
+        )?;
         if let Some(release) = &legacy.product_release {
             insert_source_attribute(
                 ctx,
@@ -102,7 +114,13 @@ pub(super) fn source_meta(
             legacy.persistence.conflicting_declaration_count(),
         )?;
     }
-    insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "file_size", scan.framing.data.len())?;
+    insert_source_attribute(
+        ctx,
+        &mut attribute_nodes,
+        &mut attributes,
+        "file_size",
+        scan.framing.data.len(),
+    )?;
     insert_source_attribute(
         ctx,
         &mut attribute_nodes,
@@ -110,7 +128,13 @@ pub(super) fn source_meta(
         "section_count",
         scan.framing.sections.len(),
     )?;
-    for (index, section) in ctx.admit_iter(&scan.framing.sections, "creo source section attribute traversal")?.enumerate() {
+    for (index, section) in ctx
+        .admit_iter(
+            &scan.framing.sections,
+            "creo source section attribute traversal",
+        )?
+        .enumerate()
+    {
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
@@ -148,15 +172,39 @@ pub(super) fn source_meta(
         )?;
     }
     if let Some(c) = scan.framing.census.srf_array_count {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "srf_array_count", c)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "srf_array_count",
+            c,
+        )?;
     }
     if let Some(c) = scan.framing.census.crv_array_count {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "crv_array_count", c)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "crv_array_count",
+            c,
+        )?;
     }
     if let Some(unit) = &scan.framing.principal_unit {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "principal_unit", unit)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "principal_unit",
+            unit,
+        )?;
         if let Some(scale) = unit.length_scale_mm().filter(|scale| scale.get() != 1.0) {
-            insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "source_length_scale_mm", scale.get())?;
+            insert_source_attribute(
+                ctx,
+                &mut attribute_nodes,
+                &mut attributes,
+                "source_length_scale_mm",
+                scale.get(),
+            )?;
         }
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
@@ -169,7 +217,10 @@ pub(super) fn source_meta(
         let mut object_inlines = 0usize;
         let mut object_nulls = 0usize;
         let mut object_arrays = 0usize;
-        for record in ctx.admit_iter(&legacy.persistence.objects, "creo legacy object coverage traversal")? {
+        for record in ctx.admit_iter(
+            &legacy.persistence.objects,
+            "creo legacy object coverage traversal",
+        )? {
             match record.payload {
                 crate::legacy::ObjectPayload::Arrow => object_arrows += 1,
                 crate::legacy::ObjectPayload::Inline => object_inlines += 1,
@@ -250,8 +301,12 @@ pub(super) fn source_meta(
             crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
             legacy.persistence.real_values.unresolved_count,
         )?;
-        let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
-            ctx.admit_iter(&legacy.persistence.string_values, "creo legacy string coverage traversal")?.try_fold(
+        let (string_scalars, string_arrays, string_elements, undecoded_encodings) = ctx
+            .admit_iter(
+                &legacy.persistence.string_values,
+                "creo legacy string coverage traversal",
+            )?
+            .try_fold(
                 (0usize, 0usize, 0usize, 0usize),
                 |(scalars, arrays, elements, undecoded_encodings),
                  record|
@@ -423,12 +478,15 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_POSITIONAL_EXTRUSION_DIRECTION_COUNT,
-        ctx.admit_iter(&scan.surfaces.parameters, "creo parameters coverage traversal")?
-            .filter(|record| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id).is_some()
-                    && record.extrusion_direction().is_some()
-            })
-            .count(),
+        ctx.admit_iter(
+            &scan.surfaces.parameters,
+            "creo parameters coverage traversal",
+        )?
+        .filter(|record| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id).is_some()
+                && record.extrusion_direction().is_some()
+        })
+        .count(),
     )?;
     let torus_coverage = torus_parameter_coverage(ctx, scan)?;
     coverage.record(
@@ -529,9 +587,12 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_TABULATED_CYLINDER_CONTROL_POINT_SET_COUNT,
-        ctx.admit_iter(&scan.curves.tabulated_cylinder_replays, "creo tabulated_cylinder_replays coverage traversal")?
-            .filter(|replay| replay.control_points.iter().all(Option::is_some))
-            .count(),
+        ctx.admit_iter(
+            &scan.curves.tabulated_cylinder_replays,
+            "creo tabulated_cylinder_replays coverage traversal",
+        )?
+        .filter(|replay| replay.control_points.iter().all(Option::is_some))
+        .count(),
     )?;
     coverage.record(
         ctx,
@@ -560,15 +621,30 @@ pub(super) fn source_meta(
         &mut attribute_nodes,
         &mut attributes,
         "expanded_section_byte_count",
-        ctx.admit_iter(&scan.framing.expanded_sections, "creo expanded_sections coverage traversal")?
-            .map(|section| section.data.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.framing.expanded_sections,
+            "creo expanded_sections coverage traversal",
+        )?
+        .map(|section| section.data.len())
+        .sum::<usize>(),
     )?;
     if let Some(family_table) = scan.framing.family_table {
         match family_table.pointer {
             crate::container::FamilyTablePointer::Null => {
-                insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "family_table_pointer", "null")?;
-                insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "configuration_state", "none")?;
+                insert_source_attribute(
+                    ctx,
+                    &mut attribute_nodes,
+                    &mut attributes,
+                    "family_table_pointer",
+                    "null",
+                )?;
+                insert_source_attribute(
+                    ctx,
+                    &mut attribute_nodes,
+                    &mut attributes,
+                    "configuration_state",
+                    "none",
+                )?;
             }
             crate::container::FamilyTablePointer::Entity(id) => {
                 insert_source_attribute(
@@ -767,7 +843,10 @@ pub(super) fn source_meta(
         scan.features.section_transforms.len(),
     )?;
     let mut placement_instruction_count = 0usize;
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo feature definition coverage traversal")? {
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo feature definition coverage traversal",
+    )? {
         let count = crate::feature::definitions::placement_instructions(ctx, definition)?.count();
         placement_instruction_count =
             placement_instruction_count
@@ -794,12 +873,19 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_OUTLINE_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .map(|definition| definition.outlines.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .map(|definition| definition.outlines.len())
+        .sum::<usize>(),
     )?;
     let mut section_point_count = 0;
-    for variables in ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
+    for variables in ctx
+        .admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
         .filter_map(|definition| definition.variables.as_ref())
     {
         let crate::feature::definitions::ReconciledPoints { points, ambiguous } =
@@ -814,12 +900,19 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.variables.as_ref())
-            .map(|variables| variables.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.variables.as_ref())
+        .map(|variables| variables.rows.len())
+        .sum::<usize>(),
     )?;
-    let missing_feature_solver_variable_count = ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
+    let missing_feature_solver_variable_count = ctx
+        .admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
         .filter_map(|definition| definition.variables.as_ref())
         .try_fold(0usize, |total, variables| {
             let declared_count = usize::try_from(variables.declared_count).map_err(|_| {
@@ -844,29 +937,73 @@ pub(super) fn source_meta(
     let (
         decoded_dimension_driven_variable_count,
         decoded_dimension_driven_coordinate_variable_count,
-    ) = ctx.admit_iter(&scan.features.definitions, "creo dimension-driven feature coverage traversal")?
+    ) = ctx
+        .admit_iter(
+            &scan.features.definitions,
+            "creo dimension-driven feature coverage traversal",
+        )?
         .filter_map(|definition| definition.variables.as_ref())
         .try_fold((0usize, 0usize), |total, variables| {
-            ctx.admit_iter(&variables.rows, "creo dimension-driven variable coverage traversal")?
-                .filter(|row| row.value == ScalarLane::DimensionDriven)
-                .try_fold(total, |(all, coordinates), row| {
-                    Ok::<_, CodecError>((
-                        all.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven coverage count", u64::MAX, u64::MAX))?,
-                        coordinates.checked_add(usize::from(matches!(row.variable_type, VariableType::U | VariableType::V))).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven coverage count", u64::MAX, u64::MAX))?,
-                    ))
-                })
+            ctx.admit_iter(
+                &variables.rows,
+                "creo dimension-driven variable coverage traversal",
+            )?
+            .filter(|row| row.value == ScalarLane::DimensionDriven)
+            .try_fold(total, |(all, coordinates), row| {
+                Ok::<_, CodecError>((
+                    all.checked_add(1).ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "creo dimension-driven coverage count",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?,
+                    coordinates
+                        .checked_add(usize::from(matches!(
+                            row.variable_type,
+                            VariableType::U | VariableType::V
+                        )))
+                        .ok_or_else(|| {
+                            cadmpeg_core::decode::refuse_local_limit(
+                                "creo dimension-driven coverage count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?,
+                ))
+            })
         })?;
-    let decoded_dimension_driven_guess_count = ctx.admit_iter(&scan.features.definitions, "creo dimension-driven guess feature traversal")?
+    let decoded_dimension_driven_guess_count = ctx
+        .admit_iter(
+            &scan.features.definitions,
+            "creo dimension-driven guess feature traversal",
+        )?
         .filter_map(|definition| definition.variables.as_ref())
         .try_fold(0usize, |total, variables| {
-            let count = ctx.admit_iter(&variables.rows, "creo dimension-driven guess variable traversal")?.filter(|row| row.guess == ScalarLane::DimensionDriven).count();
-            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven guess count", u64::MAX, u64::MAX))
+            let count = ctx
+                .admit_iter(
+                    &variables.rows,
+                    "creo dimension-driven guess variable traversal",
+                )?
+                .filter(|row| row.guess == ScalarLane::DimensionDriven)
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "creo dimension-driven guess count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })
         })?;
     let (
         resolved_dimension_driven_variable_count,
         resolved_dimension_driven_coordinate_variable_count,
         resolved_dimension_driven_other_variable_count,
-    ) = ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
+    ) = ctx
+        .admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
         .map(|definition| {
             let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
             let resolved_radii = resolved_section_radii(ctx, definition)?;
@@ -874,23 +1011,54 @@ pub(super) fn source_meta(
             let Some(variables) = &definition.variables else {
                 return Ok::<_, CodecError>((0usize, 0usize, 0usize));
             };
-            ctx.admit_iter(&variables.rows, "creo resolved dimension-driven variable traversal")?
-                .filter(|row| row.value == ScalarLane::DimensionDriven)
-                .try_fold((0usize, 0usize, 0usize), |(all, coordinates, other), row| {
+            ctx.admit_iter(
+                &variables.rows,
+                "creo resolved dimension-driven variable traversal",
+            )?
+            .filter(|row| row.value == ScalarLane::DimensionDriven)
+            .try_fold(
+                (0usize, 0usize, 0usize),
+                |(all, coordinates, other), row| {
                     let resolved = match row.variable_type {
                         VariableType::U | VariableType::V => {
-                            resolved_coordinates.get(&row.key).and_then(|point| point[usize::from(row.variable_type == VariableType::V)])
+                            resolved_coordinates.get(&row.key).and_then(|point| {
+                                point[usize::from(row.variable_type == VariableType::V)]
+                            })
                         }
                         VariableType::Radius => resolved_radii.get(&row.key).copied(),
                         _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                     };
                     let coordinate = matches!(row.variable_type, VariableType::U | VariableType::V);
                     Ok::<_, CodecError>((
-                        all.checked_add(usize::from(resolved.is_some())).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo resolved dimension-driven count", u64::MAX, u64::MAX))?,
-                        coordinates.checked_add(usize::from(coordinate && resolved.is_some())).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo resolved dimension-driven count", u64::MAX, u64::MAX))?,
-                        other.checked_add(usize::from(!coordinate && resolved.is_some())).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo resolved dimension-driven count", u64::MAX, u64::MAX))?,
+                        all.checked_add(usize::from(resolved.is_some()))
+                            .ok_or_else(|| {
+                                cadmpeg_core::decode::refuse_local_limit(
+                                    "creo resolved dimension-driven count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
+                        coordinates
+                            .checked_add(usize::from(coordinate && resolved.is_some()))
+                            .ok_or_else(|| {
+                                cadmpeg_core::decode::refuse_local_limit(
+                                    "creo resolved dimension-driven count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
+                        other
+                            .checked_add(usize::from(!coordinate && resolved.is_some()))
+                            .ok_or_else(|| {
+                                cadmpeg_core::decode::refuse_local_limit(
+                                    "creo resolved dimension-driven count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
                     ))
-                })
+                },
+            )
         })
         .try_fold((0usize, 0usize, 0usize), |total, counts| {
             let counts = counts?;
@@ -976,151 +1144,226 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo circles segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Circle(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
-                })
-            })?,
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo circles segment coverage rows",
+                )?
+                .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Circle(_)))
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo points segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Point(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
-                })
-            })?,
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo points segment coverage rows",
+                )?
+                .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Point(_)))
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo centered lines segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::CenteredLine(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo centered lines segment coverage rows",
+                )?
+                .filter(|row| {
+                    matches!(
+                        row,
+                        crate::feature::segment_rows::SegmentRow::CenteredLine(_)
+                    )
                 })
-            })?,
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo reference lines segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::ReferenceLine(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo reference lines segment coverage rows",
+                )?
+                .filter(|row| {
+                    matches!(
+                        row,
+                        crate::feature::segment_rows::SegmentRow::ReferenceLine(_)
+                    )
                 })
-            })?,
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo bounded curves segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::BoundedCurve(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo bounded curves segment coverage rows",
+                )?
+                .filter(|row| {
+                    matches!(
+                        row,
+                        crate::feature::segment_rows::SegmentRow::BoundedCurve(_)
+                    )
                 })
-            })?,
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_CONIC_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo conics segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Conic(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
-                })
-            })?,
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo conics segment coverage rows",
+                )?
+                .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Conic(_)))
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_OPAQUE_SEGMENT_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.segments.as_ref())
-            .try_fold(0usize, |total, segments| {
-                let count = ctx
-                    .admit_iter(segments.rows.as_slice(), "creo opaque segment coverage rows")?
-                    .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Opaque(_)))
-                    .count();
-                total.checked_add(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
-                })
-            })?,
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.segments.as_ref())
+        .try_fold(0usize, |total, segments| {
+            let count = ctx
+                .admit_iter(
+                    segments.rows.as_slice(),
+                    "creo opaque segment coverage rows",
+                )?
+                .filter(|row| matches!(row, crate::feature::segment_rows::SegmentRow::Opaque(_)))
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX)
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_TRIM_ENTITY_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.trim_entities.as_ref())
-            .map(|entities| entities.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.trim_entities.as_ref())
+        .map(|entities| entities.rows.len())
+        .sum::<usize>(),
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_TRIM_VERTEX_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.trim_vertices.as_ref())
-            .map(|vertices| vertices.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.trim_vertices.as_ref())
+        .map(|vertices| vertices.rows.len())
+        .sum::<usize>(),
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_ORDER_ENTRY_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.order_table.as_ref())
-            .map(|order| order.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.order_table.as_ref())
+        .map(|order| order.rows.len())
+        .sum::<usize>(),
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.dimensions.as_ref())
-            .map(|dimensions| dimensions.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.dimensions.as_ref())
+        .map(|dimensions| dimensions.rows.len())
+        .sum::<usize>(),
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_RELATION_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.relations.as_ref())
-            .map(|relations| relations.rows.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.rows.len())
+        .sum::<usize>(),
     )?;
     let mut equation_table_count = 0;
     let mut equation_count = 0;
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo feature definition coverage traversal")? {
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo feature definition coverage traversal",
+    )? {
         if let Some(equations) = crate::feature::definitions::equation_table(
             ctx,
             &definition.body,
@@ -1144,20 +1387,40 @@ pub(super) fn source_meta(
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_SAVED_ENTITY_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.saved_section.as_ref())
-            .map(|saved| saved.entities.len())
-            .sum::<usize>(),
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.saved_section.as_ref())
+        .map(|saved| saved.entities.len())
+        .sum::<usize>(),
     )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_SAVED_CONIC_COUNT,
-        ctx.admit_iter(&scan.features.definitions, "creo definitions coverage traversal")?
-            .filter_map(|definition| definition.saved_section.as_ref())
-            .try_fold(0usize, |total, saved| {
-                let count = ctx.admit_iter(&saved.entities, "creo saved conic coverage traversal")?.filter(|entity| matches!(entity, crate::feature::definitions::FeatureSavedEntity::Conic(_))).count();
-                total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo saved conic coverage count", u64::MAX, u64::MAX))
-            })?,
+        ctx.admit_iter(
+            &scan.features.definitions,
+            "creo definitions coverage traversal",
+        )?
+        .filter_map(|definition| definition.saved_section.as_ref())
+        .try_fold(0usize, |total, saved| {
+            let count = ctx
+                .admit_iter(&saved.entities, "creo saved conic coverage traversal")?
+                .filter(|entity| {
+                    matches!(
+                        entity,
+                        crate::feature::definitions::FeatureSavedEntity::Conic(_)
+                    )
+                })
+                .count();
+            total.checked_add(count).ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "creo saved conic coverage count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })
+        })?,
     )?;
     coverage.record(
         ctx,
@@ -1180,10 +1443,22 @@ pub(super) fn source_meta(
         feature_surface_replay_association_count(ctx, scan)?,
     )?;
     if let Some(count) = scan.framing.declared_body_count {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "declared_body_count", count)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "declared_body_count",
+            count,
+        )?;
     }
     if let Some(value) = scan.framing.first_quilt_ptr {
-        insert_source_attribute(ctx, &mut attribute_nodes, &mut attributes, "first_quilt_ptr", value)?;
+        insert_source_attribute(
+            ctx,
+            &mut attribute_nodes,
+            &mut attributes,
+            "first_quilt_ptr",
+            value,
+        )?;
     }
     Ok((
         SourceMeta::classified(
@@ -1193,8 +1468,11 @@ pub(super) fn source_meta(
                     .try_clone_for_decode(ctx, "creo source dialect copy")?,
             ),
             {
-                let attributes =
-                    cadmpeg_core::text::named_entries_for_decode(ctx, "the creo container", attributes)?;
+                let attributes = cadmpeg_core::text::named_entries_for_decode(
+                    ctx,
+                    "the creo container",
+                    attributes,
+                )?;
                 drop(attribute_nodes);
                 attributes
             },
@@ -1214,7 +1492,8 @@ fn record_scalar_string_coverage<K>(
 where
     K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,
 {
-    let undecoded_encodings = ctx.admit_iter(&values.rows, "creo rows coverage traversal")?
+    let undecoded_encodings = ctx
+        .admit_iter(&values.rows, "creo rows coverage traversal")?
         .map(|record| record.payload.undecoded_encoding_count())
         .sum();
     coverage.record(ctx, scalar_key, values.rows.len())?;
@@ -1242,8 +1521,9 @@ mod tests {
             .reserve_scoped(0, "Creo source attribute map nodes")
             .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        let error = insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "file_size", 12)
-            .expect_err("one source attribute needs one map node");
+        let error =
+            insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "file_size", 12)
+                .expect_err("one source attribute needs one map node");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -1262,8 +1542,14 @@ mod tests {
             .reserve_scoped(0, "Creo source attribute map nodes")
             .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "version_line", "Creo 10")
-            .expect("first attribute is admitted");
+        insert_source_attribute(
+            &ctx,
+            &mut node_storage,
+            &mut attributes,
+            "version_line",
+            "Creo 10",
+        )
+        .expect("first attribute is admitted");
         insert_source_attribute(
             &ctx,
             &mut node_storage,
@@ -1295,7 +1581,7 @@ mod tests {
             "principal_unit",
             "unknown:7",
         )
-            .expect_err("token needs one more retained byte");
+        .expect_err("token needs one more retained byte");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -1315,14 +1601,9 @@ mod tests {
             .reserve_scoped(0, "Creo source attribute map nodes")
             .expect("source attribute lease");
         let mut attributes = BTreeMap::new();
-        let error = insert_source_attribute(
-            &ctx,
-            &mut node_storage,
-            &mut attributes,
-            "file_size",
-            12,
-        )
-        .expect_err("one staging node exceeds materialized storage");
+        let error =
+            insert_source_attribute(&ctx, &mut node_storage, &mut attributes, "file_size", 12)
+                .expect_err("one staging node exceeds materialized storage");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::MaterializedBytes
@@ -1386,7 +1667,10 @@ mod tests {
         use crate::feature::segment_rows::SegmentRow;
         let mut scan = crate::test_support::empty_container_scan();
         scan.features.definitions.push(FeatureDefinition {
-            identity: DefinitionIdentity::Parsed { schema_id: None, owner_feature_id: None },
+            identity: DefinitionIdentity::Parsed {
+                schema_id: None,
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1396,8 +1680,13 @@ mod tests {
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: [SegmentRow::Circle(FeatureCircleSegment {
-                    center_id: 1, radius_ref: 2, external_id: 3, offset: 0,
-                })].into_iter().collect(),
+                    center_id: 1,
+                    radius_ref: 2,
+                    external_id: 3,
+                    offset: 0,
+                })]
+                .into_iter()
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1409,8 +1698,9 @@ mod tests {
             saved_section: None,
             offset: 0,
         });
-        let classification = crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
-            .expect("classified source");
+        let classification =
+            crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+                .expect("classified source");
         crate::test_support::assert_work_boundaries(
             &[
                 "creo circles segment coverage rows",
@@ -1423,10 +1713,13 @@ mod tests {
             ],
             |ctx| super::source_meta(ctx, &scan, &classification),
         );
-        let rows = &scan.features.definitions[0].segments.as_ref().expect("table").rows;
+        let rows = &scan.features.definitions[0]
+            .segments
+            .as_ref()
+            .expect("table")
+            .rows;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows.circles().count(), 1);
         assert_eq!(rows.points().count(), 0);
     }
-
 }

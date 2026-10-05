@@ -98,7 +98,10 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
                     < 64.0 * f64::EPSILON
             );
         }
-        let circles = crate::decode::with_test_decode_ctx(|ctx| super::coaxial_cone_torus_circle_candidates(ctx,cone(3.0 * scale), torus)).expect("admitted cone torus candidates");
+        let circles = crate::decode::with_test_decode_ctx(|ctx| {
+            super::coaxial_cone_torus_circle_candidates(ctx, cone(3.0 * scale), torus)
+        })
+        .expect("admitted cone torus candidates");
         assert_eq!(circles.len(), 2);
         for (curve, _) in circles {
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = curve else {
@@ -194,7 +197,10 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
             super::coaxial_cone_cylinder_circle_candidates(cone(r), cylinder).len(),
             2
         );
-        let cones = crate::decode::with_test_decode_ctx(|ctx| super::coaxial_cones_section_candidates(ctx,cone(r), cone(2. * r))).expect("admitted coaxial cone candidates");
+        let cones = crate::decode::with_test_decode_ctx(|ctx| {
+            super::coaxial_cones_section_candidates(ctx, cone(r), cone(2. * r))
+        })
+        .expect("admitted coaxial cone candidates");
         assert_eq!(cones.len(), 1);
         let circle = cones[0]
             .0
@@ -309,9 +315,11 @@ fn apex_plane_cone_candidate_scan_refuses_work() {
 
     let error = super::apex_plane_cone_generator_candidates(&ctx, plane, cone)
         .expect_err("admitting cone generator scan exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo apex plane cone generator candidates"));
+            && resource.operation == "creo apex plane cone generator candidates")
+    );
 }
 
 #[test]
@@ -337,9 +345,11 @@ fn coaxial_sphere_torus_output_scan_refuses_work() {
 
     let error = super::coaxial_sphere_torus_circle_candidates(&ctx, sphere, torus)
         .expect_err("admitting sphere torus candidate scan exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial sphere torus output candidates"));
+            && resource.operation == "creo coaxial sphere torus output candidates")
+    );
 }
 
 #[test]
@@ -367,9 +377,11 @@ fn coaxial_tori_output_scan_refuses_work() {
 
     let error = super::coaxial_tori_circle_candidates(&ctx, first, second)
         .expect_err("admitting torus candidate scan exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial tori output candidates"));
+            && resource.operation == "creo coaxial tori output candidates")
+    );
 }
 
 #[test]
@@ -405,9 +417,11 @@ fn coaxial_cone_section_parameter_scan_refuses_work() {
 
     let error = super::coaxial_cones_section_candidates(&ctx, first, second)
         .expect_err("checking the second parameter exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial cone section parameter candidates"));
+            && resource.operation == "creo coaxial cone section parameter candidates")
+    );
 }
 
 #[test]
@@ -439,7 +453,9 @@ fn coaxial_cone_torus_parameter_scan_refuses_work() {
 
     let error = super::coaxial_cone_torus_circle_candidates(&ctx, cone, torus)
         .expect_err("checking the second parameter exceeds work limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial cone torus parameter candidates"));
+            && resource.operation == "creo coaxial cone torus parameter candidates")
+    );
 }

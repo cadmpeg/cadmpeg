@@ -358,7 +358,11 @@ fn unknown_declaration_codes_retain_scope_identity() {
         persistence.scopes[0].declarations[1].type_code,
         LegacyTypeCode::Other(_)
     ));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| parse_declaration(ctx, b"@future 1 256")).expect("service profile admits scalar parsing").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| parse_declaration(ctx, b"@future 1 256"))
+            .expect("service profile admits scalar parsing")
+            .is_none()
+    );
 }
 
 #[test]
@@ -969,7 +973,13 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         }
     );
     assert!(persistence.string_values[4].payload.is_complete());
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4].payload.element_count(ctx)).expect("admitted string element count"), 2);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4]
+            .payload
+            .element_count(ctx))
+        .expect("admitted string element count"),
+        2
+    );
     assert_eq!(
         persistence.string_values[3]
             .payload
@@ -1662,123 +1672,167 @@ fn numeric_array_withholds_child_at_maximum_depth() {
 #[test]
 fn legacy_declaration_id_parse_refuses_before_invalid_text() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo scalar text parsing",
         |ctx| super::parse_declaration(ctx, b"@name x 1"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo scalar text parsing"));
+            && resource.operation == "creo scalar text parsing")
+    );
 }
 
 #[test]
 fn legacy_declaration_type_parse_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo scalar text parsing",
         |ctx| super::parse_declaration(ctx, b"@name 1 123"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo scalar text parsing"));
+            && resource.operation == "creo scalar text parsing")
+    );
 }
 
 #[test]
 fn legacy_signed_integer_parse_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo scalar text parsing",
         |ctx| super::signed_integer(ctx, b"-2147483648"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo scalar text parsing"));
+            && resource.operation == "creo scalar text parsing")
+    );
 }
 
 #[test]
 fn legacy_unsigned_integer_parse_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo scalar text parsing",
         |ctx| super::unsigned_integer(ctx, b"4294967295"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo scalar text parsing"));
+            && resource.operation == "creo scalar text parsing")
+    );
 }
 
 #[test]
 fn legacy_compact_real_radix_parse_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo compact real hexadecimal parsing",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo compact real hexadecimal parsing",
         |ctx| super::compact_real(ctx, b"3FF0000000000000"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo compact real hexadecimal parsing"));
+            && resource.operation == "creo compact real hexadecimal parsing")
+    );
 }
 
 #[test]
 fn legacy_declaration_utf8_refuses_before_malformed_input() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo legacy declaration UTF-8 validation",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo legacy declaration UTF-8 validation",
         |ctx| super::parse_declaration(ctx, b"@name 1 1\xff"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy declaration UTF-8 validation"));
+            && resource.operation == "creo legacy declaration UTF-8 validation")
+    );
 }
 
 #[test]
 fn legacy_signed_utf8_refuses_before_invalid_scalar() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::signed_integer(ctx, b"1\xff"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn legacy_unsigned_utf8_refuses_before_invalid_scalar() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::unsigned_integer(ctx, b"1\xff"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn legacy_compact_real_utf8_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::compact_real(ctx, b"3FF0000000000000"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn legacy_string_utf8_refuses_before_binary_fallback() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::byte_string_value(ctx, b"a\xff", super::NullToken::RepresentsBytes),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn legacy_candidate_retain_refuses_work() {
     let payload = b"@foo 1 1\n0 1 7\n";
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy candidate retain",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy candidate retain",
         |ctx| super::scan_scope(ctx, payload, 0..payload.len()),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy candidate retain"));
+            && resource.operation == "creo legacy candidate retain")
+    );
 }
 
 #[test]
@@ -1786,12 +1840,16 @@ fn legacy_model_trim_refuses_work() {
     let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
     let persistence = scan(data, std::iter::once(0..data.len())).expect("valid model fixture");
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy model name trim",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy model name trim",
         |ctx| persistence.model_name(ctx),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy model name trim"));
+            && resource.operation == "creo legacy model name trim")
+    );
 }
 
 #[test]
@@ -1799,41 +1857,50 @@ fn legacy_source_model_trim_refuses_work() {
     let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
     let persistence = scan(data, std::iter::once(0..data.len())).expect("valid model fixture");
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy source model name trim",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy source model name trim",
         |ctx| persistence.first_source_model_name(ctx),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy source model name trim"));
+            && resource.operation == "creo legacy source model name trim")
+    );
 }
 
 #[test]
 fn signed_integer_sign_prefix_refuses_before_invalid_digits() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo signed integer sign prefix",
         |ctx| super::signed_integer(ctx, b"-x"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo signed integer sign prefix"));
+            && resource.operation == "creo signed integer sign prefix")
+    );
 }
 
 #[test]
 fn legacy_declaration_prefix_refuses_before_missing_fields() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo legacy declaration name prefix",
         |ctx| super::parse_declaration(ctx, b"name"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy declaration name prefix"));
+            && resource.operation == "creo legacy declaration name prefix")
+    );
 }
 
 #[test]
 fn legacy_unit_object_prefix_refuses_work() {
-
     let factor = 0.393_700_787_401_574_8_f64;
     let data = format!(
         "@Solid 1 0\n@unit_arr 2 0\n@type 3 1\n@unit_type 4 1\n@factor 5 2\n@name 6 10\n0 1 ->\n1 2 [1]\n2 2 ->\n3 3 11\n3 4 0\n3 5 {factor_bits:016X}\n3 6 CM\n",
@@ -1842,11 +1909,14 @@ fn legacy_unit_object_prefix_refuses_work() {
     let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo legacy unit object prefix",
         |ctx| persistence.principal_unit_system(ctx),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy unit object prefix"));
+            && resource.operation == "creo legacy unit object prefix")
+    );
 }

@@ -83,9 +83,8 @@ fn coordinate_solver_pass_range_refuses_work_and_preserves_service_result() {
         saved_section: None,
         offset: 0,
     };
-    let coordinates = crate::test_support::assert_work_boundaries(
-        &["creo section solver pass scan"],
-        |ctx| {
+    let coordinates =
+        crate::test_support::assert_work_boundaries(&["creo section solver pass scan"], |ctx| {
             let mut equations = Vec::new();
             let mut scalar_values = BTreeMap::new();
             super::super::solve_section_coordinates_with_derived_constraints(
@@ -97,7 +96,6 @@ fn coordinate_solver_pass_range_refuses_work_and_preserves_service_result() {
                 &SectionEquationAuxiliaryConstraints::default(),
                 &mut scalar_values,
             )
-        },
-    );
+        });
     assert!(coordinates.is_empty());
 }

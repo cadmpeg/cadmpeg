@@ -57,11 +57,8 @@ pub(in super::super) fn feature_edge_selection(
         )? {
             return Ok(None);
         }
-        if let Some(ids) = agreed_feature_replay_edge_ids(
-            ctx,
-            &scan.features.replay_affected_ids,
-            feature_id,
-        )?
+        if let Some(ids) =
+            agreed_feature_replay_edge_ids(ctx, &scan.features.replay_affected_ids, feature_id)?
         {
             if ids.is_empty() {
                 let native = edge_selection_native(
@@ -253,11 +250,7 @@ pub(in super::super) fn generated_curve_edge_refs(
         let Some(ids) = result_edge_ids.get(&row.feature_id) else {
             return Ok(None);
         };
-        if !ctx.contains(
-            ids,
-            &curve_id,
-            "creo generated curve result ID lookup",
-        )? {
+        if !ctx.contains(ids, &curve_id, "creo generated curve result ID lookup")? {
             return Ok(None);
         }
         let local_id = ctx.format_retained(
@@ -684,14 +677,7 @@ mod tests {
         let scan = one_selected_edge();
         let selection = crate::test_support::assert_work_boundaries(
             &["creo selected edge identity validation"],
-            |ctx| {
-                feature_edge_selection(
-                    ctx,
-                    &scan,
-                    &cadmpeg_ir::document::CadIr::empty(),
-                    10,
-                )
-            },
+            |ctx| feature_edge_selection(ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10),
         );
         assert!(matches!(
             selection,
@@ -700,14 +686,14 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn generated_curve_feature_membership_miss_preserves_result_id_laziness() {
         let rows = one_edge();
-        let available = BTreeSet::from([
-            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#98")
-                .expect("nonmatching feature ID"),
-        ]);
+        let available =
+            BTreeSet::from([
+                cadmpeg_ir::features::FeatureId::mint("creo:model:feature#98")
+                    .expect("nonmatching feature ID"),
+            ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let refusal = crate::test_support::last_refusal_at(
             &[],
@@ -718,18 +704,23 @@ mod tests {
         let limit = match refusal {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "creo generated curve feature lookup" => limit,
+                    && limit.operation == "creo generated curve feature lookup" =>
+            {
+                limit
+            }
             error => panic!("expected generated feature membership refusal, got {error:?}"),
         };
         let cap = limit.used.checked_add(limit.additional).expect("work cap");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
-        assert!(generated_curve_edge_refs(&ctx, &[77], &rows, &available, &results)
-            .expect("a feature miss returns before result-ID membership")
-            .is_none());
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
+        assert!(
+            generated_curve_edge_refs(&ctx, &[77], &rows, &available, &results)
+                .expect("a feature miss returns before result-ID membership")
+                .is_none()
+        );
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             generated_curve_edge_refs(ctx, &[77], &rows, &available, &results)
         })
@@ -740,10 +731,11 @@ mod tests {
     #[test]
     fn generated_curve_result_id_membership_refuses_work_and_preserves_edge() {
         let rows = one_edge();
-        let available = BTreeSet::from([
-            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
-                .expect("fixture feature ID"),
-        ]);
+        let available =
+            BTreeSet::from([
+                cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                    .expect("fixture feature ID"),
+            ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let generated = crate::test_support::assert_work_boundaries(
             &["creo generated curve result ID lookup"],
@@ -758,10 +750,11 @@ mod tests {
     #[test]
     fn generated_curve_feature_identity_validation_refuses_at_work_boundary() {
         let rows = one_edge();
-        let available = BTreeSet::from([
-            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
-                .expect("fixture feature ID"),
-        ]);
+        let available =
+            BTreeSet::from([
+                cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                    .expect("fixture feature ID"),
+            ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let generated = crate::test_support::assert_work_boundaries(
             &[
@@ -775,5 +768,4 @@ mod tests {
         assert_eq!(generated[0].feature.as_str(), "creo:model:feature#97");
         assert_eq!(generated[0].local_id.as_str(), "curve#77");
     }
-
 }

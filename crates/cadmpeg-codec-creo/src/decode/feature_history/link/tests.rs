@@ -96,8 +96,8 @@ fn linked_feature_lookup_propagates_scan_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
-    let target = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2")
-        .expect("feature identity");
+    let target =
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2").expect("feature identity");
     let error = unique_model_feature_index(&ctx, &ir, &target)
         .expect_err("model feature lookup exceeds the work limit");
     assert!(
@@ -262,15 +262,14 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
 
 #[test]
 fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
-    let entry = |entity_id, class_id, source_entity_id| {
-        crate::feature::entity::FeatureEntityTableEntry {
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
             entity_id,
             prefixed: false,
             offset: 0,
             end_offset: 0,
-        }
-    };
+        };
     let table = crate::feature::entity::FeatureEntityTable::new(
         7,
         29,
@@ -300,50 +299,29 @@ fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
         &[],
         ResourceDimension::WorkUnits,
         "creo blind generated profile surface kind lookup",
-        |ctx| {
-            section_entity_is_generated_profile(
-                ctx,
-                true,
-                Some(7),
-                11,
-                &plane,
-                &tables,
-                &rows,
-            )
-        },
+        |ctx| section_entity_is_generated_profile(ctx, true, Some(7), 11, &plane, &tables, &rows),
     );
     let limit = match refusal {
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "creo blind generated profile surface kind lookup" => limit,
+                && limit.operation == "creo blind generated profile surface kind lookup" =>
+        {
+            limit
+        }
         error => panic!("expected blind-profile kind lookup refusal, got {error:?}"),
     };
     let cap = limit.used.checked_add(limit.additional).expect("work cap");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    assert!(!section_entity_is_generated_profile(
-        &ctx,
-        true,
-        Some(7),
-        11,
-        &plane,
-        &tables,
-        &rows,
-    )
-    .expect("the Plane-only gate returns before scanning blind profiles"));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    assert!(
+        !section_entity_is_generated_profile(&ctx, true, Some(7), 11, &plane, &tables, &rows,)
+            .expect("the Plane-only gate returns before scanning blind profiles")
+    );
     assert!(!crate::decode::with_test_decode_ctx(|ctx| {
-        section_entity_is_generated_profile(
-            ctx,
-            true,
-            Some(7),
-            11,
-            &plane,
-            &tables,
-            &rows,
-        )
+        section_entity_is_generated_profile(ctx, true, Some(7), 11, &plane, &tables, &rows)
     })
     .expect("service profile preserves the Plane-only nonmatch"));
     assert!(crate::decode::with_test_decode_ctx(|ctx| {

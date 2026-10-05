@@ -25,7 +25,11 @@ pub(crate) enum Side {
 
 impl cadmpeg_core::decode::cost::DecodeCost for Side {
     const FIXED_BYTES: Option<u64> = Some(1);
-    fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
         Ok(1)
     }
 }
@@ -75,8 +79,16 @@ pub(crate) struct HalfEdgeId {
 
 impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
     const FIXED_BYTES: Option<u64> = Some(5);
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.side), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.curve_id, &self.side),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -273,7 +285,11 @@ pub(crate) fn edge_start_vertex_pairs(
 ) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<NonZeroU32>; 2]>::new();
     for binding in incidence {
-        let sides = match ctx.entry_btree_map(&mut by_curve, binding.half_edge.curve_id, "creo start-vertex pair group nodes")? {
+        let sides = match ctx.entry_btree_map(
+            &mut by_curve,
+            binding.half_edge.curve_id,
+            "creo start-vertex pair group nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert([SingleSide::Empty, SingleSide::Empty])
@@ -371,7 +387,11 @@ pub(crate) fn edge_vertex_pairs(
 ) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
-        let sides = match ctx.entry_btree_map(&mut by_curve, binding.half_edge.curve_id, "creo edge-vertex pair group nodes")? {
+        let sides = match ctx.entry_btree_map(
+            &mut by_curve,
+            binding.half_edge.curve_id,
+            "creo edge-vertex pair group nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert([SingleSide::Empty, SingleSide::Empty])
@@ -567,10 +587,12 @@ fn adjacency_for<'a>(
     adjacency: &'a mut BTreeMap<HalfEdgeId, BTreeSet<HalfEdgeId>>,
     id: HalfEdgeId,
 ) -> Result<&'a mut BTreeSet<HalfEdgeId>, CodecError> {
-    Ok(match ctx.entry_btree_map(adjacency, id, "creo vertex adjacency nodes")? {
-        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-    })
+    Ok(
+        match ctx.entry_btree_map(adjacency, id, "creo vertex adjacency nodes")? {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
+        },
+    )
 }
 
 /// Group bounded face references connected by uniquely identified curve
@@ -704,7 +726,11 @@ pub(crate) fn build(
     for row in &rows {
         for side in [Side::Zero, Side::One] {
             let sides = ctx
-                .entry_btree_map(&mut face_sides, row.faces[side.index()], "creo face-side group nodes")?
+                .entry_btree_map(
+                    &mut face_sides,
+                    row.faces[side.index()],
+                    "creo face-side group nodes",
+                )?
                 .or_default();
             ctx.reserve_vec(sides, 1, "creo face-side group members")?;
             sides.push(HalfEdgeId {

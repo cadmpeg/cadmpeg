@@ -1511,7 +1511,10 @@ fn geometry_signal_excludes_opaque_carriers() {
         source_object: None,
     });
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 
     let _attached = ir.model.add_procedural_surface(
         &cadmpeg_ir::document::admission::StandardAdmission,
@@ -1533,7 +1536,10 @@ fn geometry_signal_excludes_opaque_carriers() {
         ),
     );
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 }
 
 #[test]

@@ -125,7 +125,10 @@ pub(super) fn thicken_feature_definition(
             "creo thicken native selection",
         )?;
         let mut faces = Vec::new();
-        for surface_id in ctx.admit_iter(&source_ids, "creo thicken source face IDs")?.copied() {
+        for surface_id in ctx
+            .admit_iter(&source_ids, "creo thicken source face IDs")?
+            .copied()
+        {
             let text = ctx.format_retained(
                 format_args!("creo:visibgeom:face#{surface_id}"),
                 "creo thicken face IDs",
@@ -300,7 +303,9 @@ pub(super) fn linear_extrusion_extent_and_direction(
         let mut extent =
             generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?;
         if extent.is_none() {
-            if let Some(planes) = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)? {
+            if let Some(planes) =
+                feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
+            {
                 extent = extrusion_extent_and_direction(
                     transform.origin(),
                     transform.normal(),
@@ -671,11 +676,9 @@ pub(in super::super) fn schema_feature_definition(
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
         {
             Some(radius) => RadiusSpec::Constant { radius },
-            None if differing_positive_lengths(ctx, &observed_radii)? => {
-                RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-                }
-            }
+            None if differing_positive_lengths(ctx, &observed_radii)? => RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
+            },
             None => RadiusSpec::Unresolved { form: None },
         };
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
@@ -751,7 +754,7 @@ pub(in super::super) fn schema_feature_definition(
                     "creo unresolved section profile identity",
                 )?,
             };
-    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
+            let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
             return Ok(circular_sweep_feature_definition(
                 profile,
                 &sweep,
@@ -778,7 +781,7 @@ pub(in super::super) fn schema_feature_definition(
             feature_id,
             extent.as_ref(),
         )?;
-    let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
+        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let profile = profile.and_then(|profile| match profile {
             cadmpeg_ir::features::ProfileRef::Planar(profile) => Some(profile),
             _ => None,
@@ -865,7 +868,7 @@ pub(in super::super) fn schema_feature_definition(
             )?),
             None => None,
         };
-    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -1032,7 +1035,7 @@ pub(in super::super) fn schema_feature_definition(
     if numbered_feature_name_has_family(ctx, kind, "Extrude")?
         && !feature_is_sheet_extrusion(ctx, scan, feature_id)?
     {
-    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -1124,8 +1127,7 @@ fn reconciled_datum_plane_definition(
     surface_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
     let local_planes = placed_planes(ctx, scan)?;
-    let Some(plane) =
-        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)?
+    let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)?
     else {
         return Ok(None);
     };
@@ -1166,9 +1168,12 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
-    let Some(row) = exactly_one(ctx.admit_iter(&scan.surfaces.rows, "creo unbounded feature plane rows")?.filter(|row| {
-        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-    })) else {
+    let Some(row) = exactly_one(
+        ctx.admit_iter(&scan.surfaces.rows, "creo unbounded feature plane rows")?
+            .filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            }),
+    ) else {
         return Ok(None);
     };
     if !(row.boundary_type == crate::surface::BoundaryType::Code01
@@ -1185,7 +1190,10 @@ pub(in super::super) fn numbered_feature_name_has_family(
     name: &str,
     family: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(ordinal) = name.strip_prefix(family).and_then(|suffix| suffix.strip_prefix(' ')) else {
+    let Some(ordinal) = name
+        .strip_prefix(family)
+        .and_then(|suffix| suffix.strip_prefix(' '))
+    else {
         return Ok(false);
     };
     Ok(!ordinal.is_empty()
@@ -1229,14 +1237,16 @@ pub(in super::super) fn feature_allows_linear_extrusion(
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let schema_class = feature_schema_class(ctx, scan, feature_id)?;
-    Ok((!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
-        && schema_class.is_some_and(|schema_class| {
-            section_sweep_allows_linear_extrusion(
-                Some(schema_class),
-                feature_recipe(scan, feature_id),
-            )
-        }))
-        || feature_is_sheet_extrusion(ctx, scan, feature_id)?)
+    Ok(
+        (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
+            && schema_class.is_some_and(|schema_class| {
+                section_sweep_allows_linear_extrusion(
+                    Some(schema_class),
+                    feature_recipe(scan, feature_id),
+                )
+            }))
+            || feature_is_sheet_extrusion(ctx, scan, feature_id)?,
+    )
 }
 
 pub(in super::super) fn feature_allows_additive_linear_extrusion(
@@ -1244,37 +1254,41 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
-        && feature_schema_class(ctx, scan, feature_id)? == Some(SchemaClass::Protrusion)
-        && section_sweep_allows_linear_extrusion(
-            Some(SchemaClass::Protrusion),
-            feature_recipe(scan, feature_id),
-        )
-        && feature_recipe_effect(scan, feature_id).is_none_or(|effect| {
-            effect == crate::feature::operations::FeatureRecipeEffect::Protrude
-        }))
+    Ok(
+        !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
+            && feature_schema_class(ctx, scan, feature_id)? == Some(SchemaClass::Protrusion)
+            && section_sweep_allows_linear_extrusion(
+                Some(SchemaClass::Protrusion),
+                feature_recipe(scan, feature_id),
+            )
+            && feature_recipe_effect(scan, feature_id).is_none_or(|effect| {
+                effect == crate::feature::operations::FeatureRecipeEffect::Protrude
+            }),
+    )
 }
 
 pub(in super::super) fn preceding_features_establish_body(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx.admit_iter(&ir.model.features, "creo prior feature body lookup")?.any(|feature| {
-        feature.suppressed != Some(true)
-            && (!feature.evaluation.outputs().is_empty()
-                || matches!(
-                    feature.evaluation.definition(),
-                    IrFeatureDefinition::Operation(
-                        IrFeatureOperation::Extrude {
-                            op: BooleanOp::NewBody,
-                            ..
-                        } | IrFeatureOperation::Revolve {
-                            op: BooleanOp::NewBody,
-                            ..
-                        }
-                    )
-                ))
-    }))
+    Ok(ctx
+        .admit_iter(&ir.model.features, "creo prior feature body lookup")?
+        .any(|feature| {
+            feature.suppressed != Some(true)
+                && (!feature.evaluation.outputs().is_empty()
+                    || matches!(
+                        feature.evaluation.definition(),
+                        IrFeatureDefinition::Operation(
+                            IrFeatureOperation::Extrude {
+                                op: BooleanOp::NewBody,
+                                ..
+                            } | IrFeatureOperation::Revolve {
+                                op: BooleanOp::NewBody,
+                                ..
+                            }
+                        )
+                    ))
+        }))
 }
 
 pub(in super::super) fn section_sweep_boolean_operation(

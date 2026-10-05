@@ -662,7 +662,8 @@ pub(crate) fn choices(
                 },
                 |hit| hit.0,
             );
-            let label = ctx.validate_utf8(label, "creo UTF-8 validation")?
+            let label = ctx
+                .validate_utf8(label, "creo UTF-8 validation")?
                 .map_err(|_| CodecError::malformed("creo static choice label"))?;
             let label = ctx.copy_retained_text(label, "creo feature choice label")?;
             let payload =
@@ -798,7 +799,11 @@ pub(crate) fn choice_fields(
             if value_start > end {
                 continue;
             }
-            let name = ctx.validate_utf8(&choice.payload[header + 2..value_start - 1], "creo UTF-8 validation")?
+            let name = ctx
+                .validate_utf8(
+                    &choice.payload[header + 2..value_start - 1],
+                    "creo UTF-8 validation",
+                )?
                 .map_err(|_| CodecError::malformed("creo ASCII choice field name"))?;
             let label = ctx.copy_retained_text(&choice.label, "creo choice field label")?;
             let name = ctx.copy_retained_text(name, "creo choice field name")?;
@@ -1547,7 +1552,11 @@ pub(crate) fn surface_merge_replay_affected_ids(
             continue;
         }
         let state = ctx
-            .entry_btree_map(&mut extents, row.stream_offset, "creo surface merge extent states")?
+            .entry_btree_map(
+                &mut extents,
+                row.stream_offset,
+                "creo surface merge extent states",
+            )?
             .or_insert([None; 3]);
         let named_arrays = [
             agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),

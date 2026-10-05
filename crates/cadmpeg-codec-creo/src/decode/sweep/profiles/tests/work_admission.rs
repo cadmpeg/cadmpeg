@@ -50,9 +50,7 @@ fn connected_profile_lookups_connectivity_and_projection_refuse_work() {
             "creo connected profile closure",
             "creo connected profile projection",
         ],
-        |ctx| {
-            super::super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
-        },
+        |ctx| super::super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id),
     );
     assert_eq!(profiles, vec![(0, vec![[3.0, 0.0]])]);
 }

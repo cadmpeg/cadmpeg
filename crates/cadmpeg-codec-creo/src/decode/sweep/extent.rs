@@ -34,23 +34,30 @@ enum SourceSurfaceGeometry<'a> {
     Present(&'a SurfaceGeometry),
 }
 
-fn unique_source_surface_geometry<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn unique_source_surface_geometry<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Result<Option<SourceSurfaceGeometry<'a>>, cadmpeg_core::CodecError> {
     let mut found = None;
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-        if crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", surface_id) {
+        if crate::identity::matches_numbered_identity(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            surface_id,
+        ) {
             if found.is_some() {
                 return Ok(None);
             }
             found = Some(surface);
         }
     }
-    Ok(Some(found.map_or(SourceSurfaceGeometry::Missing, |surface| {
-        SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface))
-    })))
+    Ok(Some(
+        found.map_or(SourceSurfaceGeometry::Missing, |surface| {
+            SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface))
+        }),
+    ))
 }
 
 fn blind_extrusion_from_carriers(
@@ -518,7 +525,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let Some(source_geometry) = unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
+        let Some(source_geometry) =
+            unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
         else {
             return Ok(None);
         };
@@ -793,7 +801,8 @@ pub(in super::super) fn generated_nurbs_translation_extent(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let Some(source_geometry) = unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
+        let Some(source_geometry) =
+            unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
         else {
             return Ok(None);
         };
@@ -807,7 +816,13 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                         SolvedSurfaceGeometry::Plane(_),
                     )) => Some(
-                        match reconciled_model_plane(ctx, &local_planes, ir, source_carriers, row.id)? {
+                        match reconciled_model_plane(
+                            ctx,
+                            &local_planes,
+                            ir,
+                            source_carriers,
+                            row.id,
+                        )? {
                             Some(plane) => plane,
                             None => return Ok(None),
                         },
@@ -1053,9 +1068,13 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|row| row.feature_id == feature_id)
     };
-    if ctx.admit_iter(&scan.surfaces.rows, "creo rectilinear source row count")?
-        .filter(|row| row.feature_id == feature_id).count() < 4
-        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
+    if ctx
+        .admit_iter(&scan.surfaces.rows, "creo rectilinear source row count")?
+        .filter(|row| row.feature_id == feature_id)
+        .count()
+        < 4
+        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane)
+    {
         return Ok(None);
     }
 

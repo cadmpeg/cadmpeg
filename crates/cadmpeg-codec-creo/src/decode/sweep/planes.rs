@@ -88,7 +88,8 @@ pub(in super::super) fn feature_plane_equations(
     }
     let mut equations = Vec::new();
     for id in ids {
-        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)? else {
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)?
+        else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
@@ -239,9 +240,19 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         return Ok(None);
     };
     if frame_records.is_empty()
-        || !ctx.all_by(&(frame_records)[..], |(surface_id, frame)| -> Result<bool, cadmpeg_core::CodecError> {
-            Ok(cylinder_frame_agrees_with_model(ctx, ir, *surface_id, frame, source_carriers)?)
-        }, "creo numbered identity candidate scan")?
+        || !ctx.all_by(
+            &(frame_records)[..],
+            |(surface_id, frame)| -> Result<bool, cadmpeg_core::CodecError> {
+                Ok(cylinder_frame_agrees_with_model(
+                    ctx,
+                    ir,
+                    *surface_id,
+                    frame,
+                    source_carriers,
+                )?)
+            },
+            "creo numbered identity candidate scan",
+        )?
     {
         return Ok(None);
     }
@@ -251,7 +262,8 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     ))
 }
 
-fn cylinder_frame_agrees_with_model(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn cylinder_frame_agrees_with_model(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface_id: u32,
     frame: &crate::surface::PositionalCylinderFrame,
@@ -259,7 +271,11 @@ fn cylinder_frame_agrees_with_model(ctx: &cadmpeg_core::decode::DecodeContext<'_
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut found = None;
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-        if crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", surface_id) {
+        if crate::identity::matches_numbered_identity(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            surface_id,
+        ) {
             if found.is_some() {
                 return Ok(false);
             }
@@ -387,7 +403,8 @@ pub(in super::super) fn generated_cap_plane_extent(
         }
         reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)
     };
-    Ok(plane(start_id)?.zip(plane(end_id)?)
+    Ok(plane(start_id)?
+        .zip(plane(end_id)?)
         .and_then(|(start, end)| ordered_parallel_cap_extent(start, end)))
 }
 

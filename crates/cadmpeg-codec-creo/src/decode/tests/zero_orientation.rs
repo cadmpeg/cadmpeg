@@ -430,7 +430,11 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([-1.0, -1.0], [1.0, 1.0]),
     ];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(ctx, &concurrent)).expect("concurrent carrier scan admitted"),
+        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(
+            ctx,
+            &concurrent
+        ))
+        .expect("concurrent carrier scan admitted"),
         Some([0.0, 0.0])
     );
 
@@ -439,7 +443,14 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([0.0, -1.0], [0.0, 1.0]),
         line([-1.0, 2.0], [2.0, -1.0]),
     ];
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(ctx, &inconsistent)).expect("inconsistent carrier scan admitted"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(
+            ctx,
+            &inconsistent
+        ))
+        .expect("inconsistent carrier scan admitted"),
+        None
+    );
 }
 
 #[test]
@@ -1440,7 +1451,10 @@ fn nonplanar_saved_spline_places_as_model_curve() {
 #[test]
 fn transferred_geometry_is_derived_from_ir_arenas() {
     let mut ir = CadIr::empty();
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 
     ir.model.points.push(Point::new(
         PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
@@ -1448,7 +1462,10 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
             .expect("a finite position is a point"),
         None,
     ));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 }
 
 #[test]
@@ -1847,13 +1864,11 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cone_torus_circle_candidates(ctx, cone, shifted_torus)
-        })
-        .expect("admitted cone torus candidates")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cone_torus_circle_candidates(ctx, cone, shifted_torus)
+    })
+    .expect("admitted cone torus candidates")
+    .is_empty());
 }
 
 #[test]

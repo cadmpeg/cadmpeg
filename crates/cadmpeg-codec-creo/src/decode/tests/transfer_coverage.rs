@@ -615,11 +615,25 @@ fn native_curve_families_accept_only_their_defined_loci() {
             SketchLocus::Center(circle.clone()),
         ],
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx, &compatible, &geometry)).expect("service locus compatibility admitted"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &compatible,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let incompatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx, &incompatible, &geometry)).expect("service locus compatibility admitted"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &incompatible,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let centered_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(
             SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture"),
@@ -627,19 +641,27 @@ fn native_curve_families_accept_only_their_defined_loci() {
         entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
             .expect("valid test fixture"),
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx,
-        &centered_midpoint,
-        &geometry
-    )).expect("service locus compatibility admitted"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &centered_midpoint,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let incompatible_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(reference_line),
         entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
             .expect("valid test fixture"),
     };
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx,
-        &incompatible_midpoint,
-        &geometry
-    )).expect("service locus compatibility admitted"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &incompatible_midpoint,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
 }
 
 #[test]
@@ -675,5 +697,9 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
     .into_iter()
     .collect();
     normalize_section_incidence_curve_family_evidence(&mut conflicting);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| conflicting.len(ctx)).expect("admitted incidence family count"), 2);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| conflicting.len(ctx))
+            .expect("admitted incidence family count"),
+        2
+    );
 }

@@ -1116,11 +1116,13 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     ]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_placed_cylinder_radius(ctx, 
+        crate::decode::with_test_decode_ctx(|ctx| super::round_placed_cylinder_radius(
+            ctx,
             &ir,
             &row,
             &crate::decode::source_carriers::SourceUnitCarriers::default()
-        )).expect("service profile admits scalar parsing"),
+        ))
+        .expect("service profile admits scalar parsing"),
         None
     );
 }
@@ -1312,9 +1314,15 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::scan_for_test("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
-            .expect("section extent")
-            .section,
+        crate::container::Section::scan_for_test(
+            "VisibGeom#1".to_string(),
+            0,
+            20,
+            None,
+            &[0u8; 20],
+        )
+        .expect("section extent")
+        .section,
     );
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -1384,9 +1392,15 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     );
 
     scan.framing.sections.push(
-        crate::container::Section::scan_for_test("VisibGeom#2".to_string(), 20, 40, None, &[0u8; 40])
-            .expect("section extent")
-            .section,
+        crate::container::Section::scan_for_test(
+            "VisibGeom#2".to_string(),
+            20,
+            40,
+            None,
+            &[0u8; 40],
+        )
+        .expect("section extent")
+        .section,
     );
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));
@@ -1409,9 +1423,15 @@ fn torus_radius_samples_refuse_collection_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::scan_for_test("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
-            .expect("section extent")
-            .section,
+        crate::container::Section::scan_for_test(
+            "VisibGeom#1".to_string(),
+            0,
+            20,
+            None,
+            &[0u8; 20],
+        )
+        .expect("section extent")
+        .section,
     );
     scan.surfaces
         .prototype_records

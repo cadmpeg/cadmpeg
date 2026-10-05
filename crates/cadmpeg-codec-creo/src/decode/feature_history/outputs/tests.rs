@@ -259,10 +259,10 @@ fn selected_shell_refuses_before_btree_node() {
 fn selected_coedge_membership_refuses_work_and_preserves_body() {
     let (ir, edge) = selected_edge_ir();
     let body = ir.model.bodies[0].id.clone();
-    let bodies = crate::test_support::assert_work_boundaries(
-        &["creo selected coedge lookup"],
-        |ctx| bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge)),
-    );
+    let bodies =
+        crate::test_support::assert_work_boundaries(&["creo selected coedge lookup"], |ctx| {
+            bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge))
+        });
     assert_eq!(bodies, vec![body]);
 }
 
@@ -280,18 +280,23 @@ fn unmatched_selected_coedge_refuses_work_and_skips_empty_shell_scan() {
     let limit = match refusal {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "creo selected coedge lookup" => limit,
+                && limit.operation == "creo selected coedge lookup" =>
+        {
+            limit
+        }
         error => panic!("expected selected-coedge lookup refusal, got {error:?}"),
     };
     let cap = limit.used.checked_add(limit.additional).expect("work cap");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    assert!(bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
-        .expect("an unmatched coedge skips loop joins and the empty shell scan")
-        .is_empty());
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    assert!(
+        bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
+            .expect("an unmatched coedge skips loop joins and the empty shell scan")
+            .is_empty()
+    );
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
         bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched))
     })
@@ -327,8 +332,8 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         match bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&selected)) {
             Ok(bodies) => {
                 assert_eq!(named_refusals, 1, "the matched wire edge stops the scan");
@@ -338,7 +343,10 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
                 assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
-                let need = resource.used.checked_add(resource.additional).expect("work need");
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("work need");
                 assert!(need > cap);
                 if resource.operation == "creo selected shell wire edge lookup" {
                     let arena = DecodeArena::new();
@@ -360,7 +368,10 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
             Err(error) => panic!("unexpected wire-shell route refusal: {error:?}"),
         }
     }
-    assert_eq!(named_refusals, 1, "work route reaches one wire membership query");
+    assert_eq!(
+        named_refusals, 1,
+        "work route reaches one wire membership query"
+    );
     assert_eq!(
         bounded_result.expect("work route admits the unchanged service result"),
         vec![body.clone()]
@@ -410,8 +421,7 @@ fn copied_unicode_output_body_id_charges_only_retained_copy_work() {
     let arena = DecodeArena::new();
     let body = BodyId::mint("creo:test:body#é").expect("identity grammar");
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units =
-        cadmpeg_core::decode::u64_from_index(body.as_str().len());
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(body.as_str().len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     assert_eq!(
@@ -694,7 +704,7 @@ fn feature_parameter_refuses_before_btree_node() {
         "choice.value",
         "x",
     )
-        .expect_err("one parameter needs one BTreeMap node");
+    .expect_err("one parameter needs one BTreeMap node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -783,7 +793,7 @@ fn feature_parameter_refuses_before_scoped_key_candidate() {
         "choice.value",
         "x",
     )
-        .expect_err("candidate exceeds materialized allowance");
+    .expect_err("candidate exceeds materialized allowance");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -941,7 +951,7 @@ fn feature_source_property_refuses_before_btree_node() {
         "recipe",
         "Extrude",
     )
-        .expect_err("one property needs one map node");
+    .expect_err("one property needs one map node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -994,7 +1004,7 @@ fn feature_source_property_refuses_before_key_copy() {
         "recipe",
         "Extrude",
     )
-        .expect_err("key bytes exceed the retained limit");
+    .expect_err("key bytes exceed the retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -1020,7 +1030,7 @@ fn feature_source_property_refuses_before_value_copy() {
         "recipe",
         "Extrude",
     )
-        .expect_err("value bytes exceed the retained limit");
+    .expect_err("value bytes exceed the retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -1331,14 +1341,13 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     );
 
     let mut existing_surface_output = ir.clone();
-    let sweep_body = BodyId::mint("creo:feature:extrusion#10:body")
-        .expect("identity grammar");
+    let sweep_body = BodyId::mint("creo:feature:extrusion#10:body").expect("identity grammar");
     existing_surface_output.model.bodies[1].id = sweep_body.clone();
     existing_surface_output.model.regions[0].body = sweep_body.clone();
-    let output_bodies = crate::test_support::assert_work_boundaries(
-        &["creo feature output body lookup"],
-        |ctx| feature_output_bodies(ctx, &scan, &existing_surface_output, 10),
-    );
+    let output_bodies =
+        crate::test_support::assert_work_boundaries(&["creo feature output body lookup"], |ctx| {
+            feature_output_bodies(ctx, &scan, &existing_surface_output, 10)
+        });
     assert_eq!(
         output_bodies,
         vec![
@@ -1406,8 +1415,7 @@ fn generated_input_chain_membership_refuses_work_without_surface_route() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     // A preexisting evaluated output makes the generated-input chain search nonempty.
-    let initial_output =
-        BodyId::mint("creo:feature:extrusion#10:body").expect("identity grammar");
+    let initial_output = BodyId::mint("creo:feature:extrusion#10:body").expect("identity grammar");
     ir.model.bodies.push(Body {
         id: initial_output.clone(),
         kind: BodyKind::Solid,
@@ -1430,8 +1438,7 @@ fn generated_input_chain_membership_refuses_work_without_surface_route() {
 
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
     let producer = GeneratedFaceRef::new(
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
-            .expect("identity grammar"),
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50").expect("identity grammar"),
         "surface#7".to_string(),
         &fixture_ctx,
     )
@@ -1467,10 +1474,10 @@ fn generated_input_chain_membership_refuses_work_without_surface_route() {
 
     assert!(scan.surfaces.rows.is_empty());
     assert!(ir.model.faces.is_empty());
-    let outputs = crate::test_support::assert_work_boundaries(
-        &["creo feature output body lookup"],
-        |ctx| feature_output_bodies(ctx, &scan, &ir, 10),
-    );
+    let outputs =
+        crate::test_support::assert_work_boundaries(&["creo feature output body lookup"], |ctx| {
+            feature_output_bodies(ctx, &scan, &ir, 10)
+        });
     assert_eq!(outputs, vec![initial_output, body]);
 }
 
@@ -1679,7 +1686,13 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         vec![BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar")]
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 40)).expect("service profile admits scalar parsing"),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "extrusion",
+            40
+        ))
+        .expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
 
@@ -1697,7 +1710,16 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
             .expect("service profile admits output bodies")
             .is_empty()
     );
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 40)).expect("service profile admits scalar parsing"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "extrusion",
+            40
+        ))
+        .expect("service profile admits scalar parsing"),
+        None
+    );
 }
 
 #[test]

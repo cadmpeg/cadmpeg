@@ -43,7 +43,8 @@ pub(super) fn push_coverage_drop_losses(
                 &**coverage,
                 "creo untransferred surface family coverage search",
             )? {
-                let stored_family = key.strip_prefix("untransferred_visible_")
+                let stored_family = key
+                    .strip_prefix("untransferred_visible_")
                     .and_then(|name| name.strip_suffix("_surface_row_count"));
                 if ctx.equal(
                     &stored_family,

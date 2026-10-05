@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::section_axis_reference_line_geometry;
 use super::super::section_axis_line_carrier;
+use super::section_axis_reference_line_geometry;
 use crate::decode::feature_history::dependencies::{
     agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids,
 };
@@ -224,10 +224,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                         6,
                         |visit_class| {
                             for class in ctx.admit_iter(&classes, "test feature schema classes")? {
-                                if matches!(
-                                    visit_class(*class)?,
-                                    std::ops::ControlFlow::Break(())
-                                ) {
+                                if matches!(visit_class(*class)?, std::ops::ControlFlow::Break(()))
+                                {
                                     break;
                                 }
                             }
@@ -242,10 +240,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             resolve_classes(&[], &[row(917, 20), row(917, 30)]),
             Some(crate::feature::schema::SchemaClass::Protrusion)
         );
-        assert_eq!(
-            resolve_classes(&[], &[row(913, 20), row(914, 30)]),
-            None
-        );
+        assert_eq!(resolve_classes(&[], &[row(913, 20), row(914, 30)]), None);
         assert_eq!(
             resolve_classes(
                 std::slice::from_ref(&operation),
@@ -412,8 +407,12 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             Some(&[1, 2][..])
         );
         assert_eq!(
-            agreed_feature_replay_edge_ids(ctx, &[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,)
-                .expect("admitted replay edge ID agreement"),
+            agreed_feature_replay_edge_ids(
+                ctx,
+                &[replay(&[1], &[7], 80), replay(&[1], &[], 90)],
+                6,
+            )
+            .expect("admitted replay edge ID agreement"),
             None
         );
     });

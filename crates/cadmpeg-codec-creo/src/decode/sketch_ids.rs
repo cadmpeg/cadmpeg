@@ -216,7 +216,10 @@ pub(super) fn feature_definition_record_id(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
     if ctx
-        .admit_iter(&scan.features.definitions, "creo feature definition identity count")?
+        .admit_iter(
+            &scan.features.definitions,
+            "creo feature definition identity count",
+        )?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
@@ -247,7 +250,10 @@ pub(super) fn feature_sketch_record_id_in_scan(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
     if ctx
-        .admit_iter(&scan.features.definitions, "creo native sketch identity uniqueness")?
+        .admit_iter(
+            &scan.features.definitions,
+            "creo native sketch identity uniqueness",
+        )?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
@@ -272,7 +278,10 @@ pub(super) fn model_sketch_id(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Option<SketchId>, CodecError> {
     let ambiguous = ctx
-        .admit_iter(&scan.features.definitions, "creo model sketch identity uniqueness")?
+        .admit_iter(
+            &scan.features.definitions,
+            "creo model sketch identity uniqueness",
+        )?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1

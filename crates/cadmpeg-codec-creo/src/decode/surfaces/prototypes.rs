@@ -60,9 +60,13 @@ fn prototype_vector_array(
         return Ok(None);
     }
     let mut triples = Vec::new();
-    for coordinates in ctx.admit_iter(array.values(), "creo prototype vector array traversal")?
-        .chunks(std::num::NonZeroUsize::new(3).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero prototype vector width"))?)
-        .filter(|coordinates| coordinates.len() == 3) {
+    for coordinates in
+        ctx.admit_iter(array.values(), "creo prototype vector array traversal")?
+            .chunks(std::num::NonZeroUsize::new(3).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("zero prototype vector width")
+            })?)
+            .filter(|coordinates| coordinates.len() == 3)
+    {
         let [Some(x), Some(y), Some(z)] = coordinates else {
             return Ok(None);
         };
@@ -194,7 +198,8 @@ fn first_instance_surface_row<'a>(
     prototype_offset: usize,
     row_kind: crate::surface::SurfaceKind,
 ) -> Result<Option<&'a crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
-    let previous = ctx.admit_iter(rows, "creo preceding prototype row selection")?
+    let previous = ctx
+        .admit_iter(rows, "creo preceding prototype row selection")?
         .filter(|row| {
             row.offset >= frame_start && row.offset < frame_end && row.offset < prototype_offset
         })
@@ -202,7 +207,8 @@ fn first_instance_surface_row<'a>(
     if previous.is_some_and(|row| row.kind == row_kind) {
         return Ok(previous);
     }
-    Ok(ctx.admit_iter(rows, "creo following prototype row selection")?
+    Ok(ctx
+        .admit_iter(rows, "creo following prototype row selection")?
         .filter(|row| row.offset >= frame_start && row.offset < frame_end)
         .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
         .min_by_key(|row| row.offset))
@@ -311,7 +317,10 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     cadmpeg_core::CodecError,
 > {
     let mut associations = Vec::new();
-    for record in ctx.admit_iter(&scan.surfaces.prototype_records, "creo unique surface prototype associations prototype records traversal")? {
+    for record in ctx.admit_iter(
+        &scan.surfaces.prototype_records,
+        "creo unique surface prototype associations prototype records traversal",
+    )? {
         let (prototype, row_kind) = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => (
                 SupportedPrototype::Plane(record),
@@ -335,7 +344,8 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             ),
             _ => continue,
         };
-        let Some(section) = ctx.admit_iter(&scan.framing.sections, "creo prototype section search")?
+        let Some(section) = ctx
+            .admit_iter(&scan.framing.sections, "creo prototype section search")?
             .find(|section| section.contains(record.offset))
         else {
             continue;
@@ -352,7 +362,8 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             adjacent_end,
             record.offset,
             row_kind,
-        )? else {
+        )?
+        else {
             continue;
         };
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id)
@@ -364,9 +375,16 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
-    for (_, row, _) in ctx.admit_iter(&associations, "creo unique surface prototype associations associations traversal")? {
+    for (_, row, _) in ctx.admit_iter(
+        &associations,
+        "creo unique surface prototype associations associations traversal",
+    )? {
         let count = ctx
-            .entry_btree_map(&mut association_counts, row.offset, "creo surface prototype row counts")?
+            .entry_btree_map(
+                &mut association_counts,
+                row.offset,
+                "creo surface prototype row counts",
+            )?
             .or_default();
         *count += 1;
     }
@@ -396,7 +414,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     }
     let mut transferred = 0;
     let associations = unique_surface_prototype_associations(ctx, scan)?;
-    for (prototype, row, section) in ctx.admit_iter(&associations, "creo prototype association traversal")?.copied() {
+    for (prototype, row, section) in ctx
+        .admit_iter(&associations, "creo prototype association traversal")?
+        .copied()
+    {
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
@@ -572,7 +593,10 @@ fn relative_surface_rows(
     section: &crate::container::Section,
 ) -> Result<Vec<crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
     let mut relative = Vec::new();
-    for candidate in ctx.admit_iter(rows, "creo relative surface row traversal")?.filter(|row| section.contains(row.offset)) {
+    for candidate in ctx
+        .admit_iter(rows, "creo relative surface row traversal")?
+        .filter(|row| section.contains(row.offset))
+    {
         let Some(offset) = candidate.offset.checked_sub(section.offset()) else {
             continue;
         };
@@ -602,7 +626,10 @@ pub(in super::super) fn transfer_positional_spline_replays(
         return Ok(0);
     }
     let mut transferred = 0;
-    for parameter in ctx.admit_iter(&scan.surfaces.parameters, "creo transfer positional spline replays parameters traversal")? {
+    for parameter in ctx.admit_iter(
+        &scan.surfaces.parameters,
+        "creo transfer positional spline replays parameters traversal",
+    )? {
         if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
             continue;
         }
@@ -768,14 +795,15 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ) {
         return Ok(0);
     }
-    let carrier_counts = legacy_carrier_counts(
-        ctx,
-        &scan.surfaces.legacy_carriers,
-        |carrier| carrier.surface_id,
-    )?;
+    let carrier_counts = legacy_carrier_counts(ctx, &scan.surfaces.legacy_carriers, |carrier| {
+        carrier.surface_id
+    })?;
 
     let mut transferred = 0;
-    for carrier in ctx.admit_iter(&scan.surfaces.legacy_carriers, "creo transfer legacy ascii surface carriers legacy carriers traversal")? {
+    for carrier in ctx.admit_iter(
+        &scan.surfaces.legacy_carriers,
+        "creo transfer legacy ascii surface carriers legacy carriers traversal",
+    )? {
         if ctx.get_btree_map(
             &carrier_counts,
             &carrier.surface_id,

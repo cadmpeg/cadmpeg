@@ -56,17 +56,40 @@ pub(crate) struct ReferenceLine {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ReferenceLine {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.kind, <[f64; 3]>::from(self.start.get()), <[f64; 3]>::from(self.end.get()), &self.offset), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.kind,
+                <[f64; 3]>::from(self.start.get()),
+                <[f64; 3]>::from(self.end.get()),
+                &self.offset,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ReferenceLineKind {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         match self {
             Self::Line => Ok(1),
-            Self::Line3d { entity_id, original_length } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                &(1_u8, entity_id, original_length.get()), ctx, operation),
+            Self::Line3d {
+                entity_id,
+                original_length,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, entity_id, original_length.get()),
+                ctx,
+                operation,
+            ),
         }
     }
 }
@@ -243,11 +266,18 @@ pub(crate) enum ConicType {
 pub(crate) struct OtherConicType(u32);
 
 impl cadmpeg_core::decode::cost::DecodeCost for ConicType {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         match self {
             Self::Ellipse => Ok(1),
             Self::Other(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                &(1_u8, value.0), ctx, operation),
+                &(1_u8, value.0),
+                ctx,
+                operation,
+            ),
         }
     }
 }
@@ -300,14 +330,30 @@ pub(crate) struct ReferenceConic {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ReferenceConic {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         let start: [f64; 3] = self.start.get().into();
         let end: [f64; 3] = self.end.get().into();
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &((&self.entity_id, &self.type_id, &self.flip, start, end),
-                (self.parameter_start.map(FiniteReal::get), self.parameter_end.map(FiniteReal::get),
-                    self.coefficient_1.get(), self.coefficient_2.get()),
-                (self.local_system.map(|system| system.get()), &self.body, &self.offset)), ctx, operation,
+            &(
+                (&self.entity_id, &self.type_id, &self.flip, start, end),
+                (
+                    self.parameter_start.map(FiniteReal::get),
+                    self.parameter_end.map(FiniteReal::get),
+                    self.coefficient_1.get(),
+                    self.coefficient_2.get(),
+                ),
+                (
+                    self.local_system.map(|system| system.get()),
+                    &self.body,
+                    &self.offset,
+                ),
+            ),
+            ctx,
+            operation,
         )
     }
 }
@@ -1124,7 +1170,11 @@ pub(crate) fn positional_conics(
         Ord::cmp,
         "creo positional conics result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |conic| Ok(conic.offset), "creo positional conics result deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |conic| Ok(conic.offset),
+        "creo positional conics result deduplication",
+    )?;
     Ok(result)
 }
 
@@ -1217,7 +1267,11 @@ pub(crate) fn lines(
         Ord::cmp,
         "creo lines result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |line| Ok(line.offset), "creo lines result deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |line| Ok(line.offset),
+        "creo lines result deduplication",
+    )?;
     Ok(result)
 }
 
@@ -1349,7 +1403,11 @@ pub(crate) fn line3d_lines(
         Ord::cmp,
         "creo line3d lines result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |line| Ok(line.offset), "creo line3d lines result deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |line| Ok(line.offset),
+        "creo line3d lines result deduplication",
+    )?;
     Ok(result)
 }
 

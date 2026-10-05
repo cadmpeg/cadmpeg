@@ -118,12 +118,18 @@ fn multiple_mate_fixture() -> crate::feature::definitions::FeatureDefinition {
     for (entity_id, endpoints, offset) in [
         (
             4,
-            [[Some(-8.0), Some(-0.85), Some(0.0)], [Some(10.0), Some(2.0), Some(0.0)]],
+            [
+                [Some(-8.0), Some(-0.85), Some(0.0)],
+                [Some(10.0), Some(2.0), Some(0.0)],
+            ],
             21,
         ),
         (
             5,
-            [[Some(-8.0), Some(-0.85), Some(0.0)], [Some(20.0), Some(3.0), Some(0.0)]],
+            [
+                [Some(-8.0), Some(-0.85), Some(0.0)],
+                [Some(20.0), Some(3.0), Some(0.0)],
+            ],
             22,
         ),
     ] {

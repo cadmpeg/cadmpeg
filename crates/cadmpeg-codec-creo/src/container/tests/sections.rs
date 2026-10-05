@@ -322,9 +322,14 @@ fn expanded_section_name_refuses_before_retained_copy() {
     use cadmpeg_core::CodecError;
 
     let data = one_compressed_section();
-    let section =
-        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
-            .expect("bounded compressed section");
+    let section = super::super::Section::scan_for_test(
+        "SolidPrimdata".to_string(),
+        0,
+        data.len(),
+        Some(3),
+        &data,
+    )
+    .expect("bounded compressed section");
     let error = crate::test_support::last_refusal_at(
         &data,
         ResourceDimension::RetainedBytes,
@@ -345,9 +350,14 @@ fn expanded_section_record_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let data = one_compressed_section();
-    let section =
-        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
-            .expect("bounded compressed section");
+    let section = super::super::Section::scan_for_test(
+        "SolidPrimdata".to_string(),
+        0,
+        data.len(),
+        Some(3),
+        &data,
+    )
+    .expect("bounded compressed section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3 * (1 << 16);
@@ -363,9 +373,14 @@ fn expanded_section_record_refuses_before_vec_growth() {
 #[test]
 fn expanded_section_record_succeeds_under_service_policy() {
     let data = one_compressed_section();
-    let section =
-        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
-            .expect("bounded compressed section");
+    let section = super::super::Section::scan_for_test(
+        "SolidPrimdata".to_string(),
+        0,
+        data.len(),
+        Some(3),
+        &data,
+    )
+    .expect("bounded compressed section");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
@@ -403,8 +418,9 @@ fn native_model_name_refuses_before_retained_copy() {
     use cadmpeg_core::CodecError;
 
     let data = b"#BasicData\nmodel_name\0widget\0";
-    let section = super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
-        .expect("bounded native name section");
+    let section =
+        super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
+            .expect("bounded native name section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -420,8 +436,9 @@ fn native_model_name_refuses_before_retained_copy() {
 #[test]
 fn native_model_name_succeeds_under_service_policy() {
     let data = b"#BasicData\nmodel_name\0widget\0";
-    let section = super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
-        .expect("bounded native name section");
+    let section =
+        super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
+            .expect("bounded native name section");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
@@ -514,19 +531,37 @@ fn section_scan_refuses_name_normalization_before_classifying() {
         "creo section name normalization",
         |ctx| super::super::Section::scan(ctx, "ND:0:VisibGeom:1".to_string(), 0, 0, None, &[]),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo section name normalization"));
+            && resource.operation == "creo section name normalization")
+    );
 }
 
 #[test]
 fn section_scan_normalizes_decorated_names_once() {
     for (raw, name, role) in [
-        ("ND:0:VisibGeom:1", "VisibGeom", super::super::SectionRole::PsbGeometry),
-        ("ND:0:AllFeatur", "AllFeatur", super::super::SectionRole::ModelData),
-        ("ModelView#3", "ModelView", super::super::SectionRole::Opaque),
+        (
+            "ND:0:VisibGeom:1",
+            "VisibGeom",
+            super::super::SectionRole::PsbGeometry,
+        ),
+        (
+            "ND:0:AllFeatur",
+            "AllFeatur",
+            super::super::SectionRole::ModelData,
+        ),
+        (
+            "ModelView#3",
+            "ModelView",
+            super::super::SectionRole::Opaque,
+        ),
         ("ND:Body", "ND:Body", super::super::SectionRole::Opaque),
-        ("BasicData", "BasicData", super::super::SectionRole::ModelData),
+        (
+            "BasicData",
+            "BasicData",
+            super::super::SectionRole::ModelData,
+        ),
     ] {
         let section = super::super::Section::scan_for_test(raw.to_string(), 0, 0, None, &[])
             .expect("empty section extent")
@@ -541,22 +576,30 @@ fn section_scan_normalizes_decorated_names_once() {
 fn toc_section_deduplication_refuses_work() {
     let data = one_toc_section("Body", "Body");
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo toc sections sections deduplication", |ctx| super::super::toc_sections(ctx, &data, 0),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo toc sections sections deduplication",
+        |ctx| super::super::toc_sections(ctx, &data, 0),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo toc sections sections deduplication"));
+            && resource.operation == "creo toc sections sections deduplication")
+    );
 }
 
 #[test]
 fn legacy_toc_section_deduplication_refuses_work() {
     let data = one_legacy_toc_section();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo legacy toc sections sections deduplication", |ctx| super::super::legacy_toc_sections(ctx, &data, 0),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy toc sections sections deduplication",
+        |ctx| super::super::legacy_toc_sections(ctx, &data, 0),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy toc sections sections deduplication"));
+            && resource.operation == "creo legacy toc sections sections deduplication")
+    );
 }

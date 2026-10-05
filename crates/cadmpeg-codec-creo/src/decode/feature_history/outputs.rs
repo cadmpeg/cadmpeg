@@ -140,11 +140,7 @@ fn feature_output_bodies_with_history(
             let Some(region) = matching_region else {
                 continue;
             };
-            if !ctx.contains(
-                &outputs,
-                &region.body,
-                "creo feature output body lookup",
-            )? {
+            if !ctx.contains(&outputs, &region.body, "creo feature output body lookup")? {
                 let body = copy_body_id(ctx, &region.body)?;
                 ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
                 outputs.push(body);
@@ -196,7 +192,10 @@ fn generated_input_output_bodies(
         "creo generated input feature lookup",
     )?;
     let mut matching_feature = None;
-    for feature in ctx.admit_iter(&ir.model.features, "creo generated input feature lookup traversal")? {
+    for feature in ctx.admit_iter(
+        &ir.model.features,
+        "creo generated input feature lookup traversal",
+    )? {
         if !ctx.equal(
             feature.id.as_str(),
             feature_id_text.as_str(),
@@ -218,8 +217,7 @@ fn generated_input_output_bodies(
     let mut outputs = Vec::new();
     let mut dependency_storage = ctx.reserve_scoped(0, "Creo generated producer lookup")?;
     let producers = dependency_storage
-        .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?
-    ;
+        .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?;
     for producer in ctx.admit_iter(&producers, "creo generated feature dependencies")? {
         let Some(producer_id) = producer
             .as_str()
@@ -279,11 +277,7 @@ fn bodies_containing_edges(
     }
     let mut shell_ids = BTreeSet::new();
     for coedge in ctx.admit_iter(&ir.model.coedges, "creo selected edge coedges")? {
-        if !ctx.contains_btree_set(
-            &selected,
-            &coedge.edge,
-            "creo selected coedge lookup",
-        )? {
+        if !ctx.contains_btree_set(&selected, &coedge.edge, "creo selected coedge lookup")? {
             continue;
         }
         let mut matching_loop = None;
@@ -329,11 +323,7 @@ fn bodies_containing_edges(
     for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell lookup")? {
         let mut has_selected_wire_edge = false;
         for edge in ctx.admit_iter(shell.wire_edges(), "creo selected shell wire edges")? {
-            if ctx.contains_btree_set(
-                &selected,
-                edge,
-                "creo selected shell wire edge lookup",
-            )? {
+            if ctx.contains_btree_set(&selected, edge, "creo selected shell wire edge lookup")? {
                 has_selected_wire_edge = true;
                 break;
             }
@@ -430,7 +420,10 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             "creo evaluated sweep body candidate",
         )?;
         let mut matching_body = None;
-        for body in ctx.admit_iter(&ir.model.bodies, "creo evaluated sweep body lookup traversal")? {
+        for body in ctx.admit_iter(
+            &ir.model.bodies,
+            "creo evaluated sweep body lookup traversal",
+        )? {
             if !ctx.equal(
                 body.id.as_str(),
                 candidate.as_str(),
@@ -496,7 +489,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Option<u32>, CodecError> {
     let mut owner_tables = ctx
-            .admit_iter(tables, "creo new sheet entity tables")?
+        .admit_iter(tables, "creo new sheet entity tables")?
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 67);
     let Some(owner_table) = owner_tables.next() else {
         return Ok(None);
@@ -508,7 +501,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
         return Ok(None);
     };
     let mut output_tables = ctx
-            .admit_iter(tables, "creo new sheet entity tables")?
+        .admit_iter(tables, "creo new sheet entity tables")?
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 100);
     let Some(output_table) = output_tables.next() else {
         return Ok(None);
@@ -520,7 +513,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
         return Ok(None);
     };
     let mut generated_tables = ctx
-            .admit_iter(tables, "creo new sheet entity tables")?
+        .admit_iter(tables, "creo new sheet entity tables")?
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29);
     let Some(generated) = generated_tables.next() else {
         return Ok(None);
@@ -532,13 +525,16 @@ pub(in super::super) fn new_sheet_output_surface_id(
         || output.entity_id != owner.entity_id
         || !generated.contains_surface_id(output.class_id())
         || !ctx
-            .admit_iter(&generated.entries, "creo new sheet generated entity entries")?
+            .admit_iter(
+                &generated.entries,
+                "creo new sheet generated entity entries",
+            )?
             .any(|entry| entry.entity_id == output.class_id() && entry.class_id() == 200)
     {
         return Ok(None);
     }
     let mut surfaces = ctx
-            .admit_iter(surface_rows, "creo new sheet surface rows")?
+        .admit_iter(surface_rows, "creo new sheet surface rows")?
         .filter(|row| row.id == output.class_id() && row.feature_id == feature_id);
     let Some(surface) = surfaces.next() else {
         return Ok(None);
@@ -569,9 +565,11 @@ pub(in super::super) fn sweep_output_kind(
     {
         return Ok(Some(BodyKind::Sheet));
     }
-    Ok(current_feature_operation(&scan.features.operations, feature_id)
-        .filter(|operation| operation.kind.as_str() == "Surface")
-        .map(|_| BodyKind::Sheet))
+    Ok(
+        current_feature_operation(&scan.features.operations, feature_id)
+            .filter(|operation| operation.kind.as_str() == "Surface")
+            .map(|_| BodyKind::Sheet),
+    )
 }
 
 pub(super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
@@ -771,7 +769,10 @@ pub(in super::super) fn feature_parameters<'ctx>(
         )?;
     }
     for affected in ctx
-        .admit_iter(&scan.features.replay_affected_ids, "creo feature replay affected IDs")?
+        .admit_iter(
+            &scan.features.replay_affected_ids,
+            "creo feature replay affected IDs",
+        )?
         .filter(|record| record.feature_id == feature_id)
     {
         insert_feature_parameter(
@@ -881,7 +882,9 @@ pub(in super::super) fn feature_parameters<'ctx>(
             direction.value,
         )?;
     }
-    if unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?.is_some() {
+    if unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?
+        .is_some()
+    {
         replace_feature_parameter(
             ctx,
             &mut text_storage,
@@ -892,7 +895,10 @@ pub(in super::super) fn feature_parameters<'ctx>(
         )?;
     }
     for table in ctx
-        .admit_iter(&scan.features.entity_tables, "creo feature parameter entity tables")?
+        .admit_iter(
+            &scan.features.entity_tables,
+            "creo feature parameter entity tables",
+        )?
         .filter(|table| table.feature_id == feature_id)
     {
         for entry in ctx.admit_iter(&table.entries, "creo feature parameter entity entries")? {
@@ -1019,7 +1025,10 @@ pub(in super::super) fn feature_reference_name<'a>(
     feature_id: u32,
 ) -> Result<Option<&'a [u8]>, CodecError> {
     let mut records = ctx
-        .admit_iter(&scan.features.reference_names, "creo feature reference names")?
+        .admit_iter(
+            &scan.features.reference_names,
+            "creo feature reference names",
+        )?
         .filter(|record| record.feature_id == feature_id);
     let Some(record) = records.next() else {
         return Ok(None);
@@ -1094,7 +1103,13 @@ pub(in super::super) fn feature_source_properties<'ctx>(
     let mut node_storage = ctx.reserve_scoped(0, "creo feature source property nodes")?;
     let mut properties = BTreeMap::new();
     if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
-        insert_feature_source_property(ctx, &mut node_storage, &mut properties, "recipe", recipe.name())?;
+        insert_feature_source_property(
+            ctx,
+            &mut node_storage,
+            &mut properties,
+            "recipe",
+            recipe.name(),
+        )?;
     }
     let schema_class = feature_schema_class(ctx, scan, feature_id)?;
     if let Some(schema_class) = schema_class {

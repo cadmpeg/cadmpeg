@@ -230,21 +230,29 @@ fn operation_family_text_refuses_copy_work() {
 #[test]
 fn operation_family_utf8_refuses_before_invalid_identity() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::super::operation_states(ctx, b"\xff id x\0"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn operation_identity_utf8_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::super::operation_states(ctx, DISPLAY),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }

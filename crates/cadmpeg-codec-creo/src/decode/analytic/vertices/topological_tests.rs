@@ -558,10 +558,11 @@ fn solve_topological_vertices_refuses_analytic_domain_node() {
 #[test]
 fn nurbs_endpoint_witness_membership_refuses_work_and_preserves_service_result() {
     let (scan, ir, carriers) = pcurve_vertex_case();
-    let nurbs_endpoint_witnesses = std::collections::BTreeSet::from([
-        cadmpeg_ir::ids::CurveId::mint("creo:visibgeom:curve#7")
-            .expect("valid NURBS endpoint witness identity"),
-    ]);
+    let nurbs_endpoint_witnesses =
+        std::collections::BTreeSet::from([cadmpeg_ir::ids::CurveId::mint(
+            "creo:visibgeom:curve#7",
+        )
+        .expect("valid NURBS endpoint witness identity")]);
     let result = crate::test_support::assert_work_boundaries(
         &["creo NURBS endpoint witness membership"],
         |ctx| {
@@ -579,10 +580,7 @@ fn nurbs_endpoint_witness_membership_refuses_work_and_preserves_service_result()
     assert_eq!(result.diagnostics.pcurve_constraints, 1);
     assert_eq!(
         result.points,
-        std::collections::BTreeMap::from([
-            (1, [1.0, 2.0, 0.0]),
-            (2, [3.0, 4.0, 0.0]),
-        ]),
+        std::collections::BTreeMap::from([(1, [1.0, 2.0, 0.0]), (2, [3.0, 4.0, 0.0]),]),
     );
 }
 

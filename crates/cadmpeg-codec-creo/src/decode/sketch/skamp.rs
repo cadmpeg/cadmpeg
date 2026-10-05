@@ -105,8 +105,11 @@ fn section_line_entity_fixed_coordinate_with_mode(
         else {
             continue;
         };
-        let Some(neighbors) =
-            ctx.get_btree_map(&adjacency, &entity_id, "creo fixed-coordinate adjacency lookup")?
+        let Some(neighbors) = ctx.get_btree_map(
+            &adjacency,
+            &entity_id,
+            "creo fixed-coordinate adjacency lookup",
+        )?
         else {
             continue;
         };
@@ -301,8 +304,7 @@ pub(in crate::decode) fn section_skamp_point_on_line(
                 continue;
             }
             if skamp.kind == 9
-                && (point_item.sense != 0
-                    || !section_skamp_is_point(ctx, definition, point_item)?)
+                && (point_item.sense != 0 || !section_skamp_is_point(ctx, definition, point_item)?)
             {
                 continue;
             }
@@ -408,25 +410,25 @@ pub(super) fn section_skamp_axis_symmetry(
     else {
         return Ok(None);
     };
-    let axis =
-        if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id) {
-            SectionSymmetryAxis::Point(segment.point_ids()[0])
-        } else if let Some(segment) = unique_row {
-            SectionSymmetryAxis::Point(segment.point_ids()[0])
-        } else {
-            if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
-                return Ok(None);
-            }
-            let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
-                section_saved_entity(ctx, definition, axis_item.entity_id)?
-            else {
-                return Ok(None);
-            };
-            let Some(value) = saved_line_fixed_coordinate_value(line, coordinate) else {
-                return Ok(None);
-            };
-            SectionSymmetryAxis::Value(value)
+    let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
+    {
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
+    } else if let Some(segment) = unique_row {
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
+    } else {
+        if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
+            return Ok(None);
+        }
+        let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
+            section_saved_entity(ctx, definition, axis_item.entity_id)?
+        else {
+            return Ok(None);
         };
+        let Some(value) = saved_line_fixed_coordinate_value(line, coordinate) else {
+            return Ok(None);
+        };
+        SectionSymmetryAxis::Value(value)
+    };
     let Some(first_point) = section_skamp_incidence_point(ctx, definition, first_item)? else {
         return Ok(None);
     };
@@ -503,11 +505,7 @@ pub(in crate::decode) fn section_segment_rows<'a>(
                 _ => None,
             })
             .count();
-        ctx.reserve_vec(
-            &mut rows,
-            count,
-            "creo section segment rows",
-        )?;
+        ctx.reserve_vec(&mut rows, count, "creo section segment rows")?;
         rows.extend(
             ctx.admit_iter(table.rows.as_slice(), "creo section segment copy rows")?
                 .filter_map(|row| match row {
@@ -530,23 +528,25 @@ pub(in crate::decode) fn complete_section_segment_rows<'a>(
         .filter(|table| table.is_complete())
     {
         let count = ctx
-            .admit_iter(table.rows.as_slice(), "creo complete section segment count rows")?
+            .admit_iter(
+                table.rows.as_slice(),
+                "creo complete section segment count rows",
+            )?
             .filter_map(|row| match row {
                 SegmentRow::Ordinary(segment) => Some(segment),
                 _ => None,
             })
             .count();
-        ctx.reserve_vec(
-            &mut rows,
-            count,
-            "creo complete section segment rows",
-        )?;
+        ctx.reserve_vec(&mut rows, count, "creo complete section segment rows")?;
         rows.extend(
-            ctx.admit_iter(table.rows.as_slice(), "creo complete section segment copy rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Ordinary(segment) => Some(segment),
-                    _ => None,
-                }),
+            ctx.admit_iter(
+                table.rows.as_slice(),
+                "creo complete section segment copy rows",
+            )?
+            .filter_map(|row| match row {
+                SegmentRow::Ordinary(segment) => Some(segment),
+                _ => None,
+            }),
         );
     }
     Ok(rows)
@@ -1112,8 +1112,7 @@ mod tests {
         let Some((center, first, second)) = crate::decode::with_test_decode_ctx(|ctx| {
             section_skamp_point_symmetry(ctx, &definition, &skamp)
         })
-        .expect("admitted point symmetry rows")
-        else {
+        .expect("admitted point symmetry rows") else {
             panic!("point-symmetry sources");
         };
         assert_eq!(center, 9);
@@ -1124,7 +1123,13 @@ mod tests {
         duplicate.segments.as_mut().expect("segments").rows.insert(
             crate::feature::segment_rows::SegmentRow::Ordinary(line(10, [6, 7])),
         );
-        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(ctx, &duplicate, &skamp)).expect("admitted point symmetry rows").is_none());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(
+                ctx, &duplicate, &skamp
+            ))
+            .expect("admitted point symmetry rows")
+            .is_none()
+        );
 
         let mut cross_family = definition;
         cross_family
@@ -1139,7 +1144,15 @@ mod tests {
                     offset: 99,
                 },
             ));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(ctx, &cross_family, &skamp)).expect("admitted point symmetry rows").is_none());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(
+                ctx,
+                &cross_family,
+                &skamp
+            ))
+            .expect("admitted point symmetry rows")
+            .is_none()
+        );
     }
 
     #[test]

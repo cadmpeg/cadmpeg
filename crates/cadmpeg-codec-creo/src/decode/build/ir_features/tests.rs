@@ -255,8 +255,8 @@ fn existing_feature_property_staging_nodes_are_scoped_before_retained_destinatio
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         cadmpeg_core::decode::u64_from_index("recipe".len() + "Extrude".len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut source_nodes = ctx
         .reserve_scoped(0, "creo feature source property nodes")
         .expect("source property lease");
@@ -295,8 +295,8 @@ fn existing_feature_property_staging_nodes_are_scoped_before_retained_destinatio
 fn existing_feature_property_scoped_named_merge_keeps_order_and_replacement() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut source_nodes = ctx
         .reserve_scoped(0, "creo feature source property nodes")
         .expect("source property lease");
@@ -849,18 +849,25 @@ fn model_feature_identity_grammar_refuses_after_formatting() {
         Some("creo model feature identity grammar"),
         run,
     );
-    assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+    assert!(
+        matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo model feature identity grammar"));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx|
-        compose_feature_id(ctx, 40).map(|(id, _reservation)| id)
-    ).expect("service identity grammar").as_str(), "creo:model:feature#40");
+            && resource.operation == "creo model feature identity grammar")
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(
+            |ctx| compose_feature_id(ctx, 40).map(|(id, _reservation)| id)
+        )
+        .expect("service identity grammar")
+        .as_str(),
+        "creo:model:feature#40"
+    );
 }
 
 #[test]
 fn combined_feature_output_membership_refuses_work_and_preserves_service_outputs() {
-    let output = cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#40:body")
-        .expect("identity grammar");
+    let output =
+        cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#40:body").expect("identity grammar");
     let mut initial = cadmpeg_ir::document::CadIr::empty();
     initial.model.bodies.push(cadmpeg_ir::topology::Body {
         id: output.clone(),
@@ -906,7 +913,10 @@ fn combined_feature_output_membership_refuses_work_and_preserves_service_outputs
                 &mut cadmpeg_ir::AnnotationBuilder::new(),
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )?;
-            Ok((feature_count, ir.model.features[0].evaluation.outputs().to_vec()))
+            Ok((
+                feature_count,
+                ir.model.features[0].evaluation.outputs().to_vec(),
+            ))
         },
     );
     assert_eq!(feature_count, 0);

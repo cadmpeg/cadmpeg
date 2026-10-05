@@ -392,15 +392,19 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         offset: 84,
     });
     synchronize_skamp_count(&mut midpoint_definition);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_circular(ctx, 
-        &midpoint_definition,
-        &midpoint_definition
-            .relations
-            .as_ref()
-            .expect("relations")
-            .skamps()[0]
-            .items[1],
-    )).expect("admitted section lookup"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_circular(
+            ctx,
+            &midpoint_definition,
+            &midpoint_definition
+                .relations
+                .as_ref()
+                .expect("relations")
+                .skamps()[0]
+                .items[1],
+        ))
+        .expect("admitted section lookup")
+    );
     assert_eq!(
         *(section_skamp_constraints(
             &midpoint_definition,

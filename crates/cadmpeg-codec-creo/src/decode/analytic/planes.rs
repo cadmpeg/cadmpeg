@@ -21,7 +21,9 @@ use super::super::holes::placement::plane_envelope_corners;
 use super::super::surfaces::intersection_resolve::intersect_plane_with_carrier_components;
 use super::super::surfaces::{fc05_cap_pair_model_frame, fc05_model_frame};
 
-use super::edges::{nurbs_intrinsic_parameter_range, nurbs_weights_positive, try_fold_nurbs_points};
+use super::edges::{
+    nurbs_intrinsic_parameter_range, nurbs_weights_positive, try_fold_nurbs_points,
+};
 use super::equations::{
     intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
@@ -156,8 +158,9 @@ pub(super) fn solve_carriers_with_diagnostics(
 ) -> Result<(Option<[f64; 3]>, CarrierSolveDiagnostics), cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     let mut diagnostics = CarrierSolveDiagnostics::default();
-    for (first_index, first_carrier) in
-        ctx.admit_iter(carriers, "creo carrier pair first equations")?.enumerate()
+    for (first_index, first_carrier) in ctx
+        .admit_iter(carriers, "creo carrier pair first equations")?
+        .enumerate()
     {
         let second_start = first_index + 1;
         for second_carrier in ctx.admit_iter(
@@ -184,8 +187,9 @@ pub(super) fn solve_carriers_with_diagnostics(
             diagnostics.pair_intersections += candidates.len() - candidate_start;
         }
     }
-    for (first_index, first_carrier) in
-        ctx.admit_iter(carriers, "creo carrier triple first equations")?.enumerate()
+    for (first_index, first_carrier) in ctx
+        .admit_iter(carriers, "creo carrier triple first equations")?
+        .enumerate()
     {
         let second_start = first_index + 1;
         for (second_offset, second_carrier) in ctx
@@ -423,12 +427,15 @@ pub(super) fn solve_carriers_with_diagnostics(
     diagnostics.valid_candidates = candidates.len();
     let mut unique = Vec::<[f64; 3]>::new();
     for candidate in ctx.admit_iter(&candidates, "creo unique carrier candidates")? {
-        if !ctx.admit_iter(&unique, "creo unique carrier solution search")?.any(|known| {
-            known
-                .iter()
-                .zip(candidate)
-                .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
-        }) {
+        if !ctx
+            .admit_iter(&unique, "creo unique carrier solution search")?
+            .any(|known| {
+                known
+                    .iter()
+                    .zip(candidate)
+                    .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
+            })
+        {
             ctx.reserve_vec(&mut unique, 1, "creo carrier unique candidates")?;
             unique.push(*candidate);
         }
@@ -524,12 +531,12 @@ pub(in crate::decode) fn reconciled_model_plane(
     let mut model_surfaces = ctx
         .admit_iter(&ir.model.surfaces, "creo reconciled model surfaces")?
         .filter(|surface| {
-        crate::identity::matches_numbered_identity(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#",
-            surface_id,
-        )
-    });
+            crate::identity::matches_numbered_identity(
+                surface.id.as_str(),
+                "creo:visibgeom:surface#",
+                surface_id,
+            )
+        });
     let first = model_surfaces.next();
     let second = model_surfaces.next();
     let model_plane = match (first, second) {
@@ -548,12 +555,14 @@ pub(in crate::decode) fn reconciled_model_plane(
         },
         _ => return Ok(None),
     };
-    Ok(match (local_planes.get(&surface_id).copied(), model_plane) {
-        (Some(local), Some(model)) => agreed_plane(ctx, &[local, model])?,
-        (Some(local), None) => Some(local),
-        (None, Some(model)) => Some(model),
-        (None, None) => None,
-    })
+    Ok(
+        match (local_planes.get(&surface_id).copied(), model_plane) {
+            (Some(local), Some(model)) => agreed_plane(ctx, &[local, model])?,
+            (Some(local), None) => Some(local),
+            (None, Some(model)) => Some(model),
+            (None, None) => None,
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -607,16 +616,16 @@ fn agreed_plane_surface(
     let mut charts = ctx
         .admit_iter(candidates, "creo plane surface chart candidates")?
         .filter_map(|candidate| {
-        let chart = candidate.chart?;
-        let normal = normalize(chart.normal)?;
-        let u_axis = normalize(chart.u_axis)?;
-        (dot(normal, u_axis).abs() <= EPS_AGREE).then_some((
-            chart.origin,
-            normal,
-            u_axis,
-            candidate.offset,
-        ))
-    });
+            let chart = candidate.chart?;
+            let normal = normalize(chart.normal)?;
+            let u_axis = normalize(chart.u_axis)?;
+            (dot(normal, u_axis).abs() <= EPS_AGREE).then_some((
+                chart.origin,
+                normal,
+                u_axis,
+                candidate.offset,
+            ))
+        });
     let Some(representative) = charts.by_ref().min_by_key(|(_, _, _, offset)| *offset) else {
         return Ok(None);
     };
@@ -626,8 +635,12 @@ fn agreed_plane_surface(
             let chart = candidate.chart?;
             let normal = normalize(chart.normal)?;
             let u_axis = normalize(chart.u_axis)?;
-            (dot(normal, u_axis).abs() <= EPS_AGREE)
-                .then_some((chart.origin, normal, u_axis, candidate.offset))
+            (dot(normal, u_axis).abs() <= EPS_AGREE).then_some((
+                chart.origin,
+                normal,
+                u_axis,
+                candidate.offset,
+            ))
         })
         .all(|(origin, normal, u_axis, _)| {
             representative.0.iter().zip(origin).all(|(left, right)| {
@@ -644,13 +657,13 @@ fn agreed_plane_surface(
                     .all(|(left, right)| (left - right).abs() <= EPS_AGREE)
         });
     Ok(compatible.then_some((
-            PlaneEquation {
-                origin: representative.0,
-                normal: representative.1,
-            },
-            representative.2,
-            representative.3,
-        )))
+        PlaneEquation {
+            origin: representative.0,
+            normal: representative.1,
+        },
+        representative.2,
+        representative.3,
+    )))
 }
 
 fn stored_parameter_normal_candidate(
@@ -715,10 +728,7 @@ fn stored_parameter_origin_sign_candidates(
     let mut count = 0;
     let mask_count = 1usize << axis_count;
     let mask_range = 0..mask_count;
-    for mask in ctx.admit_iter(
-        &mask_range,
-        "creo stored plane origin sign mask traversal",
-    )? {
+    for mask in ctx.admit_iter(&mask_range, "creo stored plane origin sign mask traversal")? {
         let mut candidate = base;
         for (bit, axis) in ctx
             .admit_iter(&nonzero_axes[..axis_count], "creo stored plane axes")?
@@ -772,7 +782,9 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     };
     for mirror_z in [false, true] {
         for mirror_origin_z in origin_branches {
-            let Some(candidate) = stored_parameter_normal_candidate(frame, mirror_z, *mirror_origin_z) else {
+            let Some(candidate) =
+                stored_parameter_normal_candidate(frame, mirror_z, *mirror_origin_z)
+            else {
                 return Ok(None);
             };
             let mut duplicate = false;
@@ -809,16 +821,18 @@ fn plane_candidates_equivalent(
     first: PlaneCandidate,
     second: PlaneCandidate,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(agreed_plane(ctx, &[first.equation, second.equation])?.is_some()
-        && match (first.chart, second.chart) {
-            (Some(first), Some(second)) => {
-                coordinate_vectors_agree(first.origin, second.origin)
-                    && coordinate_vectors_agree(first.normal, second.normal)
-                    && coordinate_vectors_agree(first.u_axis, second.u_axis)
-            }
-            (None, None) => true,
-            _ => false,
-        })
+    Ok(
+        agreed_plane(ctx, &[first.equation, second.equation])?.is_some()
+            && match (first.chart, second.chart) {
+                (Some(first), Some(second)) => {
+                    coordinate_vectors_agree(first.origin, second.origin)
+                        && coordinate_vectors_agree(first.normal, second.normal)
+                        && coordinate_vectors_agree(first.u_axis, second.u_axis)
+                }
+                (None, None) => true,
+                _ => false,
+            },
+    )
 }
 
 fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<FinitePoint3> {
@@ -919,7 +933,10 @@ fn stored_frame_branch_constraints(
         }
         Ok(())
     };
-    for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo select stored frame carrier pcurve branches pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.pcurves,
+        "creo select stored frame carrier pcurve branches pcurves traversal",
+    )? {
         add(
             pcurve.faces,
             super::pcurves::canonicalized_pcurve_endpoints(
@@ -930,7 +947,10 @@ fn stored_frame_branch_constraints(
             ),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo select stored frame carrier pcurve branches bound prototype pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.bound_prototype_pcurves,
+        "creo select stored frame carrier pcurve branches bound prototype pcurves traversal",
+    )? {
         add(
             pcurve.faces,
             super::pcurves::canonicalized_pcurve_endpoints(
@@ -941,7 +961,10 @@ fn stored_frame_branch_constraints(
             ),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.two_chart_pcurves, "creo select stored frame carrier pcurve branches two chart pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.two_chart_pcurves,
+        "creo select stored frame carrier pcurve branches two chart pcurves traversal",
+    )? {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
@@ -964,7 +987,10 @@ fn fc05_cylinder_branch_witnesses(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<super::equations::CylinderEquation>>, cadmpeg_core::CodecError> {
     let mut cylinder_frames = BTreeMap::new();
-    for pair in ctx.admit_iter(&scan.curves.fc05_cylinder_cap_pairs, "creo fc05 cylinder branch witnesses fc05 cylinder cap pairs traversal")? {
+    for pair in ctx.admit_iter(
+        &scan.curves.fc05_cylinder_cap_pairs,
+        "creo fc05 cylinder branch witnesses fc05 cylinder cap pairs traversal",
+    )? {
         let Some(frame) = fc05_cap_pair_model_frame(ctx, scan, pair)? else {
             continue;
         };
@@ -983,9 +1009,15 @@ fn fc05_cylinder_branch_witnesses(
         )?;
     }
 
-    for circle in ctx.admit_iter(&scan.curves.fc05_circles, "creo fc05 cylinder branch witnesses fc05 circles traversal")? {
+    for circle in ctx.admit_iter(
+        &scan.curves.fc05_circles,
+        "creo fc05 cylinder branch witnesses fc05 circles traversal",
+    )? {
         let Some(topology) = ctx
-            .admit_iter(&scan.curves.topology_rows, "creo FC05 circle topology search")?
+            .admit_iter(
+                &scan.curves.topology_rows,
+                "creo FC05 circle topology search",
+            )?
             .find(|row| row.id == circle.curve_id)
         else {
             continue;
@@ -1060,7 +1092,10 @@ fn fc05_cylinder_branch_witnesses(
     }
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
-    for topology in ctx.admit_iter(&scan.curves.topology_rows, "creo fc05 cylinder branch witnesses topology rows traversal")? {
+    for topology in ctx.admit_iter(
+        &scan.curves.topology_rows,
+        "creo fc05 cylinder branch witnesses topology rows traversal",
+    )? {
         let mut face_ids = [None; 2];
         for (index, face) in ctx
             .admit_iter(&topology.faces, "creo FC05 bounded topology faces")?
@@ -1069,15 +1104,19 @@ fn fc05_cylinder_branch_witnesses(
             face_ids[index] = face.map(|face| face.get());
         }
         let pair = match face_ids {
-            [Some(first), Some(second)] if first != second && cylinder_frames.contains_key(&first)
-                && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
-                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
+            [Some(first), Some(second)]
+                if first != second
+                    && cylinder_frames.contains_key(&first)
+                    && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
+                        .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
             {
                 Some((first, second))
             }
-            [Some(first), Some(second)] if first != second && cylinder_frames.contains_key(&second)
-                && crate::surface::unique_surface_row(&scan.surfaces.rows, first)
-                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
+            [Some(first), Some(second)]
+                if first != second
+                    && cylinder_frames.contains_key(&second)
+                    && crate::surface::unique_surface_row(&scan.surfaces.rows, first)
+                        .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
             {
                 Some((second, first))
             }
@@ -1119,22 +1158,38 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
     legacy: super::equations::CylinderEquation,
 ) -> Result<super::equations::CylinderEquation, cadmpeg_core::CodecError> {
     let mut curve_ids = BTreeSet::new();
-    for circle in ctx.admit_iter(&scan.curves.fc05_circles, "creo FC05 witness native circles")? {
+    for circle in ctx.admit_iter(
+        &scan.curves.fc05_circles,
+        "creo FC05 witness native circles",
+    )? {
         let mut bounded = false;
-        for topology in ctx.admit_iter(&scan.curves.topology_rows, "creo FC05 witness topology rows")? {
+        for topology in ctx.admit_iter(
+            &scan.curves.topology_rows,
+            "creo FC05 witness topology rows",
+        )? {
             if topology.id == circle.curve_id && topology.bounds_face(cylinder_id) {
                 bounded = true;
                 break;
             }
         }
         if bounded {
-            ctx.insert_btree_set(&mut curve_ids, circle.curve_id, "creo FC05 witness curve ID nodes")?;
+            ctx.insert_btree_set(
+                &mut curve_ids,
+                circle.curve_id,
+                "creo FC05 witness curve ID nodes",
+            )?;
         }
     }
     let mut circles = Vec::new();
-    for curve_id in ctx.admit_iter(&curve_ids, "creo fc05 cylinder model witness curve ids traversal")? {
+    for curve_id in ctx.admit_iter(
+        &curve_ids,
+        "creo fc05 cylinder model witness curve ids traversal",
+    )? {
         for circle in ctx
-            .admit_iter(&scan.references.circles, "creo FC05 reference circle candidates")?
+            .admit_iter(
+                &scan.references.circles,
+                "creo FC05 reference circle candidates",
+            )?
             .filter(|circle| circle.entity_id == *curve_id)
         {
             ctx.reserve_vec(&mut circles, 1, "creo FC05 witness circles")?;
@@ -1222,9 +1277,10 @@ fn fc05_tangent_plane_score(
     cylinder: super::equations::CylinderEquation,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut plane_ids = BTreeSet::new();
-    for topology in
-        ctx.admit_iter(&scan.curves.topology_rows, "creo FC05 tangent topology rows")?
-    {
+    for topology in ctx.admit_iter(
+        &scan.curves.topology_rows,
+        "creo FC05 tangent topology rows",
+    )? {
         if !topology.bounds_face(cylinder_id) {
             continue;
         }
@@ -1310,11 +1366,8 @@ fn native_positional_cylinder_carriers(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.surfaces.rows,
-        |row| row.id,
-    )?;
+    let unique_rows =
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo native positional cylinder rows")? {
         if row.kind != crate::surface::SurfaceKind::Cylinder {
             continue;
@@ -1378,7 +1431,10 @@ fn select_stored_frame_carrier_pcurve_branches(
         }
         Ok(())
     };
-    for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo stored frame branch constraints pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.pcurves,
+        "creo stored frame branch constraints pcurves traversal",
+    )? {
         apply(
             pcurve.faces,
             super::pcurves::canonicalized_pcurve_endpoints(
@@ -1389,7 +1445,10 @@ fn select_stored_frame_carrier_pcurve_branches(
             ),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo stored frame branch constraints bound prototype pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.bound_prototype_pcurves,
+        "creo stored frame branch constraints bound prototype pcurves traversal",
+    )? {
         apply(
             pcurve.faces,
             super::pcurves::canonicalized_pcurve_endpoints(
@@ -1400,7 +1459,10 @@ fn select_stored_frame_carrier_pcurve_branches(
             ),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.two_chart_pcurves, "creo stored frame branch constraints two chart pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.two_chart_pcurves,
+        "creo stored frame branch constraints two chart pcurves traversal",
+    )? {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
@@ -1426,7 +1488,10 @@ fn select_stored_frame_branches(
     let cylinder_witnesses = fc05_cylinder_branch_witnesses(ctx, scan)?;
     let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     let mut origin_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
-    for frame in ctx.admit_iter(&scan.planes.local_systems, "creo select stored frame branches local systems traversal")? {
+    for frame in ctx.admit_iter(
+        &scan.planes.local_systems,
+        "creo select stored frame branches local systems traversal",
+    )? {
         let Some((options, option_count)) = stored_parameter_normal_candidates(ctx, frame)? else {
             continue;
         };
@@ -1435,7 +1500,11 @@ fn select_stored_frame_branches(
                 stored_parameter_normal_candidates_with_origin_branches(ctx, frame, true)?
             {
                 let known = ctx
-                    .entry_btree_map(&mut origin_domains, frame.surface_id, "creo plane origin domain nodes")?
+                    .entry_btree_map(
+                        &mut origin_domains,
+                        frame.surface_id,
+                        "creo plane origin domain nodes",
+                    )?
                     .or_default();
                 for option in origin_options.into_iter().take(origin_count) {
                     let duplicate = ctx.any_by(
@@ -1469,7 +1538,9 @@ fn select_stored_frame_branches(
             }
         }
     }
-    for (surface_id, options) in ctx.admit_iter(&origin_domains, "creo FC05 origin plane domains")? {
+    for (surface_id, options) in
+        ctx.admit_iter(&origin_domains, "creo FC05 origin plane domains")?
+    {
         let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
             continue;
         };
@@ -1505,7 +1576,10 @@ fn select_stored_frame_branches(
     }
 
     let mut domains = BTreeMap::new();
-    for (surface_id, options) in ctx.admit_iter(&variable_domains, "creo select stored frame branches variable domains traversal")? {
+    for (surface_id, options) in ctx.admit_iter(
+        &variable_domains,
+        "creo select stored frame branches variable domains traversal",
+    )? {
         let mut copied = Vec::new();
         ctx.reserve_vec(
             &mut copied,
@@ -1521,7 +1595,10 @@ fn select_stored_frame_branches(
         )?;
     }
     select_stored_frame_carrier_pcurve_branches(ctx, scan, &variable_domains, &mut domains)?;
-    for (surface_id, options) in ctx.admit_iter(&variable_domains, "creo select stored frame branches variable domains traversal")? {
+    for (surface_id, options) in ctx.admit_iter(
+        &variable_domains,
+        "creo select stored frame branches variable domains traversal",
+    )? {
         let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
             continue;
         };
@@ -1570,7 +1647,11 @@ fn select_stored_frame_branches(
             })
         };
         if let Some(fixed) = fixed {
-            if !ctx.contains_key_btree_map(&domains, surface_id, "creo fixed plane domain lookup")? {
+            if !ctx.contains_key_btree_map(
+                &domains,
+                surface_id,
+                "creo fixed plane domain lookup",
+            )? {
                 let mut selected = Vec::new();
                 ctx.reserve_vec(&mut selected, 1, "creo fixed plane domain candidates")?;
                 selected.push(fixed);
@@ -1603,8 +1684,11 @@ fn select_stored_frame_branches(
                 )? {
                     break;
                 }
-                let Some(target_candidates) =
-                    ctx.get_btree_map(&filtered, &target_face, "creo constrained plane domain lookup")?
+                let Some(target_candidates) = ctx.get_btree_map(
+                    &filtered,
+                    &target_face,
+                    "creo constrained plane domain lookup",
+                )?
                 else {
                     break;
                 };
@@ -1615,8 +1699,11 @@ fn select_stored_frame_branches(
                 )? {
                     continue;
                 }
-                let Some(other_candidates) =
-                    ctx.get_btree_map(&filtered, &other_face, "creo constrained plane domain lookup")?
+                let Some(other_candidates) = ctx.get_btree_map(
+                    &filtered,
+                    &other_face,
+                    "creo constrained plane domain lookup",
+                )?
                 else {
                     break;
                 };
@@ -1628,9 +1715,17 @@ fn select_stored_frame_branches(
                         other_candidates.iter(),
                         |other| {
                             Ok(if target == 0 {
-                                pcurve_candidates_agree(*candidate, *other, constraint.endpoint_sets)
+                                pcurve_candidates_agree(
+                                    *candidate,
+                                    *other,
+                                    constraint.endpoint_sets,
+                                )
                             } else {
-                                pcurve_candidates_agree(*other, *candidate, constraint.endpoint_sets)
+                                pcurve_candidates_agree(
+                                    *other,
+                                    *candidate,
+                                    constraint.endpoint_sets,
+                                )
                             })
                         },
                         "creo opposite constrained plane candidates",
@@ -1656,7 +1751,10 @@ fn select_stored_frame_branches(
             break;
         }
     }
-    for (surface_id, _) in ctx.admit_iter(&variable_domains, "creo final stored plane variable domains")? {
+    for (surface_id, _) in ctx.admit_iter(
+        &variable_domains,
+        "creo final stored plane variable domains",
+    )? {
         let Some([candidate]) = filtered.get(surface_id).map(Vec::as_slice) else {
             continue;
         };
@@ -1724,11 +1822,8 @@ fn round_edge_envelopes_for_plane(
     plane_id: u32,
 ) -> Result<Vec<crate::surface::Type24RoundEdgeEnvelope>, cadmpeg_core::CodecError> {
     let mut rows = BTreeMap::new();
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.surfaces.rows,
-        |row| row.id,
-    )?;
+    let unique_rows =
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo round-edge unique surface rows")? {
         ctx.insert_btree_map(&mut rows, row.id, row, "creo round-edge surface row nodes")?;
     }
@@ -1738,9 +1833,10 @@ fn round_edge_envelopes_for_plane(
         |row| row.id,
     )?;
     let mut envelopes = Vec::new();
-    for topology in
-        ctx.admit_iter(&unique_topologies, "creo round-edge unique curve topologies")?
-    {
+    for topology in ctx.admit_iter(
+        &unique_topologies,
+        "creo round-edge unique curve topologies",
+    )? {
         let mut cylinder_id = None;
         for face in ctx.admit_iter(&topology.faces, "creo round-edge bounded topology faces")? {
             let Some(face) = face else {
@@ -1784,7 +1880,10 @@ fn select_round_edge_origin_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for frame in ctx.admit_iter(&scan.planes.local_systems, "creo select round edge origin branches local systems traversal")? {
+    for frame in ctx.admit_iter(
+        &scan.planes.local_systems,
+        "creo select round edge origin branches local systems traversal",
+    )? {
         let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
             continue;
@@ -1813,7 +1912,9 @@ fn select_round_edge_origin_branches(
         }
         let envelopes = round_edge_envelopes_for_plane(ctx, scan, frame.surface_id)?;
         let (options, count) = stored_parameter_origin_sign_candidates(ctx, base)?;
-        let Some(selected) = unique_round_edge_origin_candidate(ctx, &options[..count], &envelopes)? else {
+        let Some(selected) =
+            unique_round_edge_origin_candidate(ctx, &options[..count], &envelopes)?
+        else {
             continue;
         };
         if let Some(existing) = candidates.get_mut(&frame.surface_id) {
@@ -1845,37 +1946,53 @@ fn plane_candidates(
         .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
     {
         let planes = ctx
-            .entry_btree_map(&mut held_plane_groups, surface_id, "creo held plane group nodes")?
+            .entry_btree_map(
+                &mut held_plane_groups,
+                surface_id,
+                "creo held plane group nodes",
+            )?
             .or_default();
         ctx.reserve_vec(planes, 1, "creo held plane equations")?;
         planes.push(plane);
     }
     let mut held_planes = BTreeMap::new();
-    for (surface_id, planes) in ctx.admit_iter(&held_plane_groups, "creo held plane candidate groups")? {
+    for (surface_id, planes) in
+        ctx.admit_iter(&held_plane_groups, "creo held plane candidate groups")?
+    {
         if let Some(plane) = agreed_plane(ctx, planes)? {
-        ctx.insert_btree_map(
-            &mut held_planes,
-            *surface_id,
-            plane,
+            ctx.insert_btree_map(
+                &mut held_planes,
+                *surface_id,
+                plane,
                 "creo agreed held plane nodes",
             )?;
         }
     }
     let mut frame_bound_outlines = BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new();
     for outline in ctx
-        .admit_iter(&scan.planes.envelopes, "creo frame-bound outline envelope search")?
+        .admit_iter(
+            &scan.planes.envelopes,
+            "creo frame-bound outline envelope search",
+        )?
         .filter_map(|record| {
             crate::surface::frame_bound_outline_plane(record, &scan.planes.local_systems)
         })
     {
         let outlines = ctx
-            .entry_btree_map(&mut frame_bound_outlines, outline.surface_id, "creo frame-bound outline nodes")?
+            .entry_btree_map(
+                &mut frame_bound_outlines,
+                outline.surface_id,
+                "creo frame-bound outline nodes",
+            )?
             .or_default();
         ctx.reserve_vec(outlines, 1, "creo frame-bound outlines")?;
         outlines.push(outline);
     }
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
-    for frame in ctx.admit_iter(&scan.planes.local_systems, "creo plane candidates local systems traversal")? {
+    for frame in ctx.admit_iter(
+        &scan.planes.local_systems,
+        "creo plane candidates local systems traversal",
+    )? {
         let decoded_frame = frame.frame();
         let (Some(origin), Some(normal)) = (decoded_frame.origin, decoded_frame.normal()) else {
             continue;
@@ -1899,8 +2016,7 @@ fn plane_candidates(
                     return None;
                 };
                 frame_bound_outline_plane_candidate(frame, outline)
-            })
-            ;
+            });
         if candidate.is_none() {
             if let Some(held) = held_planes.get(&frame.surface_id) {
                 if agreed_plane(ctx, &[frame_candidate.equation, *held])?.is_none() {
@@ -1913,7 +2029,11 @@ fn plane_candidates(
             None => frame_candidate,
         };
         let options = ctx
-            .entry_btree_map(&mut candidates, frame.surface_id, "creo plane candidate nodes")?
+            .entry_btree_map(
+                &mut candidates,
+                frame.surface_id,
+                "creo plane candidate nodes",
+            )?
             .or_default();
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
@@ -1931,7 +2051,10 @@ fn plane_candidates(
     {
         ctx.insert_btree_set(&mut local_chart_ids, id, "creo local plane chart ID nodes")?;
     }
-    for outline in ctx.admit_iter(&scan.planes.outlines, "creo plane candidates outlines traversal")? {
+    for outline in ctx.admit_iter(
+        &scan.planes.outlines,
+        "creo plane candidates outlines traversal",
+    )? {
         if matrix_frame_ids.contains(&outline.surface_id) {
             continue;
         }
@@ -1948,12 +2071,19 @@ fn plane_candidates(
             offset: outline.offset,
         };
         let options = ctx
-            .entry_btree_map(&mut candidates, outline.surface_id, "creo plane candidate nodes")?
+            .entry_btree_map(
+                &mut candidates,
+                outline.surface_id,
+                "creo plane candidate nodes",
+            )?
             .or_default();
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
     }
-    for envelope in ctx.admit_iter(&scan.planes.envelopes, "creo plane candidates envelopes traversal")? {
+    for envelope in ctx.admit_iter(
+        &scan.planes.envelopes,
+        "creo plane candidates envelopes traversal",
+    )? {
         if matrix_frame_ids.contains(&envelope.surface_id) {
             continue;
         }
@@ -1966,12 +2096,19 @@ fn plane_candidates(
             offset: envelope.offset,
         };
         let options = ctx
-            .entry_btree_map(&mut candidates, envelope.surface_id, "creo plane candidate nodes")?
+            .entry_btree_map(
+                &mut candidates,
+                envelope.surface_id,
+                "creo plane candidate nodes",
+            )?
             .or_default();
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
     }
-    for plane in ctx.admit_iter(&scan.planes.positional_frames, "creo plane candidates positional frames traversal")? {
+    for plane in ctx.admit_iter(
+        &scan.planes.positional_frames,
+        "creo plane candidates positional frames traversal",
+    )? {
         if candidates.contains_key(&plane.surface_id) {
             continue;
         }
@@ -2003,12 +2140,10 @@ fn plane_candidates(
         if surface_search_refusal.is_some() {
             return true;
         }
-        match ctx
-            .admit_iter(
-                &scan.surfaces.rows,
-                "creo plane candidate surface identity count",
-            )
-        {
+        match ctx.admit_iter(
+            &scan.surfaces.rows,
+            "creo plane candidate surface identity count",
+        ) {
             Ok(rows) => rows.filter(|row| row.id == *id).take(2).count() < 2,
             Err(error) => {
                 surface_search_refusal = Some(error.into());
@@ -2069,9 +2204,7 @@ fn envelope_reconciled_plane_candidate(
         .chain(equation.origin.iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    if !((dot(normal, origin) - dot(normal, equation.origin)).abs()
-        <= EPS_AGREE * origin_scale)
-    {
+    if !((dot(normal, origin) - dot(normal, equation.origin)).abs() <= EPS_AGREE * origin_scale) {
         return Ok(None);
     }
     let Some(slots) = frame.complete_slots() else {
@@ -2117,7 +2250,11 @@ fn envelope_reconciled_plane_candidate(
     if first_parallel == second_parallel {
         return Ok(None);
     }
-    let u_axis = if first_parallel { second_direction } else { first_direction };
+    let u_axis = if first_parallel {
+        second_direction
+    } else {
+        first_direction
+    };
     Ok(Some(PlaneCandidate {
         equation,
         chart: Some(PlaneChart {
@@ -2200,9 +2337,7 @@ pub(in crate::decode) fn placed_plane_surfaces(
 
 pub(super) fn topology_bound_plane(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    collect_points: impl FnOnce(
-        &mut Vec<[f64; 3]>,
-    ) -> Result<(), cadmpeg_core::CodecError>,
+    collect_points: impl FnOnce(&mut Vec<[f64; 3]>) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     collect_points(&mut points)?;
@@ -2241,16 +2376,12 @@ pub(super) fn topology_bound_plane(
         .enumerate()
     {
         let first = first + 1;
-        for second_point in ctx
-            .admit_iter(
-                &points[first + 1..],
-                "creo topology plane second point candidates",
-            )?
-        {
-            let first_direction =
-                std::array::from_fn(|axis| first_point[axis] - origin[axis]);
-            let second_direction =
-                std::array::from_fn(|axis| second_point[axis] - origin[axis]);
+        for second_point in ctx.admit_iter(
+            &points[first + 1..],
+            "creo topology plane second point candidates",
+        )? {
+            let first_direction = std::array::from_fn(|axis| first_point[axis] - origin[axis]);
+            let second_direction = std::array::from_fn(|axis| second_point[axis] - origin[axis]);
             let Some(candidate) = normalize(cross(first_direction, second_direction)) else {
                 continue;
             };
@@ -2309,7 +2440,8 @@ pub(super) fn analytic_curve_plane(
                     points.push([point.x, point.y, point.z]);
                     Ok(())
                 })
-            })? else {
+            })?
+            else {
                 return Ok(None);
             };
             (plane.origin, plane.normal)
@@ -2354,7 +2486,8 @@ pub(super) fn analytic_boundary_line(
                 return Ok(None);
             };
             let origin = [first.x, first.y, first.z];
-            let Some(direction) = normalize([last.x - first.x, last.y - first.y, last.z - first.z]) else {
+            let Some(direction) = normalize([last.x - first.x, last.y - first.y, last.z - first.z])
+            else {
                 return Ok(None);
             };
             let scale = try_fold_nurbs_points(ctx, nurbs, 1.0_f64, |scale, point| {
@@ -2491,7 +2624,6 @@ pub(super) fn agreed_topology_bound_plane(
         });
     Ok((points_agree && lines_agree).then_some(plane))
 }
-
 
 #[cfg(test)]
 mod reconciliation_tests;

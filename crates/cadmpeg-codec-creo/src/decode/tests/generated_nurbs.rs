@@ -1252,34 +1252,28 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut horizontal = SketchConstraintDefinitionInput::Horizontal {
         entity: first.clone(),
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_entity_references(ctx, &mut horizontal, &emitted)
-        })
-        .expect("test constraint reconciliation resources")
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_entity_references(ctx, &mut horizontal, &emitted)
+    })
+    .expect("test constraint reconciliation resources"));
     let mut parallel = SketchConstraintDefinitionInput::Parallel {
         first: first.clone(),
         second: second.clone(),
     };
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_entity_references(ctx, &mut parallel, &emitted)
-        })
-        .expect("test constraint reconciliation resources")
-    );
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_entity_references(ctx, &mut parallel, &emitted)
+    })
+    .expect("test constraint reconciliation resources"));
     let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
         parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
             .expect("identity grammar"),
     };
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_entity_references(ctx, &mut distance, &emitted)
-        })
-        .expect("test constraint reconciliation resources")
-    );
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_entity_references(ctx, &mut distance, &emitted)
+    })
+    .expect("test constraint reconciliation resources"));
     let mut native = SketchConstraintDefinitionInput::Native {
         native_kind: cadmpeg_core::text::NonBlankString::try_from("creo:test")
             .expect("nonempty native kind"),
@@ -1290,12 +1284,10 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_entity_references(ctx, &mut native, &emitted)
-        })
-        .expect("test constraint reconciliation resources")
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_entity_references(ctx, &mut native, &emitted)
+    })
+    .expect("test constraint reconciliation resources"));
     assert!(matches!(
         native,
         SketchConstraintDefinitionInput::Native { entities, .. }
@@ -1310,23 +1302,19 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
             .expect("valid test fixture"),
         parameter: parameter.clone(),
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_parameter_reference(ctx, &mut radius, &parameters)
-        })
-        .expect("test parameter reconciliation resources")
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_parameter_reference(ctx, &mut radius, &parameters)
+    })
+    .expect("test parameter reconciliation resources"));
     let mut missing_distance = SketchConstraintDefinitionInput::Distance {
         entities: Vec::new(),
         parameter: ParameterId::mint("synthetic:test:id#missing".to_string())
             .expect("identity grammar"),
     };
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_parameter_reference(ctx, &mut missing_distance, &parameters)
-        })
-        .expect("test parameter reconciliation resources")
-    );
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_parameter_reference(ctx, &mut missing_distance, &parameters)
+    })
+    .expect("test parameter reconciliation resources"));
     let mut native_parameter = SketchConstraintDefinitionInput::Native {
         native_kind: cadmpeg_core::text::NonBlankString::try_from("creo:test")
             .expect("nonempty native kind"),
@@ -1339,12 +1327,10 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reconcile_constraint_parameter_reference(ctx, &mut native_parameter, &parameters)
-        })
-        .expect("test parameter reconciliation resources")
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reconcile_constraint_parameter_reference(ctx, &mut native_parameter, &parameters)
+    })
+    .expect("test parameter reconciliation resources"));
     assert!(matches!(
         native_parameter,
         SketchConstraintDefinitionInput::Native {

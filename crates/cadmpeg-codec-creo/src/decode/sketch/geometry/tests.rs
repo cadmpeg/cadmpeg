@@ -245,11 +245,7 @@ fn section_arc_angle_normalization_refuses_work_and_preserves_service_geometry()
     assert!(section_arc_geometry(&ctx, &absent, &segment)
         .expect("absent arc uses no work")
         .is_none());
-    let nonfinite = BTreeMap::from([
-        (1, [f64::INFINITY, 0.0]),
-        (2, [0.0, 1.0]),
-        (3, [0.0, 0.0]),
-    ]);
+    let nonfinite = BTreeMap::from([(1, [f64::INFINITY, 0.0]), (2, [0.0, 1.0]), (3, [0.0, 0.0])]);
     assert!(section_arc_geometry(&ctx, &nonfinite, &segment)
         .expect("nonfinite arc uses no work")
         .is_none());

@@ -211,7 +211,11 @@ impl<'a> Index<'a> {
                 object.offset,
                 "creo legacy family object index IDs",
             )?;
-            match ctx.entry_btree_map(&mut object_by_id, id, "creo legacy family object index nodes")? {
+            match ctx.entry_btree_map(
+                &mut object_by_id,
+                id,
+                "creo legacy family object index nodes",
+            )? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(object);
                 }

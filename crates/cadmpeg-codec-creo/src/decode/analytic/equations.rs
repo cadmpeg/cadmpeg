@@ -280,7 +280,10 @@ pub(in crate::decode) fn solve_planes(
     ctx: &DecodeContext<'_>,
     planes: &[PlaneEquation],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    for (first_index, a) in ctx.admit_iter(planes, "creo plane solver candidates")?.enumerate() {
+    for (first_index, a) in ctx
+        .admit_iter(planes, "creo plane solver candidates")?
+        .enumerate()
+    {
         for (second_offset, b) in ctx
             .admit_iter(
                 &planes[first_index + 1..],
@@ -410,7 +413,9 @@ fn polynomial_value(
     Ok(ctx
         .admit_iter(coefficients, "creo polynomial coefficients")?
         .rev()
-        .fold(0.0, |value, coefficient| value.mul_add(parameter, *coefficient)))
+        .fold(0.0, |value, coefficient| {
+            value.mul_add(parameter, *coefficient)
+        }))
 }
 
 fn operation_rounding_bound(value: f64) -> f64 {
@@ -448,15 +453,15 @@ fn polynomial_value_bound(
     let (coefficient_error, evaluation_terms, _) = ctx
         .admit_iter(coefficients, "creo bounded polynomial value terms")?
         .fold(
-        (0.0, 0.0, 1.0),
-        |(coefficient_error, evaluation_terms, power), coefficient| {
-            (
-                coefficient.bound.mul_add(power, coefficient_error),
-                coefficient.value.abs().mul_add(power, evaluation_terms),
-                power * magnitude,
-            )
-        },
-    );
+            (0.0, 0.0, 1.0),
+            |(coefficient_error, evaluation_terms, power), coefficient| {
+                (
+                    coefficient.bound.mul_add(power, coefficient_error),
+                    coefficient.value.abs().mul_add(power, evaluation_terms),
+                    power * magnitude,
+                )
+            },
+        );
     Ok(coefficient_error + cancellation_bound(evaluation_terms))
 }
 
@@ -496,8 +501,8 @@ fn polynomial_interval_value_bound(
                 &derivative[1..],
                 "creo polynomial interval derivative coefficients",
             )?
-                .enumerate()
-                .map(|(power_offset, coefficient)| {
+            .enumerate()
+            .map(|(power_offset, coefficient)| {
                 let power = power_offset + 1;
                 let Ok(power) = u32::try_from(power) else {
                     return BoundedCoefficient {
@@ -513,7 +518,7 @@ fn polynomial_interval_value_bound(
                         coefficient.bound * factor + operation_rounding_bound(value),
                     ),
                 }
-                }),
+            }),
         );
         derivative = next_derivative;
         let Ok(order) = u32::try_from(order) else {
@@ -537,8 +542,10 @@ fn polynomial_sign(
     parameter: f64,
 ) -> Result<Option<bool>, CodecError> {
     let (value, bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
-    Ok((value.is_finite() && bound.is_finite() && value.abs() > bound)
-        .then_some(value.is_sign_positive()))
+    Ok(
+        (value.is_finite() && bound.is_finite() && value.abs() > bound)
+            .then_some(value.is_sign_positive()),
+    )
 }
 
 fn polynomial_is_exactly_zero(
@@ -554,7 +561,10 @@ fn polynomial_is_exactly_zero(
     }
     let mut value = 0.0;
     for coefficient in ctx
-        .admit_iter(coefficients, "creo exact polynomial evaluation coefficients")?
+        .admit_iter(
+            coefficients,
+            "creo exact polynomial evaluation coefficients",
+        )?
         .rev()
     {
         let parameter_magnitude = parameter.abs();
@@ -758,7 +768,10 @@ fn real_polynomial_roots(
     let mut gap_lower_sign = polynomial_sign(ctx, &scaled, gap_lower)?;
     let mut gaps = Vec::new();
     for station in ctx
-        .admit_iter(&derivative_roots, "creo polynomial derivative root candidates")?
+        .admit_iter(
+            &derivative_roots,
+            "creo polynomial derivative root candidates",
+        )?
         .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
     {
         let station = PolynomialRoot {
@@ -1072,7 +1085,10 @@ fn conic_resultant(
     for (value, terms) in ctx
         .admit_iter(&values, "creo conic resultant values")?
         .copied()
-        .zip(ctx.admit_iter(&terms, "creo conic resultant term magnitudes")?.copied())
+        .zip(
+            ctx.admit_iter(&terms, "creo conic resultant term magnitudes")?
+                .copied(),
+        )
     {
         result.push(BoundedCoefficient {
             value,
@@ -1421,12 +1437,14 @@ pub(super) fn common_plane_conic_parameters(
                 <= plane_conic_residual_bound(first, refined)
                 && plane_conic_value(second, candidate[0], candidate[1]).abs()
                     <= plane_conic_residual_bound(second, refined)
-                && !ctx.admit_iter(&parameters, "creo unique conic intersection parameters")?.any(|known| {
-                    (known[0] - candidate[0])
-                        .abs()
-                        .max((known[1] - candidate[1]).abs())
-                        <= EPS_PARAM_UNIQUE * scale
-                })
+                && !ctx
+                    .admit_iter(&parameters, "creo unique conic intersection parameters")?
+                    .any(|known| {
+                        (known[0] - candidate[0])
+                            .abs()
+                            .max((known[1] - candidate[1]).abs())
+                            <= EPS_PARAM_UNIQUE * scale
+                    })
             {
                 ctx.reserve_vec(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
@@ -1928,14 +1946,16 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
 
         let error = super::solve_planes(&ctx, &planes)
             .expect_err("the first plane candidate exceeds work limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::WorkUnits
-                && refusal.operation == "creo plane solver candidates"));
+                && refusal.operation == "creo plane solver candidates")
+        );
     }
 
     #[test]
@@ -1960,8 +1980,8 @@ mod tests {
         ];
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
 
         assert!(super::solve_planes(&ctx, &planes)
             .expect("plane residual scan is admitted")
@@ -2001,9 +2021,18 @@ mod tests {
     #[test]
     fn polynomial_leading_coefficient_trim_refuses_work() {
         let coefficients = [
-            BoundedCoefficient { value: -1.0, bound: 0.0 },
-            BoundedCoefficient { value: 1.0, bound: 0.0 },
-            BoundedCoefficient { value: 0.0, bound: 0.0 },
+            BoundedCoefficient {
+                value: -1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
         ];
         let roots = crate::test_support::assert_work_boundaries(
             &["creo polynomial leading coefficient trim"],

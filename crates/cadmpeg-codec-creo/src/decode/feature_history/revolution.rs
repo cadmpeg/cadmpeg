@@ -128,12 +128,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         {
             continue;
         }
-        if unique_feature_revolution_extent(
-            ctx,
-            &scan.features.revolution_extents,
-            feature_id,
-        )?
-        .is_none()
+        if unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?
+            .is_none()
         {
             continue;
         }
@@ -218,11 +214,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             Some(order) => {
                 let mut bindings = BTreeMap::new();
                 let mut bound_surfaces = BTreeSet::new();
-                let outcome = visit_semantic_saved_section_entities::<()>(
-                    ctx,
-                    definition,
-                    |entity| {
-                        if let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity {
+                let outcome =
+                    visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+                        if let crate::feature::definitions::FeatureSavedEntity::Spline(spline) =
+                            entity
+                        {
                             let external_id = match spline.entity_id {
                                 Some(entity_id) => order.external_id(ctx, entity_id)?,
                                 None => None,
@@ -244,8 +240,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             }
                         }
                         Ok(std::ops::ControlFlow::Continue(()))
-                    },
-                )?;
+                    })?;
                 match outcome {
                     std::ops::ControlFlow::Continue(()) => bindings,
                     std::ops::ControlFlow::Break(()) => BTreeMap::new(),
@@ -360,187 +355,29 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         }
         if let Some(order) = definition.order_table.as_ref() {
             // discarded-value: this visitor continues after each saved entity.
-            let _ = visit_semantic_saved_section_entities::<()>(
-                ctx,
-                definition,
-                |entity| {
-                    let Some((internal_id, section_geometry, offset)) =
-                        saved_section_entity_geometry(ctx, entity)?
-                    else {
-                        return Ok(std::ops::ControlFlow::Continue(()));
-                    };
-                    let Some(external_id) = order.external_id(ctx, internal_id)? else {
-                        return Ok(std::ops::ControlFlow::Continue(()));
-                    };
-                    let Some(surface) =
-                        revolved_section_surface(transform, &section_geometry, &axis)
-                    else {
-                        return Ok(std::ops::ControlFlow::Continue(()));
-                    };
-                    let Some(native_surface) = ordered_analytic_surface_id_for_feature(
-                        ctx,
-                        &scan.surfaces.rows,
-                        &scan.features.entity_tables,
-                        feature_id,
-                        order,
-                        external_id,
-                        &surface,
-                    )? else {
-                        return Ok(std::ops::ControlFlow::Continue(()));
-                    };
-                    let surface_id = crate::identity::compose_checked::<SurfaceId>(
-                        ctx,
-                        &crate::identity::VISIBGEOM_SURFACE,
-                        native_surface,
-                        "creo revolution surface identity",
-                    )?;
-                    let mut surface_exists = false;
-                    for item in ctx.admit_iter(
-                        &ir.model.surfaces,
-                        "creo saved revolution surface lookup",
-                    )? {
-                        if ctx.equal(
-                            &item.id,
-                            &surface_id,
-                            "creo saved revolution surface identity comparison",
-                        )? {
-                            surface_exists = true;
-                            break;
-                        }
-                    }
-                    if surface_exists {
-                        return Ok(std::ops::ControlFlow::Continue(()));
-                    }
-                    annotate(
-                        ctx,
-                        annotations,
-                        &surface_id,
-                        "FeatDefs",
-                        cadmpeg_core::decode::u64_from_index(offset),
-                        "evaluated_saved_analytic_revolution_surface",
-                        Exactness::Derived,
-                    )?;
-                    ctx.charge_entities(1, "admit Creo model surfaces")?;
-                    source_carriers.admit_surface(
-                        ctx,
-                        ir,
-                        Surface {
-                            id: surface_id,
-                            geometry: surface,
-                            source_object: Some(SourceObjectAssociation {
-                                format: cadmpeg_ir::CodecFormat::Creo,
-                                object_id: crate::identity::source_object_id_checked(
-                                    ctx,
-                                    format_args!("VisibGeom:{native_surface}"),
-                                    "creo source object identity",
-                                )?,
-                                name: None,
-                                color: None,
-                                visible: None,
-                                layer: None,
-                                instance_path: Vec::new(),
-                            }),
-                        },
-                    )?;
-                    transferred += 1;
-                    Ok(std::ops::ControlFlow::Continue(()))
-                },
-            )?;
-        }
-        // discarded-value: this visitor continues after each saved entity.
-        let _ = visit_semantic_saved_section_entities::<()>(
-            ctx,
-            definition,
-            |entity| {
-                let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
-                    return Ok(std::ops::ControlFlow::Continue(()));
-                };
-                let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
-                    ctx.format_scoped(
-                        format_args!("{entity_id}"),
-                        "creo revolved spline identity suffix",
-                    )?
-                } else {
-                    ctx.format_scoped(
-                        format_args!("offset{}", spline.offset),
-                        "creo revolved spline identity suffix",
-                    )?
-                };
-                let curve_id = crate::identity::compose_checked::<CurveId>(
-                    ctx,
-                    &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
-                    format_args!("{}:{suffix}", definition.identity.id()),
-                    "creo revolved spline curve identity",
-                )?;
-                let mut matching_curve = None;
-                for curve in ctx.admit_iter(
-                    &ir.model.curves,
-                    "creo revolved spline directrix lookup",
-                )? {
-                    if !ctx.equal(
-                        &curve.id,
-                        &curve_id,
-                        "creo revolved spline curve identity comparison",
-                    )? {
-                        continue;
-                    }
-                    if matching_curve.is_some() {
-                        matching_curve = None;
-                        break;
-                    }
-                    matching_curve = Some(curve);
-                }
-                let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
-                    matching_curve.map(|curve| source_carriers.curve_geometry(curve))
+            let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+                let Some((internal_id, section_geometry, offset)) =
+                    saved_section_entity_geometry(ctx, entity)?
                 else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };
-                let directrix_knots = directrix
-                    .knots()
-                    .first()
-                    .zip(directrix.knots().last())
-                    .map(|(lower, upper)| [*lower, *upper]);
-                let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let surface = revolved_nurbs_surface(
-                    ctx,
-                    directrix,
-                    &axis,
-                    &format_args!(
-                        "feature {feature_id} saved spline at offset {}",
-                        spline.offset
-                    ),
-                    &mut refusal,
-                )?;
-                let refused = refusal.take_records_checked()?;
-                let Some(surface) = surface.filter(|_| refused.is_empty()) else {
-                    for record in ctx.admit_iter(&refused, "creo revolution lane refusals")? {
-                        push_revolution_surface_loss(
-                            ctx,
-                            losses,
-                            format_args!(
-                                "Feature {feature_id} states a revolved saved spline at offset {} \
-                                 that forms no surface carrier: {record}",
-                                spline.offset
-                            ),
-                        )?;
-                    }
+                let Some(external_id) = order.external_id(ctx, internal_id)? else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };
-                let external_id = match (definition.order_table.as_ref(), spline.entity_id) {
-                    (Some(order), Some(entity_id)) => order.external_id(ctx, entity_id)?,
-                    _ => None,
+                let Some(surface) = revolved_section_surface(transform, &section_geometry, &axis)
+                else {
+                    return Ok(std::ops::ControlFlow::Continue(()));
                 };
-                let native_surface = match external_id {
-                    Some(external_id) => ctx
-                        .get_btree_map(
-                            &spline_bindings,
-                            &external_id,
-                            "creo revolution spline binding lookup",
-                        )?
-                        .copied(),
-                    None => None,
-                };
-                let Some(native_surface) = native_surface else {
+                let Some(native_surface) = ordered_analytic_surface_id_for_feature(
+                    ctx,
+                    &scan.surfaces.rows,
+                    &scan.features.entity_tables,
+                    feature_id,
+                    order,
+                    external_id,
+                    &surface,
+                )?
+                else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };
                 let surface_id = crate::identity::compose_checked::<SurfaceId>(
@@ -549,18 +386,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     native_surface,
                     "creo revolution surface identity",
                 )?;
-                let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-                    ctx,
-                    &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
-                    format_args!("{feature_id}:{suffix}"),
-                    "creo revolution construction identity",
-                )?;
                 let mut surface_exists = false;
-                for item in ctx.admit_iter(&ir.model.surfaces, "creo saved spline surface lookup")? {
+                for item in
+                    ctx.admit_iter(&ir.model.surfaces, "creo saved revolution surface lookup")?
+                {
                     if ctx.equal(
                         &item.id,
                         &surface_id,
-                        "creo saved spline surface identity comparison",
+                        "creo saved revolution surface identity comparison",
                     )? {
                         surface_exists = true;
                         break;
@@ -574,17 +407,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     annotations,
                     &surface_id,
                     "FeatDefs",
-                    cadmpeg_core::decode::u64_from_index(spline.offset),
-                    "evaluated_revolution_surface",
-                    Exactness::Derived,
-                )?;
-                annotate(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "FeatDefs",
-                    cadmpeg_core::decode::u64_from_index(spline.offset),
-                    "revolution_surface_construction",
+                    cadmpeg_core::decode::u64_from_index(offset),
+                    "evaluated_saved_analytic_revolution_surface",
                     Exactness::Derived,
                 )?;
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
@@ -592,9 +416,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     ctx,
                     ir,
                     Surface {
-                        id: surface_id
-                            .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                        id: surface_id,
+                        geometry: surface,
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: crate::identity::source_object_id_checked(
@@ -610,42 +433,204 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         }),
                     },
                 )?;
-                source_carriers.admit_procedural_surface(
-                    ctx,
-                    ir,
-                    &surface_id,
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        curve_id,
-                        (
-                            axis.origin,
-                            revolution_unit_axis(ctx, feature_id, axis.direction)?,
-                        ),
-                        [0.0, std::f64::consts::TAU],
-                        None,
-                        directrix_parameter_range(
-                            ctx,
-                            spline.offset,
-                            directrix_knots
-                                .as_ref()
-                                .map_or(&[][..], |knots| knots.as_slice()),
-                        )?
-                        .into(),
-                        false,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
-                    )
-                    .map(|admitted_payload| {
-                        ProceduralSurface::new(
-                            procedural_id,
-                            ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                            None,
-                        )
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                )?;
                 transferred += 1;
                 Ok(std::ops::ControlFlow::Continue(()))
-            },
-        )?;
+            })?;
+        }
+        // discarded-value: this visitor continues after each saved entity.
+        let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+            let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+                ctx.format_scoped(
+                    format_args!("{entity_id}"),
+                    "creo revolved spline identity suffix",
+                )?
+            } else {
+                ctx.format_scoped(
+                    format_args!("offset{}", spline.offset),
+                    "creo revolved spline identity suffix",
+                )?
+            };
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx,
+                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                format_args!("{}:{suffix}", definition.identity.id()),
+                "creo revolved spline curve identity",
+            )?;
+            let mut matching_curve = None;
+            for curve in
+                ctx.admit_iter(&ir.model.curves, "creo revolved spline directrix lookup")?
+            {
+                if !ctx.equal(
+                    &curve.id,
+                    &curve_id,
+                    "creo revolved spline curve identity comparison",
+                )? {
+                    continue;
+                }
+                if matching_curve.is_some() {
+                    matching_curve = None;
+                    break;
+                }
+                matching_curve = Some(curve);
+            }
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
+                matching_curve.map(|curve| source_carriers.curve_geometry(curve))
+            else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let directrix_knots = directrix
+                .knots()
+                .first()
+                .zip(directrix.knots().last())
+                .map(|(lower, upper)| [*lower, *upper]);
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
+            let surface = revolved_nurbs_surface(
+                ctx,
+                directrix,
+                &axis,
+                &format_args!(
+                    "feature {feature_id} saved spline at offset {}",
+                    spline.offset
+                ),
+                &mut refusal,
+            )?;
+            let refused = refusal.take_records_checked()?;
+            let Some(surface) = surface.filter(|_| refused.is_empty()) else {
+                for record in ctx.admit_iter(&refused, "creo revolution lane refusals")? {
+                    push_revolution_surface_loss(
+                        ctx,
+                        losses,
+                        format_args!(
+                            "Feature {feature_id} states a revolved saved spline at offset {} \
+                                 that forms no surface carrier: {record}",
+                            spline.offset
+                        ),
+                    )?;
+                }
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let external_id = match (definition.order_table.as_ref(), spline.entity_id) {
+                (Some(order), Some(entity_id)) => order.external_id(ctx, entity_id)?,
+                _ => None,
+            };
+            let native_surface = match external_id {
+                Some(external_id) => ctx
+                    .get_btree_map(
+                        &spline_bindings,
+                        &external_id,
+                        "creo revolution spline binding lookup",
+                    )?
+                    .copied(),
+                None => None,
+            };
+            let Some(native_surface) = native_surface else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let surface_id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                native_surface,
+                "creo revolution surface identity",
+            )?;
+            let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+                ctx,
+                &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
+                format_args!("{feature_id}:{suffix}"),
+                "creo revolution construction identity",
+            )?;
+            let mut surface_exists = false;
+            for item in ctx.admit_iter(&ir.model.surfaces, "creo saved spline surface lookup")? {
+                if ctx.equal(
+                    &item.id,
+                    &surface_id,
+                    "creo saved spline surface identity comparison",
+                )? {
+                    surface_exists = true;
+                    break;
+                }
+            }
+            if surface_exists {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            }
+            annotate(
+                ctx,
+                annotations,
+                &surface_id,
+                "FeatDefs",
+                cadmpeg_core::decode::u64_from_index(spline.offset),
+                "evaluated_revolution_surface",
+                Exactness::Derived,
+            )?;
+            annotate(
+                ctx,
+                annotations,
+                &procedural_id,
+                "FeatDefs",
+                cadmpeg_core::decode::u64_from_index(spline.offset),
+                "revolution_surface_construction",
+                Exactness::Derived,
+            )?;
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
+            source_carriers.admit_surface(
+                ctx,
+                ir,
+                Surface {
+                    id: surface_id
+                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: crate::identity::source_object_id_checked(
+                            ctx,
+                            format_args!("VisibGeom:{native_surface}"),
+                            "creo source object identity",
+                        )?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
+            source_carriers.admit_procedural_surface(
+                ctx,
+                ir,
+                &surface_id,
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    curve_id,
+                    (
+                        axis.origin,
+                        revolution_unit_axis(ctx, feature_id, axis.direction)?,
+                    ),
+                    [0.0, std::f64::consts::TAU],
+                    None,
+                    directrix_parameter_range(
+                        ctx,
+                        spline.offset,
+                        directrix_knots
+                            .as_ref()
+                            .map_or(&[][..], |knots| knots.as_slice()),
+                    )?
+                    .into(),
+                    false,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                )
+                .map(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        None,
+                    )
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )?;
+            transferred += 1;
+            Ok(std::ops::ControlFlow::Continue(()))
+        })?;
     }
     Ok(transferred)
 }
@@ -705,11 +690,12 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         };
         let profiles = connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?;
-        for (profile_index, vertices) in ctx
-            .admit_iter(&profiles, "creo revolution profile rows")?
+        for (profile_index, vertices) in
+            ctx.admit_iter(&profiles, "creo revolution profile rows")?
         {
-            for (vertex_index, point) in
-                ctx.admit_iter(vertices, "creo revolution profile vertices")?.enumerate()
+            for (vertex_index, point) in ctx
+                .admit_iter(vertices, "creo revolution profile vertices")?
+                .enumerate()
             {
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
@@ -825,11 +811,10 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         };
         let profiles = connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?;
-        for (profile_index, vertices) in ctx
-            .admit_iter(&profiles, "creo extrusion profile rows")?
-        {
-            for (vertex_index, point) in
-                ctx.admit_iter(vertices, "creo extrusion profile vertices")?.enumerate()
+        for (profile_index, vertices) in ctx.admit_iter(&profiles, "creo extrusion profile rows")? {
+            for (vertex_index, point) in ctx
+                .admit_iter(vertices, "creo extrusion profile vertices")?
+                .enumerate()
             {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;

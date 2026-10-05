@@ -211,7 +211,10 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
     scan: &ContainerScan,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo planned dimension definitions")? {
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo planned dimension definitions",
+    )? {
         let Some(table) = &definition.dimensions else {
             continue;
         };
@@ -394,7 +397,10 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
     }
     let mut candidates = Vec::new();
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo dimension source definitions")? {
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo dimension source definitions",
+    )? {
         let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
@@ -402,18 +408,15 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        if !ctx.contains_btree_set(
-            &feature_ids,
-            &owner,
-            "creo dimension owner lookup",
-        )? {
+        if !ctx.contains_btree_set(&feature_ids, &owner, "creo dimension owner lookup")? {
             continue;
         }
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for (source_ordinal, dimension) in
-            ctx.admit_iter(&table.rows, "creo source dimension rows")?.enumerate()
+        for (source_ordinal, dimension) in ctx
+            .admit_iter(&table.rows, "creo source dimension rows")?
+            .enumerate()
         {
             ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")?;
             candidates.push((
@@ -432,7 +435,9 @@ pub(in super::super) fn transfer_feature_dimensions(
     )?;
     let mut keys = Vec::new();
     ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")?;
-    for (sketch, _, _, dimension) in ctx.admit_iter(&candidates, "creo dimension layout candidates")? {
+    for (sketch, _, _, dimension) in
+        ctx.admit_iter(&candidates, "creo dimension layout candidates")?
+    {
         keys.push((
             sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
             dimension.external_id,
@@ -598,11 +603,8 @@ pub(in super::super) fn transfer_feature_dimensions(
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties: {
-                    let properties = cadmpeg_core::text::named_entries_for_decode(
-                        ctx,
-                        id.as_str(),
-                        properties,
-                    )?;
+                    let properties =
+                        cadmpeg_core::text::named_entries_for_decode(ctx, id.as_str(), properties)?;
                     drop(property_nodes);
                     properties
                 },
@@ -611,8 +613,9 @@ pub(in super::super) fn transfer_feature_dimensions(
             },
         )?;
         let mut owner_index = None;
-        for (index, feature) in
-            ctx.admit_iter(&ir.model.features, "creo dimension owner feature lookup")?.enumerate()
+        for (index, feature) in ctx
+            .admit_iter(&ir.model.features, "creo dimension owner feature lookup")?
+            .enumerate()
         {
             if !ctx.equal(
                 &feature.id,

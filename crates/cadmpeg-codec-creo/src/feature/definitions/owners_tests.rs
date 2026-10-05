@@ -1489,45 +1489,61 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
 #[test]
 fn definition_identity_utf8_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::definition_starts(ctx, b"feat_defs_1\0"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn depdb_section_identity_utf8_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn depdb_definition_identity_utf8_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn definition_offset_retain_refuses_work() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo definition offset retain",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo definition offset retain",
         |ctx| super::definitions(ctx, b"feat_defs_1\0"),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo definition offset retain"));
+            && resource.operation == "creo definition offset retain")
+    );
 }
 
 #[test]
@@ -1535,10 +1551,14 @@ fn replay_definition_retain_refuses_work() {
     let payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
         \xe0\x00ref_model_info\0\xe3S2D0004\0owned\xe3S2D0004\0pending";
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo replay definition retain",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo replay definition retain",
         |ctx| super::positional_replay_definitions(ctx, payload),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo replay definition retain"));
+            && resource.operation == "creo replay definition retain")
+    );
 }

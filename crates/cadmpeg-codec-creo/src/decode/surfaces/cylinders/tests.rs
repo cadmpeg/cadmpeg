@@ -1383,25 +1383,27 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
 
 #[test]
 fn round_edge_support_frame_selects_one_offset_line() {
-    let frame = crate::decode::with_test_decode_ctx(|ctx| super::round_edge_cylinder_frame(
-        ctx,
-        crate::surface::Type24RoundEdgeEnvelope {
-            parameter_interval: [0.25, 5.25],
-            vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
-            generated_entity_reference: None,
-        },
-        0.2,
-        &[
-            PlaneEquation {
-                origin: [1.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
+    let frame = crate::decode::with_test_decode_ctx(|ctx| {
+        super::round_edge_cylinder_frame(
+            ctx,
+            crate::surface::Type24RoundEdgeEnvelope {
+                parameter_interval: [0.25, 5.25],
+                vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
+                generated_entity_reference: None,
             },
-            PlaneEquation {
-                origin: [0.0, 0.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-    ))
+            0.2,
+            &[
+                PlaneEquation {
+                    origin: [1.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+        )
+    })
     .expect("service round-edge frame search admitted")
     .expect("one offset round-edge cylinder");
 
@@ -1414,24 +1416,26 @@ fn round_edge_support_frame_selects_one_offset_line() {
 
 #[test]
 fn perpendicular_round_edge_supports_solve_their_radius() {
-    let frame = crate::decode::with_test_decode_ctx(|ctx| super::perpendicular_round_edge_cylinder_frame(
-        ctx,
-        crate::surface::Type24RoundEdgeEnvelope {
-            parameter_interval: [0.25, 5.25],
-            vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
-            generated_entity_reference: None,
-        },
-        &[
-            PlaneEquation {
-                origin: [1.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
+    let frame = crate::decode::with_test_decode_ctx(|ctx| {
+        super::perpendicular_round_edge_cylinder_frame(
+            ctx,
+            crate::surface::Type24RoundEdgeEnvelope {
+                parameter_interval: [0.25, 5.25],
+                vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
+                generated_entity_reference: None,
             },
-            PlaneEquation {
-                origin: [0.0, 0.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-    ))
+            &[
+                PlaneEquation {
+                    origin: [1.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+        )
+    })
     .expect("service perpendicular round-edge frame search admitted")
     .expect("one endpoint-solved perpendicular round cylinder");
 
@@ -1448,27 +1452,29 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
 
 #[test]
 fn round_edge_support_frame_rejects_parallel_supports() {
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::round_edge_cylinder_frame(
-        ctx,
-        crate::surface::Type24RoundEdgeEnvelope {
-            parameter_interval: [0.0, 1.0],
-            vertices: [[1.0, 0.2, 0.0], [1.0, 0.0, 1.0]],
-            generated_entity_reference: Some(17),
-        },
-        0.2,
-        &[
-            PlaneEquation {
-                origin: [1.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_edge_cylinder_frame(
+            ctx,
+            crate::surface::Type24RoundEdgeEnvelope {
+                parameter_interval: [0.0, 1.0],
+                vertices: [[1.0, 0.2, 0.0], [1.0, 0.0, 1.0]],
+                generated_entity_reference: Some(17),
             },
-            PlaneEquation {
-                origin: [2.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-        ],
-    ))
-    .expect("service parallel round-edge frame search admitted")
-    .is_none());
+            0.2,
+            &[
+                PlaneEquation {
+                    origin: [1.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [2.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+            ],
+        ))
+        .expect("service parallel round-edge frame search admitted")
+        .is_none()
+    );
 }
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
@@ -1941,8 +1947,13 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     let duplicate_first = circle(369, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::reference_cap_bound_round_frame(ctx,envelope, &[&first, &second, &duplicate_first],)).expect("admitted reference cap circles")
-            .is_none()
+        crate::decode::with_test_decode_ctx(|ctx| super::reference_cap_bound_round_frame(
+            ctx,
+            envelope,
+            &[&first, &second, &duplicate_first],
+        ))
+        .expect("admitted reference cap circles")
+        .is_none()
     );
 }
 

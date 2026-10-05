@@ -4,9 +4,9 @@
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
-use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -302,10 +302,8 @@ pub(in super::super) fn unique_feature_revolution_extent<'records>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &'records [crate::feature::rows::FeatureRevolutionExtent],
     feature_id: u32,
-) -> Result<
-    Option<&'records crate::feature::rows::FeatureRevolutionExtent>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Option<&'records crate::feature::rows::FeatureRevolutionExtent>, cadmpeg_core::CodecError>
+{
     Ok(ctx
         .admit_iter(records, "creo feature revolution extent rows")?
         .find(|record| record.feature_id == feature_id))

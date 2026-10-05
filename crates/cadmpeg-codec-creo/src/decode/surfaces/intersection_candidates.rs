@@ -443,7 +443,10 @@ pub(in super::super) fn coaxial_cones_section_candidates(
             continue;
         }
         let duplicate = ctx
-            .admit_iter(&*parameters, "creo coaxial cone section parameter candidates")?
+            .admit_iter(
+                &*parameters,
+                "creo coaxial cone section parameter candidates",
+            )?
             .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
         if !duplicate {
             parameters.push(parameter);
@@ -1029,7 +1032,10 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         _ => return Ok(FixedCandidates::default()),
     };
     Ok(ctx
-        .admit_iter(&*intersections, "creo coaxial sphere torus output candidates")?
+        .admit_iter(
+            &*intersections,
+            "creo coaxial sphere torus output candidates",
+        )?
         .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();

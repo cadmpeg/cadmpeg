@@ -83,18 +83,21 @@ fn valid_parameter_polygon_refusal_at(operation: &'static str) -> cadmpeg_core::
 
 #[test]
 fn valid_parameter_polygon_refuses_finite_coordinate_child_scan() {
-    let error = valid_parameter_polygon_refusal_at(
-        "creo parameter polygon point finite-coordinate scan",
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error =
+        valid_parameter_polygon_refusal_at("creo parameter polygon point finite-coordinate scan");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo parameter polygon point finite-coordinate scan"));
+            && resource.operation == "creo parameter polygon point finite-coordinate scan")
+    );
 }
 
 #[test]
 fn valid_parameter_polygon_refuses_point_scale_scan() {
     let error = valid_parameter_polygon_refusal_at("creo parameter polygon point scale");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo parameter polygon point scale"));
+            && resource.operation == "creo parameter polygon point scale")
+    );
 }

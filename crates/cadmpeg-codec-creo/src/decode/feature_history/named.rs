@@ -239,7 +239,7 @@ pub(super) fn extrude_feature_definition_with_profile(
             "creo unresolved named profile identity",
         )?,
     };
-        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
+    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
     } else {
@@ -289,7 +289,7 @@ fn revolve_feature_definition_with_profile(
     op: BooleanOp,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(ctx, scan, feature_id)?;
-        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
+    let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
     let profile =
         unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
             ProfileRef::Planar(planar) => Some(planar),
@@ -370,9 +370,7 @@ fn surface_intersect_feature_definition(
         return Ok(None);
     }
     let mut eligible_table = None;
-    for table in ctx
-        .admit_iter(&scan.features.entity_tables, "creo intersect entity tables")?
-    {
+    for table in ctx.admit_iter(&scan.features.entity_tables, "creo intersect entity tables")? {
         if table.feature_id != feature_id || table.table_class_id != 29 {
             continue;
         }

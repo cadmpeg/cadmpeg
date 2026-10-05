@@ -388,26 +388,30 @@ mod tests {
     #[test]
     fn numbered_identity_match_requires_canonical_decimal_bytes() {
         let prefix = "creo:visibgeom:surface#";
-        assert!(matches_numbered_identity("creo:visibgeom:surface#0",
+        assert!(matches_numbered_identity(
+            "creo:visibgeom:surface#0",
             prefix,
             0
         ));
-        assert!(matches_numbered_identity("creo:visibgeom:surface#4294967295",
+        assert!(matches_numbered_identity(
+            "creo:visibgeom:surface#4294967295",
             prefix,
             u32::MAX
         ));
-        assert!(!matches_numbered_identity("creo:visibgeom:surface#01",
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:surface#01",
             prefix,
             1
         ));
-        assert!(!matches_numbered_identity("creo:visibgeom:surface#+1",
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:surface#+1",
             prefix,
             1
         ));
-        assert!(!matches_numbered_identity("creo:visibgeom:face#1",
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:face#1",
             prefix,
             1
         ));
     }
-
 }

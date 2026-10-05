@@ -393,7 +393,8 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_cylinder_sphere_circle",
             ))
-        })()),
+        })(
+        )),
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => Ok((|| {
             let cylinder_axis = normalize(cylinder.axis)?;
@@ -637,17 +638,41 @@ mod tests {
     fn audit_regression_small_disjoint_carriers_have_no_tangent() {
         let radius = 1e-10;
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cylinder(0., radius), cylinder(5. * radius, radius))).expect("service carrier intersection admitted")
-                .is_none()
+            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(
+                ctx,
+                cylinder(0., radius),
+                cylinder(5. * radius, radius)
+            ))
+            .expect("service carrier intersection admitted")
+            .is_none()
         );
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cylinder(0., radius), cylinder(2. * radius, radius))).expect("service carrier intersection admitted")
-                .is_some()
+            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(
+                ctx,
+                cylinder(0., radius),
+                cylinder(2. * radius, radius)
+            ))
+            .expect("service carrier intersection admitted")
+            .is_some()
         );
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cylinder(0., 2. * radius), sphere(0., radius))).expect("service carrier intersection admitted").is_none()
+            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(
+                ctx,
+                cylinder(0., 2. * radius),
+                sphere(0., radius)
+            ))
+            .expect("service carrier intersection admitted")
+            .is_none()
         );
-        assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cylinder(0., radius), sphere(0., radius))).expect("service carrier intersection admitted").is_some());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(
+                ctx,
+                cylinder(0., radius),
+                sphere(0., radius)
+            ))
+            .expect("service carrier intersection admitted")
+            .is_some()
+        );
     }
     #[test]
     fn audit_regression_spherical_sections_keep_their_relative_radius() {
@@ -656,15 +681,20 @@ mod tests {
                 origin: [0., 0., 0.],
                 normal: [0., 0., 1.],
             });
-            let (section, _) = crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, plane, sphere(0., radius))).expect("service carrier intersection admitted")
-                .expect("nondegenerate plane section");
+            let (section, _) = crate::decode::with_test_decode_ctx(|ctx| {
+                carrier_intersection_curve(ctx, plane, sphere(0., radius))
+            })
+            .expect("service carrier intersection admitted")
+            .expect("nondegenerate plane section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };
             assert_eq!(circle.radius().get(), radius);
-            let (section, _) =
-                crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, sphere(0., radius), sphere(radius, radius))).expect("service carrier intersection admitted")
-                    .expect("nondegenerate sphere section");
+            let (section, _) = crate::decode::with_test_decode_ctx(|ctx| {
+                carrier_intersection_curve(ctx, sphere(0., radius), sphere(radius, radius))
+            })
+            .expect("service carrier intersection admitted")
+            .expect("nondegenerate sphere section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };

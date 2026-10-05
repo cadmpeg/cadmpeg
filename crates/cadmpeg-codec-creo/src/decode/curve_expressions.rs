@@ -349,7 +349,11 @@ fn curve_expression_assignment_indices(
         };
         let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        match ctx.entry_btree_map(&mut by_name, key, "creo curve-expression assignment indices")? {
+        match ctx.entry_btree_map(
+            &mut by_name,
+            key,
+            "creo curve-expression assignment indices",
+        )? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(Some(ordinal));
             }

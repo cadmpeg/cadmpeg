@@ -146,11 +146,7 @@ fn closed_component_lookup_fixture() -> (
             },
         ),
     ]);
-    (
-        BTreeSet::from([7]),
-        BTreeSet::from([first, second]),
-        edges,
-    )
+    (BTreeSet::from([7]), BTreeSet::from([first, second]), edges)
 }
 
 #[test]
@@ -163,9 +159,8 @@ fn closed_component_face_membership_refuses_work_and_preserves_service_result() 
         .map(|(id, edge)| (*id, edge))
         .collect::<BTreeMap<_, _>>();
     let faces = [5];
-    let closed = crate::test_support::assert_work_boundaries(
-        &[FIRST_LOOKUP, SECOND_LOOKUP],
-        |ctx| {
+    let closed =
+        crate::test_support::assert_work_boundaries(&[FIRST_LOOKUP, SECOND_LOOKUP], |ctx| {
             super::super::component_is_closed(
                 ctx,
                 &component_face_curves,
@@ -173,8 +168,7 @@ fn closed_component_face_membership_refuses_work_and_preserves_service_result() 
                 &half_edges,
                 &faces,
             )
-        },
-    );
+        });
     assert!(closed);
 }
 

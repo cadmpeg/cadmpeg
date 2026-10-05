@@ -19,7 +19,10 @@ pub(in super::super) fn link_feature_sketch_history(
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
-    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo linked section transforms")? {
+    for transform in ctx.admit_iter(
+        &scan.features.section_transforms,
+        "creo linked section transforms",
+    )? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -58,9 +61,11 @@ pub(in super::super) fn link_feature_sketch_history(
         let Some(owner_index) = unique_model_feature_index(ctx, ir, &owner)? else {
             continue;
         };
-        ir.model.features[owner_index]
-            .dependencies
-            .insert(ctx, sketch_feature, "creo sketch history dependencies")?;
+        ir.model.features[owner_index].dependencies.insert(
+            ctx,
+            sketch_feature,
+            "creo sketch history dependencies",
+        )?;
     }
     Ok(())
 }
@@ -71,8 +76,9 @@ fn unique_model_feature_index(
     feature_id: &IrFeatureId,
 ) -> Result<Option<usize>, CodecError> {
     let mut matching_index = None;
-    for (index, feature) in
-        ctx.admit_iter(&ir.model.features, "creo linked model feature lookup")?.enumerate()
+    for (index, feature) in ctx
+        .admit_iter(&ir.model.features, "creo linked model feature lookup")?
+        .enumerate()
     {
         if !ctx.equal(
             &feature.id,
@@ -151,7 +157,10 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
         };
         return Ok(row.feature_id == feature_id
             && ctx
-                .admit_iter(expected_kinds, "creo generated profile expected surface kinds")?
+                .admit_iter(
+                    expected_kinds,
+                    "creo generated profile expected surface kinds",
+                )?
                 .any(|kind| kind.same_family(row.kind)));
     }
     if !table.contains_non_surface_entity_id(entry.entity_id)
@@ -171,7 +180,10 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
         };
         if row.feature_id == feature_id
             && ctx
-                .admit_iter(expected_kinds, "creo generated profile expected surface kinds")?
+                .admit_iter(
+                    expected_kinds,
+                    "creo generated profile expected surface kinds",
+                )?
                 .any(|kind| kind.same_family(row.kind))
         {
             return Ok(true);
@@ -195,12 +207,16 @@ pub(in super::super) fn section_entity_is_generated_profile(
     let Some(feature_id) = feature_id else {
         return Ok(false);
     };
-    let direct = match generated_surface_id_for_feature(ctx, tables, feature_id, source_entity_id)? {
+    let direct = match generated_surface_id_for_feature(ctx, tables, feature_id, source_entity_id)?
+    {
         Some(surface_id) => match crate::surface::unique_surface_row(rows, surface_id) {
             Some(row) => {
                 row.feature_id == feature_id
                     && ctx
-                        .admit_iter(expected_kinds, "creo direct generated profile surface kinds")?
+                        .admit_iter(
+                            expected_kinds,
+                            "creo direct generated profile surface kinds",
+                        )?
                         .any(|kind| kind.same_family(row.kind))
             }
             None => false,
@@ -222,14 +238,17 @@ pub(in super::super) fn section_entity_is_generated_profile(
             continue;
         };
         if !table.contains_surface_id(entry.entity_id)
-            && generated_profile_entry_is_admissible(ctx, feature_id, table, entry, expected_kinds, rows)?
+            && generated_profile_entry_is_admissible(
+                ctx,
+                feature_id,
+                table,
+                entry,
+                expected_kinds,
+                rows,
+            )?
         {
             rowless_matches = rowless_matches.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "creo rowless generated profile matches",
-                    u64::MAX,
-                    u64::MAX,
-                )
+                ctx.refuse_codec_limit("creo rowless generated profile matches", u64::MAX, u64::MAX)
             })?;
         }
     }
@@ -251,10 +270,9 @@ pub(in super::super) fn section_entity_is_generated_profile(
         let [rowless_cap, cap, profile, cylinder] = table.entries.as_slice() else {
             continue;
         };
-        let row_matches = crate::surface::unique_surface_row(rows, cylinder.entity_id)
-            .is_some_and(|row| {
-                row.feature_id == feature_id
-                    && row.kind == crate::surface::SurfaceKind::Cylinder
+        let row_matches =
+            crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
             });
         let is_candidate = [
             rowless_cap.class_id(),
@@ -301,7 +319,10 @@ fn generated_profile_table_shape(
         .enumerate()
     {
         if ctx
-            .admit_iter(&table.entries[..index], "creo generated profile prior entry IDs")?
+            .admit_iter(
+                &table.entries[..index],
+                "creo generated profile prior entry IDs",
+            )?
             .any(|prior| prior.entity_id == entry.entity_id)
         {
             return Ok(false);
@@ -349,8 +370,7 @@ pub(in super::super) fn analytic_surface_id_for_feature(
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<u32>, CodecError> {
-    let Some(surface_id) =
-        generated_surface_id_for_feature(ctx, tables, feature_id, external_id)?
+    let Some(surface_id) = generated_surface_id_for_feature(ctx, tables, feature_id, external_id)?
     else {
         return Ok(None);
     };
@@ -441,22 +461,22 @@ pub(in super::super) fn profile_segment_ids(
         let mut matches = false;
         'profiles: for profile in ctx.admit_iter(profiles, "creo sketch profiles")? {
             for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
-            let Some(suffix) = entity_use
-                .entity
-                .as_str()
-                .strip_prefix("creo:featdefs:sketch_entity#")
-            else {
-                continue;
-            };
-            let Some((scope, external)) = suffix.split_once(':') else {
-                continue;
-            };
-            if crate::identity::matches_numbered_identity(scope, "", definition_id)
-                && crate::identity::matches_numbered_identity(external, "", segment.external_id)
-            {
-                matches = true;
-                break 'profiles;
-            }
+                let Some(suffix) = entity_use
+                    .entity
+                    .as_str()
+                    .strip_prefix("creo:featdefs:sketch_entity#")
+                else {
+                    continue;
+                };
+                let Some((scope, external)) = suffix.split_once(':') else {
+                    continue;
+                };
+                if crate::identity::matches_numbered_identity(scope, "", definition_id)
+                    && crate::identity::matches_numbered_identity(external, "", segment.external_id)
+                {
+                    matches = true;
+                    break 'profiles;
+                }
             }
         }
         if matches {
