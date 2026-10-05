@@ -3621,20 +3621,22 @@ pub(super) fn parasolid_attribute_field_names(
         "NX attribute field list index",
     )?;
     let (names_by_xmt, _names_storage) = ctx.unique_index(
-        strings
-            .iter()
+        ctx.admit_iter(strings, "NX attribute field name index")?
             .map(|string| {
                 (
                     (string.stream_ordinal, u32::from(string.xmt)),
                     (string.id.as_str(), string.value.as_str()),
                 )
             })
-            .chain(unicode.iter().map(|value| {
-                (
-                    (value.stream_ordinal, u32::from(value.xmt)),
-                    (value.id.as_str(), value.value.as_str()),
-                )
-            })),
+            .chain(
+                ctx.admit_iter(unicode, "NX attribute field name index")?
+                    .map(|value| {
+                        (
+                            (value.stream_ordinal, u32::from(value.xmt)),
+                            (value.id.as_str(), value.value.as_str()),
+                        )
+                    }),
+            ),
         "NX attribute field name index",
     )?;
     let mut relations = Vec::new();
@@ -4292,8 +4294,7 @@ pub(super) fn parasolid_entity_51_numeric_uses(
     doubles: &[ParasolidEntity53DoubleRecord],
 ) -> Result<Vec<ParasolidEntity51NumericUse>, CodecError> {
     let (values, _values_storage) = ctx.unique_index(
-        integers
-            .iter()
+        ctx.admit_iter(integers, "NX entity 51 value identity index")?
             .map(|record| {
                 (
                     (record.stream_ordinal, u32::from(record.xmt)),
@@ -4304,16 +4305,19 @@ pub(super) fn parasolid_entity_51_numeric_uses(
                     ),
                 )
             })
-            .chain(doubles.iter().map(|record| {
-                (
-                    (record.stream_ordinal, u32::from(record.xmt)),
-                    (
-                        ParasolidEntity51NumericKind::Doubles,
-                        record.xmt,
-                        record.id.as_str(),
-                    ),
-                )
-            })),
+            .chain(
+                ctx.admit_iter(doubles, "NX entity 51 value identity index")?
+                    .map(|record| {
+                        (
+                            (record.stream_ordinal, u32::from(record.xmt)),
+                            (
+                                ParasolidEntity51NumericKind::Doubles,
+                                record.xmt,
+                                record.id.as_str(),
+                            ),
+                        )
+                    }),
+            ),
         "NX entity 51 value identity index",
     )?;
     let mut uses = Vec::new();
@@ -4413,8 +4417,7 @@ pub(super) fn parasolid_entity_51_structured_uses(
         ((stream_ordinal, u32::from(xmt)), (kind, xmt, id))
     }
     let (values, _values_storage) = ctx.unique_index(
-        vectors
-            .iter()
+        ctx.admit_iter(vectors, "NX entity 51 value identity index")?
             .map(|record| {
                 let kind = match record.kind {
                     ParasolidVectorValueKind::Points => StructuredValueKind::Points,
@@ -4423,30 +4426,39 @@ pub(super) fn parasolid_entity_51_structured_uses(
                 };
                 structured(kind, record.stream_ordinal, record.xmt, record.id.as_str())
             })
-            .chain(axes.iter().map(|record| {
-                structured(
-                    StructuredValueKind::Axes,
-                    record.stream_ordinal,
-                    record.xmt,
-                    record.id.as_str(),
-                )
-            }))
-            .chain(tags.iter().map(|record| {
-                structured(
-                    StructuredValueKind::Tags,
-                    record.stream_ordinal,
-                    record.xmt,
-                    record.id.as_str(),
-                )
-            }))
-            .chain(unicode.iter().map(|record| {
-                structured(
-                    StructuredValueKind::Unicode,
-                    record.stream_ordinal,
-                    record.xmt,
-                    record.id.as_str(),
-                )
-            })),
+            .chain(
+                ctx.admit_iter(axes, "NX entity 51 value identity index")?
+                    .map(|record| {
+                        structured(
+                            StructuredValueKind::Axes,
+                            record.stream_ordinal,
+                            record.xmt,
+                            record.id.as_str(),
+                        )
+                    }),
+            )
+            .chain(
+                ctx.admit_iter(tags, "NX entity 51 value identity index")?
+                    .map(|record| {
+                        structured(
+                            StructuredValueKind::Tags,
+                            record.stream_ordinal,
+                            record.xmt,
+                            record.id.as_str(),
+                        )
+                    }),
+            )
+            .chain(
+                ctx.admit_iter(unicode, "NX entity 51 value identity index")?
+                    .map(|record| {
+                        structured(
+                            StructuredValueKind::Unicode,
+                            record.stream_ordinal,
+                            record.xmt,
+                            record.id.as_str(),
+                        )
+                    }),
+            ),
         "NX entity 51 value identity index",
     )?;
     let mut uses = Vec::new();
