@@ -771,6 +771,40 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
 }
 
 #[test]
+fn operation_header_identity_walk_reaches_key_counting_and_assignment() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for operation in [
+        "count NX operation header keys",
+        "assign NX operation header identities",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let (table, _storage) = ctx.unique_index(
+                    [(55, Some("block-55".to_string()))],
+                    "test block identities",
+                )?;
+                let mut labels = vec![
+                    label(0, [Some(55), None, None, None]),
+                    label(1, [Some(55), None, None, None]),
+                    label(2, [None; 4]),
+                ];
+                assign_operation_header_identities(ctx, &mut labels, &table)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn operation_body_write_retains_identity_group_and_image() {
     let body_writes = vec![
         0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff, 0x01, 0x02,
