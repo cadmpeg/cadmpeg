@@ -599,9 +599,11 @@ fn hole_cylinder_transfer_refuses_simple_rows_traversal() {
             )
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo simple hole cylinder rows traversal"));
+            && resource.operation == "creo simple hole cylinder rows traversal")
+    );
 }
 
 #[test]
@@ -616,9 +618,10 @@ fn hole_cylinder_transfer_refuses_counterbore_patch_rows_traversal() {
             policy.limits.max_work_units = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-            ir.model
-                .surfaces
-                .extend([super::model_cylinder(1, 60.0), super::model_cylinder(2, 60.0)]);
+            ir.model.surfaces.extend([
+                super::model_cylinder(1, 60.0),
+                super::model_cylinder(2, 60.0),
+            ]);
             super::super::transfer_hole_cylinders(
                 &ctx,
                 &scan,
@@ -628,7 +631,9 @@ fn hole_cylinder_transfer_refuses_counterbore_patch_rows_traversal() {
             )
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo counterbore patch cylinder rows traversal"));
+            && resource.operation == "creo counterbore patch cylinder rows traversal")
+    );
 }

@@ -738,22 +738,30 @@ fn loop_history_result_refuses_before_vec_growth() {
 fn choice_label_utf8_refuses_work() {
     let row = row();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }
 
 #[test]
 fn choice_field_utf8_refuses_work() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
         |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation"));
+            && resource.operation == "creo UTF-8 validation")
+    );
 }

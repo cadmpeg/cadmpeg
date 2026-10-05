@@ -82,7 +82,10 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut ids = Vec::new();
     let mut seen = BTreeSet::new();
-    for (table_index, table) in ctx.admit_iter(tables, "creo knit entity tables")?.enumerate() {
+    for (table_index, table) in ctx
+        .admit_iter(tables, "creo knit entity tables")?
+        .enumerate()
+    {
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
@@ -100,8 +103,9 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             )?;
             let consumer_position = (table.offset, entry.offset, table_index, entry_index);
             let mut producer = None;
-            for (source_index, source_table) in
-                ctx.admit_iter(tables, "creo knit source tables")?.enumerate()
+            for (source_index, source_table) in ctx
+                .admit_iter(tables, "creo knit source tables")?
+                .enumerate()
             {
                 if source_table.feature_id == feature_id {
                     continue;
@@ -181,7 +185,8 @@ pub(in super::super) fn knit_operand_surface_ids(
         &scan.features.surface_merge_replay_affected_ids,
         feature_id,
         quilt_ids,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let mut surface_ids = Vec::new();
@@ -398,69 +403,72 @@ pub(in super::super) fn feature_surface_transitions(
             .admit_iter(&output_table.entries, "creo transition output entries")?
             .filter(|entry| entry.class_id() == 210)
         {
-        let Some(intermediate_id) = output.related_entity_id() else {
-            return Ok(None);
-        };
-        if output.related_entity_state() != Some(0)
-            || ctx
-                .admit_iter(&output_table.entries, "creo transition surface entries")?
-                .filter(|entry| output_table.contains_surface_id(entry.entity_id))
-                .map(|entry| entry.entity_id)
-                .filter(|surface_id| *surface_id == output.entity_id)
-                .count()
-                != 1
-            || crate::surface::unique_surface_row(surface_rows, output.entity_id)
-                .is_none_or(|row| row.feature_id != feature_id)
-            || output_ids.contains(&output.entity_id)
-            || intermediate_ids.contains(&intermediate_id)
-        {
-            return Ok(None);
-        }
-        local_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut output_ids,
-                output.entity_id,
-                "creo transition output identity nodes",
-            )
-        })?;
-        local_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut intermediate_ids,
-                intermediate_id,
-                "creo transition intermediate identity nodes",
-            )
-        })?;
-        let mut matches = ctx.admit_iter(&output_table.entries, "creo transition predecessor entries")?.filter(|predecessor| {
-            predecessor.class_id() == 214
-                && predecessor.entity_id == intermediate_id
-                && predecessor.related_entity_state() == Some(0)
-                && output_table.contains_non_surface_entity_id(predecessor.entity_id)
-                && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
-        });
-        let Some(predecessor) = matches.next() else {
-            return Ok(None);
-        };
-        if matches.next().is_some() {
-            return Ok(None);
-        }
-        let Some(source_id) = predecessor.related_entity_id() else {
-            return Ok(None);
-        };
-        if crate::surface::unique_surface_row(surface_rows, source_id)
-            .is_none_or(|row| row.feature_id == feature_id)
-            || source_ids.contains(&source_id)
-        {
-            return Ok(None);
-        }
-        local_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut source_ids,
-                source_id,
-                "creo transition source identity nodes",
-            )
-        })?;
-        ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
-        transitions.push((source_id, output.entity_id));
+            let Some(intermediate_id) = output.related_entity_id() else {
+                return Ok(None);
+            };
+            if output.related_entity_state() != Some(0)
+                || ctx
+                    .admit_iter(&output_table.entries, "creo transition surface entries")?
+                    .filter(|entry| output_table.contains_surface_id(entry.entity_id))
+                    .map(|entry| entry.entity_id)
+                    .filter(|surface_id| *surface_id == output.entity_id)
+                    .count()
+                    != 1
+                || crate::surface::unique_surface_row(surface_rows, output.entity_id)
+                    .is_none_or(|row| row.feature_id != feature_id)
+                || output_ids.contains(&output.entity_id)
+                || intermediate_ids.contains(&intermediate_id)
+            {
+                return Ok(None);
+            }
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut output_ids,
+                    output.entity_id,
+                    "creo transition output identity nodes",
+                )
+            })?;
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut intermediate_ids,
+                    intermediate_id,
+                    "creo transition intermediate identity nodes",
+                )
+            })?;
+            let mut matches = ctx
+                .admit_iter(&output_table.entries, "creo transition predecessor entries")?
+                .filter(|predecessor| {
+                    predecessor.class_id() == 214
+                        && predecessor.entity_id == intermediate_id
+                        && predecessor.related_entity_state() == Some(0)
+                        && output_table.contains_non_surface_entity_id(predecessor.entity_id)
+                        && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id)
+                            .is_none()
+                });
+            let Some(predecessor) = matches.next() else {
+                return Ok(None);
+            };
+            if matches.next().is_some() {
+                return Ok(None);
+            }
+            let Some(source_id) = predecessor.related_entity_id() else {
+                return Ok(None);
+            };
+            if crate::surface::unique_surface_row(surface_rows, source_id)
+                .is_none_or(|row| row.feature_id == feature_id)
+                || source_ids.contains(&source_id)
+            {
+                return Ok(None);
+            }
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut source_ids,
+                    source_id,
+                    "creo transition source identity nodes",
+                )
+            })?;
+            ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
+            transitions.push((source_id, output.entity_id));
         }
     }
     Ok(output_ids.is_disjoint(&source_ids).then_some(transitions))
@@ -473,8 +481,8 @@ pub(in super::super) fn surface_transition_dependencies(
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Vec<u32>, CodecError> {
     let mut dependencies = Vec::new();
-    let transitions = feature_surface_transitions(ctx, feature_id, tables, surface_rows)?
-        .unwrap_or_default();
+    let transitions =
+        feature_surface_transitions(ctx, feature_id, tables, surface_rows)?.unwrap_or_default();
     for &(source_id, _) in ctx.admit_iter(&transitions, "creo feature surface transitions")? {
         let Some(row) = crate::surface::unique_surface_row(surface_rows, source_id) else {
             continue;
@@ -494,7 +502,9 @@ pub(in super::super) fn thicken_plane_offset(
     rows: &[crate::surface::SurfaceRow],
 ) -> Result<Option<(f64, ThickenSide)>, CodecError> {
     let mut offsets = Vec::new();
-    for &(source_id, output_id) in ctx.admit_iter(transitions, "creo thicken surface transitions")? {
+    for &(source_id, output_id) in
+        ctx.admit_iter(transitions, "creo thicken surface transitions")?
+    {
         let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
             continue;
         };
@@ -529,8 +539,8 @@ pub(in super::super) fn thicken_plane_offset(
     for offset in ctx.admit_iter(&offsets, "creo thicken plane offsets")? {
         magnitudes.push(offset.abs());
     }
-    let Some(magnitude) = unique_positive_length(ctx, &magnitudes)?
-        .map(cadmpeg_ir::scalar::PositiveLength::get)
+    let Some(magnitude) =
+        unique_positive_length(ctx, &magnitudes)?.map(cadmpeg_ir::scalar::PositiveLength::get)
     else {
         return Ok(None);
     };
@@ -636,8 +646,8 @@ pub(in super::super) fn feature_result_topology(
     feature_id: u32,
 ) -> Result<Option<FeatureResultTopology>, CodecError> {
     let mut faces = Vec::new();
-    let surface_ids = feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?
-        .unwrap_or_default();
+    let surface_ids =
+        feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?.unwrap_or_default();
     for surface_id in ctx.admit_iter(&surface_ids, "creo feature result surface IDs")? {
         let text = ctx.format_retained(
             format_args!("surface#{surface_id}"),
@@ -731,11 +741,7 @@ pub(in super::super) fn generated_surface_face_refs(
         let Some(ids) = result_surface_ids.get(&row.feature_id) else {
             return Ok(None);
         };
-        if !ctx.contains(
-            ids,
-            surface_id,
-            "creo generated surface result ID lookup",
-        )? {
+        if !ctx.contains(ids, surface_id, "creo generated surface result ID lookup")? {
             return Ok(None);
         }
         let local_id = ctx.format_retained(

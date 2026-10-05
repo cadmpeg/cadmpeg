@@ -843,19 +843,15 @@ fn ordered_parameter_loop_shift_work_refusal(operation: &'static str) {
         vec![[2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0]],
     ];
     let ordered = crate::test_support::assert_work_boundaries(&[operation], |ctx| {
-        super::ordered_parameter_face_loops(
-            ctx,
-            vec![&inner_left, &outer, &inner_right],
-            &polygons,
-        )
-        .map(|ordered| {
-            ordered.map(|loops| {
-                loops
-                    .into_iter()
-                    .map(|loop_| loop_.half_edges()[0].curve_id)
-                    .collect::<Vec<_>>()
+        super::ordered_parameter_face_loops(ctx, vec![&inner_left, &outer, &inner_right], &polygons)
+            .map(|ordered| {
+                ordered.map(|loops| {
+                    loops
+                        .into_iter()
+                        .map(|loop_| loop_.half_edges()[0].curve_id)
+                        .collect::<Vec<_>>()
+                })
             })
-        })
     });
     assert_eq!(ordered, Some(vec![20, 10, 30]));
 }

@@ -1763,7 +1763,11 @@ pub(super) fn loop_array_frame_records<'a>(
     let mut counts = BTreeMap::<usize, usize>::new();
     for record in &scan.loop_arrays.records {
         let count = ctx
-            .entry_btree_map(&mut counts, record.frame_offset, "creo native loop array frame count nodes")?
+            .entry_btree_map(
+                &mut counts,
+                record.frame_offset,
+                "creo native loop array frame count nodes",
+            )?
             .or_default();
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
@@ -4457,7 +4461,10 @@ pub(super) fn sketch_records<'a>(
             continue;
         }
         let id = if ctx
-            .admit_iter(&scan.features.definitions, "creo sketch record identity count")?
+            .admit_iter(
+                &scan.features.definitions,
+                "creo sketch record identity count",
+            )?
             .filter(|candidate| candidate.identity.id() == definition.identity.id())
             .count()
             != 1

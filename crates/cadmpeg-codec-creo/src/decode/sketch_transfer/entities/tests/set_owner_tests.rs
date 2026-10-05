@@ -3,36 +3,36 @@
 use super::super::{transfer_section_entities, SectionEntityTransfer};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{
-    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
-};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
     let mut scan = crate::test_support::empty_container_scan();
-    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(1),
-            owner_feature_id: None,
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
-            entities: Vec::new(),
+    scan.features
+        .definitions
+        .push(crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+                entities: Vec::new(),
+                offset: 0,
+            }),
             offset: 0,
-        }),
-        offset: 0,
-    });
+        });
     let definition = &scan.features.definitions[0];
     let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch ID");
     let segment = crate::feature::definitions::FeatureSegment {
@@ -48,8 +48,8 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
         offset: 0,
     };
     let segments = [&segment];
-    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#1:7")
-        .expect("sketch entity ID");
+    let entity_id =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#1:7").expect("sketch entity ID");
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
@@ -71,8 +71,7 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
             let mut ir = CadIr::empty();
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let mut losses = Vec::new();
-            let mut source_carriers =
-                crate::decode::source_carriers::SourceUnitCarriers::default();
+            let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
             transfer_section_entities(
                 ctx,
                 SectionEntityTransfer {
@@ -94,7 +93,8 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
                     point_geometries: &no_curve_geometries,
                     centered_line_geometries: &no_curve_geometries,
                     reference_line_geometries: &no_curve_geometries,
-                    materialized_saved_section_external_ids: &materialized_saved_section_external_ids,
+                    materialized_saved_section_external_ids:
+                        &materialized_saved_section_external_ids,
                     profiles: Vec::new(),
                     profile_entities: &profile_entities,
                     losses: &mut losses,

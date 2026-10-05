@@ -350,8 +350,16 @@ fn positional_order_table_replays_prototype_and_following_rows() {
     assert_eq!(order.rows[0].internal_id, 2);
     assert_eq!(order.rows[0].bitmask, 1);
     assert_eq!(order.rows[1].external_id, 11);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10)).expect("admitted order identity"), Some(2));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2)).expect("admitted order identity"), Some(10));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
+            .expect("admitted order identity"),
+        Some(2)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
+            .expect("admitted order identity"),
+        Some(10)
+    );
 
     let mut duplicate_external = order.clone();
     duplicate_external.declared_count += 1;
@@ -361,8 +369,16 @@ fn positional_order_table_replays_prototype_and_following_rows() {
         bitmask: 0,
         offset: 20,
     });
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| duplicate_external.internal_id(ctx, 10)).expect("admitted order identity"), None);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| duplicate_external.external_id(ctx, 2)).expect("admitted order identity"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| duplicate_external.internal_id(ctx, 10))
+            .expect("admitted order identity"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| duplicate_external.external_id(ctx, 2))
+            .expect("admitted order identity"),
+        None
+    );
     let mut duplicate_internal = order;
     duplicate_internal.declared_count += 1;
     duplicate_internal.rows.push(FeatureOrderRow {
@@ -371,8 +387,16 @@ fn positional_order_table_replays_prototype_and_following_rows() {
         bitmask: 0,
         offset: 21,
     });
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.external_id(ctx, 2)).expect("admitted order identity"), None);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.internal_id(ctx, 10)).expect("admitted order identity"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.external_id(ctx, 2))
+            .expect("admitted order identity"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.internal_id(ctx, 10))
+            .expect("admitted order identity"),
+        None
+    );
 }
 
 #[test]
@@ -389,8 +413,16 @@ fn named_order_table_replays_prototype_and_following_rows() {
     assert!(order.is_complete());
     assert_eq!(order.entity_ref, Some(66));
     assert_eq!(order.rows.len(), 2);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2)).expect("admitted order identity"), Some(10));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 11)).expect("admitted order identity"), Some(3));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
+            .expect("admitted order identity"),
+        Some(10)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 11))
+            .expect("admitted order identity"),
+        Some(3)
+    );
 }
 
 #[test]
@@ -420,14 +452,26 @@ fn incomplete_order_tables_do_not_resolve_identifiers() {
     let order = order_table(named, 0, named.len()).expect("named order_table");
     assert_eq!(order.rows.len(), 1);
     assert!(!order.is_complete());
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10)).expect("admitted order identity"), None);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2)).expect("admitted order identity"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
+            .expect("admitted order identity"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
+            .expect("admitted order identity"),
+        None
+    );
 
     let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
     let order = positional_order_table(positional, 0, positional.len(), 66)
         .expect("positional order_table");
     assert!(!order.is_complete());
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10)).expect("admitted order identity"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
+            .expect("admitted order identity"),
+        None
+    );
 }
 
 #[test]

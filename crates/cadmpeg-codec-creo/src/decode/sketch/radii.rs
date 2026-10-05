@@ -3,8 +3,8 @@
 
 use super::axis::SectionAxis;
 
-use crate::feature::segment_rows::SegmentRow;
 use crate::feature::definitions::VariableType;
+use crate::feature::segment_rows::SegmentRow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
@@ -169,7 +169,8 @@ pub(in crate::decode) fn resolved_section_radii(
                 let Some(_) = section_radius_relation_arc(definition, relation) else {
                     continue;
                 };
-                let Some(dimension) = section_relation_length_dimension(definition, relation) else {
+                let Some(dimension) = section_relation_length_dimension(definition, relation)
+                else {
                     continue;
                 };
                 let Some(value) = dimension
@@ -328,9 +329,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 continue;
             }
             let mut previous = None;
-            for &(_, radius_id) in
-                ctx.admit_iter(component, "creo scalar radius links")?
-            {
+            for &(_, radius_id) in ctx.admit_iter(component, "creo scalar radius links")? {
                 if let Some(first) = previous {
                     link_radii(ctx, &mut adjacency, first, radius_id)?;
                 }
@@ -365,10 +364,16 @@ pub(in crate::decode) fn resolved_section_radii(
         Ok(ControlFlow::Continue(()))
     })?;
     let mut remaining = BTreeSet::new();
-    for radius_id in ctx.admit_iter(&candidates, "creo radius candidate keys")?.map(|(id, _)| id) {
+    for radius_id in ctx
+        .admit_iter(&candidates, "creo radius candidate keys")?
+        .map(|(id, _)| id)
+    {
         ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
     }
-    for radius_id in ctx.admit_iter(&adjacency, "creo radius adjacency keys")?.map(|(id, _)| id) {
+    for radius_id in ctx
+        .admit_iter(&adjacency, "creo radius adjacency keys")?
+        .map(|(id, _)| id)
+    {
         ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
     }
     let mut radii = BTreeMap::new();
@@ -382,7 +387,11 @@ pub(in crate::decode) fn resolved_section_radii(
             ctx.charge_work(1, "creo radius graph visits")?;
             if let Some(neighbors) = adjacency.get(&radius_id) {
                 for neighbor in ctx.admit_iter(neighbors, "creo radius neighbors")? {
-                    if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
+                    if ctx.insert_btree_set(
+                        &mut component,
+                        *neighbor,
+                        "creo radius component nodes",
+                    )? {
                         ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
                     }
                 }
@@ -398,10 +407,7 @@ pub(in crate::decode) fn resolved_section_radii(
         let mut first_value = None;
         'first_value: for radius_id in ctx.admit_iter(&component, "creo radius component values")? {
             if let Some(values) = candidates.get(radius_id) {
-                if let Some(candidate) = ctx
-                    .admit_iter(values, "creo radius candidates")?
-                    .next()
-                {
+                if let Some(candidate) = ctx.admit_iter(values, "creo radius candidates")?.next() {
                     first_value = Some(*candidate);
                     break 'first_value;
                 }
@@ -570,7 +576,9 @@ fn section_skamp_radius_source(
         crate::feature::definitions::FeatureSavedEntity::Circle(circle) => circle.radius,
         _ => None,
     };
-    Ok(radius.and_then(PositiveLength::new).map(SectionRadiusSource::Value))
+    Ok(radius
+        .and_then(PositiveLength::new)
+        .map(SectionRadiusSource::Value))
 }
 
 pub(super) fn section_arc_carrier(
@@ -680,8 +688,9 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
     if !section_degenerate_axis_line(ctx, definition, segment)? {
         return section_proven_axis_line_carrier(ctx, definition, variable_points, segment);
     }
-    let Some(fixed_coordinate) =
-        segment.vertical_horizontal.and_then(SectionAxis::from_selector)
+    let Some(fixed_coordinate) = segment
+        .vertical_horizontal
+        .and_then(SectionAxis::from_selector)
     else {
         return Ok(None);
     };
@@ -726,11 +735,10 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
     } else {
         (Point2::new(0.0, value), Point2::new(1.0, 0.0))
     };
-    Ok(SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
-        origin,
-        direction,
-    })
-    .ok())
+    Ok(
+        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction })
+            .ok(),
+    )
 }
 
 pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
@@ -839,9 +847,7 @@ pub(in crate::decode) fn trim_segment_id(
         }
     }
     match (unmatched_segment, unmatched_row) {
-        (Some(segment_id), Some(unmatched)) if std::ptr::eq(unmatched, row) => {
-            Ok(Some(segment_id))
-        }
+        (Some(segment_id), Some(unmatched)) if std::ptr::eq(unmatched, row) => Ok(Some(segment_id)),
         _ => Ok(None),
     }
 }

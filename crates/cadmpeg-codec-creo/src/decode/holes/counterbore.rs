@@ -36,7 +36,12 @@ fn unique_model_surface_geometries(
 ) -> Result<Option<BTreeMap<u32, SurfaceGeometry>>, CodecError> {
     let mut geometries = BTreeMap::new();
     for surface in &ir.model.surfaces {
-        let Some(digits) = ctx.strip_prefix(surface.id.as_str(), "creo:visibgeom:surface#", "creo counterbore surface identity prefix")? else {
+        let Some(digits) = ctx.strip_prefix(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            "creo counterbore surface identity prefix",
+        )?
+        else {
             continue;
         };
         let Ok(surface_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -129,11 +134,7 @@ pub(in crate::decode) fn counterbore_dimensions(
     };
     let source_spans = [source_span(first_source)?, source_span(second_source)?];
     if source_spans.iter().any(Option::is_some) {
-        counterbore_envelope_dimension_values(
-            ctx,
-            dimension_tables(),
-            &source_spans,
-        )
+        counterbore_envelope_dimension_values(ctx, dimension_tables(), &source_spans)
     } else {
         Ok(counterbore_unenveloped_dimension_values(dimension_tables()))
     }
@@ -219,18 +220,20 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     let [first_source, second_source] = source_spans else {
         return Ok(None);
     };
-    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| -> Result<bool, CodecError> {
-        Ok(ctx.admit_iter(&spans, "creo counterbore diameter axis count")?
-            .filter(|spans| {
-                (**spans).into_iter().flatten().any(|span| {
-                    (FiniteReal::new(span.get()))
-                        .zip(FiniteReal::new(diameter))
-                        .is_some_and(|(first, second)| approximately_equal(first, second))
+    let cylinder_diameter_matches =
+        |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| -> Result<bool, CodecError> {
+            Ok(ctx
+                .admit_iter(&spans, "creo counterbore diameter axis count")?
+                .filter(|spans| {
+                    (**spans).into_iter().flatten().any(|span| {
+                        (FiniteReal::new(span.get()))
+                            .zip(FiniteReal::new(diameter))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    })
                 })
-            })
-            .count()
-            == 2)
-    };
+                .count()
+                == 2)
+        };
     let counterbore_matches =
         |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
             let mut diameter_axes = (0..3).filter(|axis| {
@@ -260,7 +263,10 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     let mut first_candidate = None;
     for table in tables {
         let Some((bore_diameter, counterbore_diameter, counterbore_depth)) =
-            counterbore_envelope_dimension_tuple(table) else { continue; };
+            counterbore_envelope_dimension_tuple(table)
+        else {
+            continue;
+        };
         let matches = match (first_source, second_source) {
             (Some(first), Some(second)) => {
                 let alternatives = [
@@ -270,8 +276,8 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
                         && counterbore_matches(counterbore_diameter, counterbore_depth, *first),
                 ];
                 ctx.admit_iter(&alternatives, "creo counterbore envelope alternative count")?
-                .filter(|matches| **matches)
-                .count()
+                    .filter(|matches| **matches)
+                    .count()
                     == 1
             }
             (Some(spans), None) | (None, Some(spans)) => {
@@ -283,7 +289,9 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
         if matches {
             let candidate = (bore_diameter, counterbore_diameter, counterbore_depth);
             if let Some(first) = first_candidate {
-                if !counterbore_tuples_approximately_equal(candidate, first) { return Ok(None); }
+                if !counterbore_tuples_approximately_equal(candidate, first) {
+                    return Ok(None);
+                }
             } else {
                 first_candidate = Some(candidate);
             }
@@ -930,8 +938,11 @@ fn counterbore_source_boundary_circle(
         |row| row.id,
     )?;
     Ok((|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        let boundary_for = |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
-            Ok({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(unique_edges)[..], "creo numbered identity candidate scan")?.copied().map(|edge| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let boundary_for =
+            |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
+                Ok({
+                    let mut numbered_identity_unique = None;
+                    for numbered_identity_candidate in ctx.admit_iter(&(unique_edges)[..], "creo numbered identity candidate scan")?.copied().map(|edge| -> Result<Option<_>, cadmpeg_core::CodecError> {
                 { let Some(value) = (edge.feature_id == feature_id && edge.type_byte == 0).then_some(()) else { return Ok(None); }; value };
                 let cylinder = { let Some(value) = std::num::NonZeroU32::new(cylinder_id) else { return Ok(None); }; value };
                 let other = match edge.faces {
@@ -987,8 +998,10 @@ fn counterbore_source_boundary_circle(
                     && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
                     .then_some(()) else { return Ok(None); }; value };
                 Ok(Some((other, center, axis)))
-            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique })
-        };
+            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); }
+                    numbered_identity_unique
+                })
+            };
         let mut boundaries = cylinder_ids.iter().copied().map(boundary_for);
         let Some(first) = boundaries.next() else {
             return Ok(None);

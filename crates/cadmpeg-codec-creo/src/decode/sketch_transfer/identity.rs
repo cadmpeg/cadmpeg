@@ -95,12 +95,10 @@ pub(in super::super) fn unique_section_segment_external_ids(
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     if let Some(table) = definition.segments.as_ref() {
-        for (&id, ordinal) in ctx
-            .admit_iter(
-                table.rows.identity_entries(),
-                "creo unique section segment identity rows",
-            )?
-        {
+        for (&id, ordinal) in ctx.admit_iter(
+            table.rows.identity_entries(),
+            "creo unique section segment identity rows",
+        )? {
             if ordinal.is_some() {
                 ctx.insert_btree_set(&mut ids, id, "creo unique section segment ID nodes")?;
             }
@@ -115,12 +113,10 @@ pub(in super::super) fn ambiguous_section_segment_external_ids(
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     if let Some(table) = definition.segments.as_ref() {
-        for (&id, ordinal) in ctx
-            .admit_iter(
-                table.rows.identity_entries(),
-                "creo conflicting section segment identity rows",
-            )?
-        {
+        for (&id, ordinal) in ctx.admit_iter(
+            table.rows.identity_entries(),
+            "creo conflicting section segment identity rows",
+        )? {
             if ordinal.is_none() {
                 ctx.insert_btree_set(&mut ids, id, "creo ambiguous section segment ID nodes")?;
             }
@@ -196,7 +192,11 @@ pub(in super::super) fn unresolved_saved_section_entity(
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
     let unique_internal_id = match internal_id {
         Some(id)
-            if ctx.contains_btree_set(unique_saved_ids, &id, "creo saved entity identity lookup")? =>
+            if ctx.contains_btree_set(
+                unique_saved_ids,
+                &id,
+                "creo saved entity identity lookup",
+            )? =>
         {
             Some(id)
         }
@@ -473,8 +473,10 @@ pub(in super::super) fn saved_section_external_id(
     let Some(external_id) = order.external_id(ctx, internal_id)? else {
         return Ok(None);
     };
-    Ok((!ctx.contains_btree_set(ambiguous_segment_ids, &external_id, OPERATION)?)
-        .then_some(external_id))
+    Ok(
+        (!ctx.contains_btree_set(ambiguous_segment_ids, &external_id, OPERATION)?)
+            .then_some(external_id),
+    )
 }
 
 #[cfg(test)]
@@ -545,11 +547,14 @@ mod tests {
         let error = super::visit_semantic_saved_section_entities::<()>(&ctx, &definition, |_| {
             visited = true;
             Ok(std::ops::ControlFlow::Continue(()))
-        }).expect_err("saved entity scan needs work");
+        })
+        .expect_err("saved entity scan needs work");
         assert!(!visited);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo saved section entities"));
+                && resource.operation == "creo saved section entities")
+        );
     }
 
     #[test]
@@ -557,23 +562,37 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut definition = saved_line_definition();
         definition.segments = Some(segment_table());
-        definition.segments.as_mut().expect("segments").has_elided_prototype = true;
-        definition.order_table.as_mut().expect("order").has_prototype = true;
+        definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .has_elided_prototype = true;
+        definition
+            .order_table
+            .as_mut()
+            .expect("order")
+            .has_prototype = true;
         let saved = definition.saved_section.as_mut().expect("saved section");
         saved.offset = 9;
-        let dummy = |entity_id, offset| crate::feature::definitions::FeatureSavedEntity::Dummy(
-            crate::feature::definitions::FeatureSavedDummy {
-                entity_id: Some(entity_id), body: Vec::new(), offset,
-            },
-        );
+        let dummy = |entity_id, offset| {
+            crate::feature::definitions::FeatureSavedEntity::Dummy(
+                crate::feature::definitions::FeatureSavedDummy {
+                    entity_id: Some(entity_id),
+                    body: Vec::new(),
+                    offset,
+                },
+            )
+        };
         saved.entities = vec![dummy(3, 0), dummy(3, 1), dummy(4, 9), dummy(4, 10)];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Four source visits fit; a later prototype search needs four more visits.
         policy.limits.max_work_units = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(!super::saved_section_internal_id_is_unique(&ctx, &definition, 3)
-            .expect("uniqueness stops before the later prototype search"));
+        assert!(
+            !super::saved_section_internal_id_is_unique(&ctx, &definition, 3)
+                .expect("uniqueness stops before the later prototype search")
+        );
     }
 
     #[test]

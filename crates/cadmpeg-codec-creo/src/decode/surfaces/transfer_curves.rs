@@ -113,8 +113,15 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)?;
-    for row in ctx.admit_iter(&unique_rows, "creo boundary unique topology row traversal")?.copied() {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    for row in ctx
+        .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
+        .copied()
+    {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -141,7 +148,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         let allow_unresolved_endpoint_witness = endpoint_evidence
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
-            && !ctx.contains_btree_set(nurbs_endpoint_witnesses, &curve_id, "creo intersection endpoint witness lookup")?;
+            && !ctx.contains_btree_set(
+                nurbs_endpoint_witnesses,
+                &curve_id,
+                "creo intersection endpoint witness lookup",
+            )?;
         let resolved = if let Some(resolved) = resolve_carrier_intersection_curve(
             ctx,
             first,
@@ -329,8 +340,15 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)?;
-    for row in ctx.admit_iter(&unique_rows, "creo boundary unique topology row traversal")?.copied() {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    for row in ctx
+        .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
+        .copied()
+    {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -343,18 +361,25 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         else {
             continue;
         };
-        let geometry = |surface_id: u32| -> Result<Option<&SurfaceGeometry>, cadmpeg_core::CodecError> {
-            let mut found = None;
-            for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-                if crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", surface_id) {
-                    if found.is_some() {
-                        return Ok(None);
+        let geometry =
+            |surface_id: u32| -> Result<Option<&SurfaceGeometry>, cadmpeg_core::CodecError> {
+                let mut found = None;
+                for surface in
+                    ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")?
+                {
+                    if crate::identity::matches_numbered_identity(
+                        surface.id.as_str(),
+                        "creo:visibgeom:surface#",
+                        surface_id,
+                    ) {
+                        if found.is_some() {
+                            return Ok(None);
+                        }
+                        found = Some(surface);
                     }
-                    found = Some(surface);
                 }
-            }
-            Ok(found.map(|surface| source_carriers.surface_geometry(surface)))
-        };
+                Ok(found.map(|surface| source_carriers.surface_geometry(surface)))
+            };
         let Some(first_geometry) = geometry(first.id)? else {
             continue;
         };
@@ -1009,9 +1034,10 @@ mod tests {
             },
         ]);
 
-        let endpoint_witnesses = BTreeSet::from([
-            CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-        ]);
+        let endpoint_witnesses =
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
+            ]);
         let (transferred, service_ir) = crate::test_support::assert_work_boundaries(
             &["creo intersection endpoint witness lookup"],
             |ctx| {

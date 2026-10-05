@@ -10,7 +10,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
 use super::super::feature_history::dimensions::feature_relation_table_complete;
-use crate::feature::segment_rows::SegmentRow;
 use super::equations_coordinate::{
     approximately_equal, section_equal_length_coordinate_values,
     section_equation_equal_length_constraints, section_equation_point_on_line_constraints,
@@ -40,6 +39,7 @@ use crate::decode::sketch_transfer::loci::{
     section_skamp_arc_midpoint_source, section_skamp_line_midpoint_sources,
     section_skamp_same_coordinate_sources, visit_section_skamps,
 };
+use crate::feature::segment_rows::SegmentRow;
 
 const EPS_SECTION_COORDINATE: f64 = 1.0e-9;
 const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1.0e-12;
@@ -83,7 +83,8 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
         {
             continue;
         }
-        let Some(points) = saved_section_segment_point_coordinates(ctx, definition, segment)? else {
+        let Some(points) = saved_section_segment_point_coordinates(ctx, definition, segment)?
+        else {
             continue;
         };
         for point in ctx.admit_iter(&points, "creo saved segment coordinate slots")? {
@@ -234,10 +235,10 @@ fn append_unique_auxiliary_coordinate_constraints(
                 "creo prior auxiliary coordinate equations",
             )?
             .any(|candidate| {
-            candidate.terms == equations[index].terms
-                && (FiniteReal::new(candidate.rhs))
-                    .zip(FiniteReal::new(equations[index].rhs))
-                    .is_some_and(|(first, second)| approximately_equal(first, second))
+                candidate.terms == equations[index].terms
+                    && (FiniteReal::new(candidate.rhs))
+                        .zip(FiniteReal::new(equations[index].rhs))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
             })
         {
             let shifted = index
@@ -605,7 +606,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
     let mut point_symmetric_constraints = Vec::new();
     // discarded-value: The visitor runs through every active SKAMP row.
     let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let Some((center, first, second)) = section_skamp_point_symmetry(ctx, definition, skamp)? else {
+        let Some((center, first, second)) = section_skamp_point_symmetry(ctx, definition, skamp)?
+        else {
             return Ok(ControlFlow::Continue(()));
         };
         if ambiguous_point_ids.contains(&center) {
@@ -640,42 +642,42 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     continue;
                 }
                 let Some((first, second)) = (|| {
-                if relation.relation_type != 0 {
-                    return None;
-                }
-                let vectors = relation.operand_vectors?;
-                if !section_linear_distance_vectors(vectors) {
-                    return None;
-                }
-                let [Some(first), Some(second), _, _] = vectors[0] else {
-                    return None;
-                };
+                    if relation.relation_type != 0 {
+                        return None;
+                    }
+                    let vectors = relation.operand_vectors?;
+                    if !section_linear_distance_vectors(vectors) {
+                        return None;
+                    }
+                    let [Some(first), Some(second), _, _] = vectors[0] else {
+                        return None;
+                    };
                     Some((first, second))
                 })() else {
                     continue;
                 };
-            let Some(coordinate) = section_linear_distance_coordinate(
-                ctx,
-                definition,
-                &segments,
-                [first, second],
-                &points,
-                &saved_segment_points,
-                &ambiguous_point_ids,
-            )?
-            else {
-                continue;
-            };
-            let Some(magnitude) =
-                section_relation_length_dimension(definition, relation).and_then(|dimension| {
-                    dimension
-                        .value
-                        .resolved()
-                        .filter(|value| value.is_finite() && *value >= 0.0)
-                })
-            else {
-                continue;
-            };
+                let Some(coordinate) = section_linear_distance_coordinate(
+                    ctx,
+                    definition,
+                    &segments,
+                    [first, second],
+                    &points,
+                    &saved_segment_points,
+                    &ambiguous_point_ids,
+                )?
+                else {
+                    continue;
+                };
+                let Some(magnitude) = section_relation_length_dimension(definition, relation)
+                    .and_then(|dimension| {
+                        dimension
+                            .value
+                            .resolved()
+                            .filter(|value| value.is_finite() && *value >= 0.0)
+                    })
+                else {
+                    continue;
+                };
                 if matches!(relation.sign, 0 | 1 | 0xf6) {
                     ctx.reserve_vec(
                         &mut linear_dimension_candidates,
@@ -694,24 +696,28 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }
     }
     let signed_dimension_candidates = ctx.collect_vec(
-        ctx.admit_iter(&linear_dimension_candidates, "creo linear dimension candidate rows")?.filter_map(
-            |&(first, second, coordinate, magnitude, sign)| {
-                let delta = match sign {
-                    1 => magnitude,
-                    0xf6 => -magnitude,
-                    _ => return None,
-                };
-                Some((first, second, coordinate, delta))
-            },
-        ),
+        ctx.admit_iter(
+            &linear_dimension_candidates,
+            "creo linear dimension candidate rows",
+        )?
+        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
+            let delta = match sign {
+                1 => magnitude,
+                0xf6 => -magnitude,
+                _ => return None,
+            };
+            Some((first, second, coordinate, delta))
+        }),
         "creo section signed dimension candidates",
     )?;
     let mut unsigned_dimension_candidates = ctx.collect_vec(
-        ctx.admit_iter(&linear_dimension_candidates, "creo linear dimension candidate rows")?.filter_map(
-            |&(first, second, coordinate, magnitude, sign)| {
-                (sign == 0).then_some((first, second, coordinate, magnitude))
-            },
-        ),
+        ctx.admit_iter(
+            &linear_dimension_candidates,
+            "creo linear dimension candidate rows",
+        )?
+        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
+            (sign == 0).then_some((first, second, coordinate, magnitude))
+        }),
         "creo section unsigned dimension candidates",
     )?;
     let unsigned_equation_distances =
@@ -721,16 +727,20 @@ pub(in crate::decode) fn resolved_section_coordinates(
         unsigned_equation_distances.len(),
         "creo section unsigned dimension candidates",
     )?;
-    unsigned_dimension_candidates.extend(ctx.admit_iter(&unsigned_equation_distances, "creo unsigned equation distance rows")?.map(
-        |constraint| {
+    unsigned_dimension_candidates.extend(
+        ctx.admit_iter(
+            &unsigned_equation_distances,
+            "creo unsigned equation distance rows",
+        )?
+        .map(|constraint| {
             (
                 constraint.first,
                 constraint.second,
                 constraint.coordinate,
                 constraint.value,
             )
-        },
-    ));
+        }),
+    );
     let radial_constraints =
         section_equation_radial_constraints(ctx, definition, &points, &ambiguous_point_ids)?;
     let equal_length_constraints =
@@ -1190,8 +1200,8 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
                     _ => None,
                 })
                 .any(|segment| {
-                segment.point_ids().contains(&point_id)
-                    && table.rows.get(segment.external_id).is_some()
+                    segment.point_ids().contains(&point_id)
+                        && table.rows.get(segment.external_id).is_some()
                 })
                 || ctx
                     .admit_iter(table.rows.as_slice(), "creo section endpoint point rows")?
@@ -1200,7 +1210,8 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
                         _ => None,
                     })
                     .any(|segment| {
-                segment.point_id == point_id && table.rows.get(segment.external_id).is_some()
+                        segment.point_id == point_id
+                            && table.rows.get(segment.external_id).is_some()
                     })
                 || ctx
                     .admit_iter(table.rows.as_slice(), "creo section endpoint arc rows")?
@@ -1209,11 +1220,11 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
                         _ => None,
                     })
                     .any(|segment| {
-                matches!(
-                    segment.kind,
-                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                ) && segment.center_id == Some(point_id)
-                    && table.rows.get(segment.external_id).is_some()
+                        matches!(
+                            segment.kind,
+                            crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                        ) && segment.center_id == Some(point_id)
+                            && table.rows.get(segment.external_id).is_some()
                     })
                 || ctx
                     .admit_iter(table.rows.as_slice(), "creo section endpoint circle rows")?
@@ -1222,7 +1233,8 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
                         _ => None,
                     })
                     .any(|segment| {
-                segment.center_id == point_id && table.rows.get(segment.external_id).is_some()
+                        segment.center_id == point_id
+                            && table.rows.get(segment.external_id).is_some()
                     })
                 || (matches!(point_id, 0 | 1)
                     && ctx
@@ -1236,24 +1248,30 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
                         })
                         .any(|segment| table.rows.get(segment.external_id).is_some()))
                 || ctx
-                    .admit_iter(table.rows.as_slice(), "creo section endpoint reference-line rows")?
+                    .admit_iter(
+                        table.rows.as_slice(),
+                        "creo section endpoint reference-line rows",
+                    )?
                     .filter_map(|row| match row {
                         SegmentRow::ReferenceLine(segment) => Some(segment),
                         _ => None,
                     })
                     .any(|segment| {
-                    segment.point_ids.contains(&Some(point_id))
-                        && table.rows.get(segment.external_id).is_some()
+                        segment.point_ids.contains(&Some(point_id))
+                            && table.rows.get(segment.external_id).is_some()
                     })
                 || ctx
-                    .admit_iter(table.rows.as_slice(), "creo section endpoint bounded-curve rows")?
+                    .admit_iter(
+                        table.rows.as_slice(),
+                        "creo section endpoint bounded-curve rows",
+                    )?
                     .filter_map(|row| match row {
                         SegmentRow::BoundedCurve(segment) => Some(segment),
                         _ => None,
                     })
                     .any(|segment| {
-                    segment.point_ids.contains(&point_id)
-                        && table.rows.get(segment.external_id).is_some()
+                        segment.point_ids.contains(&point_id)
+                            && table.rows.get(segment.external_id).is_some()
                     }))
         };
         if !has_unique_incident_entity(first)? || !has_unique_incident_entity(second)? {

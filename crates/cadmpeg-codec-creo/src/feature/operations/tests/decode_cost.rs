@@ -16,7 +16,11 @@ fn operation_kind_cost_counts_variant_tag_and_stored_text() {
             .expect("stored kind cost"),
         1 + cadmpeg_core::decode::u64_from_index("stored operation".len())
     );
-    for kind in [OperationKind::Extrude, OperationKind::Revolve, OperationKind::Native] {
+    for kind in [
+        OperationKind::Extrude,
+        OperationKind::Revolve,
+        OperationKind::Native,
+    ] {
         assert_eq!(
             DecodeCost::decode_cost(&kind, &ctx, "operation kind field cost")
                 .expect("fixed kind cost"),

@@ -492,10 +492,14 @@ fn overflowing_corner_spans_do_not_match_counterbore_dimensions() {
     let spans = super::paired_corner_envelope_axis_spans(corners, corners)
         .expect("finite counterbore corner coordinates");
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::counterbore_envelope_dimension_values(ctx,
-        std::iter::once(&table),
-        &[Some(spans), None],
-    )).expect("admitted counterbore envelope values")
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::counterbore_envelope_dimension_values(
+            ctx,
+            std::iter::once(&table),
+            &[Some(spans), None],
+        )
+    })
+    .expect("admitted counterbore envelope values")
     .is_none());
 }
 
@@ -843,11 +847,14 @@ fn counterbore_surface_identity_prefix_refuses_work() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo counterbore surface identity prefix",
         |ctx| super::unique_model_surface_geometries(ctx, &ir),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo counterbore surface identity prefix"));
+            && resource.operation == "creo counterbore surface identity prefix")
+    );
 }

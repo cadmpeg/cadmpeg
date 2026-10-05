@@ -13,7 +13,6 @@ use super::super::sketch_ids::{
 use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use crate::container::ContainerScan;
-use crate::feature::segment_rows::SegmentRow;
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix_admitted, saved_section_external_id,
     section_segment_identity_suffix_admitted, unresolved_saved_section_entity,
@@ -23,6 +22,7 @@ use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
 use crate::decode::sketch_transfer::profiles::{
     unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
 };
+use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;
@@ -346,7 +346,8 @@ pub(super) fn transfer_section_entities(
         )?;
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities circles segment rows")?
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo entities circles segment rows")?
             .filter_map(|row| match row {
                 SegmentRow::Circle(segment) => Some(segment),
                 _ => None,
@@ -368,7 +369,8 @@ pub(super) fn transfer_section_entities(
             let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
-            let geometry = copied_or_native_geometry(ctx, circle_geometries, segment.offset, "circle")?;
+            let geometry =
+                copied_or_native_geometry(ctx, circle_geometries, segment.offset, "circle")?;
             let solved_geometry = matches!(
                 geometry.definition(),
                 SketchGeometryDefinition::Circle { .. }
@@ -396,7 +398,8 @@ pub(super) fn transfer_section_entities(
                     &id,
                     "creo emitted profile entity membership",
                 )?;
-            let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
+            let geometry_ref =
+                placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
             let sketch_copy =
                 sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
             let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
@@ -408,11 +411,11 @@ pub(super) fn transfer_section_entities(
                     .with_native_ref(Some(native_ref))
                     .with_geometry_ref(geometry_ref),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities points segment rows")?
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo entities points segment rows")?
             .filter_map(|row| match row {
                 SegmentRow::Point(segment) => Some(segment),
                 _ => None,
@@ -434,7 +437,8 @@ pub(super) fn transfer_section_entities(
             let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
-            let geometry = copied_or_native_geometry(ctx, point_geometries, segment.offset, "point")?;
+            let geometry =
+                copied_or_native_geometry(ctx, point_geometries, segment.offset, "point")?;
             let solved_geometry = matches!(
                 geometry.definition(),
                 SketchGeometryDefinition::Point { .. }
@@ -474,11 +478,14 @@ pub(super) fn transfer_section_entities(
                     .with_native_ref(Some(native_ref))
                     .with_endpoint_refs(endpoint_refs),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities centered_lines segment rows")?
+        for segment in ctx
+            .admit_iter(
+                table.rows.as_slice(),
+                "creo entities centered_lines segment rows",
+            )?
             .filter_map(|row| match row {
                 SegmentRow::CenteredLine(segment) => Some(segment),
                 _ => None,
@@ -521,7 +528,8 @@ pub(super) fn transfer_section_entities(
                     Exactness::ByteExact
                 },
             )?;
-            let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
+            let geometry_ref =
+                placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
             let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &[0, 1])?;
             let sketch_copy =
                 sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
@@ -535,11 +543,14 @@ pub(super) fn transfer_section_entities(
                     .with_geometry_ref(geometry_ref)
                     .with_endpoint_refs(endpoint_refs),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities reference_lines segment rows")?
+        for segment in ctx
+            .admit_iter(
+                table.rows.as_slice(),
+                "creo entities reference_lines segment rows",
+            )?
             .filter_map(|row| match row {
                 SegmentRow::ReferenceLine(segment) => Some(segment),
                 _ => None,
@@ -588,7 +599,8 @@ pub(super) fn transfer_section_entities(
                     Exactness::ByteExact
                 },
             )?;
-            let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
+            let geometry_ref =
+                placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
             let endpoint_refs =
                 admitted_optional_endpoint_refs(ctx, sketch_id, &segment.point_ids)?;
             let sketch_copy =
@@ -603,11 +615,14 @@ pub(super) fn transfer_section_entities(
                     .with_geometry_ref(geometry_ref)
                     .with_endpoint_refs(endpoint_refs),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities bounded_curves segment rows")?
+        for segment in ctx
+            .admit_iter(
+                table.rows.as_slice(),
+                "creo entities bounded_curves segment rows",
+            )?
             .filter_map(|row| match row {
                 SegmentRow::BoundedCurve(segment) => Some(segment),
                 _ => None,
@@ -657,11 +672,11 @@ pub(super) fn transfer_section_entities(
                     .with_native_ref(Some(native_ref))
                     .with_endpoint_refs(endpoint_refs),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities conics segment rows")?
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo entities conics segment rows")?
             .filter_map(|row| match row {
                 SegmentRow::Conic(segment) => Some(segment),
                 _ => None,
@@ -703,11 +718,11 @@ pub(super) fn transfer_section_entities(
                     .with_construction(true)
                     .with_native_ref(Some(native_ref)),
             )?;
-
         }
     }
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo entities opaque segment rows")?
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo entities opaque segment rows")?
             .filter_map(|row| match row {
                 SegmentRow::Opaque(segment) => Some(segment),
                 _ => None,
@@ -771,7 +786,8 @@ pub(super) fn transfer_section_entities(
                 "opaque_section_segment",
                 Exactness::ByteExact,
             )?;
-            let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
+            let geometry_ref =
+                placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
             let sketch_copy =
                 sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
             let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
@@ -783,7 +799,6 @@ pub(super) fn transfer_section_entities(
                     .with_native_ref(Some(native_ref))
                     .with_geometry_ref(geometry_ref),
             )?;
-
         }
     }
     let mut saved_section_geometries = Vec::new();
@@ -968,7 +983,7 @@ pub(super) fn transfer_section_entities(
                     complete_segment_table,
                     definition.identity.owner_feature_id(),
                     external_id,
-                expected_kinds,
+                    expected_kinds,
                     &scan.features.entity_tables,
                     &scan.surfaces.rows,
                 )?
@@ -1181,16 +1196,18 @@ pub(super) fn transfer_section_entities(
             )?;
         }
         if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo placed section circles rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Circle(segment) => Some(segment),
-                _ => None,
-            })
-        {
+            for segment in ctx
+                .admit_iter(table.rows.as_slice(), "creo placed section circles rows")?
+                .filter_map(|row| match row {
+                    SegmentRow::Circle(segment) => Some(segment),
+                    _ => None,
+                })
+            {
                 let Some(section_geometry) = circle_geometries.get(&segment.offset) else {
                     continue;
                 };
-                let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
+                let Some(geometry) = placed_section_geometry_curve(transform, section_geometry)
+                else {
                     continue;
                 };
                 let suffix = section_row_suffix(
@@ -1200,7 +1217,8 @@ pub(super) fn transfer_section_entities(
                     "circle",
                     segment.offset,
                 )?;
-                let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+                let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)?
+                else {
                     continue;
                 };
                 let mut already_present = false;
@@ -1244,20 +1262,24 @@ pub(super) fn transfer_section_entities(
                         )?),
                     },
                 )?;
-
+            }
         }
-    }
         if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx.admit_iter(table.rows.as_slice(), "creo placed section centered-lines rows")?
-            .filter_map(|row| match row {
-                SegmentRow::CenteredLine(segment) => Some(segment),
-                _ => None,
-            })
-        {
+            for segment in ctx
+                .admit_iter(
+                    table.rows.as_slice(),
+                    "creo placed section centered-lines rows",
+                )?
+                .filter_map(|row| match row {
+                    SegmentRow::CenteredLine(segment) => Some(segment),
+                    _ => None,
+                })
+            {
                 let Some(section_geometry) = centered_line_geometries.get(&segment.offset) else {
                     continue;
                 };
-                let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
+                let Some(geometry) = placed_section_geometry_curve(transform, section_geometry)
+                else {
                     continue;
                 };
                 let suffix = section_row_suffix(
@@ -1267,13 +1289,15 @@ pub(super) fn transfer_section_entities(
                     "centered_line",
                     segment.offset,
                 )?;
-                let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+                let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)?
+                else {
                     continue;
                 };
                 let mut already_present = false;
-                for existing in ctx
-                    .admit_iter(&ir.model.curves, "creo existing placed centered-line curves")?
-                {
+                for existing in ctx.admit_iter(
+                    &ir.model.curves,
+                    "creo existing placed centered-line curves",
+                )? {
                     if ctx.equal(
                         &existing.id,
                         &id,
@@ -1311,14 +1335,11 @@ pub(super) fn transfer_section_entities(
                         )?),
                     },
                 )?;
-
+            }
         }
-    }
         for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
             let mut already_present = false;
-            for existing in
-                ctx.admit_iter(&ir.model.curves, "creo existing placed saved curves")?
-            {
+            for existing in ctx.admit_iter(&ir.model.curves, "creo existing placed saved curves")? {
                 if ctx.equal(
                     &existing.id,
                     &id,

@@ -201,29 +201,33 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     );
     assert!(service_single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
-        ctx,
-        true,
-        Some(40),
-        4,
-        &[crate::surface::SurfaceKind::Cylinder],
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-    ))
-    .expect("service profile admits generated profile scan"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(40),
+            4,
+            &[crate::surface::SurfaceKind::Cylinder],
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        ))
+        .expect("service profile admits generated profile scan")
+    );
 
     scan.features.entity_tables[0].unmark_surface_id(51);
     assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_none());
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
-        ctx,
-        true,
-        Some(40),
-        4,
-        &[crate::surface::SurfaceKind::Cylinder],
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-    ))
-    .expect("service profile admits generated profile scan"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(40),
+            4,
+            &[crate::surface::SurfaceKind::Cylinder],
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        ))
+        .expect("service profile admits generated profile scan")
+    );
 }
 
 #[test]
@@ -370,11 +374,13 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
             107,
             std::slice::from_ref(&table),
             std::slice::from_ref(&row),
-        )).expect("admitted surface roster"),
+        ))
+        .expect("admitted surface roster"),
         Some(117)
     );
     let mut exact_class_203_plane = table.clone();
@@ -389,46 +395,64 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         offset: 0,
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
             107,
             std::slice::from_ref(&exact_class_203_plane),
             &[topology_plane, row.clone()],
-        )).expect("admitted surface roster"),
+        ))
+        .expect("admitted surface roster"),
         Some(117)
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )).expect("admitted surface roster")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        ))
+        .expect("admitted surface roster")
+        .is_none()
+    );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )).expect("admitted surface roster")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        ))
+        .expect("admitted surface roster")
+        .is_none()
+    );
     table.table_class_id = 29;
     table.entries[3].payload = crate::feature::entity::EntryPayload::Plain {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )).expect("admitted surface roster")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        ))
+        .expect("admitted surface roster")
+        .is_none()
+    );
     table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )).expect("admitted surface roster")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        ))
+        .expect("admitted surface roster")
+        .is_none()
+    );
 
     let mut extended = crate::feature::entity::FeatureEntityTable::new(
         107,
@@ -460,7 +484,13 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
     let rows = [plane.clone(), row.clone()];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &rows)).expect("admitted surface roster"),
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&extended),
+            &rows
+        ))
+        .expect("admitted surface roster"),
         Some(117)
     );
     let mut class_203_plane = extended.clone();
@@ -469,15 +499,26 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     second_topology_plane.id = 112;
     let second_topology_rows = [second_topology_plane, row];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
             107,
             std::slice::from_ref(&class_203_plane),
             &second_topology_rows,
-        )).expect("admitted surface roster"),
+        ))
+        .expect("admitted surface roster"),
         Some(117)
     );
     extended.mark_surface_ids([109, 117, 120]);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &rows)).expect("admitted surface roster").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&extended),
+            &rows
+        ))
+        .expect("admitted surface roster")
+        .is_none()
+    );
 }
 
 #[test]
@@ -538,16 +579,18 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         .expect("service profile admits paired sphere coordinates"),
         Some([0.0, 0.0, -15.0])
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
-        ctx,
-        [
-            five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
-            five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
-        ],
-        2.65,
-    ))
-    .expect("service profile admits paired sphere coordinates")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
+            ctx,
+            [
+                five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+                five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
+            ],
+            2.65,
+        ))
+        .expect("service profile admits paired sphere coordinates")
+        .is_none()
+    );
 }
 
 #[test]
@@ -557,8 +600,8 @@ fn unique_parallel_round_supports_define_constant_radius() {
         crate::decode::with_test_decode_ctx(|ctx| {
             unique_positive_length(ctx, &[0.5, 0.5 + EPS_RADIUS_EQUIVALENCE])
         })
-            .expect("service profile admits positive length samples")
-            .map(cadmpeg_ir::scalar::PositiveLength::get),
+        .expect("service profile admits positive length samples")
+        .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.5)
     );
     assert_eq!(
@@ -584,31 +627,43 @@ fn unique_parallel_round_supports_define_constant_radius() {
     })
     .expect("service profile admits positive length samples"));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
-            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
-            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        ], |plane| Ok(Some(*plane))))
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+            ctx,
+            &[
+                plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
+                plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ],
+            |plane| Ok(Some(*plane))
+        ))
         .expect("service profile admits round support plane comparisons"),
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
-            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
-        ], |plane| Ok(Some(*plane))))
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+            ctx,
+            &[
+                plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+                plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
+            ],
+            |plane| Ok(Some(*plane))
+        ))
         .expect("service profile admits round support plane comparisons"),
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
-            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
-        ], |plane| Ok(Some(*plane))))
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+            ctx,
+            &[
+                plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+                plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+            ],
+            |plane| Ok(Some(*plane))
+        ))
         .expect("service profile admits round support plane comparisons"),
         Some(0.5)
     );
@@ -729,9 +784,15 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::scan_for_test("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
-            .expect("section extent")
-            .section,
+        crate::container::Section::scan_for_test(
+            "VisibGeom".to_string(),
+            0,
+            1_000,
+            None,
+            &[0u8; 1_000],
+        )
+        .expect("section extent")
+        .section,
     );
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
@@ -1330,13 +1391,11 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
     let x_second = circle(372, [-1.0, 0.0, 0.0], [5.5, 10.0, -4.0], [5.5, 8.0, -6.0]);
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reference_cap_bound_round_frame(ctx, envelope, &[&first, &second, &x_first, &x_second])
-        })
-        .expect("service profile admits reference cap circles")
-        .is_none()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reference_cap_bound_round_frame(ctx, envelope, &[&first, &second, &x_first, &x_second])
+    })
+    .expect("service profile admits reference cap circles")
+    .is_none());
 
     let crossed_first = circle(369, [0.0, 0.0, -1.0], [5.5, 8.0, -6.0], [3.5, 10.0, -6.0]);
     let crossed_second = circle(370, [0.0, 0.0, 1.0], [3.5, 10.0, -4.0], [5.5, 8.0, -4.0]);

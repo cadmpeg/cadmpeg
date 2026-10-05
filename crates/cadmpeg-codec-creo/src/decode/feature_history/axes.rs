@@ -98,7 +98,10 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     }
 
     let rows = ctx
-        .admit_iter(&scan.surfaces.rows, "creo full-turn revolution surface rows")?
+        .admit_iter(
+            &scan.surfaces.rows,
+            "creo full-turn revolution surface rows",
+        )?
         .filter(|row| row.feature_id == feature_id);
     let mut axes = Vec::new();
     let mut plane_normals = Vec::new();
@@ -109,13 +112,15 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let mut surfaces = ctx.admit_iter(&ir.model.surfaces, "creo full-turn model surfaces")?.filter(|surface| {
-            crate::identity::matches_numbered_identity(
-                surface.id.as_str(),
-                "creo:visibgeom:surface#",
-                row.id,
-            )
-        });
+        let mut surfaces = ctx
+            .admit_iter(&ir.model.surfaces, "creo full-turn model surfaces")?
+            .filter(|surface| {
+                crate::identity::matches_numbered_identity(
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    row.id,
+                )
+            });
         let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
             return Ok(None);
         };
@@ -180,8 +185,11 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
                 .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
         )
         .chain(
-            ctx.admit_iter(&sphere_centers, "creo full-turn revolution axis scale sphere centers")?
-                .flat_map(|center| [center.x, center.y, center.z]),
+            ctx.admit_iter(
+                &sphere_centers,
+                "creo full-turn revolution axis scale sphere centers",
+            )?
+            .flat_map(|center| [center.x, center.y, center.z]),
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
@@ -643,10 +651,13 @@ pub(in super::super) fn model_feature_ids(
     let mut ids = BTreeSet::new();
     let mut numeric_storage = ctx.reserve_scoped(0, "Creo model numeric identity lookup")?;
     let mut numeric_ids = BTreeSet::new();
-    let geometry_generators = numeric_storage
-        .with_storage(|| geometry_generator_features(ctx, scan))?;
+    let geometry_generators =
+        numeric_storage.with_storage(|| geometry_generator_features(ctx, scan))?;
     for feature_id in ctx
-        .admit_iter(&scan.features.operations, "creo emitted operation feature IDs")?
+        .admit_iter(
+            &scan.features.operations,
+            "creo emitted operation feature IDs",
+        )?
         .map(|operation| operation.feature_id)
         .chain(
             ctx.admit_iter(&scan.features.rows, "creo emitted feature row IDs")?
@@ -873,11 +884,10 @@ mod allocation_tests {
         );
         assert_eq!(
             ids,
-            BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
-                "creo:model:feature#50",
-            )
-            .expect("fixture feature identity")]),
+            BTreeSet::from([
+                cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50",)
+                    .expect("fixture feature identity")
+            ]),
         );
     }
-
 }

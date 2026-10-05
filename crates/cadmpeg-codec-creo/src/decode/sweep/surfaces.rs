@@ -633,7 +633,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 feature_id,
                 segment.external_id,
                 &geometry,
-            )? else {
+            )?
+            else {
                 continue;
             };
             let id = crate::identity::compose_checked::<SurfaceId>(
@@ -772,11 +773,29 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
         for spline in splines {
-            let Some(internal_id) = spline.entity_id else { continue; };
-            let Some(external_id) = order_table.external_id(ctx, internal_id)? else { continue; };
-            let Some(native_surface_id) = generated_surface_id_for_feature(ctx, &scan.features.entity_tables, feature_id, external_id)? else { continue; };
-            if !unique_feature_surface_row(&scan.surfaces.rows, native_surface_id, feature_id,
-                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)) { continue; }
+            let Some(internal_id) = spline.entity_id else {
+                continue;
+            };
+            let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
+                continue;
+            };
+            let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
+                &scan.features.entity_tables,
+                feature_id,
+                external_id,
+            )?
+            else {
+                continue;
+            };
+            if !unique_feature_surface_row(
+                &scan.surfaces.rows,
+                native_surface_id,
+                feature_id,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ) {
+                continue;
+            }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;

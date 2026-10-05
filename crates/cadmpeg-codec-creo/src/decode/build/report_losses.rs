@@ -2,7 +2,10 @@
 //! Loss notes derived from coverage counters and undecoded PSB layers.
 
 use crate::container::ContainerScan;
-use crate::decode::surfaces::brep::{BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, FACE_REJECTION_SAMPLE_LIMIT};
+use crate::decode::surfaces::brep::{
+    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection,
+    FACE_REJECTION_SAMPLE_LIMIT,
+};
 use crate::loss::CreoLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -23,12 +26,20 @@ pub(super) fn push_report_loss(
 }
 
 struct BrepRejectionDetails<'a> {
-    reasons: [(FaceAdmissionRejection, usize, [Option<&'a FaceAdmissionDetail>; FACE_REJECTION_SAMPLE_LIMIT]); FaceAdmissionRejection::ALL.len()],
+    reasons: [(
+        FaceAdmissionRejection,
+        usize,
+        [Option<&'a FaceAdmissionDetail>; FACE_REJECTION_SAMPLE_LIMIT],
+    ); FaceAdmissionRejection::ALL.len()],
 }
 
 impl<'a> BrepRejectionDetails<'a> {
-    fn new(ctx: &DecodeContext<'_>, diagnostics: &'a BrepTransferDiagnostics) -> Result<Self, CodecError> {
-        let mut reasons = FaceAdmissionRejection::ALL.map(|reason| (reason, 0, [None; FACE_REJECTION_SAMPLE_LIMIT]));
+    fn new(
+        ctx: &DecodeContext<'_>,
+        diagnostics: &'a BrepTransferDiagnostics,
+    ) -> Result<Self, CodecError> {
+        let mut reasons = FaceAdmissionRejection::ALL
+            .map(|reason| (reason, 0, [None; FACE_REJECTION_SAMPLE_LIMIT]));
         for (reason, count, samples) in &mut reasons {
             let (total, evidence) = diagnostics.evidence(ctx, *reason)?;
             *count = total;
@@ -303,7 +314,8 @@ fn legacy_type_count(
     type_code: u8,
     suffix: &str,
 ) -> Result<usize, CodecError> {
-    Ok(ctx.admit_iter(&**coverage, "creo legacy type coverage search")?
+    Ok(ctx
+        .admit_iter(&**coverage, "creo legacy type coverage search")?
         .find_map(|(key, count)| {
             let stored_type = key
                 .strip_prefix(prefix)?
@@ -505,7 +517,10 @@ pub(super) fn push_brep_transfer_note(
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
 ) -> Result<(), CodecError> {
-    for (body_id, reason) in ctx.admit_iter(&diagnostics.rejected_extrusion_bodies, "creo rejected extrusion body loss traversal")? {
+    for (body_id, reason) in ctx.admit_iter(
+        &diagnostics.rejected_extrusion_bodies,
+        "creo rejected extrusion body loss traversal",
+    )? {
         push_report_loss(
             ctx,
             losses,
@@ -942,8 +957,15 @@ pub(super) fn push_structural_layer_notes(
     // Named prototype fields whose bounded scalar body the decoder refused.
     // The field bytes are retained opaque; the note states which record and
     // field, and the slot and byte the refusal stands at.
-    for refusal in ctx.admit_iter(&scan.surfaces.prototype_field_refusals, "creo visible prototype refusal loss traversal")?
-        .chain(ctx.admit_iter(&scan.surfaces.nonvisible_prototype_field_refusals, "creo nonvisible prototype refusal loss traversal")?)
+    for refusal in ctx
+        .admit_iter(
+            &scan.surfaces.prototype_field_refusals,
+            "creo visible prototype refusal loss traversal",
+        )?
+        .chain(ctx.admit_iter(
+            &scan.surfaces.nonvisible_prototype_field_refusals,
+            "creo nonvisible prototype refusal loss traversal",
+        )?)
     {
         push_report_loss(
             ctx,
@@ -986,7 +1008,10 @@ pub(super) fn push_structural_layer_notes(
         None => ", configuration presence",
     };
     let unevaluated_curve_expression_record_count = ctx
-        .admit_iter(&scan.curves.expressions, "creo unevaluated curve expression coverage traversal")?
+        .admit_iter(
+            &scan.curves.expressions,
+            "creo unevaluated curve expression coverage traversal",
+        )?
         .try_fold(0usize, |total, record| {
             if record.backup {
                 return Ok::<_, CodecError>(total);
@@ -995,15 +1020,30 @@ pub(super) fn push_structural_layer_notes(
                 true
             } else {
                 let mut unresolved_solve = false;
-                for block in ctx.admit_iter(&record.solve_blocks, "creo unresolved solve block loss traversal")? {
-                    if ctx.admit_iter(&block.unknowns, "creo unresolved solve unknown loss traversal")?.any(|unknown| unknown.solution.is_none()) {
+                for block in ctx.admit_iter(
+                    &record.solve_blocks,
+                    "creo unresolved solve block loss traversal",
+                )? {
+                    if ctx
+                        .admit_iter(
+                            &block.unknowns,
+                            "creo unresolved solve unknown loss traversal",
+                        )?
+                        .any(|unknown| unknown.solution.is_none())
+                    {
                         unresolved_solve = true;
                         break;
                     }
                 }
                 unresolved_solve || record.unresolved_solve_control
             };
-            total.checked_add(usize::from(unresolved)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo unevaluated expression count", u64::MAX, u64::MAX))
+            total.checked_add(usize::from(unresolved)).ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "creo unevaluated expression count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })
         })?;
 
     let curve_expression_transfer =

@@ -79,7 +79,11 @@ impl<'a> Index<'a> {
             }
             if let Some(parent) = object.parent {
                 let key = (parent, object.name.as_str());
-                match ctx.entry_btree_map(&mut children, key, "creo legacy feature child index nodes")? {
+                match ctx.entry_btree_map(
+                    &mut children,
+                    key,
+                    "creo legacy feature child index nodes",
+                )? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut rows = Vec::new();
                         ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;

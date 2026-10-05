@@ -753,105 +753,113 @@ fn generated_datum_plane_equation(
     let mut datum_ids = 0usize;
     for table in ctx.admit_iter(sources.geometry_tables, "creo generated datum table scan")? {
         if let Some(ids) = table.kind.datum_ids() {
-            let matches = ctx.admit_iter(ids, "creo generated datum ID count")?
-                .filter(|id| **id == sketch_id).count();
-            datum_ids = datum_ids.checked_add(matches).ok_or_else(|| ctx.refuse_codec_limit("creo generated datum ID count", u64::MAX, u64::MAX))?;
+            let matches = ctx
+                .admit_iter(ids, "creo generated datum ID count")?
+                .filter(|id| **id == sketch_id)
+                .count();
+            datum_ids = datum_ids.checked_add(matches).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo generated datum ID count", u64::MAX, u64::MAX)
+            })?;
         }
     }
-    if datum_ids != 1 { return Ok(None); }
+    if datum_ids != 1 {
+        return Ok(None);
+    }
     Ok((|| {
-    let mut datums = sources
-        .datums
-        .iter()
-        .filter(|datum| datum.id == reference_id);
-    let reference_feature = match (datums.next(), datums.next()) {
-        (Some(datum), None) => Some(datum.feature_id),
-        (None, None) => unique_surface_row(sources.surface_rows, reference_id)
-            .filter(|row| row.kind == SurfaceKind::Plane)
-            .map(|row| row.feature_id),
-        _ => None,
-    }?;
-    exactly_one(
-        sources
-            .affected_ids
+        let mut datums = sources
+            .datums
             .iter()
-            .filter(|record| {
-                record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
-            })
-            .filter_map(|parents| {
-                let other = exactly_one(
-                    parents
-                        .ids
+            .filter(|datum| datum.id == reference_id);
+        let reference_feature = match (datums.next(), datums.next()) {
+            (Some(datum), None) => Some(datum.feature_id),
+            (None, None) => unique_surface_row(sources.surface_rows, reference_id)
+                .filter(|row| row.kind == SurfaceKind::Plane)
+                .map(|row| row.feature_id),
+            _ => None,
+        }?;
+        exactly_one(
+            sources
+                .affected_ids
+                .iter()
+                .filter(|record| {
+                    record.kind == AffectedIdKind::Parents
+                        && record.ids.contains(&reference_feature)
+                })
+                .filter_map(|parents| {
+                    let other = exactly_one(
+                        parents
+                            .ids
+                            .iter()
+                            .filter(|parent| **parent != reference_feature),
+                    )?;
+                    let (equation, ambiguous) = sources
+                        .datums
                         .iter()
-                        .filter(|parent| **parent != reference_feature),
-                )?;
-                let (equation, ambiguous) = sources
-                    .datums
-                    .iter()
-                    .filter(|datum| datum.feature_id == *other)
-                    .map(|datum| SignedPlaneEquation {
-                        normal: datum.plane().normal(),
-                        offset: datum.plane().offset(),
-                    })
-                    .chain(
-                        sources
-                            .surface_rows
-                            .iter()
-                            .filter(|row| {
-                                row.feature_id == *other && row.kind == SurfaceKind::Plane
-                            })
-                            .filter_map(|row| {
-                                plane_equation(
-                                    row.id,
-                                    sources.datums,
-                                    sources.model_planes,
-                                    sources.outline_planes,
-                                )
-                            }),
-                    )
-                    .chain(
-                        sources
-                            .surface_rows
-                            .iter()
-                            .filter(|row| {
-                                row.feature_id == *other && row.kind == SurfaceKind::Plane
-                            })
-                            .flat_map(|row| {
-                                sources
-                                    .plane_envelopes
-                                    .iter()
-                                    .filter(move |record| record.surface_id == row.id)
-                            })
-                            .flat_map(|record| {
-                                let corners = match &record.envelope {
-                                    PlaneEnvelope::Standard { corners_3d, .. }
-                                    | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
-                                };
-                                (0..3).filter_map(move |axis| {
-                                    if record.corner_coordinate_equal[axis] != Some(true) {
-                                        return None;
-                                    }
-                                    let coordinate = corners[0][axis]?;
-                                    let mut normal = [0.0; 3];
-                                    normal[axis] = 1.0;
-                                    Some(SignedPlaneEquation {
-                                        normal,
-                                        offset: coordinate,
-                                    })
+                        .filter(|datum| datum.feature_id == *other)
+                        .map(|datum| SignedPlaneEquation {
+                            normal: datum.plane().normal(),
+                            offset: datum.plane().offset(),
+                        })
+                        .chain(
+                            sources
+                                .surface_rows
+                                .iter()
+                                .filter(|row| {
+                                    row.feature_id == *other && row.kind == SurfaceKind::Plane
                                 })
-                            }),
-                    )
-                    .filter(|equation| {
-                        dot(equation.normal, reference_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
-                    })
-                    .fold((None, false), |(first, ambiguous), candidate| match first {
-                        None => (Some(candidate), ambiguous),
-                        Some(first) if first == candidate => (Some(first), ambiguous),
-                        Some(first) => (Some(first), true),
-                    });
-                (!ambiguous).then_some(equation?)
-            }),
-    )
+                                .filter_map(|row| {
+                                    plane_equation(
+                                        row.id,
+                                        sources.datums,
+                                        sources.model_planes,
+                                        sources.outline_planes,
+                                    )
+                                }),
+                        )
+                        .chain(
+                            sources
+                                .surface_rows
+                                .iter()
+                                .filter(|row| {
+                                    row.feature_id == *other && row.kind == SurfaceKind::Plane
+                                })
+                                .flat_map(|row| {
+                                    sources
+                                        .plane_envelopes
+                                        .iter()
+                                        .filter(move |record| record.surface_id == row.id)
+                                })
+                                .flat_map(|record| {
+                                    let corners = match &record.envelope {
+                                        PlaneEnvelope::Standard { corners_3d, .. }
+                                        | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+                                    };
+                                    (0..3).filter_map(move |axis| {
+                                        if record.corner_coordinate_equal[axis] != Some(true) {
+                                            return None;
+                                        }
+                                        let coordinate = corners[0][axis]?;
+                                        let mut normal = [0.0; 3];
+                                        normal[axis] = 1.0;
+                                        Some(SignedPlaneEquation {
+                                            normal,
+                                            offset: coordinate,
+                                        })
+                                    })
+                                }),
+                        )
+                        .filter(|equation| {
+                            dot(equation.normal, reference_normal).abs()
+                                <= EPS_PLACEMENT_EXACT_GEOMETRY
+                        })
+                        .fold((None, false), |(first, ambiguous), candidate| match first {
+                            None => (Some(candidate), ambiguous),
+                            Some(first) if first == candidate => (Some(first), ambiguous),
+                            Some(first) => (Some(first), true),
+                        });
+                    (!ambiguous).then_some(equation?)
+                }),
+        )
     })())
 }
 
@@ -1023,11 +1031,21 @@ fn zero_offset_standard_section_plane_equation(
             && instruction.member2 == 0)
             .then_some(())?;
         Some(())
-    })() else { return Ok(None); };
-    let datum_tables = ctx.admit_iter(sources.geometry_tables, "creo standard section datum table count")?
-        .filter(|table| table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id]))
+    })() else {
+        return Ok(None);
+    };
+    let datum_tables = ctx
+        .admit_iter(
+            sources.geometry_tables,
+            "creo standard section datum table count",
+        )?
+        .filter(|table| {
+            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
+        })
         .count();
-    if datum_tables != 1 { return Ok(None); }
+    if datum_tables != 1 {
+        return Ok(None);
+    }
     Ok((|| {
         let mut tables = entity_tables
             .iter()
@@ -1083,82 +1101,86 @@ fn circular_profile_aligned_origin(
     entity_tables: &[FeatureEntityTable],
 ) -> Result<Option<[f64; 3]>, CodecError> {
     let Some((table, profile_external_id, order)) = (|| {
-    let table = exactly_one(
-        entity_tables
-            .iter()
-            .filter(|table| table.feature_id == feature_id)
-            .filter(|table| {
-                table
-                    .entries
-                    .iter()
-                    .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
-                    .eq([204, 203, 200, 200])
-            }),
-    )?;
-    let profile_external_id = table.entries[2].source_entity_id()?;
-    Some((table, profile_external_id, definition.order_table.as_ref()?))
-    })() else { return Ok(None); };
-    let Some(profile_internal_id) = order.internal_id(ctx, profile_external_id)? else { return Ok(None); };
+        let table = exactly_one(
+            entity_tables
+                .iter()
+                .filter(|table| table.feature_id == feature_id)
+                .filter(|table| {
+                    table
+                        .entries
+                        .iter()
+                        .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
+                        .eq([204, 203, 200, 200])
+                }),
+        )?;
+        let profile_external_id = table.entries[2].source_entity_id()?;
+        Some((table, profile_external_id, definition.order_table.as_ref()?))
+    })() else {
+        return Ok(None);
+    };
+    let Some(profile_internal_id) = order.internal_id(ctx, profile_external_id)? else {
+        return Ok(None);
+    };
     Ok((|| {
-    let circle = exactly_one(
-        definition
-            .saved_section
+        let circle = exactly_one(
+            definition
+                .saved_section
+                .iter()
+                .flat_map(|section| &section.entities)
+                .filter_map(|entity| match entity {
+                    crate::feature::definitions::FeatureSavedEntity::Circle(circle)
+                        if circle.entity_id == profile_internal_id =>
+                    {
+                        Some(circle)
+                    }
+                    _ => None,
+                }),
+        )?;
+        let [Some(center_u), Some(center_v), _] = circle.center else {
+            return None;
+        };
+        let radius = circle
+            .radius
+            .filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY)?;
+        let cap_id = table.entries[1].entity_id;
+        let envelope = exactly_one(
+            sources
+                .plane_envelopes
+                .iter()
+                .filter(|record| record.surface_id == cap_id),
+        )?;
+        let corners = match &envelope.envelope {
+            PlaneEnvelope::Standard { corners_3d, .. }
+            | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+        };
+        let decode_corner = |corner: &[Option<f64>; 3]| Some([corner[0]?, corner[1]?, corner[2]?]);
+        let first = decode_corner(&corners[0])?;
+        let second = decode_corner(&corners[1])?;
+        let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
+        let radial = match axis {
+            0 => [1, 2],
+            1 => [0, 2],
+            2 => [0, 1],
+            _ => return None,
+        };
+        let spans = radial.map(|index| (second[index] - first[index]).abs());
+        let tolerance_scale = spans
             .iter()
-            .flat_map(|section| &section.entities)
-            .filter_map(|entity| match entity {
-                crate::feature::definitions::FeatureSavedEntity::Circle(circle)
-                    if circle.entity_id == profile_internal_id =>
-                {
-                    Some(circle)
-                }
-                _ => None,
-            }),
-    )?;
-    let [Some(center_u), Some(center_v), _] = circle.center else {
-        return None;
-    };
-    let radius = circle
-        .radius
-        .filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY)?;
-    let cap_id = table.entries[1].entity_id;
-    let envelope = exactly_one(
-        sources
-            .plane_envelopes
-            .iter()
-            .filter(|record| record.surface_id == cap_id),
-    )?;
-    let corners = match &envelope.envelope {
-        PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
-            corners_3d
-        }
-    };
-    let decode_corner = |corner: &[Option<f64>; 3]| Some([corner[0]?, corner[1]?, corner[2]?]);
-    let first = decode_corner(&corners[0])?;
-    let second = decode_corner(&corners[1])?;
-    let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
-    let radial = match axis {
-        0 => [1, 2],
-        1 => [0, 2],
-        2 => [0, 1],
-        _ => return None,
-    };
-    let spans = radial.map(|index| (second[index] - first[index]).abs());
-    let tolerance_scale = spans
-        .iter()
-        .chain(std::iter::once(&radius))
-        .copied()
-        .fold(1.0, f64::max);
-    (spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
-        && (spans[0] - spans[1]).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale
-        && (0.5 * spans[0] - radius).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale)
-        .then_some(())?;
-    let cap_center: [f64; 3] = std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
-    let signed_distance = dot(sketch_plane.normal, cap_center) - sketch_plane.offset;
-    let profile_center = add(cap_center, scale(sketch_plane.normal, -signed_distance));
-    Some(add(
-        add(profile_center, scale(u_axis, -center_u)),
-        scale(v_axis, -center_v),
-    ))
+            .chain(std::iter::once(&radius))
+            .copied()
+            .fold(1.0, f64::max);
+        (spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
+            && (spans[0] - spans[1]).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale
+            && (0.5 * spans[0] - radius).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale)
+            .then_some(())?;
+        let cap_center: [f64; 3] =
+            std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
+        let signed_distance = dot(sketch_plane.normal, cap_center) - sketch_plane.offset;
+        let profile_center = add(cap_center, scale(sketch_plane.normal, -signed_distance));
+        Some(add(
+            add(profile_center, scale(u_axis, -center_u)),
+            scale(v_axis, -center_v),
+        ))
     })())
 }
 
@@ -1229,7 +1251,13 @@ pub(crate) fn resolve(
             if let Some(sketch) = direct_sketch {
                 let mut reference = match direct_reference {
                     Some(reference) => Some(reference),
-                    None => generated_datum_plane_equation(ctx, reference_id, sketch_id, sketch.normal, sources)?,
+                    None => generated_datum_plane_equation(
+                        ctx,
+                        reference_id,
+                        sketch_id,
+                        sketch.normal,
+                        sources,
+                    )?,
                 };
                 if reference.is_none() {
                     reference = feature_generated_plane_equation(
@@ -1355,22 +1383,22 @@ pub(crate) fn resolve(
             scale(reference_normal, reference_factor),
         );
         let origin = match definition.identity.owner_feature_id() {
-            Some(feature_id) =>
-                circular_profile_aligned_origin(
-                    ctx,
-                    definition,
-                    feature_id,
-                    SignedPlaneEquation {
-                        normal: sketch_normal,
-                        offset: sketch_offset,
-                    },
-                    u_axis,
-                    reference_axis,
-                    sources,
-                    entity_tables,
-                )?,
+            Some(feature_id) => circular_profile_aligned_origin(
+                ctx,
+                definition,
+                feature_id,
+                SignedPlaneEquation {
+                    normal: sketch_normal,
+                    offset: sketch_offset,
+                },
+                u_axis,
+                reference_axis,
+                sources,
+                entity_tables,
+            )?,
             None => None,
-        }.unwrap_or(intersection_origin);
+        }
+        .unwrap_or(intersection_origin);
         let direct_transform = FeatureSectionTransform::new(
             definition.identity.id(),
             definition.identity.owner_feature_id(),

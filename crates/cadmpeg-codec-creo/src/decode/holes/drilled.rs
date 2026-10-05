@@ -57,14 +57,31 @@ fn paired_hole_replay_is_counterbore(
     let mut has_cone = false;
     for (_, pair) in ctx.admit_iter(generated_by_source, "creo paired-hole source count")? {
         let entries = [pair.first, pair.second];
-        if matches!(entries, [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)]) {
-            cylinder_sources = cylinder_sources.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX))?;
+        if matches!(
+            entries,
+            [
+                Some(crate::surface::SurfaceKind::Cylinder),
+                Some(crate::surface::SurfaceKind::Cylinder)
+            ]
+        ) {
+            cylinder_sources = cylinder_sources.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX)
+            })?;
         }
-        let plane_count = ctx.admit_iter(&entries, "creo paired-hole plane count")?
-            .filter(|kind| matches!(kind, Some(crate::surface::SurfaceKind::Plane))).count();
-        if plane_count == 1 && ctx.admit_iter(&entries, "creo paired-hole absent count")?
-            .filter(|kind| kind.is_none()).count() == 1 {
-            planar_support_sources = planar_support_sources.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX))?;
+        let plane_count = ctx
+            .admit_iter(&entries, "creo paired-hole plane count")?
+            .filter(|kind| matches!(kind, Some(crate::surface::SurfaceKind::Plane)))
+            .count();
+        if plane_count == 1
+            && ctx
+                .admit_iter(&entries, "creo paired-hole absent count")?
+                .filter(|kind| kind.is_none())
+                .count()
+                == 1
+        {
+            planar_support_sources = planar_support_sources.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX)
+            })?;
         }
         has_cone |= matches!(pair.first, Some(crate::surface::SurfaceKind::Cone))
             || matches!(pair.second, Some(crate::surface::SurfaceKind::Cone));
@@ -126,7 +143,11 @@ fn split_patch_table_is_counterbore(
             return Ok(false);
         }
         if rowless {
-            match ctx.entry_btree_map(&mut rowless_counts_by_source, source_id, "creo split-patch rowless source nodes")? {
+            match ctx.entry_btree_map(
+                &mut rowless_counts_by_source,
+                source_id,
+                "creo split-patch rowless source nodes",
+            )? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(1);
@@ -149,13 +170,21 @@ fn split_patch_table_is_counterbore(
         )?;
         if row.kind == crate::surface::SurfaceKind::Cylinder {
             let group = ctx
-                .entry_btree_map(&mut cylinder_ids_by_source, source_id, "creo split-patch cylinder source nodes")?
+                .entry_btree_map(
+                    &mut cylinder_ids_by_source,
+                    source_id,
+                    "creo split-patch cylinder source nodes",
+                )?
                 .or_default();
             ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs")?;
             group.push(entry.entity_id);
         } else if row.kind == crate::surface::SurfaceKind::Plane {
             let group = ctx
-                .entry_btree_map(&mut plane_ids_by_source, source_id, "creo split-patch plane source nodes")?
+                .entry_btree_map(
+                    &mut plane_ids_by_source,
+                    source_id,
+                    "creo split-patch plane source nodes",
+                )?
                 .or_default();
             ctx.reserve_vec(group, 1, "creo split-patch plane IDs")?;
             group.push(entry.entity_id);
@@ -171,17 +200,42 @@ fn split_patch_table_is_counterbore(
         for id in ctx.admit_iter(ids, "creo split-patch cylinder IDs")? {
             let mut previous_index = 0usize;
             let mut seen = false;
-            'previous: for (_, previous_ids) in ctx.admit_iter(&cylinder_ids_by_source, "creo split-patch prior cylinder groups")? {
-                for previous in ctx.admit_iter(previous_ids, "creo split-patch prior cylinder IDs")? {
-                    if previous_index == index { break 'previous; }
-                    if previous == id { seen = true; break 'previous; }
-                    previous_index = previous_index.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder index", u64::MAX, u64::MAX))?;
+            'previous: for (_, previous_ids) in ctx.admit_iter(
+                &cylinder_ids_by_source,
+                "creo split-patch prior cylinder groups",
+            )? {
+                for previous in
+                    ctx.admit_iter(previous_ids, "creo split-patch prior cylinder IDs")?
+                {
+                    if previous_index == index {
+                        break 'previous;
+                    }
+                    if previous == id {
+                        seen = true;
+                        break 'previous;
+                    }
+                    previous_index = previous_index.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "creo split-patch cylinder index",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
                 }
             }
             if !seen {
-                unique_cylinder_id_count = unique_cylinder_id_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder count", u64::MAX, u64::MAX))?;
+                unique_cylinder_id_count =
+                    unique_cylinder_id_count.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "creo split-patch cylinder count",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
             }
-            index = index.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder index", u64::MAX, u64::MAX))?;
+            index = index.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo split-patch cylinder index", u64::MAX, u64::MAX)
+            })?;
         }
     }
     if plane_ids_by_source.len() != 1 {
@@ -282,7 +336,8 @@ fn paired_hole_replay_surfaces_by_source(
     }
     if !(source_zero_count <= 1
         && framed_class_200_count
-            == ctx.admit_iter(&table.entries, "creo paired-hole class count")?
+            == ctx
+                .admit_iter(&table.entries, "creo paired-hole class count")?
                 .filter(|entry| entry.class_id() == 200)
                 .count())
     {
@@ -354,12 +409,14 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             continue;
         };
         let paired = |kind| -> Result<usize, CodecError> {
-            Ok(ctx.admit_iter(&generated_by_source, "creo drilled paired source count")?
+            Ok(ctx
+                .admit_iter(&generated_by_source, "creo drilled paired source count")?
                 .map(|(_, pair)| [pair.first, pair.second])
                 .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
                 .count())
         };
-        let rowless = ctx.admit_iter(&generated_by_source, "creo drilled rowless source count")?
+        let rowless = ctx
+            .admit_iter(&generated_by_source, "creo drilled rowless source count")?
             .map(|(_, pair)| [pair.first, pair.second])
             .filter(|entries| entries.as_slice() == [None, None])
             .count();
@@ -504,7 +561,8 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
     let Some(corners) = simple_drilled_hole_corner_envelopes(ctx, scan, table)? else {
         return Ok(None);
     };
-    if let Some(placement) = drilled_hole_placement_from_corner_envelopes(corners, diameter, depth) {
+    if let Some(placement) = drilled_hole_placement_from_corner_envelopes(corners, diameter, depth)
+    {
         return Ok(Some(placement));
     }
     let Some(points) = simple_drilled_hole_cone_terminal_points(ctx, scan, table)? else {
@@ -936,17 +994,26 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
 ) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let depth_external_id = family.depth_external_id();
     let mut first: Option<(f64, f64, f64)> = None;
-    for table in tables.filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3) {
+    for table in
+        tables.filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+    {
         let mut signature_matches = true;
         for (external_id, dimension_type) in [(0, 2), (1, 10), (depth_external_id, 2)] {
-            if ctx.admit_iter(&table.rows, "creo drilled dimension signature count")?
-                .filter(|row| row.external_id == external_id && row.dimension_type == dimension_type)
-                .count() != 1 {
+            if ctx
+                .admit_iter(&table.rows, "creo drilled dimension signature count")?
+                .filter(|row| {
+                    row.external_id == external_id && row.dimension_type == dimension_type
+                })
+                .count()
+                != 1
+            {
                 signature_matches = false;
                 break;
             }
         }
-        if !signature_matches { continue; }
+        if !signature_matches {
+            continue;
+        }
         let Some(candidate) =
             (|| {
                 let value = |external_id, dimension_type| {
@@ -969,7 +1036,10 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
                 let drill_point_angle = value(1, 10)?;
                 (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
                     .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
-            })() else { return Ok(None); };
+            })()
+        else {
+            return Ok(None);
+        };
         let Some(candidate) = candidate else {
             continue;
         };
@@ -982,7 +1052,9 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
                         .zip(FiniteReal::new(first))
                         .is_some_and(|(first, second)| approximately_equal(first, second))
                 });
-            if !agrees { return Ok(None); }
+            if !agrees {
+                return Ok(None);
+            }
         } else {
             first = Some(candidate);
         }

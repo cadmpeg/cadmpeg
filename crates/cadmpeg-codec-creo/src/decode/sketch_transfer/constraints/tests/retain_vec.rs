@@ -9,8 +9,7 @@ fn constraint_entity_retention_refuses_and_service_preserves_membership() {
     let entity = SketchEntityId::mint("creo:test:entity#1").expect("entity");
     let emitted = BTreeSet::from([entity.clone()]);
     let make_definition = || SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::try_from("native")
-            .expect("nonblank kind"),
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("native").expect("nonblank kind"),
         native_state: None,
         native_flags: None,
         native_properties: BTreeMap::new(),
@@ -26,15 +25,23 @@ fn constraint_entity_retention_refuses_and_service_preserves_membership() {
 
     let error = reconcile_constraint_entity_references(&ctx, &mut definition, &emitted)
         .expect_err("retention requires work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo constraint emitted entity retention"));
+            && resource.operation == "creo constraint emitted entity retention")
+    );
 
     let mut admitted = make_definition();
-    assert!(crate::decode::with_test_decode_ctx(|ctx|
-        reconcile_constraint_entity_references(ctx, &mut admitted, &emitted)
-    )
-    .expect("service entity retention admitted"));
-    assert!(matches!(admitted, SketchConstraintDefinitionInput::Native { entities, .. }
-        if entities == vec![entity]));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| reconcile_constraint_entity_references(
+            ctx,
+            &mut admitted,
+            &emitted
+        ))
+        .expect("service entity retention admitted")
+    );
+    assert!(
+        matches!(admitted, SketchConstraintDefinitionInput::Native { entities, .. }
+        if entities == vec![entity])
+    );
 }

@@ -624,7 +624,11 @@ pub(crate) fn operation_states(
         while offset > 0 && family_byte(payload[offset - 1]) {
             offset -= 1;
         }
-        while offset < separator && ctx.validate_utf8(&payload[offset..separator], "creo UTF-8 validation")?.is_err() {
+        while offset < separator
+            && ctx
+                .validate_utf8(&payload[offset..separator], "creo UTF-8 validation")?
+                .is_err()
+        {
             offset += 1;
         }
         let state_offset = offset;
@@ -751,7 +755,11 @@ pub(crate) fn operation_states(
         .iter()
         .filter(|operation| operation.display_name_stored())
     {
-        match ctx.entry_btree_map(&mut display_counts, operation.feature_id, "creo operation display counts")? {
+        match ctx.entry_btree_map(
+            &mut display_counts,
+            operation.feature_id,
+            "creo operation display counts",
+        )? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
             }
@@ -784,7 +792,11 @@ pub(crate) fn operations(
     let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
     for operation in operation_states(ctx, payload)? {
-        match ctx.entry_btree_map(&mut by_feature, operation.feature_id, "creo operation feature nodes")? {
+        match ctx.entry_btree_map(
+            &mut by_feature,
+            operation.feature_id,
+            "creo operation feature nodes",
+        )? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let mut states = Vec::new();
                 ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
@@ -901,8 +913,8 @@ pub(crate) fn operations(
 
 #[cfg(test)]
 mod tests {
-    mod resource_limits;
     mod decode_cost;
+    mod resource_limits;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

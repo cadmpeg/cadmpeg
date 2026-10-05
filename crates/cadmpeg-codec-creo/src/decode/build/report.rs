@@ -24,7 +24,10 @@ use super::report_losses::{
 use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
 
-pub(in super::super) fn has_transferred_geometry(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> Result<bool, cadmpeg_core::CodecError> {
+pub(in super::super) fn has_transferred_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let model = &ir.model;
     Ok(!model.points.is_empty()
         || !model.vertices.is_empty()
@@ -35,38 +38,57 @@ pub(in super::super) fn has_transferred_geometry(ctx: &cadmpeg_core::decode::Dec
         || !model.shells.is_empty()
         || !model.regions.is_empty()
         || !model.bodies.is_empty()
-        || ctx.admit_iter(&model.surfaces, "creo transferred surfaces search")?.any(|surface| {
-            !matches!(
-                surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Unknown { .. })
-            )
-        })
-        || ctx.admit_iter(&model.curves, "creo transferred curves search")?.any(|curve| {
-            !matches!(
-                curve.geometry.solved(),
-                Some(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
+        || ctx
+            .admit_iter(&model.surfaces, "creo transferred surfaces search")?
+            .any(|surface| {
+                !matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Unknown { .. })
+                )
+            })
+        || ctx
+            .admit_iter(&model.curves, "creo transferred curves search")?
+            .any(|curve| {
+                !matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Unknown { .. })
+                )
+            })
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
-        || ctx.admit_iter(&model.procedural_surfaces, "creo transferred procedural_surfaces search")?.any(|surface| {
-            !matches!(
-                surface.definition(),
-                ProceduralSurfaceDefinition::Unknown { .. }
-            )
-        })
-        || ctx.admit_iter(&model.procedural_curves, "creo transferred procedural_curves search")?.any(|curve| {
-            !matches!(
-                curve.definition(),
-                ProceduralCurveDefinition::Unknown { .. }
-            )
-        })
-        || ctx.admit_iter(&model.sketch_entities, "creo transferred sketch_entities search")?.any(|entity| {
-            !matches!(
-                entity.geometry.definition(),
-                SketchGeometryDefinition::Native { .. }
-            )
-        })
+        || ctx
+            .admit_iter(
+                &model.procedural_surfaces,
+                "creo transferred procedural_surfaces search",
+            )?
+            .any(|surface| {
+                !matches!(
+                    surface.definition(),
+                    ProceduralSurfaceDefinition::Unknown { .. }
+                )
+            })
+        || ctx
+            .admit_iter(
+                &model.procedural_curves,
+                "creo transferred procedural_curves search",
+            )?
+            .any(|curve| {
+                !matches!(
+                    curve.definition(),
+                    ProceduralCurveDefinition::Unknown { .. }
+                )
+            })
+        || ctx
+            .admit_iter(
+                &model.sketch_entities,
+                "creo transferred sketch_entities search",
+            )?
+            .any(|entity| {
+                !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            })
         || !model.tessellations.is_empty())
 }
 
@@ -90,10 +112,12 @@ pub(in super::super) fn build_report(
         }
     }
 
-    let geom_sections = ctx.admit_iter(&scan.framing.sections, "creo geometry section census")?
+    let geom_sections = ctx
+        .admit_iter(&scan.framing.sections, "creo geometry section census")?
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
-    let placed_frames = ctx.admit_iter(&scan.planes.local_systems, "creo placed local frame census")?
+    let placed_frames = ctx
+        .admit_iter(&scan.planes.local_systems, "creo placed local frame census")?
         .map(|source| {
             let frame = source.frame();
             let placed = if frame.origin.is_some() && frame.u_axis.is_some() {
@@ -108,10 +132,16 @@ pub(in super::super) fn build_report(
         });
     let mut placed_plane_ids = BTreeSet::new();
     for id in placed_frames
-        .chain(ctx.admit_iter(&scan.planes.outlines, "creo placed outline census")?.map(|plane| Ok(Some(plane.surface_id))))
         .chain(
-            ctx.admit_iter(&scan.planes.positional_frames, "creo placed positional frame census")?
+            ctx.admit_iter(&scan.planes.outlines, "creo placed outline census")?
                 .map(|plane| Ok(Some(plane.surface_id))),
+        )
+        .chain(
+            ctx.admit_iter(
+                &scan.planes.positional_frames,
+                "creo placed positional frame census",
+            )?
+            .map(|plane| Ok(Some(plane.surface_id))),
         )
     {
         let Some(id) = id? else {
@@ -205,7 +235,8 @@ mod tests {
     fn geometry_signal_refuses_before_surface_search() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar"),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
             ),
@@ -214,8 +245,10 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::has_transferred_geometry(&ctx, &ir).expect_err("surface traversal refused");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error =
+            super::has_transferred_geometry(&ctx, &ir).expect_err("surface traversal refused");
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
                 && resource.operation == "creo transferred surfaces search"));

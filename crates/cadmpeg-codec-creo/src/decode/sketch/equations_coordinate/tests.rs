@@ -23,17 +23,9 @@ fn section_component_loops_refuse_before_traversal() {
 fn unsigned_component_loop_refuses_before_component_work() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let distances = [(1, 2, SectionAxis::U, 1.0)];
-    crate::test_support::assert_work_boundaries(
-        &["creo unsigned coordinate components"],
-        |ctx| {
-            super::solve_unsigned_dimension_coordinates(
-                ctx,
-                &equations,
-                &BTreeMap::new(),
-                &distances,
-            )
-        },
-    );
+    crate::test_support::assert_work_boundaries(&["creo unsigned coordinate components"], |ctx| {
+        super::solve_unsigned_dimension_coordinates(ctx, &equations, &BTreeMap::new(), &distances)
+    });
 }
 
 #[test]
@@ -931,7 +923,9 @@ fn coordinate_variable_scan_refuses_before_unique_variable_node() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::admitted_coordinate_variables(&ctx, &equations, &[])
         .expect_err("equation admission precedes variable insertion");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "creo coordinate variable equations"));
+            && limit.operation == "creo coordinate variable equations")
+    );
 }

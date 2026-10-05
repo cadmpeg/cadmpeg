@@ -35,9 +35,11 @@ pub(super) fn section_equation_coordinate_equalities(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, u32, SectionAxis)>, CodecError> {
-    let source_rows = section_equation_coordinate_equality_rows(ctx, definition, ambiguous_point_ids)?;
+    let source_rows =
+        section_equation_coordinate_equality_rows(ctx, definition, ambiguous_point_ids)?;
     ctx.collect_vec(
-        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?
+            .copied()
             .filter(|constraint| constraint.active)
             .map(|constraint| (constraint.first, constraint.second, constraint.axis)),
         "creo section coordinate equalities",
@@ -211,77 +213,81 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         None
     };
     ctx.collect_vec(
-        ctx.admit_iter(&equations.rows, "creo section source equation rows")?.filter_map(|equation| {
-            if equation.function_id == 10 {
-                let (first, second, axis) = section_equation_function_ten_axis_alignment(
-                    equation,
-                    variables,
-                    ambiguous_point_ids,
-                    &scalar_equality_values,
-                    function_ten_points.as_ref()?,
-                )?;
-                return Some(SectionEquationCoordinateEquality {
-                    first,
-                    second,
-                    axis,
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
+            .filter_map(|equation| {
+                if equation.function_id == 10 {
+                    let (first, second, axis) = section_equation_function_ten_axis_alignment(
+                        equation,
+                        variables,
+                        ambiguous_point_ids,
+                        &scalar_equality_values,
+                        function_ten_points.as_ref()?,
+                    )?;
+                    return Some(SectionEquationCoordinateEquality {
+                        first,
+                        second,
+                        axis,
+                        function_id: equation.function_id,
+                        equation_id: equation.equation_id,
+                        offset: equation.offset,
+                        active: !section_solver_equation_is_disabled(
+                            definition,
+                            equation.equation_id,
+                        ),
+                    });
+                }
+                let (first, second, auxiliary) = match equation.function_id {
+                    2 if equation.arguments.len() == 2 => {
+                        let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                            return None;
+                        };
+                        (*first, *second, None)
+                    }
+                    13 if equation.arguments.len() == 3 => {
+                        let [Some(first), Some(second), Some(auxiliary)] =
+                            equation.arguments.as_slice()
+                        else {
+                            return None;
+                        };
+                        (*first, *second, Some(*auxiliary))
+                    }
+                    _ => return None,
+                };
+                let first = variables.rows.get(usize::try_from(first).ok()?)?;
+                let second = variables.rows.get(usize::try_from(second).ok()?)?;
+                if let Some(auxiliary) = auxiliary {
+                    let auxiliary = variables.rows.get(usize::try_from(auxiliary).ok()?)?;
+                    let equality_value = scalar_equality_values
+                        .get(&(auxiliary.variable_type, auxiliary.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?;
+                    if auxiliary.variable_type != VariableType::Auxiliary
+                        || reconcile_equation_value(auxiliary.value.value(), equality_value).ok()?
+                            != Some(0.0)
+                    {
+                        return None;
+                    }
+                }
+                if first.variable_type != second.variable_type
+                    || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                    || auxiliary.is_some() && first.variable_type != VariableType::V
+                    || ambiguous_point_ids.contains(&first.key)
+                    || ambiguous_point_ids.contains(&second.key)
+                    || first.key == second.key
+                {
+                    return None;
+                }
+                Some(SectionEquationCoordinateEquality {
+                    first: first.key,
+                    second: second.key,
+                    axis: SectionAxis::from_variable(first.variable_type)?,
                     function_id: equation.function_id,
                     equation_id: equation.equation_id,
                     offset: equation.offset,
                     active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-                });
-            }
-            let (first, second, auxiliary) = match equation.function_id {
-                2 if equation.arguments.len() == 2 => {
-                    let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-                        return None;
-                    };
-                    (*first, *second, None)
-                }
-                13 if equation.arguments.len() == 3 => {
-                    let [Some(first), Some(second), Some(auxiliary)] =
-                        equation.arguments.as_slice()
-                    else {
-                        return None;
-                    };
-                    (*first, *second, Some(*auxiliary))
-                }
-                _ => return None,
-            };
-            let first = variables.rows.get(usize::try_from(first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(second).ok()?)?;
-            if let Some(auxiliary) = auxiliary {
-                let auxiliary = variables.rows.get(usize::try_from(auxiliary).ok()?)?;
-                let equality_value = scalar_equality_values
-                    .get(&(auxiliary.variable_type, auxiliary.key))
-                    .copied()
-                    .unwrap_or(Ok(None))
-                    .ok()?;
-                if auxiliary.variable_type != VariableType::Auxiliary
-                    || reconcile_equation_value(auxiliary.value.value(), equality_value).ok()?
-                        != Some(0.0)
-                {
-                    return None;
-                }
-            }
-            if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, VariableType::U | VariableType::V)
-                || auxiliary.is_some() && first.variable_type != VariableType::V
-                || ambiguous_point_ids.contains(&first.key)
-                || ambiguous_point_ids.contains(&second.key)
-                || first.key == second.key
-            {
-                return None;
-            }
-            Some(SectionEquationCoordinateEquality {
-                first: first.key,
-                second: second.key,
-                axis: SectionAxis::from_variable(first.variable_type)?,
-                function_id: equation.function_id,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        }),
+                })
+            }),
         "creo section equation coordinate equality rows",
     )
 }
@@ -302,7 +308,11 @@ impl SectionEquationMidpointConstraint {
         second: SectionCoordinateVariable,
         result: SectionScalarVariable,
     ) -> Self {
-        Self { first, second, result }
+        Self {
+            first,
+            second,
+            result,
+        }
     }
 }
 
@@ -505,54 +515,56 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     ctx.collect_vec(
-        ctx.admit_iter(&equations.rows, "creo section source equation rows")?.filter_map(|equation| {
-            let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
-                return None;
-            };
-            if equation.function_id != 42 {
-                return None;
-            }
-            let (Some(first), Some(second), Some(result)) =
-                (row(Some(*first)), row(Some(*second)), row(Some(*result)))
-            else {
-                return None;
-            };
-            if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, VariableType::U | VariableType::V)
-                || result.variable_type != VariableType::Result
-                || ambiguous_point_ids.contains(&first.key)
-                || ambiguous_point_ids.contains(&second.key)
-            {
-                return None;
-            }
-            let coordinate = SectionAxis::from_variable(first.variable_type)?;
-            let solved = coordinates
-                .get(&first.key)
-                .and_then(|point| point[coordinate.index()])
-                .zip(
-                    coordinates
-                        .get(&second.key)
-                        .and_then(|point| point[coordinate.index()]),
-                )
-                .map(|(first, second)| f64::midpoint(first, second));
-            let result_variable = (result.variable_type, result.key);
-            let equality_value = scalar_equality_values
-                .get(&result_variable)
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let stored = reconcile_equation_value(result.value.value(), equality_value).ok()?;
-            let value = reconcile_equation_value(stored, solved).ok()?;
-            Some(SectionFunctionFortyTwoMidpointCoordinate {
-                first: first.key,
-                second: second.key,
-                coordinate,
-                value,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        }),
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
+            .filter_map(|equation| {
+                let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice()
+                else {
+                    return None;
+                };
+                if equation.function_id != 42 {
+                    return None;
+                }
+                let (Some(first), Some(second), Some(result)) =
+                    (row(Some(*first)), row(Some(*second)), row(Some(*result)))
+                else {
+                    return None;
+                };
+                if first.variable_type != second.variable_type
+                    || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                    || result.variable_type != VariableType::Result
+                    || ambiguous_point_ids.contains(&first.key)
+                    || ambiguous_point_ids.contains(&second.key)
+                {
+                    return None;
+                }
+                let coordinate = SectionAxis::from_variable(first.variable_type)?;
+                let solved = coordinates
+                    .get(&first.key)
+                    .and_then(|point| point[coordinate.index()])
+                    .zip(
+                        coordinates
+                            .get(&second.key)
+                            .and_then(|point| point[coordinate.index()]),
+                    )
+                    .map(|(first, second)| f64::midpoint(first, second));
+                let result_variable = (result.variable_type, result.key);
+                let equality_value = scalar_equality_values
+                    .get(&result_variable)
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let stored = reconcile_equation_value(result.value.value(), equality_value).ok()?;
+                let value = reconcile_equation_value(stored, solved).ok()?;
+                Some(SectionFunctionFortyTwoMidpointCoordinate {
+                    first: first.key,
+                    second: second.key,
+                    coordinate,
+                    value,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                })
+            }),
         "creo section equation function forty two midpoint coordinate rows",
     )
 }
@@ -592,64 +604,65 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     ctx.collect_vec(
-        ctx.admit_iter(&equations.rows, "creo section source equation rows")?.filter_map(|equation| {
-            let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
-                equation.arguments.as_slice()
-            else {
-                return None;
-            };
-            if equation.function_id != 31 {
-                return None;
-            }
-            let (Some(first_u), Some(first_v), Some(second_u), Some(second_v)) = (
-                row(Some(*first_u)),
-                row(Some(*first_v)),
-                row(Some(*second_u)),
-                row(Some(*second_v)),
-            ) else {
-                return None;
-            };
-            if first_u.variable_type != VariableType::U
-                || first_v.variable_type != VariableType::V
-                || first_u.key != first_v.key
-                || second_u.variable_type != VariableType::Result
-                || second_v.variable_type != VariableType::Result
-                || second_u.key == second_v.key
-                || ambiguous_point_ids.contains(&first_u.key)
-            {
-                return None;
-            }
-            let point = coordinates.get(&first_u.key).copied().unwrap_or([None; 2]);
-            let u_equality = scalar_equality_values
-                .get(&(second_u.variable_type, second_u.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let v_equality = scalar_equality_values
-                .get(&(second_v.variable_type, second_v.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let values = [
-                reconcile_equation_value(
-                    reconcile_equation_value(second_u.value.value(), u_equality).ok()?,
-                    point[0],
-                )
-                .ok()?,
-                reconcile_equation_value(
-                    reconcile_equation_value(second_v.value.value(), v_equality).ok()?,
-                    point[1],
-                )
-                .ok()?,
-            ];
-            Some(SectionFunctionThirtyOnePointCoordinates {
-                point: first_u.key,
-                values,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        }),
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
+            .filter_map(|equation| {
+                let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
+                    equation.arguments.as_slice()
+                else {
+                    return None;
+                };
+                if equation.function_id != 31 {
+                    return None;
+                }
+                let (Some(first_u), Some(first_v), Some(second_u), Some(second_v)) = (
+                    row(Some(*first_u)),
+                    row(Some(*first_v)),
+                    row(Some(*second_u)),
+                    row(Some(*second_v)),
+                ) else {
+                    return None;
+                };
+                if first_u.variable_type != VariableType::U
+                    || first_v.variable_type != VariableType::V
+                    || first_u.key != first_v.key
+                    || second_u.variable_type != VariableType::Result
+                    || second_v.variable_type != VariableType::Result
+                    || second_u.key == second_v.key
+                    || ambiguous_point_ids.contains(&first_u.key)
+                {
+                    return None;
+                }
+                let point = coordinates.get(&first_u.key).copied().unwrap_or([None; 2]);
+                let u_equality = scalar_equality_values
+                    .get(&(second_u.variable_type, second_u.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let v_equality = scalar_equality_values
+                    .get(&(second_v.variable_type, second_v.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let values = [
+                    reconcile_equation_value(
+                        reconcile_equation_value(second_u.value.value(), u_equality).ok()?,
+                        point[0],
+                    )
+                    .ok()?,
+                    reconcile_equation_value(
+                        reconcile_equation_value(second_v.value.value(), v_equality).ok()?,
+                        point[1],
+                    )
+                    .ok()?,
+                ];
+                Some(SectionFunctionThirtyOnePointCoordinates {
+                    point: first_u.key,
+                    values,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                })
+            }),
         "creo section equation function thirty one point coordinate rows",
     )
 }
@@ -693,36 +706,49 @@ pub(super) fn section_relation_radius_scalar_values(
     else {
         return Ok(Vec::new());
     };
-    let Some(table) = definition.relations.as_ref().filter(|table| feature_relation_table_complete(table)) else {
+    let Some(table) = definition
+        .relations
+        .as_ref()
+        .filter(|table| feature_relation_table_complete(table))
+    else {
         return Ok(Vec::new());
     };
     let mut values = Vec::new();
     for relation in ctx.admit_iter(&table.rows, "creo scalar radius relation rows")? {
-            if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)?
-                || relation.relation_type != 14
-                || relation.sign != 1
-            {
-                continue;
+        if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)?
+            || relation.relation_type != 14
+            || relation.sign != 1
+        {
+            continue;
+        }
+        let candidate = (|| {
+            let vectors = relation.operand_vectors?;
+            let [Some(radius), Some(0), Some(0), Some(0)] = vectors[0] else {
+                return None;
+            };
+            if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
+                return None;
             }
-            let candidate = (|| {
-                let vectors = relation.operand_vectors?;
-                let [Some(radius), Some(0), Some(0), Some(0)] = vectors[0] else {
-                    return None;
-                };
-                if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
-                    return None;
-                }
-                let dimension = dimensions.rows.get(usize::try_from(relation.dimension_id).ok()?)?;
-                if !matches!(dimension.dimension_type, 1..=5) {
-                    return None;
-                }
-                let value = dimension.value.resolved().filter(|value| value.is_finite() && *value > 0.0)?;
-                let value = if dimension.dimension_type == 4 { value / 2.0 } else { value };
-                PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
-            })();
-            if let Some(value) = candidate {
-                ctx.push_vec(&mut values, value, "creo section relation radius values")?;
+            let dimension = dimensions
+                .rows
+                .get(usize::try_from(relation.dimension_id).ok()?)?;
+            if !matches!(dimension.dimension_type, 1..=5) {
+                return None;
             }
+            let value = dimension
+                .value
+                .resolved()
+                .filter(|value| value.is_finite() && *value > 0.0)?;
+            let value = if dimension.dimension_type == 4 {
+                value / 2.0
+            } else {
+                value
+            };
+            PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
+        })();
+        if let Some(value) = candidate {
+            ctx.push_vec(&mut values, value, "creo section relation radius values")?;
+        }
     }
     Ok(values)
 }
@@ -766,7 +792,10 @@ pub(super) fn section_equation_scalar_seed_values(
     }
     let coordinate_distances =
         section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?;
-    for constraint in ctx.admit_iter(&coordinate_distances, "creo scalar seed coordinate distances")? {
+    for constraint in ctx.admit_iter(
+        &coordinate_distances,
+        "creo scalar seed coordinate distances",
+    )? {
         merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value)?;
     }
     let radius_dimensions = section_equation_radius_dimensions(ctx, definition)?;
@@ -783,11 +812,16 @@ pub(super) fn section_equation_scalar_seed_values(
         merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value.get())?;
     }
     let relation_radius_values = section_relation_radius_scalar_values(ctx, definition)?;
-    for &(variable, value) in ctx.admit_iter(&relation_radius_values, "creo scalar seed relation radii")? {
+    for &(variable, value) in
+        ctx.admit_iter(&relation_radius_values, "creo scalar seed relation radii")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
-    let angle_differences = section_equation_function_sixteen_angle_difference_values(ctx, definition)?;
-    for &(variable, value) in ctx.admit_iter(&angle_differences, "creo scalar seed angle differences")? {
+    let angle_differences =
+        section_equation_function_sixteen_angle_difference_values(ctx, definition)?;
+    for &(variable, value) in
+        ctx.admit_iter(&angle_differences, "creo scalar seed angle differences")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     Ok(values)
@@ -881,7 +915,10 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> Result<(), CodecError> {
-    for constraint in ctx.admit_iter(&constraints.midpoints, "creo auxiliary midpoint constraints")? {
+    for constraint in ctx.admit_iter(
+        &constraints.midpoints,
+        "creo auxiliary midpoint constraints",
+    )? {
         let Some(Some(value)) = scalar_values.get(&constraint.result) else {
             continue;
         };
@@ -906,7 +943,9 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
         ctx.reserve_vec(equations, 1, "creo auxiliary coordinate equations")?;
         equations.push(equation);
     }
-    for constraint in ctx.admit_iter(&constraints.point_bindings, "creo auxiliary point bindings")? {
+    for constraint in
+        ctx.admit_iter(&constraints.point_bindings, "creo auxiliary point bindings")?
+    {
         let mut values = [None; 2];
         let mut underdetermined = false;
         let mut invalid = false;
@@ -1038,7 +1077,9 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
         coordinates,
         &ambiguous_point_ids,
     )?;
-    for &(variable, value) in ctx.admit_iter(&function_six_values, "creo derived function six distances")? {
+    for &(variable, value) in
+        ctx.admit_iter(&function_six_values, "creo derived function six distances")?
+    {
         merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
     }
     let function_forty_three_values = section_equation_function_forty_three_axis_distance_values(
@@ -1047,7 +1088,10 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
         coordinates,
         &ambiguous_point_ids,
     )?;
-    for &(variable, value) in ctx.admit_iter(&function_forty_three_values, "creo derived function forty three distances")? {
+    for &(variable, value) in ctx.admit_iter(
+        &function_forty_three_values,
+        "creo derived function forty three distances",
+    )? {
         merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
     }
     let radial_constraints =
@@ -1199,9 +1243,10 @@ pub(super) fn section_equation_scalar_equality_components(
     let base_components = scalar_equality_components(ctx, &adjacency)?;
     let base_values =
         scalar_equality_values_for_components(ctx, &variables.rows, &base_components)?;
-    for &(first, second, selector, stored_selector) in
-        ctx.admit_iter(&deferred_function_five, "creo deferred scalar equality equations")?
-    {
+    for &(first, second, selector, stored_selector) in ctx.admit_iter(
+        &deferred_function_five,
+        "creo deferred scalar equality equations",
+    )? {
         let equality_value = base_values.get(&selector).copied().unwrap_or(Ok(None));
         if !matches!(
             equality_value
@@ -1252,15 +1297,15 @@ fn scalar_equality_components(
             ctx.charge_work(1, "creo scalar equality graph visits")?;
             if let Some(neighbors) = adjacency.get(&variable) {
                 for &neighbor in ctx.admit_iter(neighbors, "creo scalar adjacency neighbors")? {
-                if ctx.insert_btree_set(
-                    &mut component,
-                    neighbor,
-                    "creo section scalar component nodes",
-                )? {
-                    remaining.remove(&neighbor);
-                    ctx.push_back(&mut pending, neighbor, "creo section scalar pending nodes")?;
+                    if ctx.insert_btree_set(
+                        &mut component,
+                        neighbor,
+                        "creo section scalar component nodes",
+                    )? {
+                        remaining.remove(&neighbor);
+                        ctx.push_back(&mut pending, neighbor, "creo section scalar pending nodes")?;
+                    }
                 }
-            }
             }
         }
         ctx.reserve_vec(&mut components, 1, "creo section scalar components")?;
@@ -1306,7 +1351,10 @@ fn scalar_equality_values_for_components(
             let mut first = None;
             for variable in ctx.admit_iter(component, "creo scalar component first value")? {
                 if let Some(samples) = values.get(variable) {
-                    if let Some(&sample) = ctx.admit_iter(samples, "creo scalar equality first sample")?.next() {
+                    if let Some(&sample) = ctx
+                        .admit_iter(samples, "creo scalar equality first sample")?
+                        .next()
+                    {
                         first = Some(sample);
                         break;
                     }
@@ -1316,9 +1364,13 @@ fn scalar_equality_values_for_components(
                 None => Ok(None),
                 Some(first) => {
                     let mut scale: f64 = 1.0;
-                    for variable in ctx.admit_iter(component, "creo scalar component value scale")? {
+                    for variable in
+                        ctx.admit_iter(component, "creo scalar component value scale")?
+                    {
                         if let Some(samples) = values.get(variable) {
-                            for &sample in ctx.admit_iter(samples, "creo scalar equality samples")? {
+                            for &sample in
+                                ctx.admit_iter(samples, "creo scalar equality samples")?
+                            {
                                 scale = scale.max(sample.abs());
                             }
                         }
@@ -1418,9 +1470,11 @@ pub(super) fn section_equation_radial_constraints(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionRadialConstraint>, CodecError> {
-    let source_rows = section_equation_radial_constraint_rows(ctx, definition, coordinates, ambiguous_point_ids)?;
+    let source_rows =
+        section_equation_radial_constraint_rows(ctx, definition, coordinates, ambiguous_point_ids)?;
     ctx.collect_vec(
-        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?
+            .copied()
             .filter(|constraint| constraint.active),
         "creo section radial constraints",
     )
@@ -1434,15 +1488,16 @@ pub(super) fn section_equation_radial_constraints_with_scalar_values(
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> Result<Vec<SectionRadialConstraint>, CodecError> {
     let source_rows = section_equation_radial_constraint_rows_with_scalar_values(
-            ctx,
-            definition,
-            coordinates,
-            ambiguous_point_ids,
-            Some(scalar_values),
-        )?;
+        ctx,
+        definition,
+        coordinates,
+        ambiguous_point_ids,
+        Some(scalar_values),
+    )?;
     ctx.collect_vec(
-        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
-        .filter(|constraint| constraint.active),
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?
+            .copied()
+            .filter(|constraint| constraint.active),
         "creo section radial constraints",
     )
 }
@@ -1618,7 +1673,9 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         .unwrap_or_default();
     let mut values = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     let scalar_equalities = section_equation_scalar_equalities(ctx, definition)?;
-    for (&variable, &value) in ctx.admit_iter(&scalar_equalities, "creo resolved scalar equalities")? {
+    for (&variable, &value) in
+        ctx.admit_iter(&scalar_equalities, "creo resolved scalar equalities")?
+    {
         ctx.insert_btree_map(
             &mut values,
             variable,
@@ -1628,7 +1685,9 @@ pub(in crate::decode) fn resolved_section_scalar_values(
     }
     let coordinate_values =
         section_equation_scalar_values_from_coordinates(ctx, definition, &coordinates)?;
-    for (variable, value) in ctx.admit_iter(&coordinate_values, "creo resolved coordinate scalar values")? {
+    for (variable, value) in
+        ctx.admit_iter(&coordinate_values, "creo resolved coordinate scalar values")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, *variable, *value)?;
     }
     let function_six_values = section_equation_function_six_distance_values(
@@ -1637,7 +1696,9 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         &coordinates,
         &ambiguous_point_ids,
     )?;
-    for &(variable, value) in ctx.admit_iter(&function_six_values, "creo resolved function six distances")? {
+    for &(variable, value) in
+        ctx.admit_iter(&function_six_values, "creo resolved function six distances")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     let function_forty_three_values = section_equation_function_forty_three_axis_distance_values(
@@ -1646,11 +1707,17 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         &coordinates,
         &ambiguous_point_ids,
     )?;
-    for &(variable, value) in ctx.admit_iter(&function_forty_three_values, "creo resolved function forty three distances")? {
+    for &(variable, value) in ctx.admit_iter(
+        &function_forty_three_values,
+        "creo resolved function forty three distances",
+    )? {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
-    let angle_differences = section_equation_function_sixteen_angle_difference_values(ctx, definition)?;
-    for &(variable, value) in ctx.admit_iter(&angle_differences, "creo resolved angle differences")? {
+    let angle_differences =
+        section_equation_function_sixteen_angle_difference_values(ctx, definition)?;
+    for &(variable, value) in
+        ctx.admit_iter(&angle_differences, "creo resolved angle differences")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     let coordinate_distances =
@@ -1672,7 +1739,9 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value.get())?;
     }
     let relation_radius_values = section_relation_radius_scalar_values(ctx, definition)?;
-    for &(variable, value) in ctx.admit_iter(&relation_radius_values, "creo resolved relation radii")? {
+    for &(variable, value) in
+        ctx.admit_iter(&relation_radius_values, "creo resolved relation radii")?
+    {
         merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     let radial_constraints =
@@ -1805,7 +1874,8 @@ fn section_equation_function_sixteen_angle_difference_values(
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
     let source_rows = section_equation_function_sixteen_angle_difference_rows(ctx, definition)?;
     ctx.collect_vec(
-        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?
+            .copied()
             .filter(|constraint| constraint.active)
             .map(|constraint| (constraint.difference, constraint.value)),
         "creo section angle difference values",
@@ -1845,93 +1915,97 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     ctx.collect_vec(
-        ctx.admit_iter(&equations.rows, "creo section source equation rows")?.filter_map(|equation| {
-            if equation.function_id != 16 || equation.arguments.len() != 4 {
-                return None;
-            }
-            let [Some(first), Some(second), Some(difference), Some(selector)] =
-                equation.arguments.as_slice()
-            else {
-                return None;
-            };
-            let (Some(first), Some(second), Some(difference), Some(selector)) =
-                (row(*first), row(*second), row(*difference), row(*selector))
-            else {
-                return None;
-            };
-            let first_value = reconcile_equation_value(
-                first.value.value(),
-                scalar_equality_values
-                    .get(&(first.variable_type, first.key))
-                    .copied()
-                    .unwrap_or(Ok(None))
-                    .ok()?,
-            )
-            .ok()?;
-            let second_value = reconcile_equation_value(
-                second.value.value(),
-                scalar_equality_values
-                    .get(&(second.variable_type, second.key))
-                    .copied()
-                    .unwrap_or(Ok(None))
-                    .ok()?,
-            )
-            .ok()?;
-            let difference_value = reconcile_equation_value(
-                difference.value.value(),
-                scalar_equality_values
-                    .get(&(difference.variable_type, difference.key))
-                    .copied()
-                    .unwrap_or(Ok(None))
-                    .ok()?,
-            )
-            .ok()?;
-            let selector_value = reconcile_equation_value(
-                selector.value.value(),
-                scalar_equality_values
-                    .get(&(selector.variable_type, selector.key))
-                    .copied()
-                    .unwrap_or(Ok(None))
-                    .ok()?,
-            )
-            .ok()?;
-            if first.variable_type != VariableType::Parameter
-                || second.variable_type != VariableType::Parameter
-                || difference.variable_type != VariableType::Dimension
-                || selector.variable_type != VariableType::Selector
-                || selector_value != Some(0.0)
-            {
-                return None;
-            }
-            let (Some(first_value), Some(second_value)) = (first_value, second_value) else {
-                return None;
-            };
-            if !first_value.is_finite() || !second_value.is_finite() || first_value < second_value {
-                return None;
-            }
-            let value = first_value - second_value;
-            if !value.is_finite() || value > std::f64::consts::PI {
-                return None;
-            }
-            if difference_value.is_some_and(|stored| {
-                !stored.is_finite()
-                    || stored < 0.0
-                    || !(FiniteReal::new(stored))
-                        .zip(FiniteReal::new(value))
-                        .is_some_and(|(first, second)| approximately_equal(first, second))
-            }) {
-                return None;
-            }
-            Some(SectionFunctionSixteenAngleDifference {
-                first: (first.variable_type, first.key),
-                second: (second.variable_type, second.key),
-                difference: (difference.variable_type, difference.key),
-                value,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        }),
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
+            .filter_map(|equation| {
+                if equation.function_id != 16 || equation.arguments.len() != 4 {
+                    return None;
+                }
+                let [Some(first), Some(second), Some(difference), Some(selector)] =
+                    equation.arguments.as_slice()
+                else {
+                    return None;
+                };
+                let (Some(first), Some(second), Some(difference), Some(selector)) =
+                    (row(*first), row(*second), row(*difference), row(*selector))
+                else {
+                    return None;
+                };
+                let first_value = reconcile_equation_value(
+                    first.value.value(),
+                    scalar_equality_values
+                        .get(&(first.variable_type, first.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()?;
+                let second_value = reconcile_equation_value(
+                    second.value.value(),
+                    scalar_equality_values
+                        .get(&(second.variable_type, second.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()?;
+                let difference_value = reconcile_equation_value(
+                    difference.value.value(),
+                    scalar_equality_values
+                        .get(&(difference.variable_type, difference.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()?;
+                let selector_value = reconcile_equation_value(
+                    selector.value.value(),
+                    scalar_equality_values
+                        .get(&(selector.variable_type, selector.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()?;
+                if first.variable_type != VariableType::Parameter
+                    || second.variable_type != VariableType::Parameter
+                    || difference.variable_type != VariableType::Dimension
+                    || selector.variable_type != VariableType::Selector
+                    || selector_value != Some(0.0)
+                {
+                    return None;
+                }
+                let (Some(first_value), Some(second_value)) = (first_value, second_value) else {
+                    return None;
+                };
+                if !first_value.is_finite()
+                    || !second_value.is_finite()
+                    || first_value < second_value
+                {
+                    return None;
+                }
+                let value = first_value - second_value;
+                if !value.is_finite() || value > std::f64::consts::PI {
+                    return None;
+                }
+                if difference_value.is_some_and(|stored| {
+                    !stored.is_finite()
+                        || stored < 0.0
+                        || !(FiniteReal::new(stored))
+                            .zip(FiniteReal::new(value))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                }) {
+                    return None;
+                }
+                Some(SectionFunctionSixteenAngleDifference {
+                    first: (first.variable_type, first.key),
+                    second: (second.variable_type, second.key),
+                    difference: (difference.variable_type, difference.key),
+                    value,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                })
+            }),
         "creo section equation function sixteen angle difference rows",
     )
 }
@@ -1955,15 +2029,16 @@ fn section_equation_function_forty_three_axis_distance_values(
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
     let source_rows = section_equation_function_forty_three_axis_distance_rows(
-            ctx,
-            definition,
-            coordinates,
-            ambiguous_point_ids,
-        )?;
+        ctx,
+        definition,
+        coordinates,
+        ambiguous_point_ids,
+    )?;
     ctx.collect_vec(
-        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
-        .filter(|constraint| constraint.active)
-        .map(|constraint| (constraint.scalar, constraint.value)),
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?
+            .copied()
+            .filter(|constraint| constraint.active)
+            .map(|constraint| (constraint.scalar, constraint.value)),
         "creo section axis distance values",
     )
 }

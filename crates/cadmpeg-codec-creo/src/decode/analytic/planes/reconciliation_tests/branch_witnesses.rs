@@ -627,11 +627,10 @@ fn filtered_second_plane_candidate_refuses_collection_limit() {
 fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let scan = stored_frame_branch_scan(false);
     let frame = &scan.planes.local_systems[0];
-    let (candidates, count) = crate::decode::with_test_decode_ctx(|ctx| {
-        stored_parameter_normal_candidates(ctx, frame)
-    })
-    .expect("service stored plane branch scan admitted")
-    .expect("ambiguous frame");
+    let (candidates, count) =
+        crate::decode::with_test_decode_ctx(|ctx| stored_parameter_normal_candidates(ctx, frame))
+            .expect("service stored plane branch scan admitted")
+            .expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count].iter().any(|candidate| {
         candidate.equation.normal == [0.8, 0.0, 0.6]
@@ -800,10 +799,10 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
         crate::decode::with_test_decode_ctx(|ctx| {
             unique_round_edge_origin_candidate(ctx, &[positive, negative], &[envelope])
         })
-            .expect("service round-edge origin scan admitted")
-            .expect("incident plane candidate")
-            .equation
-            .origin,
+        .expect("service round-edge origin scan admitted")
+        .expect("incident plane candidate")
+        .equation
+        .origin,
         [0.0, -5.5, 0.0]
     );
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
@@ -1004,7 +1003,6 @@ fn numerical_followup_fc05_tangency_is_relative_to_radius() {
     }
 }
 
-
 #[test]
 fn fc05_tangent_plane_score_refuses_bounded_face_scan() {
     let scan = fc05_witness_scan();
@@ -1015,8 +1013,8 @@ fn fc05_tangent_plane_score_refuses_bounded_face_scan() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             fc05_cylinder_model_witness(
                 &ctx,
                 &scan,
@@ -1045,8 +1043,8 @@ fn round_edge_envelope_refuses_bounded_face_scan() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             round_edge_envelopes_for_plane(&ctx, &scan, 1)
         },
     );
@@ -1065,8 +1063,8 @@ fn plane_candidates_refuse_surface_identity_child_scan() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             plane_candidates(&ctx, &scan)
         },
     );

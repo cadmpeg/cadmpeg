@@ -87,13 +87,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                     let radius = circle_curve.radius().get();
                     (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
                 })));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cones_section_candidates(ctx, first, first)
-        })
-        .expect("admitted coaxial cone candidates")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cones_section_candidates(ctx, first, first)
+    })
+    .expect("admitted coaxial cone candidates")
+    .is_empty());
     let shifted = CarrierEquation::Cone(
         ConeEquation::new(
             [1.0, 0.0, 0.0],
@@ -105,13 +103,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         )
         .expect("valid test cone"),
     );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cones_section_candidates(ctx, first, shifted)
-        })
-        .expect("admitted coaxial cone candidates")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cones_section_candidates(ctx, first, shifted)
+    })
+    .expect("admitted coaxial cone candidates")
+    .is_empty());
 
     let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
         unreachable!();
@@ -178,13 +174,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     )
     .expect("valid test cone");
     let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cones_section_candidates(ctx, elliptical_first, incompatible_frame)
-        })
-        .expect("admitted coaxial cone candidates")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cones_section_candidates(ctx, elliptical_first, incompatible_frame)
+    })
+    .expect("admitted coaxial cone candidates")
+    .is_empty());
 
     elliptical_second_equation = ConeEquation::new(
         elliptical_second_equation.origin(),

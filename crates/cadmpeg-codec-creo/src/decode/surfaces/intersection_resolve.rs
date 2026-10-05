@@ -191,7 +191,8 @@ pub(in super::super) fn fc14_held_coordinate(
             &token.raw,
             &first.raw,
             "creo FC14 coordinate token bytes comparison",
-        )? || token.value_mm != first.value_mm {
+        )? || token.value_mm != first.value_mm
+        {
             return Ok(None);
         }
     }
@@ -203,7 +204,8 @@ pub(in super::super) fn fc14_held_coordinate(
             &token.raw,
             &first.raw,
             "creo FC14 coordinate token bytes comparison",
-        )? || token.value_mm != first.value_mm {
+        )? || token.value_mm != first.value_mm
+        {
             return Ok(None);
         }
     }

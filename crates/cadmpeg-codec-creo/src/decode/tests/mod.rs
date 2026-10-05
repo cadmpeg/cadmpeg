@@ -20,6 +20,7 @@ mod blind_circular;
 mod carrier_solver;
 mod circular_profile;
 mod coaxial_cones;
+mod datum_frames;
 mod equation_constraints;
 mod generated_nurbs;
 mod generated_nurbs_extent;
@@ -206,10 +207,9 @@ fn extruded_segment_surface(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
-    let geometry = crate::decode::with_test_decode_ctx(|ctx| {
-        section_segment_geometry(ctx, points, segment)
-    })
-    .expect("test section segment geometry");
+    let geometry =
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_geometry(ctx, points, segment))
+            .expect("test section segment geometry");
     extruded_geometry_surface(transform, &geometry?)
 }
 
@@ -219,10 +219,9 @@ fn placed_section_curve_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<CurveGeometry> {
-    let geometry = crate::decode::with_test_decode_ctx(|ctx| {
-        section_segment_geometry(ctx, points, segment)
-    })
-    .expect("test section segment geometry");
+    let geometry =
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_geometry(ctx, points, segment))
+            .expect("test section segment geometry");
     placed_section_geometry_curve(transform, &geometry?)
 }
 

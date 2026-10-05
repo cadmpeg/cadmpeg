@@ -57,7 +57,8 @@ fn rejection_evidence_refuses_before_diagnostic_count() {
     let mut diagnostics = BrepTransferDiagnostics::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, 42)
-    }).expect("service rejection admitted");
+    })
+    .expect("service rejection admitted");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -791,7 +792,8 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
         let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::MissingLoops)?;
         Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
-    }).expect("service rejection evidence admitted");
+    })
+    .expect("service rejection evidence admitted");
     assert_eq!(count, 6);
     assert_eq!(
         samples
@@ -986,9 +988,11 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
     .expect("service rejection admitted");
 
     let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
-        let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::MissingSurfaceCarrier)?;
+        let (count, samples) =
+            diagnostics.evidence(ctx, FaceAdmissionRejection::MissingSurfaceCarrier)?;
         Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
-    }).expect("service rejection evidence admitted");
+    })
+    .expect("service rejection evidence admitted");
     assert_eq!(count, 1);
     assert_eq!(
         samples
@@ -1102,9 +1106,11 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     })
     .expect("service rejection admitted");
     let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
-        let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::UnresolvedBoundaryVertices)?;
+        let (count, samples) =
+            diagnostics.evidence(ctx, FaceAdmissionRejection::UnresolvedBoundaryVertices)?;
         Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
-    }).expect("service rejection evidence admitted");
+    })
+    .expect("service rejection evidence admitted");
     assert_eq!(count, 1);
     assert_eq!(
         samples
@@ -1238,11 +1244,20 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
             offset: 0,
         });
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 5)).expect("service face reference"));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7)).expect("service face reference"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 5))
+            .expect("service face reference")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
+            .expect("service face reference")
+    );
 
     scan.framing.layout = crate::container::Layout::Nd;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7)).expect("service face reference"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
+            .expect("service face reference")
+    );
 }
 
 #[test]
@@ -1365,30 +1380,38 @@ fn closed_component_counts_two_uses_of_one_face() {
         .map(|(id, edge)| (*id, edge))
         .collect::<BTreeMap<_, _>>();
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| component_is_closed(ctx,
-        &BTreeSet::from([7]),
-        &BTreeSet::from([
-            crate::topology::HalfEdgeId {
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| component_is_closed(
+            ctx,
+            &BTreeSet::from([7]),
+            &BTreeSet::from([
+                crate::topology::HalfEdgeId {
+                    curve_id: 7,
+                    side: crate::topology::Side::Zero,
+                },
+                crate::topology::HalfEdgeId {
+                    curve_id: 7,
+                    side: crate::topology::Side::One,
+                },
+            ]),
+            &half_edges,
+            &[5],
+        ))
+        .expect("closed component search")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| component_is_closed(
+            ctx,
+            &BTreeSet::from([7]),
+            &BTreeSet::from([crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
-            },
-            crate::topology::HalfEdgeId {
-                curve_id: 7,
-                side: crate::topology::Side::One,
-            },
-        ]),
-        &half_edges,
-        &[5],
-    )).expect("closed component search"));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| component_is_closed(ctx,
-        &BTreeSet::from([7]),
-        &BTreeSet::from([crate::topology::HalfEdgeId {
-            curve_id: 7,
-            side: crate::topology::Side::Zero,
-        }]),
-        &half_edges,
-        &[5],
-    )).expect("closed component search"));
+            }]),
+            &half_edges,
+            &[5],
+        ))
+        .expect("closed component search")
+    );
 }
 
 #[test]
@@ -1917,8 +1940,10 @@ fn legacy_neutral_face_search_refuses_work_and_preserves_nd_short_circuit() {
         &["creo neutral face reference surface search"],
         |ctx| is_neutral_face_reference(ctx, &scan, 5),
     ));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
-        .expect("service legacy search"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
+            .expect("service legacy search")
+    );
     scan.framing.layout = crate::container::Layout::Nd;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

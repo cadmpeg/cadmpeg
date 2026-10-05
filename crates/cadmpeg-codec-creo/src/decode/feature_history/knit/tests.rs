@@ -1019,7 +1019,10 @@ fn feature_result_identity_validation_refuses_at_work_boundaries() {
         |ctx| feature_result_topology(ctx, &tables, &rows, &[], 17),
     )
     .expect("one feature result topology");
-    assert_eq!(topology.id.as_str(), "creo:model:feature-result-topology#17");
+    assert_eq!(
+        topology.id.as_str(),
+        "creo:model:feature-result-topology#17"
+    );
     assert_eq!(topology.output_of.as_str(), "creo:model:feature#17");
     assert_eq!(
         topology
@@ -1042,10 +1045,10 @@ fn generated_surface_result_id_membership_refuses_work_and_preserves_face() {
         next_surface: 0,
         offset: 0,
     };
-    let available = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#17")
-            .expect("fixture feature ID"),
-    ]);
+    let available = std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+        "creo:model:feature#17",
+    )
+    .expect("fixture feature ID")]);
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
     let generated = crate::test_support::assert_work_boundaries(
         &["creo generated surface result ID lookup"],
@@ -1076,10 +1079,10 @@ fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
         next_surface: 0,
         offset: 0,
     };
-    let available = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#18")
-            .expect("nonmatching feature ID"),
-    ]);
+    let available = std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+        "creo:model:feature#18",
+    )
+    .expect("nonmatching feature ID")]);
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
     let refusal = crate::test_support::last_refusal_at(
         &[],
@@ -1098,7 +1101,10 @@ fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
     let limit = match refusal {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "creo generated surface feature lookup" => limit,
+                && limit.operation == "creo generated surface feature lookup" =>
+        {
+            limit
+        }
         error => panic!("expected generated feature membership refusal, got {error:?}"),
     };
     let cap = limit.used.checked_add(limit.additional).expect("work cap");
@@ -1140,10 +1146,10 @@ fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
         next_surface: 0,
         offset: 0,
     };
-    let available = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#17")
-            .expect("fixture feature ID"),
-    ]);
+    let available = std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+        "creo:model:feature#17",
+    )
+    .expect("fixture feature ID")]);
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
     let generated = crate::test_support::assert_work_boundaries(
         &[

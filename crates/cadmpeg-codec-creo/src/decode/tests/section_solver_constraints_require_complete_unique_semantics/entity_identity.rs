@@ -398,7 +398,14 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             .expect("valid test fixture")
         )
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_point(ctx, &opaque_point, &opaque_point_item)).expect("admitted section lookup"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_point(
+            ctx,
+            &opaque_point,
+            &opaque_point_item
+        ))
+        .expect("admitted section lookup")
+    );
     assert!(matches!(
         crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
             ctx, refusal,
@@ -447,7 +454,8 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     })
                     .expect("valid test fixture"),
                 )])),
-            ).expect("admitted section lookup")
+            )
+            .expect("admitted section lookup")
         }),
         None
     );
@@ -522,13 +530,17 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(
             axis_reference_line.clone(),
         ));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(ctx, 
-        &reference_definition,
-        &crate::feature::definitions::FeatureSkampItem {
-            entity_id: axis_reference_line.external_id,
-            sense: 0,
-        },
-    )).expect("admitted section lookup"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(
+            ctx,
+            &reference_definition,
+            &crate::feature::definitions::FeatureSkampItem {
+                entity_id: axis_reference_line.external_id,
+                sense: 0,
+            },
+        ))
+        .expect("admitted section lookup")
+    );
     assert_eq!(
         resolved_section_reference_line_geometry(
             &reference_definition,
@@ -648,7 +660,14 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         entity_id: 100,
         sense: 0,
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(ctx, &opaque_line, &opaque_line_item)).expect("admitted section lookup"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(
+            ctx,
+            &opaque_line,
+            &opaque_line_item
+        ))
+        .expect("admitted section lookup")
+    );
     assert!(matches!(
         crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
             ctx, refusal,
@@ -691,7 +710,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_point_midpoint, 101)).expect("admitted section lookup"),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+            ctx,
+            &solver_only_point_midpoint,
+            101
+        ))
+        .expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     assert_eq!(
@@ -739,7 +763,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &conflicting_midpoint, 101)).expect("admitted section lookup"),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+            ctx,
+            &conflicting_midpoint,
+            101
+        ))
+        .expect("admitted section lookup"),
         None
     );
     let centered_midpoint = crate::feature::definitions::FeatureSkamp {
@@ -768,7 +797,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &opaque_line, 101)).expect("admitted section lookup"),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+            ctx,
+            &opaque_line,
+            101
+        ))
+        .expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     assert_eq!(
@@ -834,7 +868,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &opaque_line, 101)).expect("admitted section lookup"),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+            ctx,
+            &opaque_line,
+            101
+        ))
+        .expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     opaque_line
@@ -847,7 +886,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .rows_mut()[0]
         .status = 0;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &opaque_line, 101)).expect("admitted section lookup"),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+            ctx,
+            &opaque_line,
+            101
+        ))
+        .expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     opaque_line
@@ -939,10 +983,14 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::Opaque(
             colliding_row,
         ));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_point(ctx, 
-        &opaque_family_collision,
-        &opaque_point_item,
-    )).expect("admitted section lookup"));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_point(
+            ctx,
+            &opaque_family_collision,
+            &opaque_point_item,
+        ))
+        .expect("admitted section lookup")
+    );
 
     let mut opaque_collision = definition.clone();
     opaque_collision

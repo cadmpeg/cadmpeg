@@ -532,13 +532,15 @@ mod tests {
         stream.extend(codes(&[65, 66, 256]));
         assert_eq!(decode(&stream, 4), Some(b"ABAB".to_vec()));
         let error = crate::test_support::last_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "creo LZW stack reversal",
             |ctx| super::decode(ctx, &stream, 4),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && resource.operation == "creo LZW stack reversal"));
+                && resource.operation == "creo LZW stack reversal")
+        );
     }
-
 }

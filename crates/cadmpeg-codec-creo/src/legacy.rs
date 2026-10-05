@@ -449,7 +449,10 @@ impl StringPayload {
     pub(crate) fn element_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         Ok(match self {
             Self::Scalar { .. } => 1,
-            Self::Array { values, .. } => ctx.admit_iter(values, "creo legacy string element count")?.filter(|value| value.is_ok()).count(),
+            Self::Array { values, .. } => ctx
+                .admit_iter(values, "creo legacy string element count")?
+                .filter(|value| value.is_ok())
+                .count(),
         })
     }
 
@@ -502,11 +505,25 @@ struct AttributeValue {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for AttributeValue {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.depth, &self.attribute_id, &self.offset, &self.payload.start, &self.payload.end, &self.continuation,), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.depth,
+                &self.attribute_id,
+                &self.offset,
+                &self.payload.start,
+                &self.payload.end,
+                &self.continuation,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// A nonempty sequence of continuation rows following one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -518,11 +535,18 @@ pub(crate) struct Continuation {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for Continuation {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.rows.start, &self.rows.end, &self.count,), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.rows.start, &self.rows.end, &self.count),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// Declarations and values owned by one outer object or named ASCII section.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -639,9 +663,19 @@ impl Persistence {
                 Some((known, _)) if known != text => all_conflict = true,
                 Some(_) => {}
             }
-            let is_root_solid = match record.parent.as_ref().and_then(|parent| objects.get(parent)) {
-                Some(object) => object.parent.is_none()
-                    && ctx.eq_ignore_ascii_case(&object.name, "solid", "creo legacy root object name")?,
+            let is_root_solid = match record
+                .parent
+                .as_ref()
+                .and_then(|parent| objects.get(parent))
+            {
+                Some(object) => {
+                    object.parent.is_none()
+                        && ctx.eq_ignore_ascii_case(
+                            &object.name,
+                            "solid",
+                            "creo legacy root object name",
+                        )?
+                }
                 None => false,
             };
             if is_root_solid {
@@ -681,7 +715,8 @@ impl Persistence {
             }
             let StringPayload::Scalar {
                 value: StringValue::Utf8 { text },
-            } = &record.payload else {
+            } = &record.payload
+            else {
                 continue;
             };
             let text = ctx.trim_text(text, "creo legacy source model name trim")?;
@@ -815,8 +850,14 @@ impl Persistence {
         }
         let mut first = None;
         for element_id in elements {
-            let offset = match ctx.strip_prefix(element_id, "creo:legacy_ascii:object#", "creo legacy unit object prefix")? {
-                Some(digits) => ctx.parse_text::<usize>(digits, "creo scalar text parsing")?.ok(),
+            let offset = match ctx.strip_prefix(
+                element_id,
+                "creo:legacy_ascii:object#",
+                "creo legacy unit object prefix",
+            )? {
+                Some(digits) => ctx
+                    .parse_text::<usize>(digits, "creo scalar text parsing")?
+                    .ok(),
                 None => None,
             };
             let mut matches = self.objects.iter().filter(|object| {
@@ -910,19 +951,81 @@ pub(crate) fn line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
     ))
 }
 
-pub(crate) fn parse_declaration<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, line: &'a [u8]) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, cadmpeg_core::CodecError> {
-    let line = { let Some(value) = ctx.validate_utf8(line, "creo legacy declaration UTF-8 validation")?.ok() else { return Ok(None); }; value };
+pub(crate) fn parse_declaration<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    line: &'a [u8],
+) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, cadmpeg_core::CodecError> {
+    let line = {
+        let Some(value) = ctx
+            .validate_utf8(line, "creo legacy declaration UTF-8 validation")?
+            .ok()
+        else {
+            return Ok(None);
+        };
+        value
+    };
     let mut fields = line.split_ascii_whitespace();
-    let name = { let Some(value) = ctx.strip_prefix({ let Some(value) = fields.next() else { return Ok(None); }; value }, "@", "creo legacy declaration name prefix")? else { return Ok(None); }; value };
+    let name = {
+        let Some(value) = ctx.strip_prefix(
+            {
+                let Some(value) = fields.next() else {
+                    return Ok(None);
+                };
+                value
+            },
+            "@",
+            "creo legacy declaration name prefix",
+        )?
+        else {
+            return Ok(None);
+        };
+        value
+    };
     if name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_graphic()) {
         return Ok(None);
     }
-    let id = { let Some(value) = ctx.parse_text({ let Some(value) = fields.next() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
-    let type_code = LegacyTypeCode::from({ let Some(value) = ctx.parse_text::<u8>({ let Some(value) = fields.next() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value });
+    let id = {
+        let Some(value) = ctx
+            .parse_text(
+                {
+                    let Some(value) = fields.next() else {
+                        return Ok(None);
+                    };
+                    value
+                },
+                "creo scalar text parsing",
+            )?
+            .ok()
+        else {
+            return Ok(None);
+        };
+        value
+    };
+    let type_code = LegacyTypeCode::from({
+        let Some(value) = ctx
+            .parse_text::<u8>(
+                {
+                    let Some(value) = fields.next() else {
+                        return Ok(None);
+                    };
+                    value
+                },
+                "creo scalar text parsing",
+            )?
+            .ok()
+        else {
+            return Ok(None);
+        };
+        value
+    });
     Ok(fields.next().is_none().then_some((id, name, type_code)))
 }
 
-pub(crate) fn starts_with_declaration(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8], start: usize) -> Result<bool, cadmpeg_core::CodecError> {
+pub(crate) fn starts_with_declaration(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some((source, _)) = line(data, start) else {
         return Ok(false);
     };
@@ -941,7 +1044,10 @@ fn decimal(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
     (offset > start).then_some((value, offset))
 }
 
-fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<Real>, cadmpeg_core::CodecError> {
+fn compact_real(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Real>, cadmpeg_core::CodecError> {
     let (digits, repeat_last) = bytes
         .strip_suffix(b"R")
         .map_or((bytes, false), |digits| (digits, true));
@@ -953,19 +1059,46 @@ fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> 
     {
         return Ok(None);
     }
-    let digits = { let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
-    let mut bits = { let Some(value) = ctx.parse_radix::<u64>(digits, 16, "creo compact real hexadecimal parsing")?.ok() else { return Ok(None); }; value };
+    let digits = {
+        let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else {
+            return Ok(None);
+        };
+        value
+    };
+    let mut bits = {
+        let Some(value) = ctx
+            .parse_radix::<u64>(digits, 16, "creo compact real hexadecimal parsing")?
+            .ok()
+        else {
+            return Ok(None);
+        };
+        value
+    };
     let fill = if repeat_last { bits & 0x0f } else { 0 };
     for _ in digits.len()..16 {
-        bits = { let Some(value) = bits.checked_shl(4) else { return Ok(None); }; value } | fill;
+        bits = {
+            let Some(value) = bits.checked_shl(4) else {
+                return Ok(None);
+            };
+            value
+        } | fill;
     }
     Ok(f64::from_bits(bits).is_finite().then_some(Real(bits)))
 }
 
-fn signed_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<i32>, cadmpeg_core::CodecError> {
-    let text = { let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
+fn signed_integer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<i32>, cadmpeg_core::CodecError> {
+    let text = {
+        let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else {
+            return Ok(None);
+        };
+        value
+    };
     if text.is_empty()
-        || !ctx.strip_prefix(text, "-", "creo signed integer sign prefix")?
+        || !ctx
+            .strip_prefix(text, "-", "creo signed integer sign prefix")?
             .unwrap_or(text)
             .bytes()
             .all(|byte| byte.is_ascii_digit())
@@ -975,8 +1108,16 @@ fn signed_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -
     Ok(ctx.parse_text(text, "creo scalar text parsing")?.ok())
 }
 
-fn unsigned_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<u32>, cadmpeg_core::CodecError> {
-    let text = { let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
+fn unsigned_integer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<u32>, cadmpeg_core::CodecError> {
+    let text = {
+        let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else {
+            return Ok(None);
+        };
+        value
+    };
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
     }
@@ -1003,22 +1144,52 @@ fn array_dimensions(
     Ok((!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions))
 }
 
-fn numeric_run<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], scalar: fn(&cadmpeg_core::decode::DecodeContext<'_>, &[u8]) -> Result<Option<T>, cadmpeg_core::CodecError>) -> Result<Option<NumericRun<T>>, cadmpeg_core::CodecError> {
-    Ok(if let Some(star) = bytes.iter().position(|byte| *byte == b'*') {
-        let (count, after_count) = { let Some(value) = decimal(bytes, 0) else { return Ok(None); }; value };
-        if count == 0 || after_count != star {
-            return Ok(None);
-        }
-        Some(NumericRun {
-            count,
-            value: { let Some(value) = scalar(ctx, { let Some(value) = bytes.get(star + 1..) else { return Ok(None); }; value })? else { return Ok(None); }; value },
-        })
-    } else {
-        Some(NumericRun {
-            count: 1,
-            value: { let Some(value) = scalar(ctx, bytes)? else { return Ok(None); }; value },
-        })
-    })
+fn numeric_run<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    scalar: fn(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &[u8],
+    ) -> Result<Option<T>, cadmpeg_core::CodecError>,
+) -> Result<Option<NumericRun<T>>, cadmpeg_core::CodecError> {
+    Ok(
+        if let Some(star) = bytes.iter().position(|byte| *byte == b'*') {
+            let (count, after_count) = {
+                let Some(value) = decimal(bytes, 0) else {
+                    return Ok(None);
+                };
+                value
+            };
+            if count == 0 || after_count != star {
+                return Ok(None);
+            }
+            Some(NumericRun {
+                count,
+                value: {
+                    let Some(value) = scalar(ctx, {
+                        let Some(value) = bytes.get(star + 1..) else {
+                            return Ok(None);
+                        };
+                        value
+                    })?
+                    else {
+                        return Ok(None);
+                    };
+                    value
+                },
+            })
+        } else {
+            Some(NumericRun {
+                count: 1,
+                value: {
+                    let Some(value) = scalar(ctx, bytes)? else {
+                        return Ok(None);
+                    };
+                    value
+                },
+            })
+        },
+    )
 }
 
 fn continuation_numeric_runs<T>(
@@ -1187,7 +1358,11 @@ fn object_records(
                         matches!(declaration.type_code, LegacyTypeCode::Object)
                     })
             {
-                match ctx.entry_btree_map(&mut direct_array_elements, parent_offset, "creo legacy object array index nodes")? {
+                match ctx.entry_btree_map(
+                    &mut direct_array_elements,
+                    parent_offset,
+                    "creo legacy object array index nodes",
+                )? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut elements = Vec::new();
                         ctx.reserve_vec(&mut elements, 1, "creo legacy object array index rows")?;
@@ -1365,7 +1540,11 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
-                match ctx.entry_btree_map(&mut array_children, parent_offset, "creo legacy string array child nodes")? {
+                match ctx.entry_btree_map(
+                    &mut array_children,
+                    parent_offset,
+                    "creo legacy string array child nodes",
+                )? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut children = Vec::new();
                         ctx.reserve_vec(&mut children, 1, "creo legacy string array child rows")?;
@@ -1694,10 +1873,16 @@ fn scan_scope(
     }
 
     let candidate_count = candidates.len();
-    ctx.retain_vec(&mut candidates, |value| Ok({
-        declaration_indices.contains_key(&value.attribute_id)
-            && !conflicting_ids.contains(&value.attribute_id)
-    }), "creo legacy candidate retain")?;
+    ctx.retain_vec(
+        &mut candidates,
+        |value| {
+            Ok({
+                declaration_indices.contains_key(&value.attribute_id)
+                    && !conflicting_ids.contains(&value.attribute_id)
+            })
+        },
+        "creo legacy candidate retain",
+    )?;
     Ok(Scope {
         range,
         declarations,

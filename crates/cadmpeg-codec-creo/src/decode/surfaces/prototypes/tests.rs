@@ -70,8 +70,8 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error =
-        super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id).expect_err("first count node exceeds limit");
+    let error = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id)
+        .expect_err("first count node exceeds limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo legacy carrier count nodes"));
@@ -93,9 +93,11 @@ fn legacy_carrier_count_refuses_before_source_traversal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id)
         .expect_err("carrier traversal needs work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy carrier count traversal"));
+            && resource.operation == "creo legacy carrier count traversal")
+    );
 }
 
 #[test]
@@ -104,8 +106,9 @@ fn positional_replay_section_rows_refuse_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let data = [0u8];
-    let section = crate::container::Section::scan_for_test("VisibGeom".to_string(), 0, 1, None, &data)
-        .expect("bounded section");
+    let section =
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 0, 1, None, &data)
+            .expect("bounded section");
     let row = crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Spline,
@@ -849,10 +852,15 @@ ${}
 
 #[test]
 fn in_range_section_extent_states_its_declared_end() {
-    let section =
-        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
-            .expect("section extent")
-            .section;
+    let section = crate::container::Section::scan_for_test(
+        "ND:0:VisibGeom:0".to_owned(),
+        32,
+        48,
+        None,
+        &[0u8; 48],
+    )
+    .expect("section extent")
+    .section;
 
     assert_eq!(section.end(), 48);
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -868,10 +876,15 @@ fn in_range_section_extent_states_its_declared_end() {
 #[test]
 fn surface_prototype_frame_address_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section =
-        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
-            .expect("section extent")
-            .section;
+    let section = crate::container::Section::scan_for_test(
+        "ND:0:VisibGeom:0".to_owned(),
+        32,
+        48,
+        None,
+        &[0u8; 48],
+    )
+    .expect("section extent")
+    .section;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -889,10 +902,15 @@ fn surface_prototype_frame_address_error_refuses_retained_limit() {
 #[test]
 fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section =
-        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
-            .expect("section extent")
-            .section;
+    let section = crate::container::Section::scan_for_test(
+        "ND:0:VisibGeom:0".to_owned(),
+        32,
+        48,
+        None,
+        &[0u8; 48],
+    )
+    .expect("section extent")
+    .section;
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.data = vec![0u8; 16].into();
     let arena = DecodeArena::new();

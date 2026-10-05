@@ -11,11 +11,11 @@ use cadmpeg_ir::sketches::{
 #[test]
 fn emitted_parameter_identity_refuses_work_and_preserves_constraint() {
     let parameter_id = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
-    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#1:7")
-        .expect("sketch entity ID");
+    let entity_id =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#1:7").expect("sketch entity ID");
     let sketch_id = SketchId::mint("creo:model:sketch#1").expect("sketch ID");
-    let constraint_id = SketchConstraintId::mint("creo:model:sketch_constraint#1")
-        .expect("constraint ID");
+    let constraint_id =
+        SketchConstraintId::mint("creo:model:sketch_constraint#1").expect("constraint ID");
     let radius = SketchConstraintDefinitionInput::Radius {
         entity: entity_id,
         parameter: parameter_id.clone(),
@@ -34,8 +34,8 @@ fn emitted_parameter_identity_refuses_work_and_preserves_constraint() {
         pmi: None,
         native_ref: None,
     });
-    let second_parameter_id = ParameterId::mint("creo:featdefs:parameter#2")
-        .expect("second parameter ID");
+    let second_parameter_id =
+        ParameterId::mint("creo:featdefs:parameter#2").expect("second parameter ID");
     input.model.parameters.push(DesignParameter {
         id: second_parameter_id.clone(),
         owner: None,

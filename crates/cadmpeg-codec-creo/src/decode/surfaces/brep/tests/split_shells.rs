@@ -160,17 +160,38 @@ fn pending_shell_face_traversal_refuses_before_pop() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        split_neutral_component_shells(&ctx, &[1], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new())
+        split_neutral_component_shells(
+            &ctx,
+            &[1],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
     };
     let limit = crate::test_support::allocation_limit_at(
         ResourceDimension::WorkUnits,
         Some("creo B-rep pending shell face traversal"),
         run,
     );
-    assert!(matches!(run(limit), Err(CodecError::ResourceLimit(resource))
+    assert!(
+        matches!(run(limit), Err(CodecError::ResourceLimit(resource))
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo B-rep pending shell face traversal"));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx|
-        split_neutral_component_shells(ctx, &[1], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new())
-    ).expect("service shell partition"), vec![NeutralShellSpec { faces: vec![1], wire_curves: BTreeSet::new() }]);
+            && resource.operation == "creo B-rep pending shell face traversal")
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| split_neutral_component_shells(
+            ctx,
+            &[1],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new()
+        ))
+        .expect("service shell partition"),
+        vec![NeutralShellSpec {
+            faces: vec![1],
+            wire_curves: BTreeSet::new()
+        }]
+    );
 }

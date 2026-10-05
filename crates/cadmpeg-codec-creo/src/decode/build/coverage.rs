@@ -34,7 +34,8 @@ pub(super) fn collect_feature_coverage(
     feature_result_edge_count: usize,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let native_feature_count = ctx.admit_iter(&ir.model.features, "creo native feature coverage traversal")?
+    let native_feature_count = ctx
+        .admit_iter(&ir.model.features, "creo native feature coverage traversal")?
         .filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
@@ -228,12 +229,14 @@ pub(super) fn collect_feature_coverage(
                 );
                 let native_face = matches!(face, Some(FaceSelection::Native(_)));
                 let unresolved_direction = match placements.as_ref() {
-                    Some(placements) => !ctx.admit_iter(placements, "creo hole placement direction coverage")?.any(|placement| {
-                        matches!(
-                            placement,
-                            cadmpeg_ir::features::holes::HolePlacement::Directed { .. }
-                        )
-                    }),
+                    Some(placements) => !ctx
+                        .admit_iter(placements, "creo hole placement direction coverage")?
+                        .any(|placement| {
+                            matches!(
+                                placement,
+                                cadmpeg_ir::features::holes::HolePlacement::Directed { .. }
+                            )
+                        }),
                     None => true,
                 };
                 let unresolved_kind = matches!(
@@ -269,31 +272,45 @@ pub(super) fn collect_feature_coverage(
             IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
                 fillet_feature_count += 1;
                 let unresolved_edges = groups.is_empty()
-                    || ctx.admit_iter(&**groups, "creo feature edge group coverage")?.any(|group| {
+                    || ctx
+                        .admit_iter(&**groups, "creo feature edge group coverage")?
+                        .any(|group| {
+                            matches!(
+                                &group.edges,
+                                EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                            )
+                        });
+                let native_edges = ctx
+                    .admit_iter(&**groups, "creo feature edge group coverage")?
+                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
+                let unresolved_radius = groups.is_empty()
+                    || ctx
+                        .admit_iter(&**groups, "creo feature edge group coverage")?
+                        .any(|group| group.radius.is_unresolved());
+                let variable_radius = ctx
+                    .admit_iter(&**groups, "creo feature edge group coverage")?
+                    .any(|group| {
                         matches!(
-                            &group.edges,
-                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                            &group.radius,
+                            RadiusSpec::Unresolved {
+                                form: Some(
+                                    cadmpeg_ir::features::edge_treatments::RadiusForm::Variable
+                                )
+                            }
                         )
                     });
-                let native_edges = ctx.admit_iter(&**groups, "creo feature edge group coverage")?
-                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_radius =
-                    groups.is_empty() || ctx.admit_iter(&**groups, "creo feature edge group coverage")?.any(|group| group.radius.is_unresolved());
-                let variable_radius = ctx.admit_iter(&**groups, "creo feature edge group coverage")?.any(|group| {
-                    matches!(
-                        &group.radius,
-                        RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
-                        }
-                    )
-                });
                 let has_generated_surface = match feature
                     .id
                     .as_str()
                     .strip_prefix("creo:model:feature#")
                     .and_then(|value| value.parse::<u32>().ok())
                 {
-                    Some(feature_id) => ctx.admit_iter(&scan.surfaces.rows, "creo generated fillet surface coverage")?.any(|row| row.feature_id == feature_id),
+                    Some(feature_id) => ctx
+                        .admit_iter(
+                            &scan.surfaces.rows,
+                            "creo generated fillet surface coverage",
+                        )?
+                        .any(|row| row.feature_id == feature_id),
                     None => false,
                 };
                 unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
@@ -310,16 +327,21 @@ pub(super) fn collect_feature_coverage(
             IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer { groups, .. }) => {
                 chamfer_feature_count += 1;
                 let unresolved_edges = groups.is_empty()
-                    || ctx.admit_iter(&**groups, "creo feature edge group coverage")?.any(|group| {
-                        matches!(
-                            &group.edges,
-                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
-                        )
-                    });
-                let native_edges = ctx.admit_iter(&**groups, "creo feature edge group coverage")?
+                    || ctx
+                        .admit_iter(&**groups, "creo feature edge group coverage")?
+                        .any(|group| {
+                            matches!(
+                                &group.edges,
+                                EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                            )
+                        });
+                let native_edges = ctx
+                    .admit_iter(&**groups, "creo feature edge group coverage")?
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_spec =
-                    groups.is_empty() || ctx.admit_iter(&**groups, "creo feature edge group coverage")?.any(|group| group.spec.is_unresolved());
+                let unresolved_spec = groups.is_empty()
+                    || ctx
+                        .admit_iter(&**groups, "creo feature edge group coverage")?
+                        .any(|group| group.spec.is_unresolved());
                 unresolved_chamfer_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_chamfer_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_chamfer_spec_feature_count += usize::from(unresolved_spec);
@@ -457,22 +479,24 @@ pub(super) fn collect_feature_coverage(
             IrFeatureDefinition::Operation(IrFeatureOperation::Pattern { seeds, pattern }) => {
                 pattern_feature_count += 1;
                 let unresolved_seeds = seeds.is_empty()
-                    || ctx.admit_iter(seeds, "creo pattern seed coverage")?.any(|seed| match seed {
-                        cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
-                        cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
-                            face_selection_has_unresolved_operands(faces)
-                        }
-                        cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
-                            matches!(
-                                bodies,
-                                cadmpeg_ir::features::BodySelection::Unresolved
-                                    | cadmpeg_ir::features::BodySelection::Native(_)
-                            )
-                        }
-                        cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
-                            occurrences.is_empty()
-                        }
-                    });
+                    || ctx.admit_iter(seeds, "creo pattern seed coverage")?.any(
+                        |seed| match seed {
+                            cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                            cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
+                                face_selection_has_unresolved_operands(faces)
+                            }
+                            cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
+                                matches!(
+                                    bodies,
+                                    cadmpeg_ir::features::BodySelection::Unresolved
+                                        | cadmpeg_ir::features::BodySelection::Native(_)
+                                )
+                            }
+                            cadmpeg_ir::features::patterns::PatternSeed::Occurrences(
+                                occurrences,
+                            ) => occurrences.is_empty(),
+                        },
+                    );
                 let unresolved_transform = pattern_kind_has_unresolved_operands(ctx, pattern)?;
                 unresolved_pattern_seed_feature_count += usize::from(unresolved_seeds);
                 unresolved_pattern_transform_feature_count += usize::from(unresolved_transform);
@@ -932,18 +956,35 @@ pub(in crate::decode::build) struct TorusParameterCoverage {
     pub(super) split_coordinate_envelopes: usize,
 }
 
-pub(super) fn torus_parameter_coverage(ctx: &cadmpeg_core::decode::DecodeContext<'_>, scan: &ContainerScan) -> Result<TorusParameterCoverage, CodecError> {
-    let rows = || Ok::<_, CodecError>(ctx.admit_iter(&scan.surfaces.parameters, "creo torus parameter coverage traversal")?.filter_map(|record| {
-        crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-            .map(|row| (record, row))
-    }));
+pub(super) fn torus_parameter_coverage(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<TorusParameterCoverage, CodecError> {
+    let rows = || {
+        Ok::<_, CodecError>(
+            ctx.admit_iter(
+                &scan.surfaces.parameters,
+                "creo torus parameter coverage traversal",
+            )?
+            .filter_map(|record| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+                    .map(|row| (record, row))
+            }),
+        )
+    };
     Ok(TorusParameterCoverage {
         radius_overrides: rows()?
             .filter(|(record, _)| record.torus_radius_overrides().is_some())
             .count(),
         replayed_minor_radii: rows()?.try_fold(0usize, |count, (record, row)| {
             let replayed = replayed_torus_minor_radius(ctx, scan, row, record)?.is_some();
-            count.checked_add(usize::from(replayed)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo replayed torus coverage count", u64::MAX, u64::MAX))
+            count.checked_add(usize::from(replayed)).ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "creo replayed torus coverage count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })
         })?,
         outline_extents: rows()?
             .filter(|(record, _)| record.torus_outline_frame().is_some())

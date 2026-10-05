@@ -156,7 +156,10 @@ fn map_two_chart_endpoint_sets(
     let mut mismatch = false;
     // A sample that leaves the finite range is a mapped sample; it agrees
     // with no sample on the other chart.
-    for sample in ctx.admit_iter(&pcurve.samples, "creo map two chart endpoint sets samples traversal")? {
+    for sample in ctx.admit_iter(
+        &pcurve.samples,
+        "creo map two chart endpoint sets samples traversal",
+    )? {
         let mut points: [Option<Result<FinitePoint3, Point3>>; 2] = [None, None];
         for face_index in 0..2 {
             if !mapped[face_index] {
@@ -248,8 +251,10 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
         )
     })?;
     crate::decode::with_test_decode_ctx(|ctx| {
-        Ok(pcurve_endpoint_evidence_from_mapped(ctx, &mapped.mapped, false)?
-            .map(|evidence| evidence.points))
+        Ok(
+            pcurve_endpoint_evidence_from_mapped(ctx, &mapped.mapped, false)?
+                .map(|evidence| evidence.points),
+        )
     })
 }
 
@@ -341,7 +346,9 @@ impl PcurvePathActivity {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut active_paths = BTreeSet::new();
         for loop_ in ctx.admit_iter(&scan.topology.loops, "creo from scan loops traversal")? {
-            for half_edge in ctx.admit_iter(loop_.half_edges(), "creo pcurve activity half-edges")? {
+            for half_edge in
+                ctx.admit_iter(loop_.half_edges(), "creo pcurve activity half-edges")?
+            {
                 let key = (loop_.face_id(), half_edge.curve_id);
                 ctx.insert_btree_set(&mut active_paths, key, "creo active pcurve path nodes")?;
             }
@@ -361,8 +368,15 @@ impl PcurvePathActivity {
             )?;
         }
         let mut prototype_counts = BTreeMap::<u32, usize>::new();
-        for row in ctx.admit_iter(&scan.curves.prototype_topology, "creo from scan prototype topology traversal")? {
-            match ctx.entry_btree_map(&mut prototype_counts, row.curve_id, "creo pcurve prototype count nodes")? {
+        for row in ctx.admit_iter(
+            &scan.curves.prototype_topology,
+            "creo from scan prototype topology traversal",
+        )? {
+            match ctx.entry_btree_map(
+                &mut prototype_counts,
+                row.curve_id,
+                "creo pcurve prototype count nodes",
+            )? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(1);
@@ -370,7 +384,10 @@ impl PcurvePathActivity {
             }
         }
         let mut prototype_faces = BTreeMap::new();
-        for row in ctx.admit_iter(&scan.curves.prototype_topology, "creo from scan prototype topology traversal")? {
+        for row in ctx.admit_iter(
+            &scan.curves.prototype_topology,
+            "creo from scan prototype topology traversal",
+        )? {
             if prototype_counts.get(&row.curve_id) == Some(&1) {
                 ctx.insert_btree_map(
                     &mut prototype_faces,
@@ -669,7 +686,11 @@ fn collect_support_cone_plane_witness(
         let Some(plane) = planes.get(&faces[1 - face_index]).copied() else {
             continue;
         };
-        match ctx.entry_btree_map(witnesses, faces[face_index], "creo support cone witness nodes")? {
+        match ctx.entry_btree_map(
+            witnesses,
+            faces[face_index],
+            "creo support cone witness nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 ctx.reserve_vec(entry.get_mut(), 1, "creo support cone plane witnesses")?;
                 entry.get_mut().push((endpoints, plane));
@@ -720,7 +741,10 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         return Ok(0);
     }
     let mut witnesses = BTreeMap::<u32, Vec<SupportConePlaneWitness>>::new();
-    for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo transfer analytic pcurve carriers pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.pcurves,
+        "creo transfer analytic pcurve carriers pcurves traversal",
+    )? {
         let endpoint_sets = canonicalized_pcurve_endpoints(
             scan,
             pcurve.faces,
@@ -735,7 +759,10 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             endpoint_sets.map(Some),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo transfer analytic pcurve carriers bound prototype pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.bound_prototype_pcurves,
+        "creo transfer analytic pcurve carriers bound prototype pcurves traversal",
+    )? {
         let endpoint_sets = canonicalized_pcurve_endpoints(
             scan,
             pcurve.faces,
@@ -750,7 +777,10 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             endpoint_sets.map(Some),
         )?;
     }
-    for pcurve in ctx.admit_iter(&scan.curves.two_chart_pcurves, "creo pcurve edge endpoint evidence with carriers two chart pcurves traversal")? {
+    for pcurve in ctx.admit_iter(
+        &scan.curves.two_chart_pcurves,
+        "creo pcurve edge endpoint evidence with carriers two chart pcurves traversal",
+    )? {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let mapping = map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?;
         let TwoChartMapping::Mapped {
@@ -770,7 +800,9 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     }
 
     let mut reconciled = 0;
-    for (face_id, face_witnesses) in ctx.admit_iter(&witnesses, "creo support cone face witnesses")? {
+    for (face_id, face_witnesses) in
+        ctx.admit_iter(&witnesses, "creo support cone face witnesses")?
+    {
         let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, *face_id) else {
             continue;
         };
@@ -779,14 +811,20 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             continue;
         };
         let mut current_matches = true;
-        for (endpoints, plane) in ctx.admit_iter(face_witnesses, "creo reconcile support apex cone parameter branches face witnesses traversal")? {
+        for (endpoints, plane) in ctx.admit_iter(
+            face_witnesses,
+            "creo reconcile support apex cone parameter branches face witnesses traversal",
+        )? {
             if !support_cone_witness_matches(ctx, source_geometry, *endpoints, *plane)? {
                 current_matches = false;
                 break;
             }
         }
         let mut mirrored_matches = true;
-        for (endpoints, plane) in ctx.admit_iter(face_witnesses, "creo reconcile support apex cone parameter branches face witnesses traversal")? {
+        for (endpoints, plane) in ctx.admit_iter(
+            face_witnesses,
+            "creo reconcile support apex cone parameter branches face witnesses traversal",
+        )? {
             if !support_cone_witness_matches(ctx, &mirrored, *endpoints, *plane)? {
                 mirrored_matches = false;
                 break;
@@ -930,10 +968,7 @@ fn pcurve_mismatch_detail(
         return Ok(None);
     };
     let same_order_error = ctx
-        .admit_iter(
-            &mapped[1..],
-            "creo pcurve mismatch same-order comparison",
-        )?
+        .admit_iter(&mapped[1..], "creo pcurve mismatch same-order comparison")?
         .map(|candidate| endpoint_pair_error(first, candidate.endpoints, false))
         .fold(0.0, f64::max);
     let reverse_order_error = ctx
@@ -1083,7 +1118,11 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             Some(evidence) => {
                 diagnostics.accepted_records += 1;
                 diagnostics.complete_records += usize::from(evidence.complete);
-                match ctx.entry_btree_map(&mut candidates, curve_id, "creo pcurve evidence candidate nodes")? {
+                match ctx.entry_btree_map(
+                    &mut candidates,
+                    curve_id,
+                    "creo pcurve evidence candidate nodes",
+                )? {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         ctx.reserve_vec(entry.get_mut(), 1, "creo pcurve evidence candidates")?;
                         entry.get_mut().push(evidence);
@@ -1116,65 +1155,68 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         Ok(())
     };
     {
-    let mut process_face_paths = |curve_id: u32,
-                                  faces: [Option<NonZeroU32>; 2],
-                                  first: [[f64; 2]; 2],
-                                  second: [[f64; 2]; 2],
-                                  prototype: bool|
-     -> Result<(), cadmpeg_core::CodecError> {
-        diagnostics.records += 1;
-        if let Some(active) = path_activity.selected_paths(ctx, curve_id, faces, prototype)? {
-            let active_count = ctx
-                .admit_iter(&active, "creo selected pcurve path count")?
-                .filter(|is_active| **is_active)
-                .count();
-            diagnostics.inactive_paths += 2 - active_count;
-            match active_count {
-                0 => diagnostics.inactive_records += 1,
-                1 => diagnostics.partial_records += 1,
-                _ => {}
+        let mut process_face_paths = |curve_id: u32,
+                                      faces: [Option<NonZeroU32>; 2],
+                                      first: [[f64; 2]; 2],
+                                      second: [[f64; 2]; 2],
+                                      prototype: bool|
+         -> Result<(), cadmpeg_core::CodecError> {
+            diagnostics.records += 1;
+            if let Some(active) = path_activity.selected_paths(ctx, curve_id, faces, prototype)? {
+                let active_count = ctx
+                    .admit_iter(&active, "creo selected pcurve path count")?
+                    .filter(|is_active| **is_active)
+                    .count();
+                diagnostics.inactive_paths += 2 - active_count;
+                match active_count {
+                    0 => diagnostics.inactive_records += 1,
+                    1 => diagnostics.partial_records += 1,
+                    _ => {}
+                }
+            } else {
+                diagnostics.topology_mismatch_records += 1;
             }
-        } else {
-            diagnostics.topology_mismatch_records += 1;
+            let mut paths = Vec::new();
+            for path in ctx
+                .admit_iter(&faces, "creo pcurve face paths")?
+                .zip([first, second])
+                .enumerate()
+                .filter(|(_, (face_id, _))| {
+                    face_id.is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
+                })
+                .map(|(index, (face_id, endpoints))| (index, (*face_id, endpoints)))
+            {
+                ctx.reserve_vec(&mut paths, 1, "creo pcurve candidate paths")?;
+                paths.push(path);
+            }
+            process_paths(curve_id, faces, paths, false, false)
+        };
+        for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo visible pcurve records")? {
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            process_face_paths(pcurve.curve_id, pcurve.faces, first, second, false)?;
         }
-        let mut paths = Vec::new();
-        for path in ctx
-            .admit_iter(&faces, "creo pcurve face paths")?
-            .zip([first, second])
-            .enumerate()
-            .filter(|(_, (face_id, _))| {
-                face_id.is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
-            })
-            .map(|(index, (face_id, endpoints))| (index, (*face_id, endpoints)))
-        {
-            ctx.reserve_vec(&mut paths, 1, "creo pcurve candidate paths")?;
-            paths.push(path);
+        for pcurve in ctx.admit_iter(
+            &scan.curves.bound_prototype_pcurves,
+            "creo prototype pcurve records",
+        )? {
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            process_face_paths(pcurve.curve_id, pcurve.faces, first, second, true)?;
         }
-        process_paths(curve_id, faces, paths, false, false)
-    };
-    for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo visible pcurve records")? {
-        let [first, second] = canonicalized_pcurve_endpoints(
-            scan,
-            pcurve.faces,
-            pcurve.face_0_endpoints,
-            pcurve.face_1_endpoints,
-        );
-        process_face_paths(pcurve.curve_id, pcurve.faces, first, second, false)?;
     }
     for pcurve in ctx.admit_iter(
-        &scan.curves.bound_prototype_pcurves,
-        "creo prototype pcurve records",
+        &scan.curves.two_chart_pcurves,
+        "creo transfer analytic pcurve carriers two chart pcurves traversal",
     )? {
-        let [first, second] = canonicalized_pcurve_endpoints(
-            scan,
-            pcurve.faces,
-            pcurve.face_0_endpoints,
-            pcurve.face_1_endpoints,
-        );
-        process_face_paths(pcurve.curve_id, pcurve.faces, first, second, true)?;
-    }
-    }
-    for pcurve in ctx.admit_iter(&scan.curves.two_chart_pcurves, "creo transfer analytic pcurve carriers two chart pcurves traversal")? {
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
@@ -1278,16 +1320,19 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         };
         // An endpoint outside the finite range agrees with no endpoint.
         let admitted = first.points.map(finite_model_point);
-        if ctx.admit_iter(candidates, "creo pcurve endpoint candidate agreement")?.all(|candidate| {
-            admitted
-                .into_iter()
-                .zip(candidate.points)
-                .all(|(first, candidate)| {
-                    first
-                        .zip(finite_model_point(candidate))
-                        .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
-                })
-        }) {
+        if ctx
+            .admit_iter(candidates, "creo pcurve endpoint candidate agreement")?
+            .all(|candidate| {
+                admitted
+                    .into_iter()
+                    .zip(candidate.points)
+                    .all(|(first, candidate)| {
+                        first
+                            .zip(finite_model_point(candidate))
+                            .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+                    })
+            })
+        {
             ctx.insert_btree_map(
                 &mut evidence,
                 *curve_id,
@@ -1649,7 +1694,11 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 }
             }
             if evaluable {
-                match ctx.entry_btree_map(&mut evaluable_path_counts, curve_id, "creo evaluable pcurve path count nodes")? {
+                match ctx.entry_btree_map(
+                    &mut evaluable_path_counts,
+                    curve_id,
+                    "creo evaluable pcurve path count nodes",
+                )? {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
                     }
@@ -1659,7 +1708,11 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 }
             }
             if let Some(carrier) = linear_pcurve_carrier(ctx, geometry, endpoints)? {
-                match ctx.entry_btree_map(&mut candidates, curve_id, "creo analytic pcurve candidate nodes")? {
+                match ctx.entry_btree_map(
+                    &mut candidates,
+                    curve_id,
+                    "creo analytic pcurve candidate nodes",
+                )? {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         ctx.reserve_vec(entry.get_mut(), 1, "creo analytic pcurve candidates")?;
                         entry.get_mut().push((carrier, offset));
@@ -1674,7 +1727,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             }
             Ok(())
         };
-        for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo reconcile support apex cone parameter branches pcurves traversal")? {
+        for pcurve in ctx.admit_iter(
+            &scan.curves.pcurves,
+            "creo reconcile support apex cone parameter branches pcurves traversal",
+        )? {
             let endpoint_sets = canonicalized_pcurve_endpoints(
                 scan,
                 pcurve.faces,
@@ -1685,7 +1741,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
         }
-        for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo reconcile support apex cone parameter branches bound prototype pcurves traversal")? {
+        for pcurve in ctx.admit_iter(
+            &scan.curves.bound_prototype_pcurves,
+            "creo reconcile support apex cone parameter branches bound prototype pcurves traversal",
+        )? {
             let endpoint_sets = canonicalized_pcurve_endpoints(
                 scan,
                 pcurve.faces,
@@ -1696,7 +1755,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
         }
-        for pcurve in ctx.admit_iter(&scan.curves.two_chart_pcurves, "creo reconcile support apex cone parameter branches two chart pcurves traversal")? {
+        for pcurve in ctx.admit_iter(
+            &scan.curves.two_chart_pcurves,
+            "creo reconcile support apex cone parameter branches two chart pcurves traversal",
+        )? {
             let faces = pcurve.faces.map(NonZeroU32::new);
             let Some(endpoint_sets) =
                 mapped_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?
@@ -1742,7 +1804,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             continue;
         }
         let mut compatible = true;
-        for (candidate, _) in ctx.admit_iter(candidates, "creo transfer analytic pcurve carriers candidates traversal")? {
+        for (candidate, _) in ctx.admit_iter(
+            candidates,
+            "creo transfer analytic pcurve carriers candidates traversal",
+        )? {
             if !curve_contains_points(candidate, points) {
                 compatible = false;
                 break;
@@ -1767,22 +1832,26 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             continue;
         }
         let mut offsets = ctx
-            .admit_iter(candidates, "creo analytic pcurve candidate minimum candidates")?
+            .admit_iter(
+                candidates,
+                "creo analytic pcurve candidate minimum candidates",
+            )?
             .map(|(_, offset)| *offset);
         let mut minimum_offset = match offsets.next() {
             Some(offset) => offset,
             None => *offset,
         };
         for candidate_offset in offsets {
-            let comparison_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>())
-                .checked_mul(2)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo analytic pcurve candidate minimum comparisons",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?;
+            let comparison_work =
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>())
+                    .checked_mul(2)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "creo analytic pcurve candidate minimum comparisons",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
             ctx.charge_work(
                 comparison_work,
                 "creo analytic pcurve candidate minimum comparisons",
@@ -1799,9 +1868,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             "creo decoded model identity",
         )?;
         let mut curve_exists = false;
-        for curve in
-            ctx.admit_iter(&ir.model.curves, "creo existing analytic pcurve curve search")?
-        {
+        for curve in ctx.admit_iter(
+            &ir.model.curves,
+            "creo existing analytic pcurve curve search",
+        )? {
             if ctx.equal(
                 &curve.id,
                 &id,
@@ -2215,11 +2285,13 @@ fn oriented_native_pcurve_endpoints(
     else {
         return Ok(None);
     };
-    Ok(match point_pair_alignments(ctx, [first, second], [start, end])? {
-        [true, false] => Some(endpoints),
-        [false, true] => Some([endpoints[1], endpoints[0]]),
-        _ => None,
-    })
+    Ok(
+        match point_pair_alignments(ctx, [first, second], [start, end])? {
+            [true, false] => Some(endpoints),
+            [false, true] => Some([endpoints[1], endpoints[0]]),
+            _ => None,
+        },
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2235,7 +2307,9 @@ pub(in crate::decode) fn unique_oriented_native_pcurve(
     traversal: [[f64; 3]; 2],
 ) -> Result<Option<OrientedNativePcurve>, cadmpeg_core::CodecError> {
     let mut selected: Option<OrientedNativePcurve> = None;
-    for (endpoints, offset) in ctx.admit_iter(candidates, "creo oriented native pcurve candidates")? {
+    for (endpoints, offset) in
+        ctx.admit_iter(candidates, "creo oriented native pcurve candidates")?
+    {
         let Some(oriented) = oriented_native_pcurve_endpoints(ctx, surface, *endpoints, traversal)?
         else {
             continue;
@@ -2403,16 +2477,14 @@ pub(in crate::decode) fn planar_curve_pcurve(
                             resource_error = Some(error);
                             return None;
                         }
-                        let admitted_points = match ctx.admit_iter(
-                            points,
-                            "creo planar polynomial NURBS poles",
-                        ) {
-                            Ok(points) => points,
-                            Err(error) => {
-                                resource_error = Some(error.into());
-                                return None;
-                            }
-                        };
+                        let admitted_points =
+                            match ctx.admit_iter(points, "creo planar polynomial NURBS poles") {
+                                Ok(points) => points,
+                                Err(error) => {
+                                    resource_error = Some(error.into());
+                                    return None;
+                                }
+                            };
                         for point in admitted_points {
                             let point = point.get();
                             let projected_point =
@@ -2453,16 +2525,14 @@ pub(in crate::decode) fn planar_curve_pcurve(
                             resource_error = Some(error);
                             return None;
                         }
-                        let admitted_points = match ctx.admit_iter(
-                            points,
-                            "creo planar rational NURBS poles",
-                        ) {
-                            Ok(points) => points,
-                            Err(error) => {
-                                resource_error = Some(error.into());
-                                return None;
-                            }
-                        };
+                        let admitted_points =
+                            match ctx.admit_iter(points, "creo planar rational NURBS poles") {
+                                Ok(points) => points,
+                                Err(error) => {
+                                    resource_error = Some(error.into());
+                                    return None;
+                                }
+                            };
                         for pole in admitted_points {
                             let point = pole.point.get();
                             let projected_point =
@@ -2579,10 +2649,7 @@ mod tests {
     fn pcurve_vertex_propagation_round_refuses_work() {
         let constraints: [super::PcurveVertexConstraint; 1] =
             [([1, 2], [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])];
-        let fixed_points = BTreeMap::from([
-            (1, [0.0, 0.0, 0.0]),
-            (2, [1.0, 0.0, 0.0]),
-        ]);
+        let fixed_points = BTreeMap::from([(1, [0.0, 0.0, 0.0]), (2, [1.0, 0.0, 0.0])]);
         let solved = crate::test_support::assert_work_boundaries(
             &["creo pcurve vertex propagation rounds"],
             |ctx| {
@@ -3068,10 +3135,7 @@ mod tests {
         .expect("service analytic pcurve transfer");
 
         assert_eq!(
-            transferred
-                .iter()
-                .map(CurveId::as_str)
-                .collect::<Vec<_>>(),
+            transferred.iter().map(CurveId::as_str).collect::<Vec<_>>(),
             ["creo:visibgeom:curve#7"]
         );
         assert_eq!(ir.model.curves.len(), 1);
@@ -3417,11 +3481,10 @@ mod tests {
             },
         ];
 
-        let detail = crate::decode::with_test_decode_ctx(|ctx| {
-            pcurve_mismatch_detail(ctx, 11, &mapped)
-        })
-        .expect("mismatch comparison is admitted")
-        .expect("two mapped paths");
+        let detail =
+            crate::decode::with_test_decode_ctx(|ctx| pcurve_mismatch_detail(ctx, 11, &mapped))
+                .expect("mismatch comparison is admitted")
+                .expect("two mapped paths");
         assert_eq!(detail.curve_id, 11);
         assert_eq!(detail.faces, [7, 8]);
         assert!((detail.same_order_error - 1.0).abs() < EPS_TEST_ERROR);

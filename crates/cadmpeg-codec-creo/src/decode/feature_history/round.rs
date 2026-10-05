@@ -33,9 +33,7 @@ const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 pub(in super::super) fn parallel_support_radius<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sources: &[T],
-    mut resolve_plane: impl FnMut(
-        &T,
-    ) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError>,
+    mut resolve_plane: impl FnMut(&T) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError>,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let mut first_radius: Option<f64> = None;
     let mut agrees = true;
@@ -145,9 +143,7 @@ pub(in super::super) fn slot_fillet_cylinder(
             }
             let gap = dot(
                 first_normal,
-                std::array::from_fn(|index| {
-                    second_plane.origin[index] - first_plane.origin[index]
-                }),
+                std::array::from_fn(|index| second_plane.origin[index] - first_plane.origin[index]),
             )
             .abs();
             if gap <= EPS_GEOMETRY_AGREEMENT {
@@ -177,29 +173,26 @@ pub(in super::super) fn slot_fillet_cylinder(
             let radius = first.1;
             let scale = radius.max(second.1);
             if (second.1 - radius).abs() > EPS_GEOMETRY_AGREEMENT * scale
-                || dot(first.0.normal, second.0.normal).abs()
-                    > 1.0 - EPS_GEOMETRY_AGREEMENT
+                || dot(first.0.normal, second.0.normal).abs() > 1.0 - EPS_GEOMETRY_AGREEMENT
             {
                 continue;
             }
-            let Some(origin) = solve_planes(
-                ctx,
-                &[cap_planes[0], first.0, second.0],
-            )?
-            else {
+            let Some(origin) = solve_planes(ctx, &[cap_planes[0], first.0, second.0])? else {
                 continue;
             };
-    let tangent_to_all = ctx.admit_iter(support_planes, "creo slot fillet support planes")?.all(|plane| {
-                let Some(normal) = normalize(plane.normal) else {
-                    return false;
-                };
-                let distance = dot(
-                    normal,
-                    std::array::from_fn(|index| origin[index] - plane.origin[index]),
-                )
-                .abs();
-                (distance - radius).abs() <= EPS_CYLINDER_FIT * scale
-            });
+            let tangent_to_all = ctx
+                .admit_iter(support_planes, "creo slot fillet support planes")?
+                .all(|plane| {
+                    let Some(normal) = normalize(plane.normal) else {
+                        return false;
+                    };
+                    let distance = dot(
+                        normal,
+                        std::array::from_fn(|index| origin[index] - plane.origin[index]),
+                    )
+                    .abs();
+                    (distance - radius).abs() <= EPS_CYLINDER_FIT * scale
+                });
             if tangent_to_all {
                 let candidate = CylinderEquation {
                     origin,
@@ -244,8 +237,7 @@ pub(in super::super) fn outline_has_unique_radius_delta(
     frame: crate::surface::TorusOutlineFrame,
     radius: f64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let scale = frame
-        .values;
+    let scale = frame.values;
     let scale = ctx
         .admit_iter(&scale, "creo torus outline frame scale")?
         .map(|value| value.abs())
@@ -309,11 +301,12 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
         }
     }
     let mut decoded = [None, None];
-    for (index, envelope) in ctx.admit_iter(&envelopes, "creo paired sphere envelopes")?.enumerate() {
+    for (index, envelope) in ctx
+        .admit_iter(&envelopes, "creo paired sphere envelopes")?
+        .enumerate()
+    {
         let [x_min, z0, y_min, radial_max, z1] = envelope.values;
-        let close = |left: f64, right: f64| {
-            (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale
-        };
+        let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
         decoded[index] = (close(x_min, y_min)
             && close(radial_max - x_min, 2.0 * radius)
             && close((z1 - z0).abs(), radius))
@@ -331,7 +324,10 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
     let mut center_z = None;
     for candidate in ctx.admit_iter(&candidates, "creo paired sphere center candidates")? {
         if ctx
-            .admit_iter(&other_axial, "creo paired sphere matching axial coordinates")?
+            .admit_iter(
+                &other_axial,
+                "creo paired sphere matching axial coordinates",
+            )?
             .any(|other| close(*candidate, *other))
         {
             if center_z.replace(*candidate).is_some() {
@@ -342,7 +338,12 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
     let Some(center_z) = center_z else {
         return Ok(None);
     };
-    let axial_values = [first_axial[0], first_axial[1], second_axial[0], second_axial[1]];
+    let axial_values = [
+        first_axial[0],
+        first_axial[1],
+        second_axial[0],
+        second_axial[1],
+    ];
     let axial_min = ctx
         .admit_iter(&axial_values, "creo paired sphere axial extent")?
         .copied()
@@ -367,11 +368,8 @@ pub(in super::super) fn unique_surface_parameter_record<'a>(
     row: &crate::surface::SurfaceRow,
 ) -> Result<Option<&'a crate::surface::SurfaceParameterRecord>, cadmpeg_core::CodecError> {
     Ok(exactly_one(
-        ctx.admit_iter(
-            &scan.surfaces.parameters,
-            "creo surface parameter records",
-        )?
-        .filter(|record| record.offset == row.offset),
+        ctx.admit_iter(&scan.surfaces.parameters, "creo surface parameter records")?
+            .filter(|record| record.offset == row.offset),
     ))
 }
 
@@ -426,9 +424,7 @@ fn prototype_round_radius(
     let feature_id = first.feature_id;
     let associations = unique_surface_prototype_associations(ctx, scan)?;
     let mut radii = None;
-    for (record, row, _) in ctx
-        .admit_iter(&associations, "creo round prototype associations")?
-    {
+    for (record, row, _) in ctx.admit_iter(&associations, "creo round prototype associations")? {
         if !matches!(
             record.record().family,
             crate::surface::SurfacePrototypeFamily::Torus(_)
@@ -487,19 +483,17 @@ fn prototype_round_radius(
                     five_coordinate_envelope_proves_torus_radii(envelope, radius1, radius2)
                 })
         };
-        let split_coordinate_matches = if replayed_matches
-            || outline_matches
-            || five_coordinate_matches
-        {
-            false
-        } else {
-            record
-                .type26_split_coordinate_envelope()
-                .is_some_and(|envelope| {
-                    let [a1, a2, b1, b2] = envelope.values;
-                    coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
-                })
-        };
+        let split_coordinate_matches =
+            if replayed_matches || outline_matches || five_coordinate_matches {
+                false
+            } else {
+                record
+                    .type26_split_coordinate_envelope()
+                    .is_some_and(|envelope| {
+                        let [a1, a2, b1, b2] = envelope.values;
+                        coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
+                    })
+            };
         if !(replayed_matches
             || outline_matches
             || five_coordinate_matches
@@ -585,12 +579,15 @@ pub(in super::super) fn round_constant_radius(
         return prototype_round_radius(ctx, scan, &generated_rows);
     }
     if cylinder_count != generated_rows.len()
-        && ctx.admit_iter(&generated_rows, "creo generated round surface rows")?.all(|row| {
-            matches!(
-                row.kind,
-                crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::TorusOrSphere
-            )
-        })
+        && ctx
+            .admit_iter(&generated_rows, "creo generated round surface rows")?
+            .all(|row| {
+                matches!(
+                    row.kind,
+                    crate::surface::SurfaceKind::Cylinder
+                        | crate::surface::SurfaceKind::TorusOrSphere
+                )
+            })
     {
         if let Some(radii) =
             mixed_round_radius_samples(ctx, scan, ir, source_carriers, &generated_rows)?
@@ -612,11 +609,11 @@ pub(in super::super) fn round_constant_radius(
     let non_radius_rows_are_planes = ctx
         .admit_iter(&generated_rows, "creo generated round surface rows")?
         .all(|row| {
-        matches!(
-            row.kind,
-            crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
-        )
-    });
+            matches!(
+                row.kind,
+                crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
+            )
+        });
     if cylinder_radii.len() == cylinder_count && non_radius_rows_are_planes {
         return Ok(unique_positive_length(ctx, &cylinder_radii)?.map(PositiveLength::get));
     }
@@ -640,7 +637,10 @@ fn round_replay_radius(
     let radius = radius.get();
     let scale = radius.abs().max(1.0);
     Ok(ctx
-        .admit_iter(&scan.features.round_replay_scalars, "creo round replay scalar records")?
+        .admit_iter(
+            &scan.features.round_replay_scalars,
+            "creo round replay scalar records",
+        )?
         .filter(|candidate| candidate.feature_id == feature_id)
         .any(|candidate| {
             candidate.value.get() > 0.0
@@ -819,11 +819,13 @@ pub(in super::super) fn round_support_radius(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(affected_ids) = agreed_feature_geometry_ids(ctx,
+    let Some(affected_ids) = agreed_feature_geometry_ids(
+        ctx,
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
@@ -833,10 +835,14 @@ pub(in super::super) fn round_support_radius(
         return Ok(None);
     }
     let local_planes = placed_planes(ctx, scan)?;
-    let Some(first_cap) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first_cap_id)? else {
+    let Some(first_cap) =
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first_cap_id)?
+    else {
         return Ok(None);
     };
-    let Some(second_cap) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second_cap_id)? else {
+    let Some(second_cap) =
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second_cap_id)?
+    else {
         return Ok(None);
     };
     let Some(first_cap_normal) = normalize(first_cap.normal) else {
@@ -857,7 +863,8 @@ pub(in super::super) fn round_support_radius(
         return Ok(None);
     }
     for id in ctx.admit_iter(support_ids, "creo round support plane IDs")? {
-        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)? else {
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
+        else {
             return Ok(None);
         };
         let Some(normal) = normalize(plane.normal) else {
@@ -912,7 +919,9 @@ pub(in super::super) fn round_support_envelope_cylinder(
             .admit_iter(support_ids, "creo round support plane pairs")?
             .enumerate()
         {
-            let Some(first) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first)? else {
+            let Some(first) =
+                reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first)?
+            else {
                 continue;
             };
             let Some(first_normal) = normalize(first.normal) else {
@@ -922,7 +931,9 @@ pub(in super::super) fn round_support_envelope_cylinder(
                 .admit_iter(support_ids, "creo round support plane pairs")?
                 .skip(first_index + 1)
             {
-                let Some(second) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second)? else {
+                let Some(second) =
+                    reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second)?
+                else {
                     continue;
                 };
                 let Some(second_normal) = normalize(second.normal) else {
@@ -1039,7 +1050,8 @@ fn resolved_round_support_planes<'a>(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
@@ -1049,10 +1061,14 @@ fn resolved_round_support_planes<'a>(
         return Ok(None);
     }
     let local_planes = placed_planes(ctx, scan)?;
-    let Some(first_cap) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first_cap_id)? else {
+    let Some(first_cap) =
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *first_cap_id)?
+    else {
         return Ok(None);
     };
-    let Some(second_cap) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second_cap_id)? else {
+    let Some(second_cap) =
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *second_cap_id)?
+    else {
         return Ok(None);
     };
     let caps = [first_cap, second_cap];
@@ -1075,7 +1091,8 @@ fn resolved_round_support_planes<'a>(
     }
     let mut resolved_count = 0usize;
     for id in ctx.admit_iter(support_ids, "creo round support plane IDs")? {
-        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)? else {
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
+        else {
             continue;
         };
         let Some(normal) = normalize(plane.normal) else {
@@ -1110,9 +1127,12 @@ pub(in super::super) fn round_placed_cylinder_radii(
     feature_id: u32,
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     let mut radii = Vec::new();
-    for row in ctx.admit_iter(&scan.surfaces.rows, "creo placed round surface rows")?.filter(|row| {
-        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-    }) {
+    for row in ctx
+        .admit_iter(&scan.surfaces.rows, "creo placed round surface rows")?
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+    {
         if let Some(radius) = round_placed_cylinder_radius(ctx, ir, row, source_carriers)? {
             ctx.reserve_vec(&mut radii, 1, "creo placed round radii")?;
             radii.push(radius);
@@ -1139,13 +1159,15 @@ fn round_placed_cylinder_radius(
         },
         "creo round placed cylinder surface",
     )?;
-    Ok(surface.and_then(|surface| match source_carriers.surface_geometry(surface) {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius().get();
-            Some(radius)
-        }
-        _ => None,
-    }))
+    Ok(
+        surface.and_then(|surface| match source_carriers.surface_geometry(surface) {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+                let radius = cylinder_surface.radius().get();
+                Some(radius)
+            }
+            _ => None,
+        }),
+    )
 }
 
 fn round_direct_radii(
@@ -1397,7 +1419,8 @@ pub(in super::super) fn chamfer_constant_distance(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let local_planes = placed_planes(ctx, scan)?;
@@ -1414,11 +1437,11 @@ pub(in super::super) fn chamfer_constant_distance(
                 let mut model_surfaces = ctx
                     .admit_iter(&ir.model.surfaces, "creo chamfer support model surfaces")?
                     .filter(|surface| {
-                    crate::identity::matches_numbered_identity(
-                        surface.id.as_str(),
-                        "creo:visibgeom:surface#",
-                        *id,
-                    )
+                        crate::identity::matches_numbered_identity(
+                            surface.id.as_str(),
+                            "creo:visibgeom:surface#",
+                            *id,
+                        )
                     });
                 let first = model_surfaces.next();
                 let second = model_surfaces.next();
@@ -1451,7 +1474,8 @@ pub(in super::super) fn chamfer_constant_distance(
             *id,
             "creo chamfer support plane IDs",
         )?;
-        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)? else {
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
+        else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut support_planes, 1, "creo chamfer support planes")?;

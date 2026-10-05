@@ -14,22 +14,30 @@ use cadmpeg_ir::SourceObjectAssociation;
 fn source() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Creo,
-        object_id: cadmpeg_core::text::NonBlankString::try_from("VisibGeom:41").expect("source identity"),
-        name: None, color: None, visible: None, layer: None, instance_path: Vec::new(),
+        object_id: cadmpeg_core::text::NonBlankString::try_from("VisibGeom:41")
+            .expect("source identity"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
     }
 }
 
 fn curve(geometry: CurveGeometry) -> Curve {
     Curve {
         id: CurveId::mint("test:model:entity#prefix-curve".to_string()).expect("curve identity"),
-        geometry, source_object: Some(source()),
+        geometry,
+        source_object: Some(source()),
     }
 }
 
 fn surface(geometry: SurfaceGeometry) -> Surface {
     Surface {
-        id: SurfaceId::mint("test:model:surface#prefix-surface".to_string()).expect("surface identity"),
-        geometry, source_object: Some(source()),
+        id: SurfaceId::mint("test:model:surface#prefix-surface".to_string())
+            .expect("surface identity"),
+        geometry,
+        source_object: Some(source()),
     }
 }
 
@@ -37,11 +45,15 @@ fn surface(geometry: SurfaceGeometry) -> Surface {
 fn transferred_curve_identity_prefix_refuses_work() {
     let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-        ).expect("valid line"),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid line"),
     )));
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo coverage identity prefix",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo coverage identity prefix",
         |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -51,9 +63,13 @@ fn transferred_curve_identity_prefix_refuses_work() {
 
 #[test]
 fn unknown_curve_identity_prefix_refuses_work() {
-    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
+    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+        record: None,
+    }));
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo coverage identity prefix",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo coverage identity prefix",
         |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -65,11 +81,16 @@ fn unknown_curve_identity_prefix_refuses_work() {
 fn transferred_surface_identity_prefix_refuses_work() {
     let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-        ).expect("valid plane"),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid plane"),
     )));
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo coverage identity prefix",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo coverage identity prefix",
         |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -79,9 +100,13 @@ fn transferred_surface_identity_prefix_refuses_work() {
 
 #[test]
 fn unknown_surface_identity_prefix_refuses_work() {
-    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }));
+    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+        record: None,
+    }));
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo coverage identity prefix",
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo coverage identity prefix",
         |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -91,7 +116,10 @@ fn unknown_surface_identity_prefix_refuses_work() {
 
 #[test]
 fn native_constraint_kind_prefix_refuses_work() {
-    use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId, SketchId};
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId,
+        SketchId,
+    };
     use std::collections::BTreeMap;
 
     let sketch =
@@ -127,8 +155,17 @@ fn native_constraint_kind_prefix_refuses_work() {
         native_ref: None,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo native constraint kind prefix",
-        |ctx| design_constraint_transfer_coverage(ctx, std::slice::from_ref(&constraint), ":relation:", "creo:relation:"),
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo native constraint kind prefix",
+        |ctx| {
+            design_constraint_transfer_coverage(
+                ctx,
+                std::slice::from_ref(&constraint),
+                ":relation:",
+                "creo:relation:",
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits

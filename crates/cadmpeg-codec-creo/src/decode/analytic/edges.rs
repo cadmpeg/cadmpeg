@@ -96,10 +96,8 @@ pub(super) fn point_pair_alignments(
         )
         .sqrt()
     };
-    let mapped_points =
-        ctx.admit_iter(&mapped, "creo mapped edge endpoint coordinates")?;
-    let target_points =
-        ctx.admit_iter(&target, "creo target edge endpoint coordinates")?;
+    let mapped_points = ctx.admit_iter(&mapped, "creo mapped edge endpoint coordinates")?;
+    let target_points = ctx.admit_iter(&target, "creo target edge endpoint coordinates")?;
     let mut scale = 1.0_f64;
     for point in mapped_points {
         for coordinate in ctx.admit_iter(point, "creo mapped edge point coordinates")? {
@@ -266,10 +264,12 @@ fn nonperiodic_nurbs_edge_parameter_range(
     else {
         return Ok(None);
     };
-    Ok(match point_pair_alignments(ctx, [first, second], [start, end])? {
-        [true, false] | [false, true] => Some(range),
-        _ => None,
-    })
+    Ok(
+        match point_pair_alignments(ctx, [first, second], [start, end])? {
+            [true, false] | [false, true] => Some(range),
+            _ => None,
+        },
+    )
 }
 
 /// Orient a non-periodic NURBS carrier to the topological edge direction.
@@ -352,21 +352,23 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     else {
         return Ok(None);
     };
-    Ok(match point_pair_alignments(ctx, [first, second], [start, end])? {
-        [true, false] => Some(range),
-        [false, true] => {
-            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
-                return Ok(None);
-            };
-            require_some!(nurbs.reverse_parameterization_in_range(
-                ctx,
-                intrinsic_range[0],
-                intrinsic_range[1]
-            )?);
-            Some(range)
-        }
-        _ => None,
-    })
+    Ok(
+        match point_pair_alignments(ctx, [first, second], [start, end])? {
+            [true, false] => Some(range),
+            [false, true] => {
+                let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+                    return Ok(None);
+                };
+                require_some!(nurbs.reverse_parameterization_in_range(
+                    ctx,
+                    intrinsic_range[0],
+                    intrinsic_range[1]
+                )?);
+                Some(range)
+            }
+            _ => None,
+        },
+    )
 }
 
 pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
@@ -448,7 +450,9 @@ fn degree_one_nurbs_point_parameter(
                 .admit_iter(points, "creo degree-one rational NURBS spans")?
                 .enumerate()
             {
-                let Some((first, first_weight)) = previous.replace((second.point, second.weight.get())) else {
+                let Some((first, first_weight)) =
+                    previous.replace((second.point, second.weight.get()))
+                else {
                     continue;
                 };
                 match degree_one_nurbs_span_parameter(

@@ -453,10 +453,23 @@ pub(crate) struct CurveTopologyRow {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for CurveTopologyRow {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &((&self.id, &self.type_byte, &self.feature_id, &self.directions),
-                (&self.faces, &self.next_edges, &self.offset)), ctx, operation,
+            &(
+                (
+                    &self.id,
+                    &self.type_byte,
+                    &self.feature_id,
+                    &self.directions,
+                ),
+                (&self.faces, &self.next_edges, &self.offset),
+            ),
+            ctx,
+            operation,
         )
     }
 }
@@ -620,8 +633,22 @@ pub(crate) struct PcurveEndpoints {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PcurveEndpoints {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.faces, &self.face_0_endpoints, &self.face_1_endpoints, &self.offset), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.curve_id,
+                &self.faces,
+                &self.face_0_endpoints,
+                &self.face_1_endpoints,
+                &self.offset,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -647,11 +674,18 @@ pub(crate) struct TwoChartPcurveSamples {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for TwoChartPcurveSamples {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.faces, &self.samples, &self.offset,), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.curve_id, &self.faces, &self.samples, &self.offset),
+            ctx,
+            operation,
+        )
     }
 }
-
 
 /// One-sided endpoint path from the complete short fc 02 curve body.
 /// Every stored endpoint coordinate is finite at reader admission.
@@ -978,7 +1012,11 @@ pub(crate) fn prototype_topology_rows(
 ) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut prototype_counts = BTreeMap::<u32, usize>::new();
     for prototype in prototypes {
-        match ctx.entry_btree_map(&mut prototype_counts, prototype.id, "creo prototype ID count nodes")? {
+        match ctx.entry_btree_map(
+            &mut prototype_counts,
+            prototype.id,
+            "creo prototype ID count nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -987,7 +1025,11 @@ pub(crate) fn prototype_topology_rows(
     }
     let mut topology_counts = BTreeMap::<u32, usize>::new();
     for topology in prototype_topology {
-        match ctx.entry_btree_map(&mut topology_counts, topology.curve_id, "creo prototype topology count nodes")? {
+        match ctx.entry_btree_map(
+            &mut topology_counts,
+            topology.curve_id,
+            "creo prototype topology count nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -1172,7 +1214,9 @@ pub(crate) fn expression_records_with_model_name(
                 break;
             };
             let line_end = cursor + relative_end;
-            let Ok(text) = ctx.validate_utf8(&payload[cursor..line_end], "creo UTF-8 validation")? else {
+            let Ok(text) =
+                ctx.validate_utf8(&payload[cursor..line_end], "creo UTF-8 validation")?
+            else {
                 lines.clear();
                 break;
             };
@@ -1327,8 +1371,33 @@ fn curve_equation_prohibited_constructs(
                 }
                 let name = &source[start..end];
                 if bytes.get(following) == Some(&b'(')
-                    && ctx.any_by(PROHIBITED_FUNCTIONS, |candidate| Ok(ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")?), "creo relation comparison traversal")?
-                    && !{ let mut matched = false; for known in ctx.admit_iter(&prohibited, "creo prohibited name traversal")? { if ctx.eq_ignore_ascii_case(known, name, "creo relation text comparison")? { matched = true; break; } } matched }
+                    && ctx.any_by(
+                        PROHIBITED_FUNCTIONS,
+                        |candidate| {
+                            Ok(ctx.eq_ignore_ascii_case(
+                                name,
+                                candidate,
+                                "creo relation text comparison",
+                            )?)
+                        },
+                        "creo relation comparison traversal",
+                    )?
+                    && !{
+                        let mut matched = false;
+                        for known in
+                            ctx.admit_iter(&prohibited, "creo prohibited name traversal")?
+                        {
+                            if ctx.eq_ignore_ascii_case(
+                                known,
+                                name,
+                                "creo relation text comparison",
+                            )? {
+                                matched = true;
+                                break;
+                            }
+                        }
+                        matched
+                    }
                 {
                     let mut name =
                         ctx.copy_retained_text(name, "creo prohibited construct names")?;
@@ -1365,7 +1434,11 @@ impl ExternalRelationSymbols {
         use std::collections::btree_map::Entry;
 
         ctx.make_ascii_lowercase(&mut name, "creo relation identifier case fold")?;
-        match ctx.entry_btree_map(&mut self.values, name, "creo external relation symbol nodes")? {
+        match ctx.entry_btree_map(
+            &mut self.values,
+            name,
+            "creo external relation symbol nodes",
+        )? {
             Entry::Vacant(entry) => {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(entry.key().len()),
@@ -1393,7 +1466,9 @@ fn expression_assignment(
     let Some((name, expression)) = split_expression_assignment(source) else {
         return Ok(None);
     };
-    let Some(target) = expression_assignment_target(ctx, ctx.trim_text(name, "creo assignment name trim")?)? else {
+    let Some(target) =
+        expression_assignment_target(ctx, ctx.trim_text(name, "creo assignment name trim")?)?
+    else {
         return Ok(None);
     };
     let expression = ctx.trim_text(expression, "creo assignment expression trim")?;
@@ -1500,12 +1575,22 @@ fn extend_expression_dependencies(
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
                 following += 1;
             }
-            let function =
-                bytes.get(following) == Some(&b'(') && creo_relation_function(ctx, dependency)?.is_some();
+            let function = bytes.get(following) == Some(&b'(')
+                && creo_relation_function(ctx, dependency)?.is_some();
             let constant = reserved_relation_scalar(ctx, dependency)?.is_some();
             if !function
                 && !constant
-                && !ctx.any_by(dependencies.iter(), |existing| Ok(ctx.eq_ignore_ascii_case(existing, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
+                && !ctx.any_by(
+                    dependencies.iter(),
+                    |existing| {
+                        Ok(ctx.eq_ignore_ascii_case(
+                            existing,
+                            dependency,
+                            "creo relation text comparison",
+                        )?)
+                    },
+                    "creo relation comparison traversal",
+                )?
             {
                 ctx.reserve_vec(dependencies, 1, "creo expression dependency names")?;
                 dependencies
@@ -1589,7 +1674,11 @@ fn curve_expression_solve_program(
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
                     offset: line.offset,
-                    valid: ctx.eq_ignore_ascii_case(source, "solve", "creo solve keyword comparison")?,
+                    valid: ctx.eq_ignore_ascii_case(
+                        source,
+                        "solve",
+                        "creo solve keyword comparison",
+                    )?,
                 });
             } else if starts_relation_keyword(ctx, source, "for")? {
                 ctx.insert_btree_set(
@@ -1622,9 +1711,25 @@ fn curve_expression_solve_program(
             let mut assignment_line_indices = Vec::new();
             if let Some(unknowns) = &unknowns {
                 for statement in std::mem::take(&mut block.statements) {
-                    if ctx.any_by(&statement.equation.dependencies, |dependency| Ok({
-                        ctx.any_by(unknowns, |unknown| Ok(ctx.eq_ignore_ascii_case(&unknown.name, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
-                    }), "creo relation comparison traversal")? {
+                    if ctx.any_by(
+                        &statement.equation.dependencies,
+                        |dependency| {
+                            Ok({
+                                ctx.any_by(
+                                    unknowns,
+                                    |unknown| {
+                                        Ok(ctx.eq_ignore_ascii_case(
+                                            &unknown.name,
+                                            dependency,
+                                            "creo relation text comparison",
+                                        )?)
+                                    },
+                                    "creo relation comparison traversal",
+                                )?
+                            })
+                        },
+                        "creo relation comparison traversal",
+                    )? {
                         ctx.reserve_vec(&mut equations, 1, "creo solve equations")?;
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
@@ -1671,7 +1776,10 @@ fn curve_expression_solve_program(
             block.valid = false;
             continue;
         };
-        let (left, right) = (ctx.trim_text(left, "creo solve left operand trim")?, ctx.trim_text(right, "creo solve right operand trim")?);
+        let (left, right) = (
+            ctx.trim_text(left, "creo solve left operand trim")?,
+            ctx.trim_text(right, "creo solve right operand trim")?,
+        );
         if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
             program.unresolved_control = true;
             block.valid = false;
@@ -1715,8 +1823,13 @@ fn curve_expression_solve_unknowns(
         if !valid_scoped_expression_identifier(name) {
             return Ok(None);
         }
-        if ctx.any_by(&unknowns, |known| Ok(ctx.eq_ignore_ascii_case(&known.name, name, "creo relation text comparison")?), "creo solve unknown duplicate checks")?
-        {
+        if ctx.any_by(
+            &unknowns,
+            |known| {
+                Ok(ctx.eq_ignore_ascii_case(&known.name, name, "creo relation text comparison")?)
+            },
+            "creo solve unknown duplicate checks",
+        )? {
             return Ok(None);
         }
         ctx.reserve_vec(&mut unknowns, 1, "creo solve unknowns")?;
@@ -1837,7 +1950,10 @@ fn expression_target_function_call<'a>(
     let Some(body) = source.get(argument_start + 1..source.len() - 1) else {
         return Ok(None);
     };
-    let arguments = if ctx.trim_text(body, "creo function target body trim")?.is_empty() {
+    let arguments = if ctx
+        .trim_text(body, "creo function target body trim")?
+        .is_empty()
+    {
         Vec::new()
     } else {
         let Some(arguments) = split_assignment_target_arguments(ctx, body)? else {
@@ -1859,36 +1975,67 @@ fn valid_scoped_expression_identifier(name: &str) -> bool {
     expression_identifier_end(name.as_bytes(), 0) == Some(name.len())
 }
 
-fn expression_system_symbol_family(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<CurveExpressionSystemSymbolFamily>, cadmpeg_core::CodecError> {
-    let digit_start = { let Some(value) = name
-        .bytes()
-        .position(|byte| byte.is_ascii_digit())
-        .filter(|digit_start| *digit_start != 0) else { return Ok(None); }; value };
-    { let Some(value) = { let Some(value) = name.get(digit_start..) else { return Ok(None); }; value }
+fn expression_system_symbol_family(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<Option<CurveExpressionSystemSymbolFamily>, cadmpeg_core::CodecError> {
+    let digit_start = {
+        let Some(value) = name
+            .bytes()
+            .position(|byte| byte.is_ascii_digit())
+            .filter(|digit_start| *digit_start != 0)
+        else {
+            return Ok(None);
+        };
+        value
+    };
+    {
+        let Some(value) = {
+            let Some(value) = name.get(digit_start..) else {
+                return Ok(None);
+            };
+            value
+        }
         .bytes()
         .all(|byte| byte.is_ascii_digit())
-        .then_some(()) else { return Ok(None); }; value };
-    let prefix = { let Some(value) = name.get(..digit_start) else { return Ok(None); }; value };
-    Ok(if ctx.eq_ignore_ascii_case(prefix, "d", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::Dimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "sd", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::SectionDimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "rd", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "rsd", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "kd", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::KnownDimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "ad", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
-    } else if ctx.eq_ignore_ascii_case(prefix, "p", "creo relation text comparison")? {
-        Some(CurveExpressionSystemSymbolFamily::PatternCount)
-    } else if ctx.any_by(&["tpm", "tp", "tm"], |family| Ok(ctx.eq_ignore_ascii_case(prefix, family, "creo relation text comparison")?), "creo relation comparison traversal")?
-    {
-        Some(CurveExpressionSystemSymbolFamily::Tolerance)
-    } else {
-        None
-    })
+        .then_some(()) else {
+            return Ok(None);
+        };
+        value
+    };
+    let prefix = {
+        let Some(value) = name.get(..digit_start) else {
+            return Ok(None);
+        };
+        value
+    };
+    Ok(
+        if ctx.eq_ignore_ascii_case(prefix, "d", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::Dimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "sd", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::SectionDimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "rd", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "rsd", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "kd", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::KnownDimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "ad", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
+        } else if ctx.eq_ignore_ascii_case(prefix, "p", "creo relation text comparison")? {
+            Some(CurveExpressionSystemSymbolFamily::PatternCount)
+        } else if ctx.any_by(
+            &["tpm", "tp", "tm"],
+            |family| {
+                Ok(ctx.eq_ignore_ascii_case(prefix, family, "creo relation text comparison")?)
+            },
+            "creo relation comparison traversal",
+        )? {
+            Some(CurveExpressionSystemSymbolFamily::Tolerance)
+        } else {
+            None
+        },
+    )
 }
 
 fn split_assignment_target_arguments<'a>(
@@ -1950,18 +2097,27 @@ fn split_assignment_target_arguments<'a>(
     Ok(Some(arguments))
 }
 
-fn reserved_relation_scalar(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    Ok(if ctx.eq_ignore_ascii_case(name, "pi", "creo relation text comparison")? {
-        Some(std::f64::consts::PI)
-    } else if ctx.eq_ignore_ascii_case(name, "g", "creo relation text comparison")? {
-        Some(9_800.0)
-    } else if ctx.eq_ignore_ascii_case(name, "true", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(name, "yes", "creo relation text comparison")? {
-        Some(1.0)
-    } else if ctx.eq_ignore_ascii_case(name, "false", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(name, "no", "creo relation text comparison")? {
-        Some(0.0)
-    } else {
-        None
-    })
+fn reserved_relation_scalar(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    Ok(
+        if ctx.eq_ignore_ascii_case(name, "pi", "creo relation text comparison")? {
+            Some(std::f64::consts::PI)
+        } else if ctx.eq_ignore_ascii_case(name, "g", "creo relation text comparison")? {
+            Some(9_800.0)
+        } else if ctx.eq_ignore_ascii_case(name, "true", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(name, "yes", "creo relation text comparison")?
+        {
+            Some(1.0)
+        } else if ctx.eq_ignore_ascii_case(name, "false", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(name, "no", "creo relation text comparison")?
+        {
+            Some(0.0)
+        } else {
+            None
+        },
+    )
 }
 
 fn expression_identifier_end(source: &[u8], start: usize) -> Option<usize> {
@@ -2054,27 +2210,63 @@ impl ConditionalStack {
     }
 }
 
-fn conditional_keyword_expression<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &'a str, keyword: &str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
+fn conditional_keyword_expression<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+    keyword: &str,
+) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
     let source = ctx.trim_text(source, "creo relation condition trim")?;
-    let prefix = { let Some(value) = source.get(..keyword.len()) else { return Ok(None); }; value };
-    { let Some(value) = ctx.eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?.then_some(()) else { return Ok(None); }; value };
-    { let Some(value) = source
-        .as_bytes()
-        .get(keyword.len())
-        .is_some_and(u8::is_ascii_whitespace)
-        .then_some(()) else { return Ok(None); }; value };
-    let expression = { let Some(value) = source.get(keyword.len()..) else { return Ok(None); }; value }.trim_start();
+    let prefix = {
+        let Some(value) = source.get(..keyword.len()) else {
+            return Ok(None);
+        };
+        value
+    };
+    {
+        let Some(value) = ctx
+            .eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?
+            .then_some(())
+        else {
+            return Ok(None);
+        };
+        value
+    };
+    {
+        let Some(value) = source
+            .as_bytes()
+            .get(keyword.len())
+            .is_some_and(u8::is_ascii_whitespace)
+            .then_some(())
+        else {
+            return Ok(None);
+        };
+        value
+    };
+    let expression = {
+        let Some(value) = source.get(keyword.len()..) else {
+            return Ok(None);
+        };
+        value
+    }
+    .trim_start();
     Ok((!expression.is_empty()).then_some(expression))
 }
 
-fn starts_relation_keyword(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &str, keyword: &str) -> Result<bool, cadmpeg_core::CodecError> {
+fn starts_relation_keyword(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    keyword: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let source = ctx.trim_text(source, "creo relation keyword trim")?;
-    Ok(match source
-        .get(..keyword.len()) { Some(prefix) => ctx.eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?, None => false }
-        && source
-            .as_bytes()
-            .get(keyword.len())
-            .is_none_or(u8::is_ascii_whitespace))
+    Ok(match source.get(..keyword.len()) {
+        Some(prefix) => {
+            ctx.eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?
+        }
+        None => false,
+    } && source
+        .as_bytes()
+        .get(keyword.len())
+        .is_none_or(u8::is_ascii_whitespace))
 }
 
 fn expression_program_control_is_valid(
@@ -2102,7 +2294,8 @@ fn expression_program_control_is_valid(
             }
             *seen = true;
         } else if starts_relation_keyword(ctx, source, "endif")?
-            && (!ctx.eq_ignore_ascii_case(source, "endif", "creo relation text comparison")? || else_seen.pop().is_none())
+            && (!ctx.eq_ignore_ascii_case(source, "endif", "creo relation text comparison")?
+                || else_seen.pop().is_none())
         {
             return Ok(false);
         }
@@ -2283,9 +2476,12 @@ fn evaluate_expression_program_details(
                     )?;
                 }
                 for assignment in &mut assignments {
-                    if match assignment
-                        .scalar_target() { Some((name, _)) => ctx.eq_ignore_ascii_case(name, &key, "creo relation text comparison")?, None => false }
-                    {
+                    if match assignment.scalar_target() {
+                        Some((name, _)) => {
+                            ctx.eq_ignore_ascii_case(name, &key, "creo relation text comparison")?
+                        }
+                        None => false,
+                    } {
                         assignment.value = None;
                     }
                 }
@@ -2351,9 +2547,14 @@ fn evaluate_expression_program_details(
                     let mut key = ctx.copy_retained_text(variable, "creo solved value names")?;
                     ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                     for assignment in &mut assignments {
-                        if match assignment
-                            .scalar_target() { Some((name, _)) => ctx.eq_ignore_ascii_case(name, &key, "creo relation text comparison")?, None => false }
-                        {
+                        if match assignment.scalar_target() {
+                            Some((name, _)) => ctx.eq_ignore_ascii_case(
+                                name,
+                                &key,
+                                "creo relation text comparison",
+                            )?,
+                            None => false,
+                        } {
                             assignment.value = Some(copy_expression_value(
                                 ctx,
                                 value,
@@ -2627,7 +2828,12 @@ struct RelationUnitParser<'a> {
 
 impl RelationUnitParser<'_> {
     fn expression(&mut self) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
-        let mut unit = { let Some(value) = self.power()? else { return Ok(None); }; value };
+        let mut unit = {
+            let Some(value) = self.power()? else {
+                return Ok(None);
+            };
+            value
+        };
         loop {
             self.whitespace();
             let divide = match self.source.get(self.cursor) {
@@ -2636,13 +2842,32 @@ impl RelationUnitParser<'_> {
                 _ => return Ok(Some(unit)),
             };
             self.cursor += 1;
-            self.ctx.charge_work(1, "creo relation unit multiplication")?;
-            unit = { let Some(value) = unit.combine({ let Some(value) = self.power()? else { return Ok(None); }; value }, divide) else { return Ok(None); }; value };
+            self.ctx
+                .charge_work(1, "creo relation unit multiplication")?;
+            unit = {
+                let Some(value) = unit.combine(
+                    {
+                        let Some(value) = self.power()? else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    divide,
+                ) else {
+                    return Ok(None);
+                };
+                value
+            };
         }
     }
 
     fn power(&mut self) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
-        let unit = { let Some(value) = self.primary()? else { return Ok(None); }; value };
+        let unit = {
+            let Some(value) = self.primary()? else {
+                return Ok(None);
+            };
+            value
+        };
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'^') {
             return Ok(Some(unit));
@@ -2663,15 +2888,20 @@ impl RelationUnitParser<'_> {
         let Ok(digits) = self.ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
             return Ok(None);
         };
-        let Ok(magnitude) = self.ctx.parse_text::<i16>(
-            digits,
-            "creo relation unit exponent parsing",
-        )? else {
+        let Ok(magnitude) = self
+            .ctx
+            .parse_text::<i16>(digits, "creo relation unit exponent parsing")?
+        else {
             return Ok(None);
         };
         let exponent = if negative { -magnitude } else { magnitude };
         self.ctx.charge_work(1, "creo relation unit power")?;
-        Ok(unit.power({ let Some(value) = i8::try_from(exponent).ok() else { return Ok(None); }; value }))
+        Ok(unit.power({
+            let Some(value) = i8::try_from(exponent).ok() else {
+                return Ok(None);
+            };
+            value
+        }))
     }
 
     fn primary(&mut self) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
@@ -2688,10 +2918,21 @@ impl RelationUnitParser<'_> {
             let _depth = self.ctx.enter_nested("creo relation unit depth")?;
             self.cursor += 1;
             self.nesting += 1;
-            let unit = { let Some(value) = self.expression()? else { return Ok(None); }; value };
+            let unit = {
+                let Some(value) = self.expression()? else {
+                    return Ok(None);
+                };
+                value
+            };
             self.nesting -= 1;
             self.whitespace();
-            { let Some(value) = (self.source.get(self.cursor) == Some(&b')')).then_some(()) else { return Ok(None); }; value };
+            {
+                let Some(value) = (self.source.get(self.cursor) == Some(&b')')).then_some(())
+                else {
+                    return Ok(None);
+                };
+                value
+            };
             self.cursor += 1;
             return Ok(Some(unit));
         }
@@ -2703,7 +2944,24 @@ impl RelationUnitParser<'_> {
         {
             self.cursor += 1;
         }
-        let symbol = { let Some(value) = self.ctx.validate_utf8({ let Some(value) = self.source.get(start..self.cursor) else { return Ok(None); }; value }, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
+        let symbol = {
+            let Some(value) = self
+                .ctx
+                .validate_utf8(
+                    {
+                        let Some(value) = self.source.get(start..self.cursor) else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    "creo UTF-8 validation",
+                )?
+                .ok()
+            else {
+                return Ok(None);
+            };
+            value
+        };
         Ok(relation_unit_symbol(self.ctx, symbol)?)
     }
 
@@ -2718,18 +2976,32 @@ impl RelationUnitParser<'_> {
     }
 }
 
-fn relation_unit_symbol(ctx: &cadmpeg_core::decode::DecodeContext<'_>, symbol: &str) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
+fn relation_unit_symbol(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    symbol: &str,
+) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
     let (scale, offset, dimension) = match symbol {
-        _ if ctx.eq_ignore_ascii_case(symbol, "k", "creo relation text comparison")? => (1.0, 0.0, RelationDimension::TEMPERATURE),
-        _ if ctx.eq_ignore_ascii_case(symbol, "c", "creo relation text comparison")? => (1.0, 273.15, RelationDimension::TEMPERATURE),
+        _ if ctx.eq_ignore_ascii_case(symbol, "k", "creo relation text comparison")? => {
+            (1.0, 0.0, RelationDimension::TEMPERATURE)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "c", "creo relation text comparison")? => {
+            (1.0, 273.15, RelationDimension::TEMPERATURE)
+        }
         _ if ctx.eq_ignore_ascii_case(symbol, "f", "creo relation text comparison")? => (
             5.0 / 9.0,
             459.67 * 5.0 / 9.0,
             RelationDimension::TEMPERATURE,
         ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "r", "creo relation text comparison")? => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if ctx.eq_ignore_ascii_case(symbol, "r", "creo relation text comparison")? => {
+            (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE)
+        }
         symbol => {
-            let (scale, dimension) = { let Some(value) = multiplicative_relation_unit_symbol(ctx, symbol)? else { return Ok(None); }; value };
+            let (scale, dimension) = {
+                let Some(value) = multiplicative_relation_unit_symbol(ctx, symbol)? else {
+                    return Ok(None);
+                };
+                value
+            };
             (scale, 0.0, dimension)
         }
     };
@@ -2740,113 +3012,309 @@ fn relation_unit_symbol(ctx: &cadmpeg_core::decode::DecodeContext<'_>, symbol: &
     }))
 }
 
-fn multiplicative_relation_unit_symbol(ctx: &cadmpeg_core::decode::DecodeContext<'_>, symbol: &str) -> Result<Option<(f64, RelationDimension)>, cadmpeg_core::CodecError> {
+fn multiplicative_relation_unit_symbol(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    symbol: &str,
+) -> Result<Option<(f64, RelationDimension)>, cadmpeg_core::CodecError> {
     Ok(Some(match symbol {
-        _ if ctx.eq_ignore_ascii_case(symbol, "mm", "creo relation text comparison")? => (1.0, RelationDimension::LENGTH),
-        _ if ctx.eq_ignore_ascii_case(symbol, "cm", "creo relation text comparison")? => (10.0, RelationDimension::LENGTH),
-        _ if ctx.eq_ignore_ascii_case(symbol, "m", "creo relation text comparison")? => (1_000.0, RelationDimension::LENGTH),
-        _ if ctx.eq_ignore_ascii_case(symbol, "in", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "inch", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "mm", "creo relation text comparison")? => {
+            (1.0, RelationDimension::LENGTH)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "cm", "creo relation text comparison")? => {
+            (10.0, RelationDimension::LENGTH)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "m", "creo relation text comparison")? => {
+            (1_000.0, RelationDimension::LENGTH)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "in", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "inch", "creo relation text comparison")? =>
+        {
             (25.4, RelationDimension::LENGTH)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "ft", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "foot", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "ft", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "foot", "creo relation text comparison")? =>
+        {
             (304.8, RelationDimension::LENGTH)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "micron", "creo relation text comparison")? => (0.001, RelationDimension::LENGTH),
-        _ if ctx.eq_ignore_ascii_case(symbol, "sq_mm", "creo relation text comparison")? => (1.0, { let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }),
-        _ if ctx.eq_ignore_ascii_case(symbol, "sq_cm", "creo relation text comparison")? => (100.0, { let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }),
+        _ if ctx.eq_ignore_ascii_case(symbol, "micron", "creo relation text comparison")? => {
+            (0.001, RelationDimension::LENGTH)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "sq_mm", "creo relation text comparison")? => {
+            (1.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "sq_cm", "creo relation text comparison")? => {
+            (100.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
         _ if ctx.eq_ignore_ascii_case(symbol, "sq_m", "creo relation text comparison")? => {
-            (1_000_000.0, { let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value })
+            (1_000_000.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                    return Ok(None);
+                };
+                value
+            })
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "sq_in", "creo relation text comparison")? => (645.16, { let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }),
+        _ if ctx.eq_ignore_ascii_case(symbol, "sq_in", "creo relation text comparison")? => {
+            (645.16, {
+                let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
         _ if ctx.eq_ignore_ascii_case(symbol, "sq_ft", "creo relation text comparison")? => {
-            (92_903.04, { let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value })
+            (92_903.04, {
+                let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                    return Ok(None);
+                };
+                value
+            })
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "cu_mm", "creo relation text comparison")? => (1.0, { let Some(value) = RelationDimension::LENGTH.scale(3) else { return Ok(None); }; value }),
-        _ if ctx.eq_ignore_ascii_case(symbol, "cu_cm", "creo relation text comparison")? => (1_000.0, { let Some(value) = RelationDimension::LENGTH.scale(3) else { return Ok(None); }; value }),
+        _ if ctx.eq_ignore_ascii_case(symbol, "cu_mm", "creo relation text comparison")? => {
+            (1.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(3) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "cu_cm", "creo relation text comparison")? => {
+            (1_000.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(3) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
         _ if ctx.eq_ignore_ascii_case(symbol, "cu_m", "creo relation text comparison")? => {
-            (1_000_000_000.0, { let Some(value) = RelationDimension::LENGTH.scale(3) else { return Ok(None); }; value })
+            (1_000_000_000.0, {
+                let Some(value) = RelationDimension::LENGTH.scale(3) else {
+                    return Ok(None);
+                };
+                value
+            })
         }
         _ if ctx.eq_ignore_ascii_case(symbol, "cu_in", "creo relation text comparison")? => {
-            (16_387.064, { let Some(value) = RelationDimension::LENGTH.scale(3) else { return Ok(None); }; value })
+            (16_387.064, {
+                let Some(value) = RelationDimension::LENGTH.scale(3) else {
+                    return Ok(None);
+                };
+                value
+            })
         }
         _ if ctx.eq_ignore_ascii_case(symbol, "cu_ft", "creo relation text comparison")? => {
-            (28_316_846.592, { let Some(value) = RelationDimension::LENGTH.scale(3) else { return Ok(None); }; value })
+            (28_316_846.592, {
+                let Some(value) = RelationDimension::LENGTH.scale(3) else {
+                    return Ok(None);
+                };
+                value
+            })
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "kg", "creo relation text comparison")? => (1.0, RelationDimension::MASS),
-        _ if ctx.eq_ignore_ascii_case(symbol, "g", "creo relation text comparison")? => (0.001, RelationDimension::MASS),
-        _ if ctx.eq_ignore_ascii_case(symbol, "mg", "creo relation text comparison")? => (0.000_001, RelationDimension::MASS),
-        _ if ctx.eq_ignore_ascii_case(symbol, "lb", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "lbm", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "kg", "creo relation text comparison")? => {
+            (1.0, RelationDimension::MASS)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "g", "creo relation text comparison")? => {
+            (0.001, RelationDimension::MASS)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "mg", "creo relation text comparison")? => {
+            (0.000_001, RelationDimension::MASS)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "lb", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "lbm", "creo relation text comparison")? =>
+        {
             (0.453_592_37, RelationDimension::MASS)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "slug", "creo relation text comparison")? => (14.593_902_937_206_4, RelationDimension::MASS),
-        _ if ctx.eq_ignore_ascii_case(symbol, "tonne", "creo relation text comparison")? => (1_000.0, RelationDimension::MASS),
+        _ if ctx.eq_ignore_ascii_case(symbol, "slug", "creo relation text comparison")? => {
+            (14.593_902_937_206_4, RelationDimension::MASS)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "tonne", "creo relation text comparison")? => {
+            (1_000.0, RelationDimension::MASS)
+        }
         _ if ctx.eq_ignore_ascii_case(symbol, "s", "creo relation text comparison")?
             || ctx.eq_ignore_ascii_case(symbol, "sec", "creo relation text comparison")?
             || ctx.eq_ignore_ascii_case(symbol, "second", "creo relation text comparison")? =>
         {
             (1.0, RelationDimension::TIME)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "msec", "creo relation text comparison")? => (0.001, RelationDimension::TIME),
-        _ if ctx.eq_ignore_ascii_case(symbol, "min", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "minute", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "msec", "creo relation text comparison")? => {
+            (0.001, RelationDimension::TIME)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "min", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "minute", "creo relation text comparison")? =>
+        {
             (60.0, RelationDimension::TIME)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "hr", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "hour", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "hr", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "hour", "creo relation text comparison")? =>
+        {
             (3_600.0, RelationDimension::TIME)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "day", "creo relation text comparison")? => (86_400.0, RelationDimension::TIME),
-        _ if ctx.eq_ignore_ascii_case(symbol, "deg", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "degree", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "day", "creo relation text comparison")? => {
+            (86_400.0, RelationDimension::TIME)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "deg", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "degree", "creo relation text comparison")? =>
+        {
             (1.0, RelationDimension::ANGLE)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "rad", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "radian", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "rad", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "radian", "creo relation text comparison")? =>
+        {
             (180.0 / std::f64::consts::PI, RelationDimension::ANGLE)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "n", "creo relation text comparison")? || ctx.eq_ignore_ascii_case(symbol, "newton", "creo relation text comparison")? => {
+        _ if ctx.eq_ignore_ascii_case(symbol, "n", "creo relation text comparison")?
+            || ctx.eq_ignore_ascii_case(symbol, "newton", "creo relation text comparison")? =>
+        {
             (1_000.0, RelationDimension::FORCE)
         }
-        _ if ctx.eq_ignore_ascii_case(symbol, "kn", "creo relation text comparison")? => (1_000_000.0, RelationDimension::FORCE),
-        _ if ctx.eq_ignore_ascii_case(symbol, "dyne", "creo relation text comparison")? => (0.01, RelationDimension::FORCE),
-        _ if ctx.eq_ignore_ascii_case(symbol, "lbf", "creo relation text comparison")? => (4_448.221_615_260_5, RelationDimension::FORCE),
-        _ if ctx.eq_ignore_ascii_case(symbol, "ton", "creo relation text comparison")? => (9_806_650.0, RelationDimension::FORCE),
-        _ if ctx.eq_ignore_ascii_case(symbol, "erg", "creo relation text comparison")? => (
-            0.1,
-            { let Some(value) = RelationDimension::FORCE.combine(RelationDimension::LENGTH, false) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "joule", "creo relation text comparison")? => (
-            1_000_000.0,
-            { let Some(value) = RelationDimension::FORCE.combine(RelationDimension::LENGTH, false) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "kw", "creo relation text comparison")? => (
-            1_000_000_000.0,
-            { let Some(value) = { let Some(value) = RelationDimension::FORCE
-                .combine(RelationDimension::LENGTH, false) else { return Ok(None); }; value }
-                .combine(RelationDimension::TIME, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "mw", "creo relation text comparison")? => (
-            1_000_000_000_000.0,
-            { let Some(value) = { let Some(value) = RelationDimension::FORCE
-                .combine(RelationDimension::LENGTH, false) else { return Ok(None); }; value }
-                .combine(RelationDimension::TIME, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "pa", "creo relation text comparison")? => (
-            0.001,
-            { let Some(value) = RelationDimension::FORCE.combine({ let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "mpa", "creo relation text comparison")? => (
-            1_000.0,
-            { let Some(value) = RelationDimension::FORCE.combine({ let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "gpa", "creo relation text comparison")? => (
-            1_000_000.0,
-            { let Some(value) = RelationDimension::FORCE.combine({ let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "psi", "creo relation text comparison")? => (
-            6.894_757_293_168_361,
-            { let Some(value) = RelationDimension::FORCE.combine({ let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }, true) else { return Ok(None); }; value },
-        ),
-        _ if ctx.eq_ignore_ascii_case(symbol, "ksi", "creo relation text comparison")? => (
-            6_894.757_293_168_361,
-            { let Some(value) = RelationDimension::FORCE.combine({ let Some(value) = RelationDimension::LENGTH.scale(2) else { return Ok(None); }; value }, true) else { return Ok(None); }; value },
-        ),
+        _ if ctx.eq_ignore_ascii_case(symbol, "kn", "creo relation text comparison")? => {
+            (1_000_000.0, RelationDimension::FORCE)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "dyne", "creo relation text comparison")? => {
+            (0.01, RelationDimension::FORCE)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "lbf", "creo relation text comparison")? => {
+            (4_448.221_615_260_5, RelationDimension::FORCE)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "ton", "creo relation text comparison")? => {
+            (9_806_650.0, RelationDimension::FORCE)
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "erg", "creo relation text comparison")? => (0.1, {
+            let Some(value) = RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)
+            else {
+                return Ok(None);
+            };
+            value
+        }),
+        _ if ctx.eq_ignore_ascii_case(symbol, "joule", "creo relation text comparison")? => {
+            (1_000_000.0, {
+                let Some(value) =
+                    RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)
+                else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "kw", "creo relation text comparison")? => {
+            (1_000_000_000.0, {
+                let Some(value) = {
+                    let Some(value) =
+                        RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)
+                    else {
+                        return Ok(None);
+                    };
+                    value
+                }
+                .combine(RelationDimension::TIME, true) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "mw", "creo relation text comparison")? => {
+            (1_000_000_000_000.0, {
+                let Some(value) = {
+                    let Some(value) =
+                        RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)
+                    else {
+                        return Ok(None);
+                    };
+                    value
+                }
+                .combine(RelationDimension::TIME, true) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "pa", "creo relation text comparison")? => (0.001, {
+            let Some(value) = RelationDimension::FORCE.combine(
+                {
+                    let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                        return Ok(None);
+                    };
+                    value
+                },
+                true,
+            ) else {
+                return Ok(None);
+            };
+            value
+        }),
+        _ if ctx.eq_ignore_ascii_case(symbol, "mpa", "creo relation text comparison")? => {
+            (1_000.0, {
+                let Some(value) = RelationDimension::FORCE.combine(
+                    {
+                        let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    true,
+                ) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "gpa", "creo relation text comparison")? => {
+            (1_000_000.0, {
+                let Some(value) = RelationDimension::FORCE.combine(
+                    {
+                        let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    true,
+                ) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "psi", "creo relation text comparison")? => {
+            (6.894_757_293_168_361, {
+                let Some(value) = RelationDimension::FORCE.combine(
+                    {
+                        let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    true,
+                ) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
+        _ if ctx.eq_ignore_ascii_case(symbol, "ksi", "creo relation text comparison")? => {
+            (6_894.757_293_168_361, {
+                let Some(value) = RelationDimension::FORCE.combine(
+                    {
+                        let Some(value) = RelationDimension::LENGTH.scale(2) else {
+                            return Ok(None);
+                        };
+                        value
+                    },
+                    true,
+                ) else {
+                    return Ok(None);
+                };
+                value
+            })
+        }
         _ => return Ok(None),
     }))
 }
@@ -2857,7 +3325,10 @@ trait ExpressionValue: Sized {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError>;
     fn number(value: f64) -> Option<Self>;
-    fn reserved(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+    fn reserved(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         Ok(reserved_relation_scalar(ctx, name)?.and_then(Self::number))
     }
     fn string(_value: String) -> Option<Self> {
@@ -3370,9 +3841,22 @@ impl ExpressionValue for SimultaneousAffineValue {
         Some(Self::constant(value, RelationDimension::default()))
     }
 
-    fn reserved(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let value = { let Some(value) = CurveExpressionValue::reserved(ctx, name)? else { return Ok(None); }; value };
-        let (value, dimension) = { let Some(value) = quantity_parts_ref(&value) else { return Ok(None); }; value };
+    fn reserved(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let value = {
+            let Some(value) = CurveExpressionValue::reserved(ctx, name)? else {
+                return Ok(None);
+            };
+            value
+        };
+        let (value, dimension) = {
+            let Some(value) = quantity_parts_ref(&value) else {
+                return Ok(None);
+            };
+            value
+        };
         Ok(Some(Self::constant(value, dimension)))
     }
 
@@ -4645,8 +5129,16 @@ impl ExpressionValue for DimensionProbeValue {
         Some(Self::numeric(Some(value)))
     }
 
-    fn reserved(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok(Self::from_relation_value(&{ let Some(value) = CurveExpressionValue::reserved(ctx, name)? else { return Ok(None); }; value }))
+    fn reserved(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(Self::from_relation_value(&{
+            let Some(value) = CurveExpressionValue::reserved(ctx, name)? else {
+                return Ok(None);
+            };
+            value
+        }))
     }
 
     fn string(value: String) -> Option<Self> {
@@ -5071,13 +5563,23 @@ impl ExpressionValue for DimensionProbeValue {
                             "creo dimension text search work",
                         )?;
                         Some(
-                            cadmpeg_core::convert::f64_from_index(
-                                match value.find(needle) {
-                                    Some(byte) => ctx.admit_iter(&value[..byte], "creo dimension text search prefix count")?
-                                        .count().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo dimension text search prefix count", u64::MAX, u64::MAX))?,
-                                    None => 0,
-                                },
-                            )
+                            cadmpeg_core::convert::f64_from_index(match value.find(needle) {
+                                Some(byte) => ctx
+                                    .admit_iter(
+                                        &value[..byte],
+                                        "creo dimension text search prefix count",
+                                    )?
+                                    .count()
+                                    .checked_add(1)
+                                    .ok_or_else(|| {
+                                        ctx.refuse_codec_limit(
+                                            "creo dimension text search prefix count",
+                                            u64::MAX,
+                                            u64::MAX,
+                                        )
+                                    })?,
+                                None => 0,
+                            })
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "Creo numeric value cannot be represented exactly",
@@ -5123,7 +5625,9 @@ impl ExpressionValue for DimensionProbeValue {
                             {
                                 return Ok(None);
                             }
-                            let character_count = ctx.admit_iter(value, "creo dimension text extract work")?.count();
+                            let character_count = ctx
+                                .admit_iter(value, "creo dimension text extract work")?
+                                .count();
                             if position
                                 > cadmpeg_core::convert::f64_from_index(character_count)
                                     .ok_or_else(|| {
@@ -5179,16 +5683,17 @@ impl ExpressionValue for DimensionProbeValue {
             }
             (CreoMathFunction::StringLength, [value]) => {
                 let value = match value.text_value() {
-                    Some(value) => {
-                        Some(
-                            cadmpeg_core::convert::f64_from_index(ctx.admit_iter(value, "creo dimension text length work")?.count())
-                                .ok_or_else(|| {
-                                    cadmpeg_core::CodecError::malformed(
-                                        "Creo numeric value cannot be represented exactly",
-                                    )
-                                })?,
+                    Some(value) => Some(
+                        cadmpeg_core::convert::f64_from_index(
+                            ctx.admit_iter(value, "creo dimension text length work")?
+                                .count(),
                         )
-                    }
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        })?,
+                    ),
                     None => None,
                 };
                 Ok(Some(Self::numeric_result(
@@ -5283,12 +5788,17 @@ impl ExpressionValue for CurveExpressionValue {
         Some(Self::String(value))
     }
 
-    fn reserved(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok(if ctx.eq_ignore_ascii_case(name, "g", "creo relation text comparison")? {
-            quantity_value(9_800.0, RelationDimension::ACCELERATION)
-        } else {
-            reserved_relation_scalar(ctx, name)?.and_then(Self::number)
-        })
+    fn reserved(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(
+            if ctx.eq_ignore_ascii_case(name, "g", "creo relation text comparison")? {
+                quantity_value(9_800.0, RelationDimension::ACCELERATION)
+            } else {
+                reserved_relation_scalar(ctx, name)?.and_then(Self::number)
+            },
+        )
     }
 
     fn with_unit_checked(
@@ -5512,8 +6022,17 @@ impl ExpressionValue for CurveExpressionValue {
                     "creo relation text search work",
                 )?;
                 let position = match value.find(needle) {
-                    Some(byte) => ctx.admit_iter(&value[..byte], "creo relation text search prefix count")?
-                        .count().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo relation text search prefix count", u64::MAX, u64::MAX))?,
+                    Some(byte) => ctx
+                        .admit_iter(&value[..byte], "creo relation text search prefix count")?
+                        .count()
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "creo relation text search prefix count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?,
                     None => 0,
                 };
                 Ok(Self::number(
@@ -5532,7 +6051,9 @@ impl ExpressionValue for CurveExpressionValue {
                 {
                     return Ok(None);
                 }
-                let character_count = ctx.admit_iter(value.as_str(), "creo relation extract scan")?.count();
+                let character_count = ctx
+                    .admit_iter(value.as_str(), "creo relation extract scan")?
+                    .count();
                 if position.get()
                     > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
@@ -5588,17 +6109,17 @@ impl ExpressionValue for CurveExpressionValue {
                     "creo relation conditional string",
                 )?)))
             }
-            (CreoMathFunction::StringLength, [String(value)]) => {
-                Ok(Self::number(
-                    cadmpeg_core::convert::f64_from_index(ctx.admit_iter(value.as_str(), "creo relation text length work")?.count()).ok_or_else(
-                        || {
-                            cadmpeg_core::CodecError::malformed(
-                                "Creo numeric value cannot be represented exactly",
-                            )
-                        },
-                    )?,
-                ))
-            }
+            (CreoMathFunction::StringLength, [String(value)]) => Ok(Self::number(
+                cadmpeg_core::convert::f64_from_index(
+                    ctx.admit_iter(value.as_str(), "creo relation text length work")?
+                        .count(),
+                )
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "Creo numeric value cannot be represented exactly",
+                    )
+                })?,
+            )),
             (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(prefix.len()),
@@ -6019,10 +6540,15 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         if self.source.get(self.cursor) != Some(&delimiter) {
             return Ok(None);
         }
-        let Ok(source) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")? else {
+        let Ok(source) = self
+            .ctx
+            .validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")?
+        else {
             return Ok(None);
         };
-        let value = self.ctx.copy_retained_text(source, "creo relation literal text")?;
+        let value = self
+            .ctx
+            .copy_retained_text(source, "creo relation literal text")?;
         self.cursor += 1;
         Ok(V::string(value))
     }
@@ -6053,7 +6579,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 self.cursor += 1;
             }
         }
-        let Ok(text) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")? else {
+        let Ok(text) = self
+            .ctx
+            .validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")?
+        else {
             return Ok(None);
         };
         let Ok(value) = self.ctx.parse_text(text, "creo scalar text parsing")? else {
@@ -6128,7 +6657,13 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         }
         self.cursor += 1;
         self.nesting -= 1;
-        Ok(V::function_checked(function, scope, &arguments, self.context, self.ctx)?)
+        Ok(V::function_checked(
+            function,
+            scope,
+            &arguments,
+            self.context,
+            self.ctx,
+        )?)
     }
 }
 
@@ -6176,7 +6711,10 @@ enum CreoMathFunction {
     ContextDependent,
 }
 
-fn creo_math_function(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<Option<CreoMathFunction>, cadmpeg_core::CodecError> {
+fn creo_math_function(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<Option<CreoMathFunction>, cadmpeg_core::CodecError> {
     const FUNCTIONS: &[(&str, CreoMathFunction)] = &[
         ("sin", CreoMathFunction::Sin),
         ("cos", CreoMathFunction::Cos),
@@ -6248,19 +6786,28 @@ fn creo_math_function(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str)
     ];
     if let Some(function) = ctx.find_map(
         FUNCTIONS,
-        |(spelling, function)| Ok(ctx.eq_ignore_ascii_case(name, spelling, "creo math function name")?.then_some(*function)),
+        |(spelling, function)| {
+            Ok(ctx
+                .eq_ignore_ascii_case(name, spelling, "creo math function name")?
+                .then_some(*function))
+        },
         "creo math function table traversal",
     )? {
         return Ok(Some(function));
     }
-    Ok(ctx.any_by(
-        CONTEXT_DEPENDENT,
-        |spelling| ctx.eq_ignore_ascii_case(name, spelling, "creo context function name"),
-        "creo context function table traversal",
-    )?.then_some(CreoMathFunction::ContextDependent))
+    Ok(ctx
+        .any_by(
+            CONTEXT_DEPENDENT,
+            |spelling| ctx.eq_ignore_ascii_case(name, spelling, "creo context function name"),
+            "creo context function table traversal",
+        )?
+        .then_some(CreoMathFunction::ContextDependent))
 }
 
-fn creo_relation_function<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &'a str) -> Result<Option<(CreoMathFunction, Option<&'a str>)>, cadmpeg_core::CodecError> {
+fn creo_relation_function<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &'a str,
+) -> Result<Option<(CreoMathFunction, Option<&'a str>)>, cadmpeg_core::CodecError> {
     Ok(if let Some((function, scope)) = name.split_once(':') {
         (ctx.eq_ignore_ascii_case(function, "rel_model_name", "creo relation text comparison")?
             && !scope.is_empty()
@@ -6717,7 +7264,13 @@ fn infer_solve_variable_dimensions(
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if ctx.any_by(
             variable_keys.iter(),
-            |known: &String| ctx.equal(known.as_str(), key.as_str(), "creo dimension duplicate checks"),
+            |known: &String| {
+                ctx.equal(
+                    known.as_str(),
+                    key.as_str(),
+                    "creo dimension duplicate checks",
+                )
+            },
             "creo dimension duplicate checks",
         )? {
             return Ok(None);
@@ -7178,13 +7731,29 @@ fn solve_nonlinear_expression_block(
     Ok(Some(solved))
 }
 
-fn nonlinear_equations_are_smooth(ctx: &cadmpeg_core::decode::DecodeContext<'_>, block: &CurveExpressionSolveBlock) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx.all_by(&block.equations, |equation| Ok({
-        ctx.all_by(&[equation.left.as_str(), equation.right.as_str()], |expression| Ok(nonlinear_expression_is_smooth(ctx, expression)?), "creo relation comparison traversal")?
-    }), "creo relation comparison traversal")?)
+fn nonlinear_equations_are_smooth(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    block: &CurveExpressionSolveBlock,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(ctx.all_by(
+        &block.equations,
+        |equation| {
+            Ok({
+                ctx.all_by(
+                    &[equation.left.as_str(), equation.right.as_str()],
+                    |expression| Ok(nonlinear_expression_is_smooth(ctx, expression)?),
+                    "creo relation comparison traversal",
+                )?
+            })
+        },
+        "creo relation comparison traversal",
+    )?)
 }
 
-fn nonlinear_expression_is_smooth(ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str) -> Result<bool, cadmpeg_core::CodecError> {
+fn nonlinear_expression_is_smooth(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -7218,10 +7787,20 @@ fn nonlinear_expression_is_smooth(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
             }
             if bytes.get(following) == Some(&b'(') {
                 let name = &expression[start..end];
-                let smooth = ctx.any_by(&[
-                    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
-                    "log", "ln", "exp", "pow", "sqrt",
-                ], |candidate| Ok(ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")?), "creo relation comparison traversal")?;
+                let smooth = ctx.any_by(
+                    &[
+                        "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh",
+                        "tanh", "log", "ln", "exp", "pow", "sqrt",
+                    ],
+                    |candidate| {
+                        Ok(ctx.eq_ignore_ascii_case(
+                            name,
+                            candidate,
+                            "creo relation text comparison",
+                        )?)
+                    },
+                    "creo relation comparison traversal",
+                )?;
                 if !smooth {
                     return Ok(false);
                 }
@@ -7817,10 +8396,20 @@ pub(crate) fn expression_helix(
         return Ok(None);
     }
     for output in ["r", "theta", "z"] {
-        if !ctx.any_by(&record.assignments, |assignment| Ok({
-            match assignment
-                .parameter_target() { Some((name, _)) => ctx.eq_ignore_ascii_case(name, output, "creo relation text comparison")?, None => false }
-        }), "creo helix output scan work")? {
+        if !ctx.any_by(
+            &record.assignments,
+            |assignment| {
+                Ok({
+                    match assignment.parameter_target() {
+                        Some((name, _)) => {
+                            ctx.eq_ignore_ascii_case(name, output, "creo relation text comparison")?
+                        }
+                        None => false,
+                    }
+                })
+            },
+            "creo helix output scan work",
+        )? {
             return Ok(None);
         }
     }
@@ -7879,7 +8468,11 @@ pub(crate) fn topology_rows_with_face_ids(
         Ord::cmp,
         "creo topology rows with face ids rows ordering",
     )?;
-    ctx.dedup_by_key(&mut rows, |row| Ok(row.offset), "creo topology curve row deduplication")?;
+    ctx.dedup_by_key(
+        &mut rows,
+        |row| Ok(row.offset),
+        "creo topology curve row deduplication",
+    )?;
     Ok(rows)
 }
 
@@ -8052,9 +8645,18 @@ struct FramedRow {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FramedRow {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -8229,7 +8831,11 @@ fn framed_rows_with_face_ids(
         Ord::cmp,
         "creo framed rows with face ids result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |row| Ok(row.start), "creo framed rows with face ids result deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |row| Ok(row.start),
+        "creo framed rows with face ids result deduplication",
+    )?;
     Ok(result)
 }
 
@@ -8673,7 +9279,11 @@ pub(crate) fn two_chart_pcurve_samples(
         {
             let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
             let counts = ctx
-                .entry_btree_map(&mut canonical_counts, group_key, "creo two-chart canonical group nodes")?
+                .entry_btree_map(
+                    &mut canonical_counts,
+                    group_key,
+                    "creo two-chart canonical group nodes",
+                )?
                 .or_default();
             ctx.insert_btree_set(counts, count, "creo two-chart canonical count nodes")?;
         }
@@ -8739,11 +9349,19 @@ pub(crate) fn two_chart_pcurve_samples(
     let mut counts = BTreeMap::new();
     for record in &result {
         let count = ctx
-            .entry_btree_map(&mut counts, record.curve_id, "creo two-chart result count nodes")?
+            .entry_btree_map(
+                &mut counts,
+                record.curve_id,
+                "creo two-chart result count nodes",
+            )?
             .or_insert(0usize);
         *count += 1;
     }
-    ctx.retain_vec(&mut result, |record| Ok(counts.get(&record.curve_id) == Some(&1)), "creo sampled pcurve retain")?;
+    ctx.retain_vec(
+        &mut result,
+        |record| Ok(counts.get(&record.curve_id) == Some(&1)),
+        "creo sampled pcurve retain",
+    )?;
     Ok(result)
 }
 
@@ -9119,7 +9737,11 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
-        match ctx.entry_btree_map(&mut circle_counts, circle.curve_id, "creo fc05 circle-count nodes")? {
+        match ctx.entry_btree_map(
+            &mut circle_counts,
+            circle.curve_id,
+            "creo fc05 circle-count nodes",
+        )? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -9406,14 +10028,22 @@ pub(crate) fn bind_prototype_pcurves(
     let mut pcurve_counts = BTreeMap::new();
     for pcurve in pcurves {
         let count = ctx
-            .entry_btree_map(&mut pcurve_counts, pcurve.curve_id, "creo prototype pcurve count nodes")?
+            .entry_btree_map(
+                &mut pcurve_counts,
+                pcurve.curve_id,
+                "creo prototype pcurve count nodes",
+            )?
             .or_insert(0usize);
         *count += 1;
     }
     let mut topology_counts = BTreeMap::new();
     for row in topology {
         let count = ctx
-            .entry_btree_map(&mut topology_counts, row.curve_id, "creo prototype topology count nodes")?
+            .entry_btree_map(
+                &mut topology_counts,
+                row.curve_id,
+                "creo prototype topology count nodes",
+            )?
             .or_insert(0usize);
         *count += 1;
     }

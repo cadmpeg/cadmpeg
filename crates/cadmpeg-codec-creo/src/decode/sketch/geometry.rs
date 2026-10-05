@@ -273,7 +273,8 @@ pub(in crate::decode) fn saved_section_line_geometry(
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Line(_)
-    ) || !saved_section_ordinary_geometry_allowed(definition, segment) {
+    ) || !saved_section_ordinary_geometry_allowed(definition, segment)
+    {
         return Ok(None);
     }
     let Some(order_table) = definition.order_table.as_ref() else {
@@ -299,7 +300,9 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 "creo saved line segment position rows",
             )? {
                 let mut previous = None;
-                for row in ctx.admit_iter(&rows[..position], "creo saved line previous segment rows")? {
+                for row in
+                    ctx.admit_iter(&rows[..position], "creo saved line previous segment rows")?
+                {
                     if let SegmentRow::Ordinary(candidate) = row {
                         if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? {
                             previous = Some(id);
@@ -325,7 +328,8 @@ pub(in crate::decode) fn saved_section_line_geometry(
                                     ctx,
                                     definition,
                                     |entity| {
-                                        if matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == candidate_id) {
+                                        if matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == candidate_id)
+                                        {
                                             matching_line = true;
                                             return Ok(ControlFlow::Break(()));
                                         }
@@ -344,11 +348,13 @@ pub(in crate::decode) fn saved_section_line_geometry(
     }
     if internal_id.is_none() && order_table.is_complete() {
         if let (Some(trimmed), Some(segment_table)) = (
+            definition.trim_entities.as_ref().filter(|table| {
+                table.has_complete_bucket_frame() && table.has_unique_external_ids()
+            }),
             definition
-                .trim_entities
+                .segments
                 .as_ref()
-                .filter(|table| table.has_complete_bucket_frame() && table.has_unique_external_ids()),
-            definition.segments.as_ref().filter(|table| table.is_complete()),
+                .filter(|table| table.is_complete()),
         ) {
             let mut matching_external_id = None;
             let mut multiple_matching_external_ids = false;
@@ -394,10 +400,8 @@ pub(in crate::decode) fn saved_section_line_geometry(
             };
             if let Some(external_id) = matching_external_id {
                 let mut candidate_internal_id = None;
-                let outcome = visit_semantic_saved_section_entities::<()>(
-                    ctx,
-                    definition,
-                    |entity| {
+                let outcome =
+                    visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
                         let crate::feature::definitions::FeatureSavedEntity::Line(line) = entity
                         else {
                             return Ok(ControlFlow::Continue(()));
@@ -412,8 +416,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                             candidate_internal_id = Some(line.entity_id);
                         }
                         Ok(ControlFlow::Continue(()))
-                    },
-                )?;
+                    })?;
                 if external_id == segment.external_id
                     && matches!(outcome, ControlFlow::Continue(()))
                 {
@@ -478,15 +481,13 @@ pub(super) fn saved_section_arc_record<'a>(
     if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
         return Ok(None);
     }
-    let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| {
-        match entity {
-            crate::feature::definitions::FeatureSavedEntity::Arc(arc)
-                if arc.entity_id == internal_id =>
-            {
-                Ok(ControlFlow::Break(arc))
-            }
-            _ => Ok(ControlFlow::Continue(())),
+    let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| match entity {
+        crate::feature::definitions::FeatureSavedEntity::Arc(arc)
+            if arc.entity_id == internal_id =>
+        {
+            Ok(ControlFlow::Break(arc))
         }
+        _ => Ok(ControlFlow::Continue(())),
     })?;
     Ok(match outcome {
         ControlFlow::Break(arc) => Some(arc),
@@ -684,10 +685,13 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             Some([
                 Some((segment.point_ids()[0], [first_u, first_v])),
                 Some((segment.point_ids()[1], [second_u, second_v])),
-                Some((match segment.center_id {
-                    Some(center_id) => center_id,
-                    None => return Ok(None),
-                }, [center.u, center.v])),
+                Some((
+                    match segment.center_id {
+                        Some(center_id) => center_id,
+                        None => return Ok(None),
+                    },
+                    [center.u, center.v],
+                )),
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
@@ -722,84 +726,84 @@ pub(in crate::decode) fn saved_section_entity_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::feature::definitions::FeatureSavedEntity,
 ) -> Result<Option<(u32, SketchGeometry, usize)>, cadmpeg_core::CodecError> {
-    let conic_facts =
-        if let crate::feature::definitions::FeatureSavedEntity::Conic(conic) = entity {
-            let (Some(frame), [Some(first_radius), Some(second_radius)]) =
-                (conic.local_system, conic.coefficients)
-            else {
-                return Ok(None);
-            };
-            let first_axis = [frame[0], frame[1]];
-            let second_axis = [frame[3], frame[4]];
-            let first_length = first_axis[0].hypot(first_axis[1]);
-            let second_length = second_axis[0].hypot(second_axis[1]);
-            let scale = first_length.max(second_length).max(1.0);
-            if first_radius <= EPS_POINT_NONZERO
-                || second_radius <= EPS_POINT_NONZERO
-                || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
-                || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
-                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
-                    > EPS_SECTION_FRAME_ORTHONORMAL
-                || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
-                    > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[2].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[5].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[6].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[7].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || (frame[8] - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[11].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-            {
-                return Ok(None);
-            }
-            let (major_axis, major_radius, minor_radius, parameter_shift) =
-                if first_radius >= second_radius {
-                    (first_axis, first_radius, second_radius, 0.0)
-                } else {
-                    (
-                        second_axis,
-                        second_radius,
-                        first_radius,
-                        -std::f64::consts::FRAC_PI_2,
-                    )
-                };
-            let mut endpoints_complete = true;
-            for endpoint in ctx.admit_iter(&conic.endpoints, "creo saved conic endpoint rows")? {
-                if !ctx
-                    .admit_iter(endpoint, "creo saved conic endpoint coordinates")?
-                    .all(Option::is_some)
-                {
-                    endpoints_complete = false;
-                    break;
-                }
-            }
-            let coincident_endpoints = endpoints_complete
-                && ctx
-                    .admit_iter(
-                        &conic.endpoints[0],
-                        "creo first saved conic endpoint coordinates",
-                    )?
-                    .zip(ctx.admit_iter(
-                        &conic.endpoints[1],
-                        "creo second saved conic endpoint coordinates",
-                    )?)
-                    .all(|(first, second)| {
-                        let (Some(first), Some(second)) = (*first, *second) else {
-                            return false;
-                        };
-                        let scale = first.abs().max(second.abs()).max(1.0);
-                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
-                    });
-            Some((
-                frame,
-                major_axis,
-                major_radius,
-                minor_radius,
-                parameter_shift,
-                coincident_endpoints,
-            ))
-        } else {
-            None
+    let conic_facts = if let crate::feature::definitions::FeatureSavedEntity::Conic(conic) = entity
+    {
+        let (Some(frame), [Some(first_radius), Some(second_radius)]) =
+            (conic.local_system, conic.coefficients)
+        else {
+            return Ok(None);
         };
+        let first_axis = [frame[0], frame[1]];
+        let second_axis = [frame[3], frame[4]];
+        let first_length = first_axis[0].hypot(first_axis[1]);
+        let second_length = second_axis[0].hypot(second_axis[1]);
+        let scale = first_length.max(second_length).max(1.0);
+        if first_radius <= EPS_POINT_NONZERO
+            || second_radius <= EPS_POINT_NONZERO
+            || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
+            || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
+            || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
+                > EPS_SECTION_FRAME_ORTHONORMAL
+            || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
+                > EPS_SECTION_FRAME_ORTHONORMAL
+            || frame[2].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            || frame[5].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            || frame[6].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            || frame[7].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            || (frame[8] - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            || frame[11].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+        {
+            return Ok(None);
+        }
+        let (major_axis, major_radius, minor_radius, parameter_shift) =
+            if first_radius >= second_radius {
+                (first_axis, first_radius, second_radius, 0.0)
+            } else {
+                (
+                    second_axis,
+                    second_radius,
+                    first_radius,
+                    -std::f64::consts::FRAC_PI_2,
+                )
+            };
+        let mut endpoints_complete = true;
+        for endpoint in ctx.admit_iter(&conic.endpoints, "creo saved conic endpoint rows")? {
+            if !ctx
+                .admit_iter(endpoint, "creo saved conic endpoint coordinates")?
+                .all(Option::is_some)
+            {
+                endpoints_complete = false;
+                break;
+            }
+        }
+        let coincident_endpoints = endpoints_complete
+            && ctx
+                .admit_iter(
+                    &conic.endpoints[0],
+                    "creo first saved conic endpoint coordinates",
+                )?
+                .zip(ctx.admit_iter(
+                    &conic.endpoints[1],
+                    "creo second saved conic endpoint coordinates",
+                )?)
+                .all(|(first, second)| {
+                    let (Some(first), Some(second)) = (*first, *second) else {
+                        return false;
+                    };
+                    let scale = first.abs().max(second.abs()).max(1.0);
+                    (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
+                });
+        Some((
+            frame,
+            major_axis,
+            major_radius,
+            minor_radius,
+            parameter_shift,
+            coincident_endpoints,
+        ))
+    } else {
+        None
+    };
     let arc_angles = if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = entity {
         let ([Some(center_u), Some(center_v)], Some(radius)) = (
             [arc.center[0], arc.center[1]],
@@ -1218,10 +1222,7 @@ pub(in crate::decode) fn saved_profile_chains(
                             candidate_endpoints[candidate_endpoint],
                         )
                     {
-                        if mate
-                            .replace((candidate_row, candidate_endpoint))
-                            .is_some()
-                        {
+                        if mate.replace((candidate_row, candidate_endpoint)).is_some() {
                             has_second_mate = true;
                             break 'candidate_rows;
                         }
@@ -1234,15 +1235,15 @@ pub(in crate::decode) fn saved_profile_chains(
         }
     }
     let mut remaining = BTreeSet::new();
-    for (index, _) in ctx.admit_iter(&rows, "creo saved profile remaining nodes")?.enumerate() {
+    for (index, _) in ctx
+        .admit_iter(&rows, "creo saved profile remaining nodes")?
+        .enumerate()
+    {
         ctx.insert_btree_set(&mut remaining, index, "creo saved profile remaining nodes")?;
     }
     while !remaining.is_empty() {
         ctx.charge_work(1, "creo saved profile components")?;
-        let mut candidates = ctx.admit_iter(
-            &remaining,
-            "creo saved profile seed candidates",
-        )?;
+        let mut candidates = ctx.admit_iter(&remaining, "creo saved profile seed candidates")?;
         let Some(first_candidate) = candidates.next() else {
             break;
         };

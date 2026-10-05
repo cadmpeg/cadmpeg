@@ -9,8 +9,8 @@ use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allo
 use crate::decode::sketch_transfer::loci::{
     section_degenerate_axis_line, section_saved_entity, section_skamp_active,
     unique_bounded_curve_segment, unique_centered_line_segment, unique_circle_segment,
-    unique_point_segment, unique_reference_line_segment, visit_section_skamps,
-    visit_all_section_skamps,
+    unique_point_segment, unique_reference_line_segment, visit_all_section_skamps,
+    visit_section_skamps,
 };
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_core::decode::DecodeContext;
@@ -53,7 +53,10 @@ pub(in super::super) fn resolved_profile_chains(
         }
     }
     let mut remaining = BTreeSet::new();
-    for (index, _) in ctx.admit_iter(&rows, "creo trim profile remaining sources")?.enumerate() {
+    for (index, _) in ctx
+        .admit_iter(&rows, "creo trim profile remaining sources")?
+        .enumerate()
+    {
         ctx.insert_btree_set(&mut remaining, index, "creo trim profile remaining nodes")?;
     }
     let mut profiles = Vec::new();
@@ -81,7 +84,10 @@ pub(in super::super) fn resolved_profile_chains(
         }
         remaining.retain(|index| !component.contains(index));
         let mut component_degree_too_high = false;
-        for adjacent_rows in ctx.admit_iter(&incident, "creo trim profile vertex rows")?.map(|(_, rows)| rows) {
+        for adjacent_rows in ctx
+            .admit_iter(&incident, "creo trim profile vertex rows")?
+            .map(|(_, rows)| rows)
+        {
             let component_degree = ctx
                 .admit_iter(adjacent_rows, "creo trim profile component degrees")?
                 .filter(|row| component.contains(row))
@@ -242,7 +248,10 @@ fn resolved_segment_profile_chains(
         }
     }
     let mut remaining = BTreeSet::new();
-    for (index, _) in ctx.admit_iter(&rows, "creo segment profile remaining sources")?.enumerate() {
+    for (index, _) in ctx
+        .admit_iter(&rows, "creo segment profile remaining sources")?
+        .enumerate()
+    {
         ctx.insert_btree_set(
             &mut remaining,
             index,
@@ -274,8 +283,8 @@ fn resolved_segment_profile_chains(
         }
         remaining.retain(|index| !component.contains(index));
         let mut invalid_component_degree = false;
-        'component_rows: for index in ctx
-            .admit_iter(&component, "creo segment profile component rows")?
+        'component_rows: for index in
+            ctx.admit_iter(&component, "creo segment profile component rows")?
         {
             for point in rows[*index].point_ids() {
                 let component_degree = ctx
@@ -414,9 +423,8 @@ pub(in super::super) fn solver_only_section_entity_offset(
             .admit_iter(&skamp.items, "creo solver-only entity SKAMP items")?
             .any(|item| item.entity_id == entity_id)
         {
-            first_offset = Some(first_offset.map_or(skamp.offset, |offset: usize| {
-                offset.min(skamp.offset)
-            }));
+            first_offset =
+                Some(first_offset.map_or(skamp.offset, |offset: usize| offset.min(skamp.offset)));
         }
         Ok(ControlFlow::Continue(()))
     })?;
@@ -461,10 +469,7 @@ impl IncidenceEvidence {
         self.0[Self::slot(family)]
     }
 
-    pub(in super::super) fn len(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<usize, CodecError> {
+    pub(in super::super) fn len(self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         Ok(ctx
             .admit_iter(&self.0, "creo section incidence evidence")?
             .filter(|present| **present)
@@ -561,13 +566,17 @@ fn section_skamp_has_proven_point_locus(
     };
     Ok(matches!(
         (saved, item.sense),
-        (crate::feature::definitions::FeatureSavedEntity::Line(_), 2 | 3)
-            | (crate::feature::definitions::FeatureSavedEntity::Arc(_), 2..=4)
-            | (
-                crate::feature::definitions::FeatureSavedEntity::Circle(_)
-                    | crate::feature::definitions::FeatureSavedEntity::Conic(_),
-                4,
-            )
+        (
+            crate::feature::definitions::FeatureSavedEntity::Line(_),
+            2 | 3
+        ) | (
+            crate::feature::definitions::FeatureSavedEntity::Arc(_),
+            2..=4
+        ) | (
+            crate::feature::definitions::FeatureSavedEntity::Circle(_)
+                | crate::feature::definitions::FeatureSavedEntity::Conic(_),
+            4,
+        )
     ))
 }
 
@@ -616,14 +625,16 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
 ) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     let mut evidence = IncidenceEvidence::default();
     let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-        Ok(if matches!(
-            (skamp.kind, skamp.items.as_slice()),
-            (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id
-        ) {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        })
+        Ok(
+            if matches!(
+                (skamp.kind, skamp.items.as_slice()),
+                (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id
+            ) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            },
+        )
     })?;
     if matches!(outcome, ControlFlow::Break(())) {
         evidence.insert(SectionEntityIncidenceFamily::Line);
@@ -794,28 +805,28 @@ pub(in super::super) fn solver_only_section_entity_family(
             })
         })?;
         if matches!(outcome, ControlFlow::Break(())) {
-        evidence.insert(SectionEntityIncidenceFamily::Circular);
-        normalize_section_incidence_curve_family_evidence(&mut evidence);
+            evidence.insert(SectionEntityIncidenceFamily::Circular);
+            normalize_section_incidence_curve_family_evidence(&mut evidence);
         }
     }
     if !evidence.contains(SectionEntityIncidenceFamily::Line)
         && !evidence.contains(SectionEntityIncidenceFamily::LineOrArc)
     {
         let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-            let has_centered_line_target =
-                if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                    let roles = [(first, second), (second, first)];
-                    ctx.admit_iter(&roles, "creo centered-line target roles")?
-                        .any(|(point, target)| {
-                            point.entity_id == entity_id
-                                && point.sense == 0
-                                && target.sense == 4
-                                && unique_centered_line_segment(definition, target.entity_id)
-                                    .is_some()
-                        })
-                } else {
-                    false
-                };
+            let has_centered_line_target = if let (35, [first, second]) =
+                (skamp.kind, skamp.items.as_slice())
+            {
+                let roles = [(first, second), (second, first)];
+                ctx.admit_iter(&roles, "creo centered-line target roles")?
+                    .any(|(point, target)| {
+                        point.entity_id == entity_id
+                            && point.sense == 0
+                            && target.sense == 4
+                            && unique_centered_line_segment(definition, target.entity_id).is_some()
+                    })
+            } else {
+                false
+            };
             Ok(if has_centered_line_target {
                 ControlFlow::Break(())
             } else {
@@ -892,7 +903,7 @@ mod tests {
     };
     use crate::decode::tests::opaque;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+    use cadmpeg_core::CodecError;
 
     fn single_trim_profile() -> crate::feature::definitions::FeatureDefinition {
         let mut definition = definition(201, false);
@@ -1265,17 +1276,32 @@ use cadmpeg_core::CodecError;
     fn type35_point_locus_establishes_unique_native_line_or_arc_family() {
         let opaque_target = definition(101, true);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &opaque_target, 101)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &opaque_target,
+                101
+            ))
+            .expect("admitted incidence family rows"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
 
         let solver_only_target = definition(201, false);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &solver_only_target, 201)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &solver_only_target,
+                201
+            ))
+            .expect("admitted incidence family rows"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_target, 201)).expect("admitted solver entity roles"),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+                ctx,
+                &solver_only_target,
+                201
+            ))
+            .expect("admitted solver entity roles"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
     }
@@ -1397,7 +1423,12 @@ use cadmpeg_core::CodecError;
             )));
         segments.declared_count = 2;
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 101)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &definition,
+                101
+            ))
+            .expect("admitted incidence family rows"),
             None
         );
     }
@@ -1415,7 +1446,12 @@ use cadmpeg_core::CodecError;
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &opaque_target, 101)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &opaque_target,
+                101
+            ))
+            .expect("admitted incidence family rows"),
             Some(SectionEntityIncidenceFamily::Point)
         );
 
@@ -1430,11 +1466,21 @@ use cadmpeg_core::CodecError;
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &solver_only_target, 201)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &solver_only_target,
+                201
+            ))
+            .expect("admitted incidence family rows"),
             Some(SectionEntityIncidenceFamily::Point)
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_target, 201)).expect("admitted solver entity roles"),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+                ctx,
+                &solver_only_target,
+                201
+            ))
+            .expect("admitted solver entity roles"),
             Some(SectionEntityIncidenceFamily::Point)
         );
     }
@@ -1459,7 +1505,12 @@ use cadmpeg_core::CodecError;
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 101)).expect("admitted incidence family rows"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(
+                ctx,
+                &definition,
+                101
+            ))
+            .expect("admitted incidence family rows"),
             None
         );
     }
@@ -1522,7 +1573,12 @@ use cadmpeg_core::CodecError;
         crate::decode::tests::synchronize_skamp_count(&mut definition);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &definition, 21)).expect("admitted solver entity roles"),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(
+                ctx,
+                &definition,
+                21
+            ))
+            .expect("admitted solver entity roles"),
             Some(SectionEntityIncidenceFamily::Arc)
         );
     }

@@ -30,7 +30,7 @@ fn topology_bound_plane_service<const N: usize>(points: [[f64; 3]; N]) -> Option
             Ok(())
         })
     })
-        .expect("service topology plane admission")
+    .expect("service topology plane admission")
 }
 
 fn analytic_curve_plane_service(geometry: &CurveGeometry) -> Option<PlaneEquation> {
@@ -269,7 +269,15 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
         },
     )]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| reconciled_model_plane(ctx,&local, &ir, &source_carriers, 7)).expect("admitted model plane scan").map(|plane| plane.origin),
+        crate::decode::with_test_decode_ctx(|ctx| reconciled_model_plane(
+            ctx,
+            &local,
+            &ir,
+            &source_carriers,
+            7
+        ))
+        .expect("admitted model plane scan")
+        .map(|plane| plane.origin),
         Some([1.0, 0.0, 0.0])
     );
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
@@ -329,16 +337,14 @@ fn topology_bound_plane_refuses_candidate_point_vector() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let Err(error) =
-        topology_bound_plane(&ctx, |admitted| {
-            let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-            for point in ctx.admit_iter(&points, "test topology plane points")? {
-                ctx.reserve_vec(admitted, 1, "creo topology plane candidate points")?;
-                admitted.push(*point);
-            }
-            Ok(())
-        })
-    else {
+    let Err(error) = topology_bound_plane(&ctx, |admitted| {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        for point in ctx.admit_iter(&points, "test topology plane points")? {
+            ctx.reserve_vec(admitted, 1, "creo topology plane candidate points")?;
+            admitted.push(*point);
+        }
+        Ok(())
+    }) else {
         panic!("one topology point exceeds collection limit")
     };
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -425,9 +431,11 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         ],
         None,
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| analytic_boundary_line(ctx, &bent))
-        .expect("bent NURBS line admission")
-        .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| analytic_boundary_line(ctx, &bent))
+            .expect("bent NURBS line admission")
+            .is_none()
+    );
 }
 
 #[test]
@@ -593,11 +601,10 @@ fn distinct_boundary_lines_define_one_plane() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    let analytic = crate::decode::with_test_decode_ctx(|ctx| {
-        analytic_boundary_line(ctx, &analytic_geometry)
-    })
-    .expect("analytic boundary line admission")
-    .expect("analytic line");
+    let analytic =
+        crate::decode::with_test_decode_ctx(|ctx| analytic_boundary_line(ctx, &analytic_geometry))
+            .expect("analytic boundary line admission")
+            .expect("analytic line");
     assert_eq!(analytic.direction, [1.0, 0.0, 0.0]);
 }
 
@@ -788,7 +795,9 @@ fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
         origin: [-4.0, 9.0, 3.0],
         normal: [0.0, 0.0, -1.0],
     };
-    let agreed = crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx,&[first, equivalent])).expect("admitted plane candidates").expect("equivalent planes agree");
+    let agreed = crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx, &[first, equivalent]))
+        .expect("admitted plane candidates")
+        .expect("equivalent planes agree");
     assert_eq!(agreed.normal, [0.0, 0.0, 1.0]);
     assert_eq!(dot(agreed.normal, agreed.origin), 3.0);
 
@@ -796,7 +805,11 @@ fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
         origin: [0.0, 0.0, 4.0],
         normal: [0.0, 0.0, 1.0],
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx,&[first, conflicting])).expect("admitted plane candidates").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx, &[first, conflicting]))
+            .expect("admitted plane candidates")
+            .is_none()
+    );
 }
 
 #[test]
@@ -810,9 +823,11 @@ fn plane_agreement_rejects_nan_distance() {
         normal: [0.0, 0.0, 1.0],
     };
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx, &[finite, non_finite]))
-        .expect("plane agreement scan is admitted")
-        .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane(ctx, &[finite, non_finite]))
+            .expect("plane agreement scan is admitted")
+            .is_none()
+    );
 }
 
 #[test]
@@ -830,21 +845,39 @@ fn plane_surface_reconciliation_requires_one_chart_direction() {
         }),
         offset,
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx,&[
-        candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
-        candidate([0.0, 0.0, 3.0], [2.0, 0.0, 0.0], 10),
-    ])).expect("admitted plane surface candidates")
-    .is_some_and(|(_, u_axis, offset)| u_axis == [1.0, 0.0, 0.0] && offset == 10));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx,&[
-        candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
-        candidate([0.0, 0.0, 3.0], [0.0, 1.0, 0.0], 20),
-    ])).expect("admitted plane surface candidates")
-    .is_none());
-    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx,&[
-        candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
-        candidate([1.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
-    ])).expect("admitted plane surface candidates")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(
+            ctx,
+            &[
+                candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
+                candidate([0.0, 0.0, 3.0], [2.0, 0.0, 0.0], 10),
+            ]
+        ))
+        .expect("admitted plane surface candidates")
+        .is_some_and(|(_, u_axis, offset)| u_axis == [1.0, 0.0, 0.0] && offset == 10)
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(
+            ctx,
+            &[
+                candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
+                candidate([0.0, 0.0, 3.0], [0.0, 1.0, 0.0], 20),
+            ]
+        ))
+        .expect("admitted plane surface candidates")
+        .is_none()
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(
+            ctx,
+            &[
+                candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
+                candidate([1.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
+            ]
+        ))
+        .expect("admitted plane surface candidates")
+        .is_none()
+    );
 }
 
 #[test]
@@ -998,7 +1031,9 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
         .expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) =
-        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx,candidates)).expect("admitted plane surface candidates").expect("frame-selected outline plane");
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx, candidates))
+            .expect("admitted plane surface candidates")
+            .expect("frame-selected outline plane");
     assert_eq!(plane.origin, [100.0, -4.0, 300.0]);
     assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
     assert_eq!(u_axis, [0.0, 0.0, 1.0]);
@@ -1066,7 +1101,10 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
         .expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
-    let (plane, u_axis, _) = crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx,candidates)).expect("admitted plane surface candidates").expect("matrix frame plane");
+    let (plane, u_axis, _) =
+        crate::decode::with_test_decode_ctx(|ctx| agreed_plane_surface(ctx, candidates))
+            .expect("admitted plane surface candidates")
+            .expect("matrix frame plane");
     assert_eq!(plane.normal, [component, 0.0, component]);
     assert_eq!(u_axis, [component, 0.0, -component]);
 }
@@ -1220,11 +1258,10 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
         offset: 30,
     };
 
-    let frame = crate::decode::with_test_decode_ctx(|ctx| {
-        fc05_cap_pair_model_frame(ctx, &scan, &pair)
-    })
-    .expect("unit cap-span admission")
-    .expect("unit cap-span frame");
+    let frame =
+        crate::decode::with_test_decode_ctx(|ctx| fc05_cap_pair_model_frame(ctx, &scan, &pair))
+            .expect("unit cap-span admission")
+            .expect("unit cap-span frame");
     assert_eq!(frame.unit_vector(), [0.0, 1.0, 0.0]);
     assert!((frame.origin[0] - 2.0).abs() <= EPS_FC05_FRAME_TEST);
     assert!((frame.origin[1] - 87.5368).abs() <= EPS_FC05_FRAME_TEST);
@@ -1246,11 +1283,10 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
         cap_ordinates_row_frame: vec![-87.5368, -49.5368],
         ..pair
     };
-    let reversed_frame = crate::decode::with_test_decode_ctx(|ctx| {
-        fc05_cap_pair_model_frame(ctx, &scan, &reversed)
-    })
-    .expect("reversed cap-span admission")
-    .expect("reversed unit cap-span frame");
+    let reversed_frame =
+        crate::decode::with_test_decode_ctx(|ctx| fc05_cap_pair_model_frame(ctx, &scan, &reversed))
+            .expect("reversed cap-span admission")
+            .expect("reversed unit cap-span frame");
     assert_eq!(reversed_frame.unit_vector(), [0.0, -1.0, 0.0]);
     assert!((reversed_frame.origin[1] + 49.5368).abs() <= EPS_FC05_FRAME_TEST);
 }
@@ -1489,8 +1525,8 @@ fn envelope_reconciled_plane_refuses_support_coordinate_scan() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             envelope_reconciled_plane_candidate(&ctx, &frame, equation)
         },
     );
@@ -1509,8 +1545,8 @@ fn topology_bound_plane_refuses_point_coordinate_scan() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             topology_bound_plane(&ctx, |admitted| {
                 for point in ctx.admit_iter(&points, "test topology plane points")? {
                     ctx.reserve_vec(admitted, 1, "creo topology plane candidate points")?;

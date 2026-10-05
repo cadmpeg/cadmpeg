@@ -21,10 +21,28 @@ pub(crate) enum SchemaClass {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SchemaClass {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Unknown(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value.0), ctx, operation),
-            Self::Hole | Self::Round | Self::Chamfer | Self::Cut | Self::Protrusion | Self::DatumPlane | Self::Section | Self::Draft | Self::Surface | Self::SurfaceMerge | Self::CoordinateSystem => Ok(1),
+            Self::Unknown(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, value.0),
+                ctx,
+                operation,
+            ),
+            Self::Hole
+            | Self::Round
+            | Self::Chamfer
+            | Self::Cut
+            | Self::Protrusion
+            | Self::DatumPlane
+            | Self::Section
+            | Self::Draft
+            | Self::Surface
+            | Self::SurfaceMerge
+            | Self::CoordinateSystem => Ok(1),
         }
     }
 }
@@ -99,13 +117,20 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| {
             // Each class has one tag; Unknown also carries its four-byte code.
             for code in [911, 913, 914, 916, 917, 923, 926, 927, 942, 946, 979] {
-                assert_eq!(SchemaClass::from(code).decode_cost(ctx, "schema class cost")?, 1);
+                assert_eq!(
+                    SchemaClass::from(code).decode_cost(ctx, "schema class cost")?,
+                    1
+                );
             }
             for code in [0, 949, u32::MAX] {
-                assert_eq!(SchemaClass::from(code).decode_cost(ctx, "schema class cost")?, 5);
+                assert_eq!(
+                    SchemaClass::from(code).decode_cost(ctx, "schema class cost")?,
+                    5
+                );
             }
             Ok::<(), cadmpeg_core::CodecError>(())
-        }).expect("schema class costs fit service work");
+        })
+        .expect("schema class costs fit service work");
     }
 
     #[test]

@@ -57,15 +57,26 @@ pub(crate) enum SurfaceKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SurfaceKind {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Extrusion(variant) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, variant), ctx, operation),
-            Self::Plane | Self::Cylinder | Self::Cone | Self::TorusOrSphere | Self::Spline | Self::Fillet => Ok(1),
+            Self::Extrusion(variant) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, variant),
+                ctx,
+                operation,
+            ),
+            Self::Plane
+            | Self::Cylinder
+            | Self::Cone
+            | Self::TorusOrSphere
+            | Self::Spline
+            | Self::Fillet => Ok(1),
         }
     }
 }
-
-
 
 impl SurfaceKind {
     /// Compare surface families without the extrusion encoding variant.
@@ -112,7 +123,11 @@ pub(crate) enum ExtrusionVariant {
 
 impl cadmpeg_core::decode::cost::DecodeCost for ExtrusionVariant {
     const FIXED_BYTES: Option<u64> = Some(1);
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         Ok(1)
     }
 }
@@ -129,12 +144,14 @@ pub(crate) enum BoundaryType {
 
 impl cadmpeg_core::decode::cost::DecodeCost for BoundaryType {
     const FIXED_BYTES: Option<u64> = Some(1);
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         Ok(1)
     }
 }
-
-
 
 impl BoundaryType {
     pub(crate) fn from_byte(value: u8) -> Option<Self> {
@@ -185,14 +202,21 @@ pub(crate) struct SurfaceRow {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SurfaceRow {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &((&self.id, &self.kind, &self.feature_id, &self.reversed),
-                (&self.boundary_type, &self.next_surface, &self.offset)), ctx, operation,
+            &(
+                (&self.id, &self.kind, &self.feature_id, &self.reversed),
+                (&self.boundary_type, &self.next_surface, &self.offset),
+            ),
+            ctx,
+            operation,
         )
     }
 }
-
 
 /// Return the surface row for `id` only when the namespace contains one match.
 pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&SurfaceRow> {
@@ -2577,13 +2601,24 @@ pub(crate) struct OutlinePlane {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for OutlinePlane {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(&self.surface_id, &self.origin, self.normal(), self.u_axis(), &self.offset), ctx, operation,
+            &(
+                &self.surface_id,
+                &self.origin,
+                self.normal(),
+                self.u_axis(),
+                &self.offset,
+            ),
+            ctx,
+            operation,
         )
     }
 }
-
 
 impl OutlinePlane {
     pub(crate) fn normal(&self) -> [f64; 3] {
@@ -2954,10 +2989,16 @@ pub(crate) fn placed_outline_planes(
         )?;
     }
     let mut result = outline_planes(ctx, envelopes)?;
-    ctx.retain_vec(&mut result, |plane| Ok({
-        !frame_bound_ids.contains(&plane.surface_id)
-            && !matrix_frame_ids.contains(&plane.surface_id)
-    }), "creo placed outline retain")?;
+    ctx.retain_vec(
+        &mut result,
+        |plane| {
+            Ok({
+                !frame_bound_ids.contains(&plane.surface_id)
+                    && !matrix_frame_ids.contains(&plane.surface_id)
+            })
+        },
+        "creo placed outline retain",
+    )?;
     for plane in frame_bound {
         ctx.reserve_vec(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
@@ -3259,7 +3300,11 @@ fn rows_with_boundaries(
         Ord::cmp,
         "creo rows with boundaries result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |row| Ok(row.offset), "creo rows with boundaries result deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |row| Ok(row.offset),
+        "creo rows with boundaries result deduplication",
+    )?;
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
         match ctx.entry_btree_map(&mut id_counts, row.id, "creo surface row ID nodes")? {
@@ -3269,7 +3314,11 @@ fn rows_with_boundaries(
             }
         }
     }
-    ctx.retain_vec(&mut result, |row| Ok(id_counts.get(&row.id) == Some(&1)), "creo unique surface row retain")?;
+    ctx.retain_vec(
+        &mut result,
+        |row| Ok(id_counts.get(&row.id) == Some(&1)),
+        "creo unique surface row retain",
+    )?;
     let mut prototype_parameter_spans = Vec::new();
     for frame in named_prototype_frames(ctx, payload)? {
         for parameter in frame.parameters {
@@ -3281,12 +3330,22 @@ fn rows_with_boundaries(
             prototype_parameter_spans.push((parameter.value_offset, parameter.value_end));
         }
     }
-    ctx.retain_vec(&mut result, |row| Ok({
-        !prototype_parameter_spans
-            .iter()
-            .any(|(start, end)| row.offset >= *start && row.offset < *end)
-    }), "creo prototype surface row retain")?;
-    ctx.retain_vec(&mut result, |row| Ok(boundary_types.contains(&row.boundary_type)), "creo boundary surface row retain")?;
+    ctx.retain_vec(
+        &mut result,
+        |row| {
+            Ok({
+                !prototype_parameter_spans
+                    .iter()
+                    .any(|(start, end)| row.offset >= *start && row.offset < *end)
+            })
+        },
+        "creo prototype surface row retain",
+    )?;
+    ctx.retain_vec(
+        &mut result,
+        |row| Ok(boundary_types.contains(&row.boundary_type)),
+        "creo boundary surface row retain",
+    )?;
     let mut frames = surface_array_frames(ctx, payload);
     if let Some(first) = frames.next().transpose()? {
         let mut framed = Vec::new();
@@ -3785,7 +3844,9 @@ fn named_prototype_frames<'a>(
             };
             let name_start = token_offset + 2;
             let name_end = token_offset + length - 1;
-            let name = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?.ok();
+            let name = ctx
+                .validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?
+                .ok();
             if name.is_some_and(|name| prototype_parameter_allowed(&family, name)) {
                 ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")?;
                 named.push((token_offset, length));
@@ -3799,32 +3860,41 @@ fn named_prototype_frames<'a>(
         )?;
         named.dedup();
         let mut owned_scalar_end = close + 2;
-        ctx.retain_vec(&mut named, |(token_offset, token_length)| {
-            if *token_offset < owned_scalar_end {
-                return Ok(false);
-            }
-            let name_start = *token_offset + 2;
-            let name_end = *token_offset + *token_length - 1;
-            if let Ok(name) = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")? {
-                if prototype_parameter_allowed(&family, name) {
-                    let value_offset = *token_offset + *token_length;
-                    if let Some(length) = named_vector_scalar_body_len(
-                        &family,
-                        name,
-                        &payload[value_offset..record_end],
-                        &cache,
-                    ) {
-                        owned_scalar_end = value_offset + length;
+        ctx.retain_vec(
+            &mut named,
+            |(token_offset, token_length)| {
+                if *token_offset < owned_scalar_end {
+                    return Ok(false);
+                }
+                let name_start = *token_offset + 2;
+                let name_end = *token_offset + *token_length - 1;
+                if let Ok(name) =
+                    ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?
+                {
+                    if prototype_parameter_allowed(&family, name) {
+                        let value_offset = *token_offset + *token_length;
+                        if let Some(length) = named_vector_scalar_body_len(
+                            &family,
+                            name,
+                            &payload[value_offset..record_end],
+                            &cache,
+                        ) {
+                            owned_scalar_end = value_offset + length;
+                        }
                     }
                 }
-            }
-            Ok(true)
-        }, "creo named prototype field retain")?;
+                Ok(true)
+            },
+            "creo named prototype field retain",
+        )?;
         let mut parameters = Vec::new();
         for (position, (token_offset, token_length)) in named.iter().copied().enumerate() {
             let name_start = token_offset + 2;
             let name_end = token_offset + token_length - 1;
-            let Some(name) = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?.ok() else {
+            let Some(name) = ctx
+                .validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?
+                .ok()
+            else {
                 continue;
             };
             if !prototype_parameter_allowed(&family, name) {
@@ -4581,9 +4651,16 @@ fn inline_surface_suffix_body(
                         .all(|candidate| *candidate == Some(*first))
                 });
             let carrier = match inline_suffix_witness(kind, body, local_start, cache) {
-                Some(witness) if inline_suffix_witness_agrees(
-                    ctx, witness, &carriers[..carrier_count], geometric_interpretation_count,
-                )? => Some(witness),
+                Some(witness)
+                    if inline_suffix_witness_agrees(
+                        ctx,
+                        witness,
+                        &carriers[..carrier_count],
+                        geometric_interpretation_count,
+                    )? =>
+                {
+                    Some(witness)
+                }
                 _ => carrier,
             };
             let layout = InlineSurfaceBody {
@@ -4837,60 +4914,67 @@ fn decode_inline_selector_cylinder_envelope(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceEnvelope>, CodecError> {
     let candidate = (|| {
-    (kind == SurfaceKind::Cylinder).then_some(())?;
-    let selector_end = |cursor: usize| match body.get(cursor..) {
-        Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
-        Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
-        _ => None,
-    };
-    let decode_coordinate = |cursor| {
-        if body.get(cursor) == Some(&0x18) {
-            return Some((0.0, cursor + 1));
-        }
-        let (value, next) =
-            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
-        let value = -value;
-        value.is_finite().then_some((value, next))
-    };
-    let mut cursor = selector_end(0)?;
-    let (first_axial, next) = decode_coordinate(cursor)?;
-    cursor = selector_end(next)?;
-    let (second_axial, next) = decode_coordinate(cursor)?;
-    cursor = next;
-    (first_axial != second_axial).then_some(())?;
-
-    let mut corners = [[None; 3]; 2];
-    for coordinate in corners.iter_mut().flatten() {
-        if matches!(body.get(cursor), Some(0x92 | 0xda)) {
-            body.get(cursor..cursor.checked_add(7)?)?;
-            cursor += 7;
-            continue;
-        }
-        let (decoded, next) = decode_coordinate(cursor)?;
-        *coordinate = Some(decoded);
+        (kind == SurfaceKind::Cylinder).then_some(())?;
+        let selector_end = |cursor: usize| match body.get(cursor..) {
+            Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
+            Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
+            _ => None,
+        };
+        let decode_coordinate = |cursor| {
+            if body.get(cursor) == Some(&0x18) {
+                return Some((0.0, cursor + 1));
+            }
+            let (value, next) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+            let value = -value;
+            value.is_finite().then_some((value, next))
+        };
+        let mut cursor = selector_end(0)?;
+        let (first_axial, next) = decode_coordinate(cursor)?;
+        cursor = selector_end(next)?;
+        let (second_axial, next) = decode_coordinate(cursor)?;
         cursor = next;
-    }
-    let close = inline_surface_envelope_close(body, cursor)?;
-    let axial_span = (second_axial - first_axial).abs();
-    let spans = std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
-    let mut axial_axes =
-        (0..3).filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
-    let axis_index = axial_axes.next()?;
-    axial_axes.next().is_none().then_some(())?;
-    let mut radial = (0..3).filter(|axis| *axis != axis_index);
-    let radial_axes = [radial.next()?, radial.next()?];
-    radial.next().is_none().then_some(())?;
-    Some((InlineSurfaceEnvelope {
-        axial: [first_axial, second_axial],
-        corners,
-        close,
-    }, radial_axes, spans))
+        (first_axial != second_axial).then_some(())?;
+
+        let mut corners = [[None; 3]; 2];
+        for coordinate in corners.iter_mut().flatten() {
+            if matches!(body.get(cursor), Some(0x92 | 0xda)) {
+                body.get(cursor..cursor.checked_add(7)?)?;
+                cursor += 7;
+                continue;
+            }
+            let (decoded, next) = decode_coordinate(cursor)?;
+            *coordinate = Some(decoded);
+            cursor = next;
+        }
+        let close = inline_surface_envelope_close(body, cursor)?;
+        let axial_span = (second_axial - first_axial).abs();
+        let spans =
+            std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
+        let mut axial_axes = (0..3)
+            .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
+        let axis_index = axial_axes.next()?;
+        axial_axes.next().is_none().then_some(())?;
+        let mut radial = (0..3).filter(|axis| *axis != axis_index);
+        let radial_axes = [radial.next()?, radial.next()?];
+        radial.next().is_none().then_some(())?;
+        Some((
+            InlineSurfaceEnvelope {
+                axial: [first_axial, second_axial],
+                corners,
+                close,
+            },
+            radial_axes,
+            spans,
+        ))
     })();
     let Some((envelope, radial_axes, spans)) = candidate else {
         return Ok(None);
     };
-    let absent = ctx.admit_iter(&radial_axes, "creo selector envelope radial count")?
-        .filter(|axis| spans[**axis].is_none()).count();
+    let absent = ctx
+        .admit_iter(&radial_axes, "creo selector envelope radial count")?
+        .filter(|axis| spans[**axis].is_none())
+        .count();
     Ok((absent <= 1).then_some(envelope))
 }
 
@@ -6443,9 +6527,16 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
-    let state_count = body.len().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo_counted_parameter_slots", u64::MAX, u64::MAX))?;
+    let state_count = body.len().checked_add(1).ok_or_else(|| {
+        ctx.refuse_codec_limit("creo_counted_parameter_slots", u64::MAX, u64::MAX)
+    })?;
     let mut states = Vec::new();
-    ctx.resize_with(&mut states, state_count, || Ok(CountedParameterState(BTreeMap::new())), "creo_counted_parameter_slots")?;
+    ctx.resize_with(
+        &mut states,
+        state_count,
+        || Ok(CountedParameterState(BTreeMap::new())),
+        "creo_counted_parameter_slots",
+    )?;
     ctx.insert_btree_map(
         &mut states[0].0,
         0,
@@ -6539,11 +6630,19 @@ fn counted_parameter_scalar_slots(
 struct CountedParameterState(BTreeMap<usize, CountedParameterParse>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for CountedParameterState {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
-        ctx.admit_iter(&self.0, operation)?.try_fold(0_u64, |bytes, entry| {
-            let cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&entry, ctx, operation)?;
-            bytes.checked_add(cost).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
-        })
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        ctx.admit_iter(&self.0, operation)?
+            .try_fold(0_u64, |bytes, entry| {
+                let cost =
+                    cadmpeg_core::decode::cost::DecodeCost::decode_cost(&entry, ctx, operation)?;
+                bytes
+                    .checked_add(cost)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+            })
     }
 }
 
@@ -6553,14 +6652,19 @@ enum CountedParameterParse {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for CountedParameterParse {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         match self {
-            Self::Unique(slots) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, slots), ctx, operation),
+            Self::Unique(slots) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, slots), ctx, operation)
+            }
             Self::Ambiguous => Ok(1),
         }
     }
 }
-
 
 fn advance_counted_parameter_parse(
     ctx: &DecodeContext<'_>,
@@ -7013,8 +7117,18 @@ fn plane_envelope_has_one_held_coordinate(
 ) -> Result<bool, CodecError> {
     let mut count = 0usize;
     for [first, second] in ctx.admit_iter(&pairs, "creo plane envelope held coordinate count")? {
-        if ctx.equal_bytes(slots[*first].1, slots[*second].1, "creo plane envelope held coordinate bytes")? {
-            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo plane envelope held coordinate count", u64::MAX, u64::MAX))?;
+        if ctx.equal_bytes(
+            slots[*first].1,
+            slots[*second].1,
+            "creo plane envelope held coordinate bytes",
+        )? {
+            count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo plane envelope held coordinate count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
         }
     }
     Ok(count == 1)
@@ -7805,7 +7919,8 @@ pub(crate) fn prototype_count(
         else {
             break;
         };
-        if ctx.validate_utf8(&payload[family_start..close], "creo UTF-8 validation")?
+        if ctx
+            .validate_utf8(&payload[family_start..close], "creo UTF-8 validation")?
             .ok()
             .and_then(SurfacePrototypeFamily::from_known_name)
             .is_some()

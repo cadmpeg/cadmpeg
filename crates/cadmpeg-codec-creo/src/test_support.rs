@@ -391,7 +391,10 @@ pub(crate) fn assert_work_boundaries<T>(
         return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
     }
     loop {
-        assert!(cap <= service_work_limit, "work route exceeds service work limit");
+        assert!(
+            cap <= service_work_limit,
+            "work route exceeds service work limit"
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -406,7 +409,10 @@ pub(crate) fn assert_work_boundaries<T>(
                     .checked_add(resource.additional)
                     .expect("work need fits");
                 assert!(need > cap);
-                assert!(need <= service_work_limit, "work route exceeds service work limit");
+                assert!(
+                    need <= service_work_limit,
+                    "work route exceeds service work limit"
+                );
                 if operations.contains(&resource.operation) {
                     assert!(resource.additional > 0, "named work boundary is positive");
                     let below = need.checked_sub(1).expect("positive work need");
@@ -429,9 +435,7 @@ pub(crate) fn assert_work_boundaries<T>(
                     assert_eq!(below_resource.additional, resource.additional);
                     assert_eq!(below_ctx.resource_refusal().as_ref(), Some(&below_resource));
                     assert_eq!(
-                        below_resource
-                            .used
-                            .checked_add(below_resource.additional),
+                        below_resource.used.checked_add(below_resource.additional),
                         Some(need)
                     );
 
