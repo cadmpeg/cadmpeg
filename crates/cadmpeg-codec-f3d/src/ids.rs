@@ -1390,11 +1390,6 @@ native_record_id!(
     "sketch-text"
 );
 native_record_id!(
-    /// The native sketch-surface record key.
-    native_sketch_surface_id,
-    "sketch-surface"
-);
-native_record_id!(
     /// The native mesh-body record key.
     #[cfg(test)]
     native_mesh_body_id,
