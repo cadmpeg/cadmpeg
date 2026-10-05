@@ -8,9 +8,11 @@ use crate::native::display_jt::{
     JtTessellationIndex,
 };
 
-/// Resolves the paths of node 7 in a one-node scene under an adjusted policy.
+/// Resolves the paths of node 7 in a one-node scene under an adjusted policy,
+/// or walks the cap in `walk` until its named path operation refuses.
 fn scene_node_paths_under(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    walk: Option<(ResourceDimension, &str)>,
 ) -> Result<usize, CodecError> {
     let compressed = DisplayJtCompressedElement {
         id: "element".into(),
@@ -56,6 +58,14 @@ fn scene_node_paths_under(
         materials: &[],
         compressed_elements: &[compressed],
     };
+    if let Some((dimension, operation)) = walk {
+        return Err(crate::test_support::resource_refusal_at(
+            &[],
+            dimension,
+            operation,
+            |ctx| scene_node_paths(ctx, &inputs),
+        ));
+    }
     crate::test_support::with_decode_context_over(&[], configure, |ctx| {
         scene_node_paths(ctx, &inputs)
     })
@@ -71,53 +81,43 @@ fn scene_node_paths(
     Ok(paths.len())
 }
 
-fn refusal_dimension(result: Result<usize, CodecError>) -> ResourceDimension {
-    match result {
-        Err(CodecError::ResourceLimit(limit)) => limit.dimension,
-        other => panic!("expected a resource refusal, got {other:?}"),
-    }
-}
-
 #[test]
 fn scene_node_paths_refuse_collection_limit() {
-    assert_eq!(
-        refusal_dimension(scene_node_paths_under(|policy| {
-            policy.limits.max_collection_items = 0;
-        })),
-        ResourceDimension::CollectionItems
-    );
+    drop(scene_node_paths_under(
+        |_| {},
+        Some((ResourceDimension::CollectionItems, "nx JT root path state")),
+    ));
 }
 
 #[test]
 fn scene_node_paths_refuse_scoped_limit() {
-    assert_eq!(
-        refusal_dimension(scene_node_paths_under(|policy| {
-            policy.limits.max_materialized_bytes = 0;
-        })),
-        ResourceDimension::MaterializedBytes
-    );
+    drop(scene_node_paths_under(
+        |_| {},
+        Some((
+            ResourceDimension::MaterializedBytes,
+            "nx JT node path nodes",
+        )),
+    ));
 }
 
 #[test]
 fn scene_node_paths_hold_temporary_paths_outside_retained_storage() {
-    let paths = scene_node_paths_under(|policy| policy.limits.max_retained_bytes = 0)
+    let paths = scene_node_paths_under(|policy| policy.limits.max_retained_bytes = 0, None)
         .expect("scene graph and paths are scoped");
     assert_eq!(paths, 1);
 }
 
 #[test]
 fn scene_node_paths_refuse_work_limit() {
-    assert_eq!(
-        refusal_dimension(scene_node_paths_under(|policy| {
-            policy.limits.max_work_units = 0;
-        })),
-        ResourceDimension::WorkUnits
-    );
+    drop(scene_node_paths_under(
+        |_| {},
+        Some((ResourceDimension::WorkUnits, "resolve JT path states")),
+    ));
 }
 
 #[test]
 fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
-    let error = scene_node_paths_under(|policy| policy.limits.max_recursion_depth = 0)
+    let error = scene_node_paths_under(|policy| policy.limits.max_recursion_depth = 0, None)
         .expect_err("node path exceeds the nesting limit");
     assert!(matches!(
         error,

@@ -231,3 +231,54 @@ fn group_members_replay_paired_deltas_events_in_offset_order() {
     assert_eq!(members[0].list_record_xmt, 20);
     assert_eq!(members[1].member_xmt, 100);
 }
+
+/// Walks the cap in one dimension until the named GROUP member operation refuses.
+fn group_member_chain_refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) {
+    let records = [
+        record(90, 10, Some(7), vec![3, 4, 5, 6, 30]),
+        record(91, 30, None, vec![10, 100, 3, 4, 20, 1]),
+        record(91, 20, None, vec![10, 101, 3, 4, 1, 30]),
+        record(14, 100, Some(50), Vec::new()),
+        record(16, 101, Some(51), Vec::new()),
+    ];
+    let records: Vec<_> = records
+        .iter()
+        .map(|record| (record.xmt, &record.family))
+        .collect();
+    crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
+        let mut members = Vec::new();
+        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
+    });
+}
+
+#[test]
+fn group_member_route_refuses_collection_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX GROUP members",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_retained_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX GROUP member identity",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_scoped_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX GROUP member seen index",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_work_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX GROUP member chain",
+    );
+}
