@@ -27,7 +27,8 @@ pub(crate) fn decode_component_occurrences(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
-    let mut occurrences = Vec::new();
+    let mut scratch = ctx.reserve_scoped(0, "f3d component occurrence candidates")?;
+    let mut candidates = Vec::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D component occurrence streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
@@ -42,10 +43,11 @@ pub(crate) fn decode_component_occurrences(
                 if let Some(occurrence) =
                     exact_component_occurrence(ctx, bytes, &header, end, &scope)?
                 {
-                    ctx.push_vec(
-                        &mut occurrences,
+                    ctx.push_scoped_vec(
+                        &mut scratch,
+                        &mut candidates,
                         occurrence,
-                        "f3d decoded component occurrence",
+                        "f3d component occurrence candidates",
                     )?;
                 }
             }
@@ -53,12 +55,30 @@ pub(crate) fn decode_component_occurrences(
         }
     }
     ctx.stable_sort_by(
-        &mut occurrences[..],
+        &mut candidates[..],
         |value| &value.id,
         Ord::cmp,
         "sort f3d design components 1",
     )?;
-    occurrences.dedup_by(|left, right| left.id == right.id);
+    let mut occurrences = Vec::new();
+    for occurrence in candidates {
+        ctx.charge_work(1, "dedup f3d design components")?;
+        if let Some(kept) = occurrences.last() {
+            let kept: &DesignComponentOccurrence = kept;
+            if ctx.equal_bytes(
+                kept.id.as_bytes(),
+                occurrence.id.as_bytes(),
+                "dedup f3d design components",
+            )? {
+                continue;
+            }
+        }
+        ctx.push_vec(
+            &mut occurrences,
+            occurrence,
+            "f3d decoded component occurrence",
+        )?;
+    }
     Ok(occurrences)
 }
 
