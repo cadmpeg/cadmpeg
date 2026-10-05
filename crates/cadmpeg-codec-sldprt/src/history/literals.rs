@@ -219,7 +219,10 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-pub(super) fn parse_parameter_literal(ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str) -> Result<Option<ParameterValue>, cadmpeg_core::CodecError> {
+pub(super) fn parse_parameter_literal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
+) -> Result<Option<ParameterValue>, cadmpeg_core::CodecError> {
     if dimension_display(ctx, expression)?.is_some() {
         return Ok(parse_dimension_display_length(ctx, expression)?.map(ParameterValue::Length));
     }
@@ -247,22 +250,30 @@ pub(super) fn parse_parameter_literal(ctx: &cadmpeg_core::decode::DecodeContext<
         .map(ParameterValue::Real))
 }
 
-pub(super) fn dimension_display(ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str) -> Result<Option<DimensionDisplay>, cadmpeg_core::CodecError> {
+pub(super) fn dimension_display(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
+) -> Result<Option<DimensionDisplay>, cadmpeg_core::CodecError> {
     let expression = strip_dimension_count(ctx, expression.trim())?;
-    Ok(if strip_diameter_modifier(expression).is_some()
-        || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
-    {
-        Some(DimensionDisplay::Diameter)
-    } else if strip_radius_modifier(expression).is_some()
-        || (expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some())
-    {
-        Some(DimensionDisplay::Radius)
-    } else {
-        None
-    })
+    Ok(
+        if strip_diameter_modifier(expression).is_some()
+            || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
+        {
+            Some(DimensionDisplay::Diameter)
+        } else if strip_radius_modifier(expression).is_some()
+            || (expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some())
+        {
+            Some(DimensionDisplay::Radius)
+        } else {
+            None
+        },
+    )
 }
 
-pub(crate) fn parse_dimension_display_length(ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str) -> Result<Option<Length>, cadmpeg_core::CodecError> {
+pub(crate) fn parse_dimension_display_length(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
+) -> Result<Option<Length>, cadmpeg_core::CodecError> {
     let expression = strip_dimension_count(ctx, expression.trim())?;
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))
@@ -275,28 +286,54 @@ pub(crate) fn parse_dimension_display_length(ctx: &cadmpeg_core::decode::DecodeC
     Ok(parsed.or_else(|| parse_length_mm(expression)))
 }
 
-fn strip_dimension_count<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &'a str) -> Result<&'a str, cadmpeg_core::CodecError> {
-    let digit_count = ctx.admit_iter(expression.as_bytes(), "scan SLDPRT dimension count digits")?.copied().take_while(u8::is_ascii_digit).count();
+fn strip_dimension_count<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &'a str,
+) -> Result<&'a str, cadmpeg_core::CodecError> {
+    let digit_count = ctx
+        .admit_iter(expression.as_bytes(), "scan SLDPRT dimension count digits")?
+        .copied()
+        .take_while(u8::is_ascii_digit)
+        .count();
     let (count, rest) = expression.split_at(digit_count);
-    Ok(if !count.is_empty()
-        && count.parse::<u64>().is_ok_and(|count| count > 0)
-        && rest.starts_with(['X', 'x'])
-    {
-        rest[1..].trim_start()
-    } else {
-        expression
-    })
+    Ok(
+        if !count.is_empty()
+            && count.parse::<u64>().is_ok_and(|count| count > 0)
+            && rest.starts_with(['X', 'x'])
+        {
+            rest[1..].trim_start()
+        } else {
+            expression
+        },
+    )
 }
 
-fn strip_dimension_fit<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &'a str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
-    let Some(fit_start) = ctx.admit_iter(value.as_bytes(), "scan SLDPRT dimension fit position")?.position(u8::is_ascii_alphabetic) else { return Ok(None); };
+fn strip_dimension_fit<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &'a str,
+) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
+    let Some(fit_start) = ctx
+        .admit_iter(value.as_bytes(), "scan SLDPRT dimension fit position")?
+        .position(u8::is_ascii_alphabetic)
+    else {
+        return Ok(None);
+    };
     let (nominal, fit) = value.split_at(fit_start);
-    let Some(grade_start) = ctx.admit_iter(fit.as_bytes(), "scan SLDPRT dimension fit grade")?.position(u8::is_ascii_digit) else { return Ok(None); };
+    let Some(grade_start) = ctx
+        .admit_iter(fit.as_bytes(), "scan SLDPRT dimension fit grade")?
+        .position(u8::is_ascii_digit)
+    else {
+        return Ok(None);
+    };
     let (position, grade) = fit.split_at(grade_start);
     Ok((!nominal.is_empty()
         && !position.is_empty()
-        && ctx.admit_iter(position.as_bytes(), "scan SLDPRT dimension fit letters")?.all(|byte| byte.is_ascii_alphabetic())
-        && ctx.admit_iter(grade.as_bytes(), "scan SLDPRT dimension fit digits")?.all(|byte| byte.is_ascii_digit()))
+        && ctx
+            .admit_iter(position.as_bytes(), "scan SLDPRT dimension fit letters")?
+            .all(|byte| byte.is_ascii_alphabetic())
+        && ctx
+            .admit_iter(grade.as_bytes(), "scan SLDPRT dimension fit digits")?
+            .all(|byte| byte.is_ascii_digit()))
     .then_some(nominal))
 }
 
@@ -314,7 +351,8 @@ fn strip_radius_modifier(expression: &str) -> Option<&str> {
         .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
 }
 
-pub(super) fn parse_neutral_parameter_literal(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(super) fn parse_neutral_parameter_literal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &cadmpeg_ir::features::Feature,
     name: &str,
     expression: &str,

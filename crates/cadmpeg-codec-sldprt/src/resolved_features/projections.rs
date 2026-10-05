@@ -536,7 +536,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         } else {
             parameter.ordinal + 1
         };
-        if let Some(current) = ctx.get_mut_hash_map(&mut next_ordinals, owner, "lookup SLDPRT existing parameter ordinal")? {
+        if let Some(current) = ctx.get_mut_hash_map(
+            &mut next_ordinals,
+            owner,
+            "lookup SLDPRT existing parameter ordinal",
+        )? {
             *current = (*current).max(next);
         } else {
             let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
@@ -578,7 +582,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Some(next_ordinal) = current_ordinal.checked_add(1) else {
                 continue;
             };
-            if let Some(ordinal) = ctx.get_mut_hash_map(&mut next_ordinals, owner, "lookup SLDPRT display parameter ordinal")? {
+            if let Some(ordinal) = ctx.get_mut_hash_map(
+                &mut next_ordinals,
+                owner,
+                "lookup SLDPRT display parameter ordinal",
+            )? {
                 *ordinal = next_ordinal;
             } else {
                 let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
@@ -617,7 +625,8 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                     )?;
                 }
             }
-            let relation_key = ctx.rsplit_once(&relation.id, "#", "split SLDPRT relation key")?
+            let relation_key = ctx
+                .rsplit_once(&relation.id, "#", "split SLDPRT relation key")?
                 .map_or(relation.id.as_str(), |(_, key)| key);
             let (mut key_text, _key_reservation) =
                 ctx.scoped_string(relation_key.len(), OPERATION)?;
@@ -724,7 +733,10 @@ fn relation_display_parameter_value(
                 ParameterValue::Length(millimetres),
                 Some(DimensionDisplay::Diameter),
                 ctx.format_retained(
-                    format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(millimetres)),
+                    format_args!(
+                        "<MOD-DIAM>{}",
+                        crate::history::literals::LengthLiteral(millimetres)
+                    ),
                     "format SLDPRT relation display parameter",
                 )?,
             )
@@ -763,7 +775,9 @@ pub(crate) fn type_display_relation_parameters(
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         ctx.charge_work(1, OPERATION)?;
         if let Some(Some(parameter)) = ownership.get(&relation.id) {
-            let family_set = ctx.entry_hash_map(&mut families, parameter, OPERATION)?.or_default();
+            let family_set = ctx
+                .entry_hash_map(&mut families, parameter, OPERATION)?
+                .or_default();
             ctx.insert_hash_set(family_set, relation.family, OPERATION)?;
         }
     }
@@ -799,7 +813,10 @@ pub(crate) fn type_display_relation_parameters(
                         })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         ctx.format_retained(
-                            format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(value)),
+                            format_args!(
+                                "<MOD-DIAM>{}",
+                                crate::history::literals::LengthLiteral(value)
+                            ),
                             "format SLDPRT relation display parameter",
                         )?
                     } else {
@@ -821,7 +838,10 @@ pub(crate) fn type_display_relation_parameters(
                     })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         ctx.format_retained(
-                            format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(value)),
+                            format_args!(
+                                "<MOD-DIAM>{}",
+                                crate::history::literals::LengthLiteral(value)
+                            ),
                             "format SLDPRT relation display parameter",
                         )?
                     } else {
@@ -932,7 +952,11 @@ pub(crate) fn project_compact_edge_selections(
         ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
-        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT compact edge feature identity")? {
+        if let Some(previous) = ctx.get_mut_hash_map(
+            &mut feature_ids_by_native,
+            native_ref,
+            "lookup SLDPRT compact edge feature identity",
+        )? {
             *previous = id;
             continue;
         }
@@ -945,7 +969,12 @@ pub(crate) fn project_compact_edge_selections(
     let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.edge_selections) {
         ctx.charge_work(1, INDEX_OPERATION)?;
-        let group = ctx.entry_hash_map(&mut selections, selection.feature_ref.as_str(), INDEX_OPERATION)?
+        let group = ctx
+            .entry_hash_map(
+                &mut selections,
+                selection.feature_ref.as_str(),
+                INDEX_OPERATION,
+            )?
             .or_default();
         ctx.reserve_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
@@ -1149,9 +1178,10 @@ fn variable_fillet_radius_groups<'a>(
         for name in &parameter_names {
             let Some(parameter) =
                 variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.zip(
-                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
-                        crate::history::literals::parse_positive_dimension_length_mm(value)
-                    }),
+                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?
+                        .and_then(|value| {
+                            crate::history::literals::parse_positive_dimension_length_mm(value)
+                        }),
                 )
             else {
                 return Ok(None);
@@ -1247,9 +1277,12 @@ fn variable_fillet_radius_groups<'a>(
                     ctx.try_reserve_retained_text(&mut retained_name, name.len(), OPERATION)?;
                     ctx.append_retained(&mut retained_name, &name, OPERATION)?;
                     control_names.insert(retained_name);
-                    let Some(radius) = ctx.get_btree_map(&feature.parameters, name.as_str(), OPERATION)?.and_then(|value| {
-                        crate::history::literals::parse_positive_dimension_length_mm(value)
-                    }) else {
+                    let Some(radius) = ctx
+                        .get_btree_map(&feature.parameters, name.as_str(), OPERATION)?
+                        .and_then(|value| {
+                            crate::history::literals::parse_positive_dimension_length_mm(value)
+                        })
+                    else {
                         return Ok(None);
                     };
                     if !vertex_radii.contains_key(&vertex.type_signature) {
@@ -1294,9 +1327,10 @@ fn variable_fillet_radius_groups<'a>(
         for name in &parameter_names {
             let Some(parameter) =
                 variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.zip(
-                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
-                        crate::history::literals::parse_positive_dimension_length_mm(value)
-                    }),
+                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?
+                        .and_then(|value| {
+                            crate::history::literals::parse_positive_dimension_length_mm(value)
+                        }),
                 )
             else {
                 return Ok(None);
@@ -1511,7 +1545,11 @@ pub(crate) fn project_compact_surface_selections(
         ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
-        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT compact surface feature identity")? {
+        if let Some(previous) = ctx.get_mut_hash_map(
+            &mut feature_ids_by_native,
+            native_ref,
+            "lookup SLDPRT compact surface feature identity",
+        )? {
             *previous = id;
             continue;
         }
@@ -1531,7 +1569,12 @@ pub(crate) fn project_compact_surface_selections(
     let mut selections = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.surface_selections) {
         ctx.charge_work(1, INDEX_OPERATION)?;
-        let group = ctx.entry_hash_map(&mut selections, selection.feature_ref.as_str(), INDEX_OPERATION)?
+        let group = ctx
+            .entry_hash_map(
+                &mut selections,
+                selection.feature_ref.as_str(),
+                INDEX_OPERATION,
+            )?
             .or_default();
         ctx.reserve_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
@@ -2241,7 +2284,9 @@ fn surface_selections_by_lane<'a>(
     let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
     for selection in selections {
         ctx.charge_work(1, operation)?;
-        let group = ctx.entry_hash_map(&mut by_lane, selection.parent.as_str(), operation)?.or_default();
+        let group = ctx
+            .entry_hash_map(&mut by_lane, selection.parent.as_str(), operation)?
+            .or_default();
         ctx.reserve_vec(group, 1, operation)?;
         group.push(*selection);
     }
@@ -2266,7 +2311,11 @@ pub(crate) fn project_draft_operands(
         ctx.append_retained(&mut id, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT draft feature id"))?;
-        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT draft feature identity")? {
+        if let Some(previous) = ctx.get_mut_hash_map(
+            &mut feature_ids_by_native,
+            native_ref,
+            "lookup SLDPRT draft feature identity",
+        )? {
             *previous = id;
             continue;
         }
@@ -2280,7 +2329,9 @@ pub(crate) fn project_draft_operands(
     for lane in lanes {
         for (feature, operands) in draft_operand_candidates(ctx, histories, lane)? {
             const OPERATION: &str = "group SLDPRT draft operand candidates";
-            let by_feature = ctx.entry_hash_map(&mut candidates, feature, OPERATION)?.or_default();
+            let by_feature = ctx
+                .entry_hash_map(&mut candidates, feature, OPERATION)?
+                .or_default();
             ctx.reserve_vec(by_feature, 1, OPERATION)?;
             by_feature.push(operands);
         }
@@ -2584,13 +2635,21 @@ fn format_surface_path_set<'a>(
         ctx.append_retained(&mut value, PATH_PREFIX, operation)?;
         for (component_index, component) in components.iter().enumerate() {
             if component_index != 0 {
-                ctx.push_retained_char(&mut value, ',', "format SLDPRT surface component separator")?;
+                ctx.push_retained_char(
+                    &mut value,
+                    ',',
+                    "format SLDPRT surface component separator",
+                )?;
             }
             match component.local_id {
                 Some(local_id) => write!(value, "{local_id}").map_err(|_| {
                     cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface selection")
                 })?,
-                None => ctx.push_retained_char(&mut value, '_', "format SLDPRT absent surface component")?,
+                None => ctx.push_retained_char(
+                    &mut value,
+                    '_',
+                    "format SLDPRT absent surface component",
+                )?,
             }
         }
         emitted += 1;
@@ -2731,7 +2790,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 OPERATION,
             )
         })?;
-        lookup_storage.with_storage(|| ctx.push_vec(&mut history_features, native_feature, OPERATION))?;
+        lookup_storage
+            .with_storage(|| ctx.push_vec(&mut history_features, native_feature, OPERATION))?;
     }
     let mut scoped_ids = Vec::new();
     let mut feature_ids_by_native = HashMap::new();
@@ -2746,8 +2806,13 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let id = cadmpeg_ir::features::FeatureId::mint(id_text).map_err(|_| {
             cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id")
         })?;
-        lookup_storage.with_storage(|| ctx.push_vec(&mut scoped_ids, id_reservation, ID_OPERATION))?;
-        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT cosmetic thread feature identity")? {
+        lookup_storage
+            .with_storage(|| ctx.push_vec(&mut scoped_ids, id_reservation, ID_OPERATION))?;
+        if let Some(previous) = ctx.get_mut_hash_map(
+            &mut feature_ids_by_native,
+            native_ref,
+            "lookup SLDPRT cosmetic thread feature identity",
+        )? {
             *previous = id;
             continue;
         }
@@ -2756,7 +2821,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let (mut native_key, key_reservation) =
             ctx.scoped_string(native_ref.len(), ID_OPERATION)?;
         ctx.append_retained(&mut native_key, native_ref, ID_OPERATION)?;
-        lookup_storage.with_storage(|| ctx.push_vec(&mut scoped_ids, key_reservation, ID_OPERATION))?;
+        lookup_storage
+            .with_storage(|| ctx.push_vec(&mut scoped_ids, key_reservation, ID_OPERATION))?;
         feature_ids_by_native.insert(native_key, id);
     }
     for feature in features {
@@ -2824,7 +2890,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     Option<&str>,
                 )>::new();
                 for lane in lanes {
-                    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+                    let lane_key = ctx
+                        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for selection in &lane.surface_selections {
                         ctx.charge_work(1, REFERENCE_OPERATION)?;
@@ -2835,11 +2902,19 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         lookup_storage.with_storage(|| {
                             ctx.push_vec(&mut key_reservations, reservation, REFERENCE_OPERATION)
                         })?;
-                        lookup_storage.with_storage(|| ctx.push_vec(&mut references, (
-                            key,
-                            Some(std::borrow::Cow::Borrowed(selection.components.as_slice())),
-                            selection.producer_feature_refs.first().map(String::as_str),
-                        ), REFERENCE_OPERATION))?;
+                        lookup_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut references,
+                                (
+                                    key,
+                                    Some(std::borrow::Cow::Borrowed(
+                                        selection.components.as_slice(),
+                                    )),
+                                    selection.producer_feature_refs.first().map(String::as_str),
+                                ),
+                                REFERENCE_OPERATION,
+                            )
+                        })?;
                     }
                 }
                 for lane in lanes {
@@ -2873,7 +2948,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         };
                         ctx.insert_hash_set(&mut cylinder_tokens, token, TOKEN_OPERATION)?;
                     }
-                    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
+                    let lane_key = ctx
+                        .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for super::selections::CylinderMarkerReference(marker, components) in
                         cosmetic_thread_cylinder_marker_reference(
@@ -2892,7 +2968,13 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         lookup_storage.with_storage(|| {
                             ctx.push_vec(&mut key_reservations, reservation, REFERENCE_OPERATION)
                         })?;
-                        lookup_storage.with_storage(|| ctx.push_vec(&mut references, (key, components.map(std::borrow::Cow::Owned), None), REFERENCE_OPERATION))?;
+                        lookup_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut references,
+                                (key, components.map(std::borrow::Cow::Owned), None),
+                                REFERENCE_OPERATION,
+                            )
+                        })?;
                     }
                 }
                 ctx.sort_unstable_by(
@@ -2931,7 +3013,11 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             continue;
                         }
                         if last.is_some() {
-                            ctx.push_retained_char(&mut native, ',', "format SLDPRT cylinder reference separator")?;
+                            ctx.push_retained_char(
+                                &mut native,
+                                ',',
+                                "format SLDPRT cylinder reference separator",
+                            )?;
                         }
                         ctx.append_retained(&mut native, reference, NATIVE_OPERATION)?;
                         last = Some(reference.as_str());

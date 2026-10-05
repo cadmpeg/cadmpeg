@@ -31,29 +31,6 @@ use super::standard_legacy_compact_selected_axis_endpoint_indices;
 use super::wide_coordinate_roster_full_circle;
 use super::wide_indexed_curve_endpoint_indices;
 
-fn marker_coordinates(
-    payload: &[u8],
-    offset: usize,
-) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
-    crate::resolved_features::markers::standard_marker_result(
-        crate::resolved_features::markers::marker_coordinates(
-            &crate::resolved_features::markers::StandardMarkerAdmission,
-            payload,
-            offset,
-        ),
-    )
-}
-
-fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    crate::resolved_features::markers::standard_marker_result(
-        crate::resolved_features::markers::marker_local_id(
-            &crate::resolved_features::markers::StandardMarkerAdmission,
-            payload,
-            offset,
-        ),
-    )
-}
-
 mod arcs;
 mod circles;
 mod compact;

@@ -75,8 +75,12 @@ pub(crate) fn project_parameters(
             {
                 let expression = &feature.parameters[name.as_str()];
                 let display = dimension_display(ctx, expression)?;
-                let properties = ctx.get_btree_map(&(feature
-                    .dimension_properties), &name, "look up SLDPRT ordered key")?
+                let properties = ctx
+                    .get_btree_map(
+                        &(feature.dimension_properties),
+                        &name,
+                        "look up SLDPRT ordered key",
+                    )?
                     .map(|properties| {
                         copy_projected_feature_properties(
                             ctx,
@@ -86,13 +90,20 @@ pub(crate) fn project_parameters(
                     })
                     .transpose()?
                     .unwrap_or_default();
-                let parse_value = |value: &str| -> Result<_, CodecError> { Ok(match display {
-                    Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                        parse_dimension_display_length(ctx, value)?.map(ParameterValue::Length)
-                    }
-                    None => parse_native_parameter_literal(ctx, feature, &name, value)?,
-                }) };
-                let value = match properties.get("Value").map(|value| parse_value(value)).transpose()?.flatten() {
+                let parse_value = |value: &str| -> Result<_, CodecError> {
+                    Ok(match display {
+                        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+                            parse_dimension_display_length(ctx, value)?.map(ParameterValue::Length)
+                        }
+                        None => parse_native_parameter_literal(ctx, feature, &name, value)?,
+                    })
+                };
+                let value = match properties
+                    .get("Value")
+                    .map(|value| parse_value(value))
+                    .transpose()?
+                    .flatten()
+                {
                     Some(value) => Some(value),
                     None => parse_value(expression)?,
                 };
@@ -157,12 +168,14 @@ fn bare_text_parameter_literal(
     )?;
     let expression = expression.trim();
     if expression.is_empty()
-        || ctx.admit_iter(expression, "scan SLDPRT text parameter operators")?.any(|character| {
-            matches!(
-                character,
-                '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
-            )
-        })
+        || ctx
+            .admit_iter(expression, "scan SLDPRT text parameter operators")?
+            .any(|character| {
+                matches!(
+                    character,
+                    '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
+                )
+            })
     {
         return Ok(None);
     }
@@ -204,11 +217,19 @@ fn formatted_text_dimension_literal(
         .transpose()
 }
 
-fn formatted_text_dimension_value<'a>(ctx: &DecodeContext<'_>, name: &str, expression: &'a str) -> Result<Option<&'a str>, CodecError> {
+fn formatted_text_dimension_value<'a>(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    expression: &'a str,
+) -> Result<Option<&'a str>, CodecError> {
     let Some(suffix) = name.strip_prefix("TXD") else {
         return Ok(None);
     };
-    if suffix.is_empty() || !ctx.admit_iter(suffix.as_bytes(), "scan SLDPRT formatted dimension ordinal")?.all(|byte| byte.is_ascii_digit()) {
+    if suffix.is_empty()
+        || !ctx
+            .admit_iter(suffix.as_bytes(), "scan SLDPRT formatted dimension ordinal")?
+            .all(|byte| byte.is_ascii_digit())
+    {
         return Ok(None);
     }
     let expression = expression.trim();
@@ -318,13 +339,19 @@ pub(super) fn apply_evaluated_parameters(
             replacements.push((name, value));
         }
         for (name, value) in replacements {
-            ctx.insert_btree_map(&mut (feature.parameters), name, value, "insert SLDPRT ordered entry")?;
+            ctx.insert_btree_map(
+                &mut (feature.parameters),
+                name,
+                value,
+                "insert SLDPRT ordered entry",
+            )?;
         }
     }
     Ok(())
 }
 
-pub(crate) fn parse_native_parameter_literal(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn parse_native_parameter_literal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     name: &str,
     expression: &str,
@@ -337,23 +364,24 @@ pub(crate) fn parse_native_parameter_literal(ctx: &cadmpeg_core::decode::DecodeC
     Ok(parse_parameter_literal(ctx, expression)?)
 }
 
-pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(super) fn native_parameter_is_length(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     name: &str,
     expression: Option<&str>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let cosmetic_thread = classify(ctx, feature)? == Some(FeatureClass::CosmeticThread);
+    let cosmetic_thread = classify(feature) == Some(FeatureClass::CosmeticThread);
     Ok(match name {
         "D1" => {
-            is_extrude(ctx, feature)?
-                || is_fillet(ctx, feature)?
-                || is_chamfer(ctx, feature)?
-                || feature_family(ctx, feature, "Shell")?
-                || feature_family(ctx, feature, "Thicken")?
-                || feature_family(ctx, feature, "Thickness")?
+            is_extrude(feature)
+                || is_fillet(feature)
+                || is_chamfer(feature)
+                || feature_family(feature, "Shell")
+                || feature_family(feature, "Thicken")
+                || feature_family(feature, "Thickness")
                 || feature_input_class(feature, NativeClassKind::Thicken)
                 || matches!(
-                    classify(ctx, feature)?,
+                    classify(feature),
                     Some(
                         FeatureClass::Dome
                             | FeatureClass::Rib
@@ -362,7 +390,7 @@ pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeConte
                             | FeatureClass::RuledSurface
                     )
                 )
-                || (classify(ctx, feature)? == Some(FeatureClass::MoveFace)
+                || (classify(feature) == Some(FeatureClass::MoveFace)
                     && feature.properties.get("Mode").is_some_and(|mode| {
                         mode.eq_ignore_ascii_case("Offset")
                             || mode.eq_ignore_ascii_case("Translate")
@@ -371,7 +399,7 @@ pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeConte
                 || cosmetic_thread
         }
         "D2" if cosmetic_thread => true,
-        "D2" if is_chamfer(ctx, feature)? => {
+        "D2" if is_chamfer(feature) => {
             expression.is_none_or(|value| parse_angle_rad(value).is_none())
         }
         "D3" if matches!(
@@ -382,7 +410,7 @@ pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeConte
             true
         }
         _ => {
-            is_extrude(ctx, feature)?
+            is_extrude(feature)
                 && matches!(
                     feature.properties.get("EndCondition").map(String::as_str),
                     Some("Blind" | "Symmetric")
@@ -396,32 +424,42 @@ pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeConte
 /// The expression of a native scalar `value` in metres or radians, in the
 /// display form of `expression`, or `None` when the value in its unit is not
 /// finite.
-pub(crate) fn format_native_scalar(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn format_native_scalar(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     name: &str,
     value: f64,
     expression: Option<&str>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    Ok(if let Some(display) = expression.map(|value| dimension_display(ctx, value)).transpose()?.flatten() {
-        let prefix = match display {
-            DimensionDisplay::Diameter => expression
-                .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
-                .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;"),
-            DimensionDisplay::Radius => expression
-                .filter(|value| value.trim().starts_with("&lt;MOD-RHO&gt;"))
-                .map_or("<MOD-RHO>", |_| "&lt;MOD-RHO&gt;"),
-        };
-        Some(format!(
-            "{prefix}{}",
-            format_length_number(match Length::new(value * 1000.0) { Some(length) => length, None => return Ok(None) })
-        ))
-    } else if native_parameter_is_length(ctx, feature, name, expression)? {
-        Length::new(value * 1000.0).map(format_length_mm)
-    } else if expression.and_then(parse_angle_rad).is_some() {
-        Angle::new(value).map(format_angle_rad)
-    } else {
-        FiniteReal::new(value).map(format_f64_literal)
-    })
+    Ok(
+        if let Some(display) = expression
+            .map(|value| dimension_display(ctx, value))
+            .transpose()?
+            .flatten()
+        {
+            let prefix = match display {
+                DimensionDisplay::Diameter => expression
+                    .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
+                    .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;"),
+                DimensionDisplay::Radius => expression
+                    .filter(|value| value.trim().starts_with("&lt;MOD-RHO&gt;"))
+                    .map_or("<MOD-RHO>", |_| "&lt;MOD-RHO&gt;"),
+            };
+            Some(format!(
+                "{prefix}{}",
+                format_length_number(match Length::new(value * 1000.0) {
+                    Some(length) => length,
+                    None => return Ok(None),
+                })
+            ))
+        } else if native_parameter_is_length(ctx, feature, name, expression)? {
+            Length::new(value * 1000.0).map(format_length_mm)
+        } else if expression.and_then(parse_angle_rad).is_some() {
+            Angle::new(value).map(format_angle_rad)
+        } else {
+            FiniteReal::new(value).map(format_f64_literal)
+        },
+    )
 }
 
 fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<ParameterId, CodecError> {
@@ -503,7 +541,10 @@ fn order_parameters_by_dependencies(
         ctx.insert_hash_map(&mut parameter_owners, &parameter.id, owner, OPERATION)?;
     }
     let mut updates = Vec::new();
-    for owner in ctx.admit_iter(&owner_order, "scan SLDPRT parameter owners")?.copied() {
+    for owner in ctx
+        .admit_iter(&owner_order, "scan SLDPRT parameter owners")?
+        .copied()
+    {
         let mut remaining = Vec::new();
         for (index, parameter) in parameters.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
@@ -524,11 +565,30 @@ fn order_parameters_by_dependencies(
                     ),
                     OPERATION,
                 )?;
-                if ctx.admit_iter(parameters[*index].dependencies.as_slice(), "scan SLDPRT order_parameters_by_dependencies values")?.try_fold(true, |found, dependency| { Ok::<_, cadmpeg_core::CodecError>(found && ( {
-                    ctx.get_hash_map(&(parameter_owners), dependency, "look up SLDPRT hash key")?
-                        .is_none_or(|dependency_owner| dependency_owner != &owner)
-                        || ctx.contains_hash_set(&(ordered_ids), dependency, "test SLDPRT hashed identity")?
-                } )) })? {
+                if ctx
+                    .admit_iter(
+                        parameters[*index].dependencies.as_slice(),
+                        "scan SLDPRT order_parameters_by_dependencies values",
+                    )?
+                    .try_fold(true, |found, dependency| {
+                        Ok::<_, cadmpeg_core::CodecError>(
+                            found
+                                && ({
+                                    ctx.get_hash_map(
+                                        &(parameter_owners),
+                                        dependency,
+                                        "look up SLDPRT hash key",
+                                    )?
+                                    .is_none_or(|dependency_owner| dependency_owner != &owner)
+                                        || ctx.contains_hash_set(
+                                            &(ordered_ids),
+                                            dependency,
+                                            "test SLDPRT hashed identity",
+                                        )?
+                                }),
+                        )
+                    })?
+                {
                     next = Some(position);
                     break;
                 }
@@ -547,7 +607,11 @@ fn order_parameters_by_dependencies(
             ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push(index);
         }
-        for (ordinal, index) in ctx.admit_iter(&ordered, "scan SLDPRT ordered parameter indices")?.copied().enumerate() {
+        for (ordinal, index) in ctx
+            .admit_iter(&ordered, "scan SLDPRT ordered parameter indices")?
+            .copied()
+            .enumerate()
+        {
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "index SLDPRT ordered parameter ordinal",
@@ -559,7 +623,10 @@ fn order_parameters_by_dependencies(
             updates.push((index, ordinal));
         }
     }
-    for (index, ordinal) in ctx.admit_iter(&updates, "scan SLDPRT updates values")?.copied() {
+    for (index, ordinal) in ctx
+        .admit_iter(&updates, "scan SLDPRT updates values")?
+        .copied()
+    {
         parameters[index].ordinal = ordinal;
     }
     Ok(())
@@ -590,7 +657,9 @@ fn insert_parameter_alias(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT parameter aliases";
     ctx.charge_work(1, OPERATION)?;
-    if let Some(candidate) = ctx.get_mut_hash_map(&mut *aliases, &alias, "look up mutable SLDPRT hash key")? {
+    if let Some(candidate) =
+        ctx.get_mut_hash_map(&mut *aliases, &alias, "look up mutable SLDPRT hash key")?
+    {
         if candidate
             .as_ref()
             .is_some_and(|existing| existing != parameter)
@@ -644,7 +713,16 @@ impl ParameterAliases {
             ];
             if let Some(owner_name) = parameter
                 .owner
-                .as_ref().map(|owner| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(feature_names), owner, "look up SLDPRT hash key")?)}).transpose()?.flatten()
+                .as_ref()
+                .map(|owner| {
+                    Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(
+                        &(feature_names),
+                        owner,
+                        "look up SLDPRT hash key",
+                    )?)
+                })
+                .transpose()?
+                .flatten()
             {
                 let qualified = ctx
                     .format_retained(format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
@@ -658,16 +736,22 @@ impl ParameterAliases {
                     insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 }
             }
-            if match parameter
-                .owner
-                .as_ref() { Some(owner) => ctx.contains_hash_set(&(global_owners), owner, "test SLDPRT hashed identity")?, None => false }
-            {
+            if match parameter.owner.as_ref() {
+                Some(owner) => {
+                    ctx.contains_hash_set(&(global_owners), owner, "test SLDPRT hashed identity")?
+                }
+                None => false,
+            } {
                 for alias in unqualified.into_iter().flatten() {
                     insert_parameter_alias(ctx, &mut aliases.global, copy(alias)?, &parameter.id)?;
                 }
             }
             let local = if let Some(owner) = parameter.owner.as_ref() {
-                if !ctx.contains_key_hash_map(&(aliases.feature_local), owner, "test SLDPRT map key")? {
+                if !ctx.contains_key_hash_map(
+                    &(aliases.feature_local),
+                    owner,
+                    "test SLDPRT map key",
+                )? {
                     let id = copy_projected_feature_id(ctx, owner)?;
                     ctx.insert_hash_map(
                         &mut aliases.feature_local,
@@ -676,7 +760,12 @@ impl ParameterAliases {
                         "index SLDPRT local parameter alias owners",
                     )?;
                 }
-                ctx.get_mut_hash_map(&mut (aliases.feature_local), owner, "look up mutable SLDPRT hash key")?.ok_or_else(|| {
+                ctx.get_mut_hash_map(
+                    &mut (aliases.feature_local),
+                    owner,
+                    "look up mutable SLDPRT hash key",
+                )?
+                .ok_or_else(|| {
                     CodecError::malformed("missing SLDPRT local parameter alias owner")
                 })?
             } else {
@@ -720,19 +809,30 @@ pub(in crate::history) struct ParameterAliasView<'a> {
 }
 
 impl ParameterAliasView<'_> {
-    pub(super) fn get(&self, ctx: &DecodeContext<'_>, alias: &str) -> Result<Option<&Option<ParameterId>>, CodecError> {
-    if let Some(value) = ctx.get_hash_map(&self.aliases.exact, alias, "look up SLDPRT hash key")? {
-        return Ok(Some(value));
+    pub(super) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        alias: &str,
+    ) -> Result<Option<&Option<ParameterId>>, CodecError> {
+        if let Some(value) =
+            ctx.get_hash_map(&self.aliases.exact, alias, "look up SLDPRT hash key")?
+        {
+            return Ok(Some(value));
+        }
+        let local = match self.owner {
+            Some(owner) => ctx.get_hash_map(
+                &self.aliases.feature_local,
+                owner,
+                "look up SLDPRT hash key",
+            )?,
+            None => None,
+        }
+        .unwrap_or(&self.aliases.document_local);
+        if let Some(value) = ctx.get_hash_map(local, alias, "look up SLDPRT hash key")? {
+            return Ok(Some(value));
+        }
+        ctx.get_hash_map(&self.aliases.global, alias, "look up SLDPRT hash key")
     }
-    let local = match self.owner {
-        Some(owner) => ctx.get_hash_map(&self.aliases.feature_local, owner, "look up SLDPRT hash key")?,
-        None => None,
-    }.unwrap_or(&self.aliases.document_local);
-    if let Some(value) = ctx.get_hash_map(local, alias, "look up SLDPRT hash key")? {
-        return Ok(Some(value));
-    }
-    ctx.get_hash_map(&self.aliases.global, alias, "look up SLDPRT hash key")
-}
 }
 
 fn evaluate_parameter_expressions(
@@ -801,9 +901,15 @@ pub(crate) fn parameters_with_unresolved_references(
             None => true,
             Some(parsed) => {
                 let mut unresolved = false;
-                for identifier in ctx.admit_iter(&parsed[..], "scan SLDPRT parameters_with_unresolved_references values")? {
-                    if !identifier.is_syntax() && definite_parameter_reference(ctx, identifier)?
-                        && aliases.get(ctx, identifier.value())?.and_then(Option::as_ref)
+                for identifier in ctx.admit_iter(
+                    &parsed[..],
+                    "scan SLDPRT parameters_with_unresolved_references values",
+                )? {
+                    if !identifier.is_syntax()
+                        && definite_parameter_reference(ctx, identifier)?
+                        && aliases
+                            .get(ctx, identifier.value())?
+                            .and_then(Option::as_ref)
                             .is_none_or(|dependency| dependency == &parameter.id)
                     {
                         unresolved = true;
@@ -811,7 +917,7 @@ pub(crate) fn parameters_with_unresolved_references(
                     }
                 }
                 unresolved
-            },
+            }
         };
         if unresolved {
             count += 1;
@@ -833,7 +939,10 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, false)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameters_with_unevaluable_expressions values")? {
+    for parameter in ctx.admit_iter(
+        parameters,
+        "scan SLDPRT parameters_with_unevaluable_expressions values",
+    )? {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT parameter evaluation")?;
@@ -865,7 +974,10 @@ pub(crate) fn parameters_with_incoherent_dependencies(
 ) -> Result<usize, CodecError> {
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameters_with_incoherent_dependencies values")? {
+    for parameter in ctx.admit_iter(
+        parameters,
+        "scan SLDPRT parameters_with_incoherent_dependencies values",
+    )? {
         if parameter.dependencies
             != project_parameter_dependencies(
                 ctx,
@@ -892,7 +1004,8 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, true)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameter dependencies")?
+    for parameter in ctx
+        .admit_iter(parameters, "scan SLDPRT parameter dependencies")?
         .filter(|parameter| !parameter.dependencies.is_empty())
     {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
@@ -943,7 +1056,9 @@ fn parameter_value_states(
         ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
         states.push(state);
     }
-    for configuration in ctx.admit_iter(configurations, "scan SLDPRT parameter_value_states values")? {
+    for configuration in
+        ctx.admit_iter(configurations, "scan SLDPRT parameter_value_states values")?
+    {
         let state = make_state(Some(configuration))?;
         ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
         states.push(state);
@@ -974,14 +1089,23 @@ fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) ->
     }
 }
 
-pub(super) fn definite_parameter_reference(ctx: &DecodeContext<'_>, identifier: &ExpressionIdentifier<'_, '_>) -> Result<bool, CodecError> {
+pub(super) fn definite_parameter_reference(
+    ctx: &DecodeContext<'_>,
+    identifier: &ExpressionIdentifier<'_, '_>,
+) -> Result<bool, CodecError> {
     if identifier.is_quoted() || identifier.value().contains('@') {
         return Ok(true);
     }
     let Some(ordinal) = identifier.value().strip_prefix('D') else {
         return Ok(false);
     };
-    Ok(!ordinal.is_empty() && ctx.admit_iter(ordinal.as_bytes(), "scan SLDPRT parameter reference ordinal")?.all(|byte| byte.is_ascii_digit()))
+    Ok(!ordinal.is_empty()
+        && ctx
+            .admit_iter(
+                ordinal.as_bytes(),
+                "scan SLDPRT parameter reference ordinal",
+            )?
+            .all(|byte| byte.is_ascii_digit()))
 }
 
 #[cfg(test)]

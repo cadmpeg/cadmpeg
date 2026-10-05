@@ -408,8 +408,9 @@ pub(crate) fn bind_pattern_inputs(
                         ..
                     }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
                 ) {
-                    if let Some((spacing, count)) =
-                        object_start.filter(|start| *start < end).map(|start| {
+                    if let Some((spacing, count)) = object_start
+                        .filter(|start| *start < end)
+                        .map(|start| {
                             typed_linear_pattern_dimensions(
                                 ctx,
                                 feature,
@@ -417,7 +418,9 @@ pub(crate) fn bind_pattern_inputs(
                                 start,
                                 pattern_object_end(),
                             )
-                        }).transpose()?.flatten()
+                        })
+                        .transpose()?
+                        .flatten()
                     {
                         let admitted = PatternKind::new(PatternTransform::Linear {
                             direction: None,
@@ -517,7 +520,11 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    ctx.extend_vec(&mut directions, declared, "merge SLDPRT declared line directions")?;
+                    ctx.extend_vec(
+                        &mut directions,
+                        declared,
+                        "merge SLDPRT declared line directions",
+                    )?;
                 }
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
@@ -538,7 +545,11 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    ctx.extend_vec(&mut directions, compact, "merge SLDPRT compact line directions")?;
+                    ctx.extend_vec(
+                        &mut directions,
+                        compact,
+                        "merge SLDPRT compact line directions",
+                    )?;
                     if directions.is_empty() {
                         let first_spacing_m = feature
                             .parameters
@@ -561,7 +572,11 @@ pub(crate) fn bind_pattern_inputs(
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
                         );
-                        ctx.extend_vec(&mut directions, display, "collect SLDPRT pattern display directions")?;
+                        ctx.extend_vec(
+                            &mut directions,
+                            display,
+                            "collect SLDPRT pattern display directions",
+                        )?;
                     }
                 }
                 let mut unique_directions = Vec::new();
@@ -655,7 +670,11 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    ctx.extend_vec(&mut pattern_seed_assignments, curve_seed_assignments, "merge SLDPRT pattern seed assignments")?;
+    ctx.extend_vec(
+        &mut pattern_seed_assignments,
+        curve_seed_assignments,
+        "merge SLDPRT pattern seed assignments",
+    )?;
     let mut seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
     for (index, seed) in pattern_seed_assignments {
         reserve_feature_binding_map(ctx, &mut seeds_by_pattern, "index SLDPRT pattern inputs")?;
@@ -809,10 +828,9 @@ pub(crate) fn bind_pattern_inputs(
                         second,
                     })
                     .map_err(|message| {
-                        match ctx.copy_retained_text(
-                            message,
-                            "retain SLDPRT pattern admission error",
-                        ) {
+                        match ctx
+                            .copy_retained_text(message, "retain SLDPRT pattern admission error")
+                        {
                             Ok(text) => cadmpeg_core::CodecError::Malformed(text),
                             Err(error) => error,
                         }
@@ -846,10 +864,7 @@ pub(crate) fn bind_pattern_inputs(
                 plane_normal: admitted_direction(*normal)?,
             })
             .map_err(|message| {
-                match ctx.copy_retained_text(
-                    message,
-                    "retain SLDPRT pattern admission error",
-                ) {
+                match ctx.copy_retained_text(message, "retain SLDPRT pattern admission error") {
                     Ok(text) => cadmpeg_core::CodecError::Malformed(text),
                     Err(error) => error,
                 }
@@ -964,10 +979,7 @@ pub(crate) fn bind_pattern_inputs(
             count,
         })
         .map_err(|message| {
-            match ctx.copy_retained_text(
-                message,
-                "retain SLDPRT pattern admission error",
-            ) {
+            match ctx.copy_retained_text(message, "retain SLDPRT pattern admission error") {
                 Ok(text) => cadmpeg_core::CodecError::Malformed(text),
                 Err(error) => error,
             }
@@ -1062,7 +1074,12 @@ pub(crate) fn bind_mirror_surface_planes(
     }
     let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
-        let candidates = ctx.entry_hash_map(&mut faces_by_identity, (identity.feature_source_id, identity.local_id), "index SLDPRT mirror surface planes")?
+        let candidates = ctx
+            .entry_hash_map(
+                &mut faces_by_identity,
+                (identity.feature_source_id, identity.local_id),
+                "index SLDPRT mirror surface planes",
+            )?
             .or_default();
         if !candidates.contains(&face.as_str()) {
             ctx.reserve_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
@@ -1500,7 +1517,11 @@ pub(crate) fn finalize_lane_bindings(
                 ctx.reserve_map(&mut marker_ids, 1, SCALAR_BINDING_INDEX)?;
                 marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
             }
-            if let Some(by_local) = ctx.get_mut_hash_map(&mut marker_ids, feature.as_str(), "lookup SLDPRT scalar marker group")? {
+            if let Some(by_local) = ctx.get_mut_hash_map(
+                &mut marker_ids,
+                feature.as_str(),
+                "lookup SLDPRT scalar marker group",
+            )? {
                 ctx.reserve_map(by_local, 1, SCALAR_BINDING_INDEX)?;
                 let candidates = by_local.entry(local_id).or_default();
                 ctx.reserve_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
@@ -1558,7 +1579,9 @@ pub(crate) fn finalize_lane_bindings(
     let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
     for entity in &lane.sketch_entities {
         if let Some(feature) = entity.feature_ref.as_deref() {
-            let entities = ctx.entry_hash_map(&mut entities_by_feature, feature, SCALAR_BINDING_INDEX)?.or_default();
+            let entities = ctx
+                .entry_hash_map(&mut entities_by_feature, feature, SCALAR_BINDING_INDEX)?
+                .or_default();
             ctx.reserve_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
             entities.push(entity);
         }
@@ -2071,7 +2094,11 @@ pub(super) fn normalize_indexed_curve_entities(
             ctx.reserve_map(&mut endpoints, 1, SCALAR_BINDING_INDEX)?;
             endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
         }
-        if let Some(by_index) = ctx.get_mut_hash_map(&mut endpoints, feature, "lookup SLDPRT scalar endpoint group")? {
+        if let Some(by_index) = ctx.get_mut_hash_map(
+            &mut endpoints,
+            feature,
+            "lookup SLDPRT scalar endpoint group",
+        )? {
             for index in indices {
                 ctx.reserve_set(by_index, 1, SCALAR_BINDING_INDEX)?;
                 by_index.insert(index);

@@ -147,9 +147,15 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
         "Blind".into(),
     );
 
-    assert!(native_parameter_is_length(&cadmpeg_test_support::service_decode_context(), &feature, "s", Some("2.1")).unwrap());
+    assert!(native_parameter_is_length(
+        &cadmpeg_test_support::service_decode_context(),
+        &feature,
+        "s",
+        Some("2.1")
+    )
+    .unwrap());
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &BTreeMap::new()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -175,7 +181,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &BTreeMap::new()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -362,7 +368,7 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
             &spatial,
             &HashMap::new(),
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             std::slice::from_ref(&spatial),
         )
         .unwrap(),
@@ -382,7 +388,7 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
             &base_body,
             &HashMap::new(),
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             std::slice::from_ref(&base_body),
         )
         .unwrap(),
@@ -645,7 +651,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let projected = project_hole(
         &cadmpeg_test_support::service_decode_context(),
         &native_owned,
-        &HashMap::new(),
+        &BTreeMap::new(),
         &[native_owned.clone(), native_profile],
     )
     .expect("resource budget")
@@ -680,7 +686,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let projected = project_hole(
         &cadmpeg_test_support::service_decode_context(),
         &canonical,
-        &HashMap::new(),
+        &BTreeMap::new(),
         std::slice::from_ref(&canonical),
     )
     .expect("resource budget")
@@ -783,7 +789,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
             node.xml_tag = "Sketch".into();
         }
         assert_eq!(
-            feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &node, &roster(&node)).unwrap(),
+            feature_tree_node_role(
+                &cadmpeg_test_support::service_decode_context(),
+                &node,
+                &roster(&node)
+            )
+            .unwrap(),
             Some(expected)
         );
     }
@@ -795,7 +806,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     first_light.kind = fourth_light.kind.clone();
     directional_roster.push(first_light);
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &fourth_light, &directional_roster).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &fourth_light,
+            &directional_roster
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::DirectionalLight)
     );
 
@@ -806,7 +822,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     reserved_ambient.kind = additional_ambient.kind.clone();
     ambient_roster.push(reserved_ambient);
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &additional_ambient, &ambient_roster).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &additional_ambient,
+            &ambient_roster
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::AmbientLight)
     );
 
@@ -836,7 +857,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     ] {
         let node = feature("legacy", Some(source), 0);
         assert_eq!(
-            feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &node, &legacy_roster(&node)).unwrap(),
+            feature_tree_node_role(
+                &cadmpeg_test_support::service_decode_context(),
+                &node,
+                &legacy_roster(&node)
+            )
+            .unwrap(),
             Some(expected)
         );
     }
@@ -864,7 +890,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
         ));
     }
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &legacy_lights, &complete_legacy_roster).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &legacy_lights,
+            &complete_legacy_roster
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::LightsAndCameras)
     );
 
@@ -897,7 +928,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     ];
     let lights = feature("lights", Some("6"), 0);
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &lights, &roster_from(&lights, &default_frame, &["7", "8"])).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &lights,
+            &roster_from(&lights, &default_frame, &["7", "8"])
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::LightsAndCameras)
     );
 
@@ -905,10 +941,12 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     let mut folders_at_seven = default_frame.to_vec();
     folders_at_seven.extend([("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")]);
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), 
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
             &ambient,
             &roster_from(&ambient, &folders_at_seven, &["6", "11", "12"]),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::AmbientLight)
     );
 
@@ -921,39 +959,80 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
         ("6", "moOriginProfileFeature_c"),
     ];
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), 
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
             &early_lights,
             &roster_from(&early_lights, &origin_at_six, &["7", "8"]),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::LightsAndCameras)
     );
 
     let ambiguous = feature("node", Some("99"), 0);
-    assert_eq!(feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &ambiguous, &[]).unwrap(), None);
+    assert_eq!(
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &ambiguous,
+            &[]
+        )
+        .unwrap(),
+        None
+    );
 
     let mut exploded_views = ambiguous.clone();
     exploded_views.name.clear();
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &exploded_views, &roster(&exploded_views)).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &exploded_views,
+            &roster(&exploded_views)
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::ExplodedViews)
     );
 
     let mut reference_plane = feature("node", Some("5"), 0);
     reference_plane.input_class = Some("moRefPlane_c".into());
-    assert_eq!(feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &reference_plane, &[]).unwrap(), None);
+    assert_eq!(
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &reference_plane,
+            &[]
+        )
+        .unwrap(),
+        None
+    );
 
     let mut sheet_metal = feature("node", Some("-1"), 0);
     sheet_metal.name.clear();
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &sheet_metal, &roster(&sheet_metal)).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &sheet_metal,
+            &roster(&sheet_metal)
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::SheetMetal)
     );
     sheet_metal.name = "任意本地化鈑金根節點".into();
     assert_eq!(
-        feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &sheet_metal, &roster(&sheet_metal)).unwrap(),
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &sheet_metal,
+            &roster(&sheet_metal)
+        )
+        .unwrap(),
         Some(FeatureTreeNodeRole::SheetMetal)
     );
-    assert_eq!(feature_tree_node_role(&cadmpeg_test_support::service_decode_context(), &sheet_metal, &[]).unwrap(), None);
+    assert_eq!(
+        feature_tree_node_role(
+            &cadmpeg_test_support::service_decode_context(),
+            &sheet_metal,
+            &[]
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -1094,18 +1173,36 @@ fn shifted_reserved_triplet_does_not_classify_principal_planes() {
     let by_source = features
         .iter()
         .filter_map(|feature| Some((feature.source_id?, feature)))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
 
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &front, &by_source, &features).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &front,
+            &by_source,
+            &features
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &top, &by_source, &features).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &top,
+            &by_source,
+            &features
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &right, &by_source, &features).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &right,
+            &by_source,
+            &features
+        )
+        .unwrap(),
         None
     );
 }
@@ -1135,7 +1232,7 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
             &plane,
             &HashMap::new(),
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             std::slice::from_ref(&plane),
         )
         .unwrap(),
@@ -1165,7 +1262,7 @@ fn length_plane_parameter_claims_offset_semantics() {
             &plane,
             &HashMap::new(),
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             std::slice::from_ref(&plane),
         )
         .unwrap(),
@@ -1187,7 +1284,7 @@ fn frameless_reference_plane_remains_typed_unresolved() {
             &plane,
             &HashMap::new(),
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             std::slice::from_ref(&plane),
         )
         .unwrap(),
@@ -1205,9 +1302,15 @@ fn legacy_principal_plane_requires_a_complete_matching_triplet() {
     let features = [&front, &top, &right]
         .into_iter()
         .map(|feature| (feature.source_id.expect("required invariant"), feature))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &front, &features, &[]).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &front,
+            &features,
+            &[]
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::PrincipalPlane::Front)
     );
 
@@ -1216,8 +1319,17 @@ fn legacy_principal_plane_requires_a_complete_matching_triplet() {
     let features = [&front, &top, &mismatched]
         .into_iter()
         .map(|feature| (feature.source_id.expect("required invariant"), feature))
-        .collect::<HashMap<_, _>>();
-    assert_eq!(principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &front, &features, &[]).unwrap(), None);
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &front,
+            &features,
+            &[]
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -1230,14 +1342,26 @@ fn idless_legacy_principal_planes_require_an_exact_bounded_triplet() {
     let records = [front.clone(), top.clone(), right.clone(), successor.clone()];
 
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &front, &HashMap::new(), &records).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &front,
+            &BTreeMap::new(),
+            &records
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::PrincipalPlane::Front)
     );
 
     let mut unbounded = records.clone();
     unbounded[3].kind = unbounded[0].kind.clone();
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &front, &HashMap::new(), &unbounded).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &front,
+            &BTreeMap::new(),
+            &unbounded
+        )
+        .unwrap(),
         None
     );
 
@@ -1257,7 +1381,13 @@ fn idless_legacy_principal_planes_require_an_exact_bounded_triplet() {
         second_successor,
     ];
     assert_eq!(
-        principal_plane_in_history(&cadmpeg_test_support::service_decode_context(), &ambiguous[0], &HashMap::new(), &ambiguous).unwrap(),
+        principal_plane_in_history(
+            &cadmpeg_test_support::service_decode_context(),
+            &ambiguous[0],
+            &BTreeMap::new(),
+            &ambiguous
+        )
+        .unwrap(),
         None
     );
 }

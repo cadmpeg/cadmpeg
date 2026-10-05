@@ -533,7 +533,10 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.05, 1.0, 0.0, 0.0] {
         bef64(&mut cyl, v);
     }
-    match parse_carrier(&cadmpeg_test_support::service_decode_context(), &cyl, 0).unwrap().unwrap() {
+    match parse_carrier(&cadmpeg_test_support::service_decode_context(), &cyl, 0)
+        .unwrap()
+        .unwrap()
+    {
         Carrier::Surface(SurfaceCarrier {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             ..
@@ -557,7 +560,10 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.003] {
         bef64(&mut circ, v);
     }
-    match parse_carrier(&cadmpeg_test_support::service_decode_context(), &circ, 0).unwrap().unwrap() {
+    match parse_carrier(&cadmpeg_test_support::service_decode_context(), &circ, 0)
+        .unwrap()
+        .unwrap()
+    {
         Carrier::Curve(CurveCarrier {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
@@ -571,7 +577,11 @@ fn compact_carrier_shapes_decode() {
     // A bad marker (not 2b/2d) rejects the candidate.
     let mut bad = cyl.clone();
     bad[2 + 2 + 4 + 10] = 0x00;
-    assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bad, 0).unwrap().is_none());
+    assert!(
+        parse_carrier(&cadmpeg_test_support::service_decode_context(), &bad, 0)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -579,8 +589,18 @@ fn compact_carriers_reject_zero_direction_frames() {
     use crate::brep::parse_carrier;
 
     let line = line_carrier(5, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]);
-    assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &line, 0).unwrap().is_none());
+    assert!(
+        parse_carrier(&cadmpeg_test_support::service_decode_context(), &line, 0)
+            .unwrap()
+            .is_none()
+    );
 
     let cylinder = cylinder_carrier(6, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1.0);
-    assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &cylinder, 0).unwrap().is_none());
+    assert!(parse_carrier(
+        &cadmpeg_test_support::service_decode_context(),
+        &cylinder,
+        0
+    )
+    .unwrap()
+    .is_none());
 }

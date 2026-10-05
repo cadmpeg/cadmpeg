@@ -764,10 +764,7 @@ fn metadata_class_binding_refuses_collection_limit() {
 
 #[test]
 fn geometry_class_binding_refuses_collection_limit() {
-    let refusal = collection_refusal_at(
-        &class_binding_source(),
-        "index SLDPRT input class names",
-    );
+    let refusal = collection_refusal_at(&class_binding_source(), "index SLDPRT input class names");
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::CollectionItems

@@ -217,11 +217,27 @@ fn native_scalar_refresh_preserves_radial_dimension_semantics() {
     let profile = feature("profile", Some("212"), 1);
 
     assert_eq!(
-        format_native_scalar(&cadmpeg_test_support::service_decode_context(), &profile, "bore", 0.0042, Some("<MOD-DIAM>4.2")).unwrap().as_deref(),
+        format_native_scalar(
+            &cadmpeg_test_support::service_decode_context(),
+            &profile,
+            "bore",
+            0.0042,
+            Some("<MOD-DIAM>4.2")
+        )
+        .unwrap()
+        .as_deref(),
         Some("<MOD-DIAM>4.2")
     );
     assert_eq!(
-        format_native_scalar(&cadmpeg_test_support::service_decode_context(), &profile, "radius", 0.003, Some("&lt;MOD-RHO&gt;3")).unwrap().as_deref(),
+        format_native_scalar(
+            &cadmpeg_test_support::service_decode_context(),
+            &profile,
+            "radius",
+            0.003,
+            Some("&lt;MOD-RHO&gt;3")
+        )
+        .unwrap()
+        .as_deref(),
         Some("&lt;MOD-RHO&gt;3")
     );
 }
@@ -233,7 +249,14 @@ fn native_scalar_whose_millimetre_value_overflows_has_no_expression() {
     let profile = feature("profile", Some("212"), 1);
 
     assert_eq!(
-        format_native_scalar(&cadmpeg_test_support::service_decode_context(), &profile, "bore", 1.0e306, Some("<MOD-DIAM>4.2")).unwrap(),
+        format_native_scalar(
+            &cadmpeg_test_support::service_decode_context(),
+            &profile,
+            "bore",
+            1.0e306,
+            Some("<MOD-DIAM>4.2")
+        )
+        .unwrap(),
         None
     );
 }

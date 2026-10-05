@@ -179,8 +179,12 @@ fn retained_name_text_propagates_copy_work_refusal() {
                 && limit.operation == OPERATION
     ));
     assert_eq!(
-        super::retained_text(&cadmpeg_test_support::service_decode_context(), "name", OPERATION)
-            .unwrap(),
+        super::retained_text(
+            &cadmpeg_test_support::service_decode_context(),
+            "name",
+            OPERATION
+        )
+        .unwrap(),
         "name",
     );
 }
@@ -216,9 +220,14 @@ fn configuration_searches_propagate_work_refusal() {
         ));
     }
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(super::configuration(&ctx, section).unwrap().as_deref(), Some("name"));
     assert_eq!(
-        super::configuration(&ctx, "Config-name-ResolvedFeatures").unwrap().as_deref(),
+        super::configuration(&ctx, section).unwrap().as_deref(),
+        Some("name")
+    );
+    assert_eq!(
+        super::configuration(&ctx, "Config-name-ResolvedFeatures")
+            .unwrap()
+            .as_deref(),
         Some("name"),
     );
     assert_eq!(super::configuration(&ctx, "Other").unwrap(), None);

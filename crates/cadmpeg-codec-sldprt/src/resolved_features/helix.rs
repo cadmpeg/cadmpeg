@@ -44,7 +44,10 @@ pub(super) fn fit_helix_polyline(
         let mut rhs = [[0.0; 3]; 4];
         for (point, distance) in ctx
             .admit_iter(points, "fit SLDPRT helix normal equations")?
-            .zip(ctx.admit_iter(&parameters, "fit SLDPRT helix normal equations")?.copied())
+            .zip(
+                ctx.admit_iter(&parameters, "fit SLDPRT helix normal equations")?
+                    .copied(),
+            )
         {
             let t = distance / total;
             let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
@@ -79,10 +82,10 @@ pub(super) fn fit_helix_polyline(
             return Ok(None);
         }
         let mut max_error = 0.0f64;
-        for (point, distance) in ctx
-            .admit_iter(points, "fit SLDPRT helix residual")?
-            .zip(ctx.admit_iter(&parameters, "fit SLDPRT helix residual")?.copied())
-        {
+        for (point, distance) in ctx.admit_iter(points, "fit SLDPRT helix residual")?.zip(
+            ctx.admit_iter(&parameters, "fit SLDPRT helix residual")?
+                .copied(),
+        ) {
             let t = distance / total;
             let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
             for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {

@@ -11,14 +11,15 @@ use super::selections::{
 };
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
-    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+    classify, native_object_class, principal_plane_in_layout, principal_plane_layout, FeatureClass,
+    NativeClassKind,
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
@@ -156,7 +157,16 @@ pub(crate) fn enrich_history_reference_planes(
     let mut known_sources = Vec::new();
     let mut features_by_source = Vec::new();
     let mut known_reference_plane_sources = Vec::new();
-    for history in ctx.admit_iter(histories, "index SLDPRT reference plane sources")? {
+    let mut principal_layouts = Vec::new();
+    for history in ctx.admit_iter(&*histories, "index SLDPRT reference plane sources")? {
+        let layout = principal_plane_layout(ctx, &history.features)?;
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut principal_layouts,
+                layout,
+                "collect SLDPRT principal plane layouts",
+            )
+        })?;
         let mut sources = HashSet::new();
         let mut by_source = HashMap::new();
         let mut reference_sources = HashSet::new();
@@ -212,7 +222,7 @@ pub(crate) fn enrich_history_reference_planes(
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference plane lanes")? {
         let mut starts = Vec::new();
         for (history_index, history) in ctx
-            .admit_iter(histories, "scan SLDPRT reference plane features")?
+            .admit_iter(&*histories, "scan SLDPRT reference plane features")?
             .enumerate()
         {
             for (feature_index, feature) in ctx
@@ -237,8 +247,7 @@ pub(crate) fn enrich_history_reference_planes(
         {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::ReferencePlane)
-                || principal_plane_with_siblings(feature, &histories[history_index].features)
-                    .is_some()
+                || principal_plane_in_layout(principal_layouts[history_index], feature).is_some()
                 || feature.properties.contains_key("Origin")
                 || feature.properties.contains_key("Normal")
                 || feature.properties.contains_key("UAxis")
@@ -471,7 +480,7 @@ pub(crate) fn enrich_history_reference_planes(
             )?;
         }
     }
-    let mut face_reference_indices = HashSet::new();
+    let mut face_reference_indices = BTreeSet::new();
     for &index in ctx
         .admit_iter(&face_native_candidates, "index SLDPRT face references")?
         .map(|(index, _)| index)
@@ -481,7 +490,7 @@ pub(crate) fn enrich_history_reference_planes(
         )
     {
         temporary_storage.with_storage(|| {
-            ctx.insert_hash_set(
+            ctx.insert_btree_set(
                 &mut face_reference_indices,
                 index,
                 "index SLDPRT face references",
@@ -526,15 +535,16 @@ pub(crate) fn enrich_history_reference_planes(
             )?;
         }
     }
-    let mut unique_frames = HashMap::new();
+    let mut unique_frames = BTreeMap::new();
     for (&index, frames) in ctx.admit_iter(&candidates, "select SLDPRT unique plane frames")? {
         if let Some(&frame) = frames.first() {
-            if ctx
-                .admit_iter(&frames[1..], "compare SLDPRT plane frame candidates")?
-                .all(|candidate| *candidate == frame)
-            {
+            if ctx.all_by(
+                &frames[1..],
+                |candidate| Ok(*candidate == frame),
+                "compare SLDPRT plane frame candidates",
+            )? {
                 temporary_storage.with_storage(|| {
-                    ctx.insert_hash_map(
+                    ctx.insert_btree_map(
                         &mut unique_frames,
                         index,
                         frame,
@@ -564,7 +574,7 @@ pub(crate) fn enrich_history_reference_planes(
             })?;
         }
     }
-    let mut unique_reference_frames = HashMap::new();
+    let mut unique_reference_frames = BTreeMap::new();
     for (&index, frames) in ctx.admit_iter(
         &reference_frame_candidates,
         "select SLDPRT unique reference frames",
@@ -575,7 +585,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .all(|candidate| *candidate == frame)
             {
                 temporary_storage.with_storage(|| {
-                    ctx.insert_hash_map(
+                    ctx.insert_btree_map(
                         &mut unique_reference_frames,
                         index,
                         frame,
@@ -587,14 +597,15 @@ pub(crate) fn enrich_history_reference_planes(
     }
     let mut frames_by_reference = Vec::new();
     for (history_index, history) in ctx
-        .admit_iter(histories, "collect SLDPRT reference frames")?
+        .admit_iter(&*histories, "collect SLDPRT reference frames")?
         .enumerate()
     {
         for (feature_index, feature) in ctx
             .admit_iter(&history.features, "collect SLDPRT reference frames")?
             .enumerate()
         {
-            let Some(plane) = principal_plane_with_siblings(feature, &history.features) else {
+            let Some(plane) = principal_plane_in_layout(principal_layouts[history_index], feature)
+            else {
                 continue;
             };
             let reference = retained_plane_frame_source(ctx, feature)?;
@@ -641,10 +652,10 @@ pub(crate) fn enrich_history_reference_planes(
                 |candidate| {
                     candidate.history_index == index.0
                         && (candidate.feature_index < index.1
-                            || principal_plane_with_siblings(
+                            || principal_plane_in_layout(
+                                principal_layouts[candidate.history_index],
                                 &histories[candidate.history_index].features
                                     [candidate.feature_index],
-                                &histories[candidate.history_index].features,
                             )
                             .is_some())
                         && offset_plane_reference_frame_matches(candidate.frame, reference, 0.0)
@@ -697,11 +708,7 @@ pub(crate) fn enrich_history_reference_planes(
             &frames_by_reference,
             |candidate| {
                 candidate.history_index == index.0
-                    && offset_plane_reference_frame_matches(
-                        candidate.frame,
-                        frame,
-                        distance.get(),
-                    )
+                    && offset_plane_reference_frame_matches(candidate.frame, frame, distance.get())
             },
             "select SLDPRT offset plane reference",
         )? {
@@ -878,7 +885,7 @@ pub(crate) fn enrich_history_reference_points(
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference point lanes")? {
         let mut starts = Vec::new();
         for (history_index, history) in ctx
-            .admit_iter(histories, "scan SLDPRT reference point features")?
+            .admit_iter(&*histories, "scan SLDPRT reference point features")?
             .enumerate()
         {
             for (feature_index, feature) in ctx
@@ -1071,7 +1078,7 @@ pub(crate) fn enrich_history_coordinate_systems(
     for lane in ctx.admit_iter(lanes, "scan SLDPRT coordinate system lanes")? {
         let mut starts = Vec::new();
         for (history_index, history) in ctx
-            .admit_iter(histories, "scan SLDPRT coordinate system features")?
+            .admit_iter(&*histories, "scan SLDPRT coordinate system features")?
             .enumerate()
         {
             for (feature_index, feature) in ctx
@@ -2380,7 +2387,7 @@ pub(crate) fn enrich_history_reference_axes(
         ctx.reserve_scoped(0, "SLDPRT reference_geometry temporary storage")?;
 
     let mut known_sources = HashSet::new();
-    for history in ctx.admit_iter(histories, "index SLDPRT reference axis sources")? {
+    for history in ctx.admit_iter(&*histories, "index SLDPRT reference axis sources")? {
         for feature in ctx.admit_iter(&history.features, "index SLDPRT reference axis sources")? {
             if let Some(source) = feature.source_value() {
                 temporary_storage.with_storage(|| {
@@ -2396,7 +2403,7 @@ pub(crate) fn enrich_history_reference_axes(
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference axis lanes")? {
         let mut starts = Vec::new();
         for (history_index, history) in ctx
-            .admit_iter(histories, "collect SLDPRT reference axis starts")?
+            .admit_iter(&*histories, "collect SLDPRT reference axis starts")?
             .enumerate()
         {
             for (feature_index, feature) in ctx

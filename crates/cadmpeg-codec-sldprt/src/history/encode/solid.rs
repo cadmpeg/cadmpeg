@@ -122,7 +122,10 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             }
-            if match existing { Some(record) => !is_extrude(self.ctx, record)?, None => false } {
+            if match existing {
+                Some(record) => !is_extrude(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported extrusion semantics",
                     feature.id
@@ -428,7 +431,10 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     feature.id
                 )));
             }
-            if match existing { Some(record) => classify(self.ctx, record)? != Some(FeatureClass::Hole), None => false } {
+            if match existing {
+                Some(record) => classify(record) != Some(FeatureClass::Hole),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported hole semantics",
                     feature.id

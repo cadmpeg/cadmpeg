@@ -601,7 +601,11 @@ pub(crate) fn enrich_history_split_lines(
                     class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
                 })
                 .count();
-            if let Some(observation) = ctx.get_mut_hash_map(&mut observations, &feature.id, "index SLDPRT split-line observations")? {
+            if let Some(observation) = ctx.get_mut_hash_map(
+                &mut observations,
+                &feature.id,
+                "index SLDPRT split-line observations",
+            )? {
                 if project_classes == 1 {
                     observation.0 = true;
                 } else {
@@ -638,7 +642,9 @@ pub(crate) fn enrich_history_split_lines(
                 continue;
             };
             let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
-            if let Some(existing) = ctx.get_mut_hash_map(&mut tools, &feature.id, "index SLDPRT split-line tools")? {
+            if let Some(existing) =
+                ctx.get_mut_hash_map(&mut tools, &feature.id, "index SLDPRT split-line tools")?
+            {
                 *existing = value;
             } else {
                 ctx.reserve_map(&mut tools, 1, "index SLDPRT split-line tools")?;
@@ -674,27 +680,42 @@ pub(crate) fn enrich_history_split_lines(
     Ok(())
 }
 
-fn split_line_source_sketch<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+/// The one earlier profile sketch in the same history that repeats a split
+/// line's parameters.
+fn split_line_source_sketch<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     history_features: &'a [Feature],
 ) -> Result<Option<&'a Feature>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "find SLDPRT split line source sketch";
     if feature.parameters.is_empty() {
         return Ok(None);
     }
-    let source = match feature.source_value() { Some(value) => value, None => return Ok(None) };
-    let mut tool = None;
-    for candidate in history_features.iter() {
-        if candidate.parent == feature.parent
-            && classify(ctx, candidate)? == Some(FeatureClass::Sketch)
+    let Some(source) = feature.source_value() else {
+        return Ok(None);
+    };
+    let candidate_matches = |candidate: &&'a Feature| {
+        Ok(classify(candidate) == Some(FeatureClass::Sketch)
             && candidate.input_class.as_deref() == Some("moProfileFeature_c")
-            && candidate.parameters == feature.parameters
-            && candidate.source_value().is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
-        {
-            if tool.is_some() { return Ok(None); }
-            tool = Some(candidate);
-        }
-    }
-    Ok(tool)
+            && candidate
+                .source_value()
+                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
+            && ctx.equal(&candidate.parent, &feature.parent, OPERATION)?
+            && crate::records::equal_text_maps(
+                ctx,
+                &candidate.parameters,
+                &feature.parameters,
+                OPERATION,
+            )?)
+    };
+    let mut candidates = history_features.iter();
+    let Some(tool) = ctx.find_by(&mut candidates, &candidate_matches, OPERATION)? else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .find_by(&mut candidates, &candidate_matches, OPERATION)?
+        .is_none()
+        .then_some(tool))
 }
 
 #[cfg(test)]

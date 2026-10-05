@@ -89,7 +89,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
-            require_same_family(self.ctx, existing, &feature.id, &["Wrap"])?;
+            require_same_family(existing, &feature.id, &["Wrap"])?;
             let profile =
                 planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                     .ok_or_else(|| {
@@ -142,7 +142,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            require_same_family(self.ctx, existing, &feature.id, &["Sketch"])?;
+            require_same_family(existing, &feature.id, &["Sketch"])?;
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
                 parameters: existing
@@ -157,7 +157,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            require_same_family(self.ctx, existing, &feature.id, &["Sketch"])?;
+            require_same_family(existing, &feature.id, &["Sketch"])?;
             NeutralFeatureEncoding {
                 kind: "3DSketch".into(),
                 parameters: existing

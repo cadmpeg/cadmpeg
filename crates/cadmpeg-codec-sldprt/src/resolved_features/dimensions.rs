@@ -39,7 +39,7 @@ use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1.0e-8;
 
@@ -877,7 +877,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     const OPERATION: &str = "project SLDPRT dimensioned sketch circles";
 
     let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT dimension temporary storage")?;
-    let mut sketches_by_feature = HashMap::<&str, _>::new();
+    let mut sketches_by_feature = BTreeMap::<&str, _>::new();
     for feature in ctx.admit_iter(features, "scan SLDPRT dimension geometry")? {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -891,7 +891,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             continue;
         };
         temporary_storage.with_storage(|| {
-            ctx.insert_hash_map(
+            ctx.insert_btree_map(
                 &mut sketches_by_feature,
                 native,
                 sketch,
@@ -1080,7 +1080,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             }
             let (Some(sketch), Some(transform)) = (
-                ctx.get_hash_map(
+                ctx.get_btree_map(
                     &sketches_by_feature,
                     relation.feature_ref.as_str(),
                     "resolve SLDPRT dimensions keys",
@@ -1143,7 +1143,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let center = Point2::new(center_u * QUANTUM, center_v * QUANTUM);
             let relation_entity_already_present = {
                 let mut search_result = false;
-                for entity in ctx.admit_iter(entities, "scan SLDPRT dimensions records")? {
+                for entity in ctx.admit_iter(&*entities, "scan SLDPRT dimensions records")? {
                     if ctx.equal(
                         &(entity.sketch),
                         &(**sketch),
@@ -1288,7 +1288,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT dimension temporary storage")?;
 
-    let mut sketches_by_feature = HashMap::<&str, _>::new();
+    let mut sketches_by_feature = BTreeMap::<&str, _>::new();
     for feature in ctx.admit_iter(features, "scan SLDPRT dimension geometry")? {
         ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -1302,7 +1302,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         };
 
         temporary_storage.with_storage(|| {
-            ctx.insert_hash_map(
+            ctx.insert_btree_map(
                 &mut sketches_by_feature,
                 native_ref,
                 sketch,
@@ -1356,7 +1356,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let ([operand] | [_, operand]) = relation.operands.as_slice() else {
                 continue;
             };
-            let Some(sketch) = ctx.get_hash_map(
+            let Some(sketch) = ctx.get_btree_map(
                 &sketches_by_feature,
                 relation.feature_ref.as_str(),
                 "resolve SLDPRT dimensions keys",
@@ -1485,7 +1485,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
 
             let dimensioned_circle_already_present = {
                 let mut search_result = false;
-                for entity in ctx.admit_iter(entities, "scan SLDPRT dimensions records")? {
+                for entity in ctx.admit_iter(&*entities, "scan SLDPRT dimensions records")? {
                     if ctx.equal(
                         &(entity.sketch),
                         &(**sketch),
@@ -1844,9 +1844,7 @@ fn reconcile_direct_circle_dimension_carriers(
             };
             let mut candidate = None;
             let mut ambiguous = false;
-            for iteration_lane in
-                ctx.admit_iter(lanes, "scan SLDPRT dimensions source records")?
-            {
+            for iteration_lane in ctx.admit_iter(lanes, "scan SLDPRT dimensions source records")? {
                 for marker in ctx.admit_iter(
                     &iteration_lane.sketch_entities,
                     "scan SLDPRT dimensions records",
@@ -2405,9 +2403,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                         }) else {
                             continue;
                         };
-                        sketch.profiles.retain_uses(ctx, |usage| {
-                            Ok(!ctx.equal(&usage.entity, &removed, OPERATION)?)
-                        })?;
+                        // The profile filter admits each use's key bytes for this comparison.
+                        sketch
+                            .profiles
+                            .retain_uses(ctx, |usage| usage.entity != removed)?;
                         for (index, (parameter, radius)) in ctx
                             .admit_iter(&(radial_dimensions)[..], "scan SLDPRT dimensions records")?
                             .copied()
@@ -2508,7 +2507,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let carrier_ref = marker_circle_carrier_reference(ctx, lane_key, record.offset)?;
                 let matching_native_entity_exists = {
                     let mut search_result = false;
-                    for entity in ctx.admit_iter(entities, "scan SLDPRT dimensions records")? {
+                    for entity in ctx.admit_iter(&*entities, "scan SLDPRT dimensions records")? {
                         if ctx.equal(
                             &(entity.sketch),
                             sketch_id,
@@ -2623,8 +2622,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 else {
                     continue;
                 };
-                for candidate in ctx.admit_iter(records, "scan SLDPRT dimensions records")?
-                {
+                for candidate in ctx.admit_iter(records, "scan SLDPRT dimensions records")? {
                     ctx.charge_work(64, OPERATION)?;
                     if candidate.construction {
                         continue;
@@ -2709,9 +2707,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 }) else {
                     continue;
                 };
-                sketch.profiles.retain_uses(ctx, |usage| {
-                    Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
-                })?;
+                // The profile filter admits each use's key bytes for this lookup.
+                sketch
+                    .profiles
+                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)?;
                     let Ok(entity_id) = ({
@@ -2965,9 +2964,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                     }) else {
                         continue;
                     };
-                    sketch.profiles.retain_uses(ctx, |usage| {
-                        Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
-                    })?;
+                    // The profile filter admits each use's key bytes for this lookup.
+                    sketch
+                        .profiles
+                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                     for (record, geometry) in transformed {
                         let lane_key = ctx
                             .rsplit_once(&record.0.id, "#", "resolve SLDPRT dimensions keys")?
@@ -3082,7 +3082,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             };
             let matching_dimensioned_circle_exists = {
                 let mut search_result = false;
-                for entity in ctx.admit_iter(entities, "scan SLDPRT dimensions records")? {
+                for entity in ctx.admit_iter(&*entities, "scan SLDPRT dimensions records")? {
                     if ctx.equal(
                         &(entity.sketch),
                         sketch_id,

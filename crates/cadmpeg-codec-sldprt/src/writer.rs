@@ -8,9 +8,6 @@ use std::num::NonZeroU16;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
-use crate::resolved_features::markers::{
-    marker_coordinates, standard_marker_result, StandardMarkerAdmission,
-};
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -88,8 +85,12 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
-    let retained_partition =
-        retained_partition(&digest_ctx, &normalized, source_scan.as_ref(), native.as_ref())?;
+    let retained_partition = retained_partition(
+        &digest_ctx,
+        &normalized,
+        source_scan.as_ref(),
+        native.as_ref(),
+    )?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -253,7 +254,8 @@ pub(crate) fn write_semantic_with_records(
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
         ));
     }
-    let opaque = opaque_blocks(&digest_ctx, 
+    let opaque = opaque_blocks(
+        &digest_ctx,
         ir,
         retained_records,
         annotations,
@@ -534,26 +536,48 @@ fn retained_partition(
     };
     let original_section = site.name();
     let section = native
-        .map(|native| remapped_partition_section(ctx, ir, native, &original_section)).transpose()?.flatten()
+        .map(|native| remapped_partition_section(ctx, ir, native, &original_section))
+        .transpose()?
+        .flatten()
         .unwrap_or(original_section);
     Ok(Some((section, site.section.payload().to_vec())))
 }
 
-fn remapped_partition_section(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, native: &SldprtNative, section: &str) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let old_index = match crate::container::configuration_index(ctx, section)? { Some(value) => value, None => return Ok(None) };
+fn remapped_partition_section(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    native: &SldprtNative,
+    section: &str,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let old_index = match crate::container::configuration_index(ctx, section)? {
+        Some(value) => value,
+        None => return Ok(None),
+    };
     let native_id = match native
         .feature_histories
         .iter()
         .flat_map(|history| &history.configurations)
-        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok()) { Some(value) => value, None => return Ok(None) }
-        .id
-        .as_str();
+        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())
+    {
+        Some(value) => value,
+        None => return Ok(None),
+    }
+    .id
+    .as_str();
     let new_index = match match ir
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id)) { Some(value) => value, None => return Ok(None) }
-        .source_index { Some(value) => value, None => return Ok(None) };
+        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))
+    {
+        Some(value) => value,
+        None => return Ok(None),
+    }
+    .source_index
+    {
+        Some(value) => value,
+        None => return Ok(None),
+    };
     Ok(Some(format!("Contents/Config-{new_index}-Partition")))
 }
 
@@ -961,7 +985,8 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
-fn opaque_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn opaque_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
@@ -986,11 +1011,17 @@ fn opaque_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 return None;
             }
             if lower.ends_with("-partition") {
-                let remapped = match native.as_ref().map(|native| remapped_partition_section(ctx, ir, native, section)).transpose() {
+                let remapped = match native
+                    .as_ref()
+                    .map(|native| remapped_partition_section(ctx, ir, native, section))
+                    .transpose()
+                {
                     Ok(remapped) => remapped.flatten(),
                     Err(error) => return Some(Err(error)),
                 };
-                if remapped.is_some_and(|remapped| generated_partitions.contains(&remapped)) { return None; }
+                if remapped.is_some_and(|remapped| generated_partitions.contains(&remapped)) {
+                    return None;
+                }
             }
             if lower.contains("deltas") && !retain_native_brep {
                 return None;
@@ -1398,10 +1429,8 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
-        standard_marker_result(entity.validate_against_payload(
-            &StandardMarkerAdmission,
-            &lane.native_payload,
-        ))
+        entity
+            .validate_against_payload(&lane.native_payload)
             .map_err(|error| {
                 CodecError::malformed(format_args!(
                     "feature-input lane {} entity {}: {error}",
@@ -1443,12 +1472,8 @@ fn resolved_feature_payload(
             state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
-            if standard_marker_result(marker_coordinates(
-                &StandardMarkerAdmission,
-                &lane.native_payload,
-                offset,
-            ))
-            .is_none()
+            if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
+                .is_none()
             {
                 return Err(CodecError::NotImplemented(
                     "feature-input marker does not carry editable coordinate fields".into(),
@@ -1700,7 +1725,10 @@ fn metadata_attributes<'ir>(
     ir: &'ir CadIr,
 ) -> Result<Vec<&'ir cadmpeg_ir::attributes::SourceAttribute>, CodecError> {
     let mut positioned = Vec::new();
-    for attribute in ctx.admit_iter(&ir.model.attributes, "scan SLDPRT metadata_attributes values")? {
+    for attribute in ctx.admit_iter(
+        &ir.model.attributes,
+        "scan SLDPRT metadata_attributes values",
+    )? {
         let work = cadmpeg_core::decode::u64_from_index(attribute.id.as_str().len())
             .checked_mul(2)
             .and_then(|bytes| bytes.checked_add(8))
@@ -1961,8 +1989,11 @@ pub(crate) fn validate_feature_graph(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
-    if ctx.admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
-        .try_fold(false, |invalid, feature| Ok::<_, CodecError>(invalid || !valid_xml_name(ctx, &feature.xml_tag)?))?
+    if ctx
+        .admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
+        .try_fold(false, |invalid, feature| {
+            Ok::<_, CodecError>(invalid || !valid_xml_name(ctx, &feature.xml_tag)?)
+        })?
     {
         return Err(CodecError::Malformed(
             "invalid feature XML element name".into(),
@@ -1976,7 +2007,8 @@ pub(crate) fn validate_feature_graph(
         }
     }
     if by_id.len()
-        != ctx.admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
+        != ctx
+            .admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
             .filter(|feature| feature.source_id.is_some())
             .count()
     {
@@ -2002,7 +2034,8 @@ pub(crate) fn validate_feature_graph(
             if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
-            let node = ctx.get_hash_map(&(by_id), &id, "look up SLDPRT hash key")?
+            let node = ctx
+                .get_hash_map(&(by_id), &id, "look up SLDPRT hash key")?
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
             parent = node.parent_source_id();
         }
@@ -2013,9 +2046,11 @@ pub(crate) fn validate_feature_graph(
             if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }
-            let node = ctx.get_hash_map(&(by_record), id, "look up SLDPRT hash key")?.ok_or_else(|| {
-                CodecError::Malformed("feature references missing tree parent".into())
-            })?;
+            let node = ctx
+                .get_hash_map(&(by_record), id, "look up SLDPRT hash key")?
+                .ok_or_else(|| {
+                    CodecError::Malformed("feature references missing tree parent".into())
+                })?;
             parent = node.tree_parent_record_id();
         }
     }
@@ -2136,7 +2171,11 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ctx: &DecodeContext<'_>, ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+fn tessellation_payload(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<Vec<u8>, CodecError> {
     type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
@@ -2197,7 +2236,11 @@ fn tessellation_payload(ctx: &DecodeContext<'_>, ir: &CadIr, length_scale: f64) 
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
         if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(ctx, &strip_lengths, auxiliary)?
+            && !crate::tessellation::auxiliary_channels_are_consistent(
+                ctx,
+                &strip_lengths,
+                auxiliary,
+            )?
         {
             return Err(CodecError::InvalidInput(
                 "tessellation channels: the SLDPRT display-list table carries exactly three \
@@ -2433,9 +2476,15 @@ fn body_material<'ir>(
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let appearance = ctx.get_hash_map(&(appearances), &binding.appearance, "look up SLDPRT hash key")?.ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
+        let appearance = ctx
+            .get_hash_map(
+                &(appearances),
+                &binding.appearance,
+                "look up SLDPRT hash key",
+            )?
+            .ok_or_else(|| {
+                CodecError::Malformed("body binding references missing appearance".into())
+            })?;
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
         })?;

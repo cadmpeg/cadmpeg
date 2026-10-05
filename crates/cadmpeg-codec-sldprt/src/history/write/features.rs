@@ -295,9 +295,15 @@ pub(in crate::history) fn sync_neutral_features(
     }
     let mut principal_planes_by_record = HashMap::new();
     for history in &native.feature_histories {
-        let by_source = history.features.iter().filter_map(|feature| Some((feature.source_id?, feature))).collect::<HashMap<_, _>>();
+        let by_source = history
+            .features
+            .iter()
+            .filter_map(|feature| Some((feature.source_id?, feature)))
+            .collect::<std::collections::BTreeMap<_, _>>();
         for feature in &history.features {
-            if let Some(plane) = principal_plane_in_history(&ctx, feature, &by_source, &history.features)? {
+            if let Some(plane) =
+                principal_plane_in_history(&ctx, feature, &by_source, &history.features)?
+            {
                 principal_planes_by_record.insert(feature.id.clone(), plane);
             }
         }
@@ -348,7 +354,9 @@ pub(in crate::history) fn sync_neutral_features(
         if feature
             .source_tag
             .as_deref()
-            .map(|tag| valid_xml_name(&ctx, tag).map(|valid| !valid)).transpose()?.unwrap_or(false)
+            .map(|tag| valid_xml_name(&ctx, tag).map(|valid| !valid))
+            .transpose()?
+            .unwrap_or(false)
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
@@ -387,7 +395,8 @@ pub(in crate::history) fn sync_neutral_features(
         }
         .encode()?;
         if let Some(record) = existing.as_deref() {
-            restore_equivalent_parameter_expressions(&ctx, 
+            restore_equivalent_parameter_expressions(
+                &ctx,
                 record,
                 &original_parameters,
                 &evaluated_parameters,

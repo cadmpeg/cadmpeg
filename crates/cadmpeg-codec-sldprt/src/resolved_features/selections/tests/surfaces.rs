@@ -544,9 +544,10 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         sketch_entities: Vec::new(),
     };
 
-    crate::test_support::work_refusal_at("deduplicate SLDPRT full round fillet class bodies", |ctx| {
-        fillet_face_selection_candidates(ctx, &lane, 0, 700)
-    });
+    crate::test_support::work_refusal_at(
+        "deduplicate SLDPRT full round fillet class bodies",
+        |ctx| fillet_face_selection_candidates(ctx, &lane, 0, 700),
+    );
     let candidates = fillet_face_selection_candidates(&candidates_ctx, &lane, 0, 700).unwrap();
     assert_eq!(candidates.len(), 3);
     assert_eq!(

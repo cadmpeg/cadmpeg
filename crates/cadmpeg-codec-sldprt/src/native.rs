@@ -379,7 +379,21 @@ impl SldprtNative {
                 .map(|history| history.id.as_str()),
             "index SLDPRT history ids",
         )?;
-        if let Some(record) = ctx.admit_iter(&configurations[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(history_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&configurations[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(history_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -388,7 +402,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&features[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(history_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&features[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(history_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -418,7 +446,21 @@ impl SldprtNative {
                 .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
             "index SLDPRT lane payloads",
         )?;
-        if let Some(record) = ctx.admit_iter(&entity_wires[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&entity_wires[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -439,7 +481,14 @@ impl SldprtNative {
             )?;
         }
         for wire in entity_wires {
-            let Some(payload) = ctx.get_hash_map(&(lane_payloads), wire.parent.as_str(), "look up SLDPRT hash key")?.copied() else {
+            let Some(payload) = ctx
+                .get_hash_map(
+                    &(lane_payloads),
+                    wire.parent.as_str(),
+                    "look up SLDPRT hash key",
+                )?
+                .copied()
+            else {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -450,11 +499,25 @@ impl SldprtNative {
                     )?,
                 ));
             };
-            let entity = crate::records::SketchInputEntity::try_from_wire(ctx, wire, payload)?
+            let entity = crate::records::SketchInputEntity::try_from_wire(wire, payload)
                 .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
             entities.push(entity);
         }
-        if let Some(record) = ctx.admit_iter(&classes[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&classes[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -466,7 +529,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&body_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&body_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -478,7 +555,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&edge_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&edge_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -490,7 +581,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&surface_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&surface_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -502,7 +607,24 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&generated_surface_identities[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(
+                &generated_surface_identities[..],
+                "scan SLDPRT load_charged values",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -514,7 +636,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&names[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&names[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -526,7 +662,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -538,11 +688,27 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            match record
-                .feature_ref
-                .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    match record.feature_ref.as_deref() {
+                        Some(feature) => !ctx.contains_hash_set(
+                            &(feature_ids),
+                            feature,
+                            "test SLDPRT hashed identity",
+                        )?,
+                        None => false,
+                    }
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -554,7 +720,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&references[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&references[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -566,7 +746,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -578,7 +772,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&relation_instances[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&relation_instances[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(lane_ids),
+                    record.parent.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -595,11 +803,28 @@ impl SldprtNative {
             names.iter().map(|record| record.id.as_str()),
             "index SLDPRT feature names",
         )?;
-        if let Some(record) = ctx.admit_iter(&body_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                || record.local_body_ids.is_empty()
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&body_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || record.local_body_ids.is_empty()
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -610,11 +835,28 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&edge_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                || record.local_edge_ids.is_empty()
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&edge_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || record.local_edge_ids.is_empty()
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -625,24 +867,73 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&surface_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                || record.components.is_empty()
-                || ctx.admit_iter(&record.producer_feature_refs[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(false, |found, producer| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(feature_ids), producer.as_str(), "test SLDPRT hashed identity")? )) })?
-                || match record
-                    .terminal_feature_ref
-                    .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-                || match record.endpoint_selector() { Some(selector) => {
-                    usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| offset.checked_sub(4)).map(|offset| {
-                            Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(lane_payloads), record.parent.as_str(), "look up SLDPRT hash key")?
-                                .and_then(|payload| View::u32_le_at(payload, offset)))
-                        }).transpose()?.flatten()
-                        != Some(selector)
-                }, None => false }
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&surface_selections[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || record.components.is_empty()
+                        || ctx
+                            .admit_iter(
+                                &record.producer_feature_refs[..],
+                                "scan SLDPRT load_charged values",
+                            )
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .try_fold(false, |found, producer| {
+                                Ok::<_, cadmpeg_core::CodecError>(
+                                    found
+                                        || (!ctx.contains_hash_set(
+                                            &(feature_ids),
+                                            producer.as_str(),
+                                            "test SLDPRT hashed identity",
+                                        )?),
+                                )
+                            })?
+                        || match record.terminal_feature_ref.as_deref() {
+                            Some(feature) => !ctx.contains_hash_set(
+                                &(feature_ids),
+                                feature,
+                                "test SLDPRT hashed identity",
+                            )?,
+                            None => false,
+                        }
+                        || match record.endpoint_selector() {
+                            Some(selector) => {
+                                usize::try_from(record.offset)
+                                    .ok()
+                                    .and_then(|offset| offset.checked_sub(4))
+                                    .map(|offset| {
+                                        Ok::<_, cadmpeg_core::CodecError>(
+                                            ctx.get_hash_map(
+                                                &(lane_payloads),
+                                                record.parent.as_str(),
+                                                "look up SLDPRT hash key",
+                                            )?
+                                            .and_then(|payload| View::u32_le_at(payload, offset)),
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten()
+                                    != Some(selector)
+                            }
+                            None => false,
+                        }
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -653,7 +944,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(name_ids), record.name.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+        if let Some(record) = ctx
+            .admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok((!ctx.contains_hash_set(
+                    &(name_ids),
+                    record.name.as_str(),
+                    "test SLDPRT hashed identity",
+                )?)
+                .then_some(candidate))
+            })?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
@@ -677,16 +982,40 @@ impl SldprtNative {
         )?;
         let (scalar_ids, _scalar_ids_reservation) = ctx.collect_scoped_string_set(
             scalars.len(),
-            ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.map(|record| record.id.as_str()),
+            ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .map(|record| record.id.as_str()),
             "index SLDPRT scalars",
         )?;
-        if let Some(record) = ctx.admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            !ctx.contains_hash_set(&(class_ids), record.class_ref.as_str(), "test SLDPRT hashed identity")?
-                || !ctx.contains_hash_set(&(scalar_ids), record.scalar_ref.as_str(), "test SLDPRT hashed identity")?
-                || match record
-                    .feature_ref
-                    .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    !ctx.contains_hash_set(
+                        &(class_ids),
+                        record.class_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || !ctx.contains_hash_set(
+                        &(scalar_ids),
+                        record.scalar_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || match record.feature_ref.as_deref() {
+                        Some(feature) => !ctx.contains_hash_set(
+                            &(feature_ids),
+                            feature,
+                            "test SLDPRT hashed identity",
+                        )?,
+                        None => false,
+                    }
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -697,40 +1026,85 @@ impl SldprtNative {
                 )?,
             ));
         }
-        if let Some(record) = ctx.admit_iter(&relation_instances[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-            !ctx.contains_hash_set(&(class_ids), record.class_ref.as_str(), "test SLDPRT hashed identity")?
-                || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                || record.scalar_refs().is_empty()
-                || (record.scalar_refs().len() > 3
-                    && !repeated_circle_display_shape_valid(ctx, record, &scalars, &names)?)
-                || ctx.admit_iter(record.scalar_refs(), "scan SLDPRT relation scalar references").map_err(cadmpeg_core::CodecError::from)?
-                    .enumerate()
-                    .any(|(index, scalar)| record.scalar_refs()[..index].contains(scalar))
-                || ctx.admit_iter(&classes[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
-                    .find(|class| class.id == record.class_ref)
-                    .is_none_or(|class| {
-                        !matches!(
-                            crate::classification::native_object_class(&class.name),
-                            crate::classification::NativeClassKind::SketchRelation(family)
-                                if family == record.family
-                        )
-                    })
-                || ctx.admit_iter(record.scalar_refs(), "scan SLDPRT relation scalar references").map_err(cadmpeg_core::CodecError::from)?.try_fold(false, |found, scalar| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(scalar_ids), scalar.as_str(), "test SLDPRT hashed identity")? )) })?
-                || match record.parameter_scalar_ref() { Some(id) => {
-                    ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
-                        .find(|scalar| scalar.id == id)
-                        .is_none_or(|scalar| {
-                            scalar.role != crate::records::FeatureInputScalarRole::Driving
-                        })
-                }, None => false }
-                || match record.display_scalar_ref() { Some(id) => {
-                    ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
-                        .find(|scalar| scalar.id == id)
-                        .is_none_or(|scalar| {
-                            scalar.role != crate::records::FeatureInputScalarRole::Display
-                        })
-                }, None => false }
-        } ).then_some(candidate)) })? {
+        if let Some(record) = ctx
+            .admit_iter(&relation_instances[..], "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .try_fold(None, |found, candidate| {
+                if found.is_some() {
+                    return Ok::<_, cadmpeg_core::CodecError>(found);
+                }
+                let record = &candidate;
+                Ok(({
+                    !ctx.contains_hash_set(
+                        &(class_ids),
+                        record.class_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )? || record.scalar_refs().is_empty()
+                        || (record.scalar_refs().len() > 3
+                            && !repeated_circle_display_shape_valid(ctx, record, &scalars, &names)?)
+                        || ctx
+                            .admit_iter(
+                                record.scalar_refs(),
+                                "scan SLDPRT relation scalar references",
+                            )
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .enumerate()
+                            .any(|(index, scalar)| record.scalar_refs()[..index].contains(scalar))
+                        || ctx
+                            .admit_iter(&classes[..], "scan SLDPRT load_charged values")
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .find(|class| class.id == record.class_ref)
+                            .is_none_or(|class| {
+                                !matches!(
+                                    crate::classification::native_object_class(&class.name),
+                                    crate::classification::NativeClassKind::SketchRelation(family)
+                                        if family == record.family
+                                )
+                            })
+                        || ctx
+                            .admit_iter(
+                                record.scalar_refs(),
+                                "scan SLDPRT relation scalar references",
+                            )
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .try_fold(false, |found, scalar| {
+                                Ok::<_, cadmpeg_core::CodecError>(
+                                    found
+                                        || (!ctx.contains_hash_set(
+                                            &(scalar_ids),
+                                            scalar.as_str(),
+                                            "test SLDPRT hashed identity",
+                                        )?),
+                                )
+                            })?
+                        || match record.parameter_scalar_ref() {
+                            Some(id) => ctx
+                                .admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+                                .map_err(cadmpeg_core::CodecError::from)?
+                                .find(|scalar| scalar.id == id)
+                                .is_none_or(|scalar| {
+                                    scalar.role != crate::records::FeatureInputScalarRole::Driving
+                                }),
+                            None => false,
+                        }
+                        || match record.display_scalar_ref() {
+                            Some(id) => ctx
+                                .admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+                                .map_err(cadmpeg_core::CodecError::from)?
+                                .find(|scalar| scalar.id == id)
+                                .is_none_or(|scalar| {
+                                    scalar.role != crate::records::FeatureInputScalarRole::Display
+                                }),
+                            None => false,
+                        }
+                })
+                .then_some(candidate))
+            })?
+        {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 ctx.format_retained(
                     format_args!(
@@ -741,9 +1115,20 @@ impl SldprtNative {
                 )?,
             ));
         }
-        for scalar in ctx.admit_iter(&scalars, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
-            for operand in ctx.admit_iter(&scalar.operands, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
-                let Some(reference) = ctx.get_hash_map(&(references_by_id), operand.reference_ref.as_str(), "look up SLDPRT hash key")? else {
+        for scalar in ctx
+            .admit_iter(&scalars, "scan SLDPRT load_charged values")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            for operand in ctx
+                .admit_iter(&scalar.operands, "scan SLDPRT load_charged values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                let Some(reference) = ctx.get_hash_map(
+                    &(references_by_id),
+                    operand.reference_ref.as_str(),
+                    "look up SLDPRT hash key",
+                )?
+                else {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
                             format_args!(
@@ -772,7 +1157,8 @@ impl SldprtNative {
         }
         for history in &mut native.feature_histories {
             history.configurations = ctx.try_collect_retained_with(
-                ctx.admit_iter(&configurations[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&configurations[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == history.id),
                 "attach SLDPRT history configurations",
                 |record| record.clone_charged(ctx, "attach SLDPRT history configurations"),
@@ -783,7 +1169,17 @@ impl SldprtNative {
                 Ord::cmp,
                 "sort SLDPRT native records",
             )?;
-            if let Some(pair) = ctx.admit_iter(&history.configurations, "scan SLDPRT adjacent history configurations").map_err(cadmpeg_core::CodecError::from)?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
+            if let Some(pair) = ctx
+                .admit_iter(
+                    &history.configurations,
+                    "scan SLDPRT adjacent history configurations",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+                .windows(
+                    std::num::NonZeroUsize::new(2).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("zero scan window width")
+                    })?,
+                )
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -797,7 +1193,9 @@ impl SldprtNative {
                 ));
             }
             history.features = ctx.try_collect_retained_with(
-                ctx.admit_iter(&features[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent == history.id),
+                ctx.admit_iter(&features[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
                 |record| record.clone_charged(ctx, "attach SLDPRT history features"),
             )?;
@@ -807,8 +1205,13 @@ impl SldprtNative {
                 Ord::cmp,
                 "sort SLDPRT native records",
             )?;
-            if let Some(pair) = ctx.admit_iter(&history.features, "scan SLDPRT adjacent history features").map_err(cadmpeg_core::CodecError::from)?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
-                .find(|pair| pair[0].ordinal == pair[1].ordinal)
+            if let Some(pair) =
+                ctx.admit_iter(&history.features, "scan SLDPRT adjacent history features")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("zero scan window width")
+                    })?)
+                    .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
@@ -823,7 +1226,9 @@ impl SldprtNative {
         }
         for lane in &mut native.feature_input_lanes {
             lane.classes = ctx.try_collect_retained_with(
-                ctx.admit_iter(&classes[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent == lane.id),
+                ctx.admit_iter(&classes[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane classes"),
             )?;
@@ -834,7 +1239,9 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.names = ctx.try_collect_retained_with(
-                ctx.admit_iter(&names[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent == lane.id),
+                ctx.admit_iter(&names[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane names"),
             )?;
@@ -845,7 +1252,9 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.scalars = ctx.try_collect_retained_with(
-                ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent == lane.id),
+                ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane scalars"),
             )?;
@@ -856,7 +1265,9 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.references = ctx.try_collect_retained_with(
-                ctx.admit_iter(&references[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent == lane.id),
+                ctx.admit_iter(&references[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane references"),
             )?;
@@ -867,7 +1278,8 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.relation_bindings = ctx.try_collect_retained_with(
-                ctx.admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&relation_bindings[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation bindings",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane relation bindings"),
@@ -879,7 +1291,8 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.relation_instances = ctx.try_collect_retained_with(
-                ctx.admit_iter(&relation_instances[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&relation_instances[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation instances",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane relation instances"),
@@ -891,7 +1304,8 @@ impl SldprtNative {
                 "sort SLDPRT native records",
             )?;
             lane.body_selections = ctx.try_collect_retained_with(
-                ctx.admit_iter(&body_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&body_selections[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane body selections",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane body selections"),
@@ -902,7 +1316,10 @@ impl SldprtNative {
                 Ord::cmp,
                 "sort SLDPRT native records",
             )?;
-            for record in ctx.admit_iter(&lane.body_selections, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.body_selections, "scan SLDPRT load_charged values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if body_selection_disagrees_with_payload(ctx, lane, record)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
@@ -916,7 +1333,8 @@ impl SldprtNative {
                 }
             }
             lane.edge_selections = ctx.try_collect_retained_with(
-                ctx.admit_iter(&edge_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&edge_selections[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane edge selections",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane edge selections"),
@@ -940,7 +1358,10 @@ impl SldprtNative {
                 &mut edge_features,
                 std::slice::from_ref(lane),
             )?;
-            for record in ctx.admit_iter(&lane.edge_selections, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.edge_selections, "scan SLDPRT load_charged values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
@@ -954,7 +1375,9 @@ impl SldprtNative {
                 }
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
-                        let feature_kind = ctx.admit_iter(&edge_features[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                        let feature_kind = ctx
+                            .admit_iter(&edge_features[..], "scan SLDPRT load_charged values")
+                            .map_err(cadmpeg_core::CodecError::from)?
                             .find(|feature| feature.id == record.feature_ref)
                             .map(|feature| feature.kind.as_str())
                             .unwrap_or_default();
@@ -993,7 +1416,8 @@ impl SldprtNative {
                 std::slice::from_ref(lane),
             )?;
             lane.surface_selections = ctx.try_collect_retained_with(
-                ctx.admit_iter(&surface_selections[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
+                ctx.admit_iter(&surface_selections[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane surface selections",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane surface selections"),
@@ -1004,7 +1428,10 @@ impl SldprtNative {
                 Ord::cmp,
                 "sort SLDPRT native records",
             )?;
-            for record in ctx.admit_iter(&lane.surface_selections, "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.surface_selections, "scan SLDPRT load_charged values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
@@ -1018,8 +1445,12 @@ impl SldprtNative {
                 }
             }
             let mut records = ctx.try_collect_retained_with(
-                ctx.admit_iter(&generated_surface_identities[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?
-                    .filter(|record| record.parent == lane.id),
+                ctx.admit_iter(
+                    &generated_surface_identities[..],
+                    "scan SLDPRT load_charged values",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+                .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane generated surfaces",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane generated surfaces"),
             )?;
@@ -1042,7 +1473,9 @@ impl SldprtNative {
                 ));
             }
             lane.sketch_entities = ctx.try_collect_retained_with(
-                ctx.admit_iter(&entities[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.filter(|record| record.parent() == lane.id),
+                ctx.admit_iter(&entities[..], "scan SLDPRT load_charged values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane sketch entities"),
             )?;
@@ -1065,8 +1498,13 @@ impl SldprtNative {
         // Load admits every record against the lane payload it is derived from;
         // that is the boundary a hand-written namespace crosses. Store holds the
         // relations between records that no single payload derives.
-        for history in ctx.admit_iter(&self.feature_histories, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
-            if let Some(record) = ctx.admit_iter(&history.configurations[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
+        for history in ctx
+            .admit_iter(&self.feature_histories, "scan SLDPRT store values")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            if let Some(record) = ctx
+                .admit_iter(&history.configurations[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .find(|record| record.parent != history.id)
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -1079,7 +1517,9 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&history.features[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
+            if let Some(record) = ctx
+                .admit_iter(&history.features[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .find(|record| record.parent != history.id)
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -1100,7 +1540,8 @@ impl SldprtNative {
         let (features, _features_reservation) =
             ctx.with_scoped_storage("validate SLDPRT store features", || {
                 ctx.try_collect_retained_with(
-                    ctx.admit_iter(&self.feature_histories[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
+                    ctx.admit_iter(&self.feature_histories[..], "scan SLDPRT store values")
+                        .map_err(cadmpeg_core::CodecError::from)?
                         .flat_map(|history| &history.features),
                     "validate SLDPRT store features",
                     |record| record.clone_charged(ctx, "validate SLDPRT store features"),
@@ -1111,10 +1552,15 @@ impl SldprtNative {
             features.iter().map(|feature| feature.id.as_str()),
             "index SLDPRT stored features",
         )?;
-        for lane in ctx.admit_iter(&self.feature_input_lanes, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
+        for lane in ctx
+            .admit_iter(&self.feature_input_lanes, "scan SLDPRT store values")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let (name_ids, _name_ids_reservation) = ctx.collect_scoped_string_set(
                 lane.names.len(),
-                ctx.admit_iter(&lane.names[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.map(|record| record.id.as_str()),
+                ctx.admit_iter(&lane.names[..], "scan SLDPRT store values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .map(|record| record.id.as_str()),
                 "index SLDPRT stored names",
             )?;
             let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
@@ -1126,15 +1572,23 @@ impl SldprtNative {
             )?;
             let (class_ids, _class_ids_reservation) = ctx.collect_scoped_string_set(
                 lane.classes.len(),
-                ctx.admit_iter(&lane.classes[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.map(|record| record.id.as_str()),
+                ctx.admit_iter(&lane.classes[..], "scan SLDPRT store values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .map(|record| record.id.as_str()),
                 "index SLDPRT stored classes",
             )?;
             let (scalar_ids, _scalar_ids_reservation) = ctx.collect_scoped_string_set(
                 lane.scalars.len(),
-                ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.map(|record| record.id.as_str()),
+                ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .map(|record| record.id.as_str()),
                 "index SLDPRT stored scalars",
             )?;
-            if let Some(record) = ctx.admit_iter(&lane.classes[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.find(|record| record.parent != lane.id) {
+            if let Some(record) = ctx
+                .admit_iter(&lane.classes[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .find(|record| record.parent != lane.id)
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1145,7 +1599,11 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.names[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.find(|record| record.parent != lane.id) {
+            if let Some(record) = ctx
+                .admit_iter(&lane.names[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .find(|record| record.parent != lane.id)
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1156,7 +1614,11 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.find(|record| record.parent != lane.id) {
+            if let Some(record) = ctx
+                .admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .find(|record| record.parent != lane.id)
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1167,10 +1629,21 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            for record in ctx.admit_iter(&lane.body_selections, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.body_selections, "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 let invalid = record.parent != lane.id
-                    || !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
+                    || !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
                     || record.local_body_ids.is_empty();
                 if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -1210,10 +1683,21 @@ impl SldprtNative {
                 &mut edge_features,
                 std::slice::from_ref(lane),
             )?;
-            for record in ctx.admit_iter(&lane.edge_selections, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.edge_selections, "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 let invalid = record.parent != lane.id
-                    || !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
+                    || !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
                     || record.local_edge_ids.is_empty();
                 if invalid
                     || edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)?
@@ -1244,10 +1728,21 @@ impl SldprtNative {
                 &mut surface_features,
                 std::slice::from_ref(lane),
             )?;
-            for record in ctx.admit_iter(&lane.surface_selections, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
+            for record in ctx
+                .admit_iter(&lane.surface_selections, "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 let invalid = record.parent != lane.id
-                    || !ctx.contains_hash_set(&(name_ids), record.object_name_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
+                    || !ctx.contains_hash_set(
+                        &(name_ids),
+                        record.object_name_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
                     || record.components.is_empty();
                 if invalid
                     || surface_selection_disagrees_with_payload(
@@ -1268,11 +1763,27 @@ impl SldprtNative {
                     ));
                 }
             }
-            if let Some(record) = ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-                match record
-                    .feature_ref
-                    .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-            } ).then_some(candidate)) })? {
+            if let Some(record) = ctx
+                .admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, candidate| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    let record = &candidate;
+                    Ok(({
+                        match record.feature_ref.as_deref() {
+                            Some(feature) => !ctx.contains_hash_set(
+                                &(feature_ids),
+                                feature,
+                                "test SLDPRT hashed identity",
+                            )?,
+                            None => false,
+                        }
+                    })
+                    .then_some(candidate))
+                })?
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1284,7 +1795,9 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.references[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
+            if let Some(record) = ctx
+                .admit_iter(&lane.references[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .find(|record| record.parent != lane.id)
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -1297,14 +1810,38 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.relation_bindings[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-                record.parent != lane.id
-                    || !ctx.contains_hash_set(&(class_ids), record.class_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !ctx.contains_hash_set(&(scalar_ids), record.scalar_ref.as_str(), "test SLDPRT hashed identity")?
-                    || match record
-                        .feature_ref
-                        .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-            } ).then_some(candidate)) })? {
+            if let Some(record) = ctx
+                .admit_iter(&lane.relation_bindings[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, candidate| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    let record = &candidate;
+                    Ok(({
+                        record.parent != lane.id
+                            || !ctx.contains_hash_set(
+                                &(class_ids),
+                                record.class_ref.as_str(),
+                                "test SLDPRT hashed identity",
+                            )?
+                            || !ctx.contains_hash_set(
+                                &(scalar_ids),
+                                record.scalar_ref.as_str(),
+                                "test SLDPRT hashed identity",
+                            )?
+                            || match record.feature_ref.as_deref() {
+                                Some(feature) => !ctx.contains_hash_set(
+                                    &(feature_ids),
+                                    feature,
+                                    "test SLDPRT hashed identity",
+                                )?,
+                                None => false,
+                            }
+                    })
+                    .then_some(candidate))
+                })?
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1315,32 +1852,64 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, record| {
-                if found.is_some() {
-                    return Ok::<_, cadmpeg_core::CodecError>(found);
-                }
-                Ok(( 
-                record.parent != lane.id
-                    || !ctx.contains_hash_set(&(class_ids), record.class_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !ctx.contains_hash_set(&(feature_ids), record.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                    || !relation_instance_shape_valid(ctx, record, lane)?
-                    || ctx.admit_iter(record.scalar_refs(), "scan SLDPRT relation scalar references").map_err(cadmpeg_core::CodecError::from)?.try_fold(false, |found, scalar| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(scalar_ids), scalar.as_str(), "test SLDPRT hashed identity")? )) })?
-                    || match record.parameter_scalar_ref() { Some(id) => {
-                        ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
-                            .find(|scalar| scalar.id == id)
-                            .is_none_or(|scalar| {
-                                scalar.role != crate::records::FeatureInputScalarRole::Driving
-                            })
-                    }, None => false }
-                    || match record.display_scalar_ref() { Some(id) => {
-                        ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
-                            .find(|scalar| scalar.id == id)
-                            .is_none_or(|scalar| {
-                                scalar.role != crate::records::FeatureInputScalarRole::Display
-                            })
-                    }, None => false }
-             ).then_some(record))
-            })? {
+            if let Some(record) = ctx
+                .admit_iter(&lane.relation_instances[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, record| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    Ok((record.parent != lane.id
+                        || !ctx.contains_hash_set(
+                            &(class_ids),
+                            record.class_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || !ctx.contains_hash_set(
+                            &(feature_ids),
+                            record.feature_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || !relation_instance_shape_valid(ctx, record, lane)?
+                        || ctx
+                            .admit_iter(
+                                record.scalar_refs(),
+                                "scan SLDPRT relation scalar references",
+                            )
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .try_fold(false, |found, scalar| {
+                                Ok::<_, cadmpeg_core::CodecError>(
+                                    found
+                                        || (!ctx.contains_hash_set(
+                                            &(scalar_ids),
+                                            scalar.as_str(),
+                                            "test SLDPRT hashed identity",
+                                        )?),
+                                )
+                            })?
+                        || match record.parameter_scalar_ref() {
+                            Some(id) => ctx
+                                .admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                                .map_err(cadmpeg_core::CodecError::from)?
+                                .find(|scalar| scalar.id == id)
+                                .is_none_or(|scalar| {
+                                    scalar.role != crate::records::FeatureInputScalarRole::Driving
+                                }),
+                            None => false,
+                        }
+                        || match record.display_scalar_ref() {
+                            Some(id) => ctx
+                                .admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                                .map_err(cadmpeg_core::CodecError::from)?
+                                .find(|scalar| scalar.id == id)
+                                .is_none_or(|scalar| {
+                                    scalar.role != crate::records::FeatureInputScalarRole::Display
+                                }),
+                            None => false,
+                        })
+                    .then_some(record))
+                })?
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1351,11 +1920,23 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.relation_bindings[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-                ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
-                    .find(|scalar| scalar.id == record.scalar_ref)
-                    .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
-            } ).then_some(candidate)) })? {
+            if let Some(record) = ctx
+                .admit_iter(&lane.relation_bindings[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, candidate| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    let record = &candidate;
+                    Ok(({
+                        ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .find(|scalar| scalar.id == record.scalar_ref)
+                            .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
+                    })
+                    .then_some(candidate))
+                })?
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1366,7 +1947,21 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            if let Some(record) = ctx.admit_iter(&lane.scalars[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(name_ids), record.name.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
+            if let Some(record) = ctx
+                .admit_iter(&lane.scalars[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, candidate| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    let record = &candidate;
+                    Ok((!ctx.contains_hash_set(
+                        &(name_ids),
+                        record.name.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?)
+                    .then_some(candidate))
+                })?
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
@@ -1385,10 +1980,24 @@ impl SldprtNative {
                     .map(|record| (record.id(), record)),
                 "index SLDPRT stored sketch entities",
             )?;
-            for scalar in ctx.admit_iter(&lane.scalars, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
+            for scalar in ctx
+                .admit_iter(&lane.scalars, "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 let resolved_operands = resolved_scalar_operand_markers(ctx, lane, scalar)?;
-                for (operand, resolved) in ctx.admit_iter(&scalar.operands, "scan SLDPRT scalar operands").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&resolved_operands[..], "scan SLDPRT resolved operands").map_err(cadmpeg_core::CodecError::from)?) {
-                    let Some(reference) = ctx.get_hash_map(&(references_by_id), operand.reference_ref.as_str(), "look up SLDPRT hash key")?
+                for (operand, resolved) in ctx
+                    .admit_iter(&scalar.operands, "scan SLDPRT scalar operands")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .zip(
+                        ctx.admit_iter(&resolved_operands[..], "scan SLDPRT resolved operands")
+                            .map_err(cadmpeg_core::CodecError::from)?,
+                    )
+                {
+                    let Some(reference) = ctx.get_hash_map(
+                        &(references_by_id),
+                        operand.reference_ref.as_str(),
+                        "look up SLDPRT hash key",
+                    )?
                     else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                             ctx.format_retained(
@@ -1415,7 +2024,12 @@ impl SldprtNative {
                         ));
                     }
                     if let Some(entity_ref) = operand.entity_ref.as_deref() {
-                        let Some(target) = ctx.get_hash_map(&(sketch_entities), entity_ref, "look up SLDPRT hash key")? else {
+                        let Some(target) = ctx.get_hash_map(
+                            &(sketch_entities),
+                            entity_ref,
+                            "look up SLDPRT hash key",
+                        )?
+                        else {
                             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                                 ctx.format_retained(
                                     format_args!(
@@ -1440,12 +2054,28 @@ impl SldprtNative {
                     }
                 }
             }
-            if let Some(record) = ctx.admit_iter(&lane.sketch_entities[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( {
-                record.parent() != lane.id
-                    || match record
-                        .feature_ref
-                        .as_deref() { Some(feature) => !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")?, None => false }
-            } ).then_some(candidate)) })? {
+            if let Some(record) = ctx
+                .admit_iter(&lane.sketch_entities[..], "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(None, |found, candidate| {
+                    if found.is_some() {
+                        return Ok::<_, cadmpeg_core::CodecError>(found);
+                    }
+                    let record = &candidate;
+                    Ok(({
+                        record.parent() != lane.id
+                            || match record.feature_ref.as_deref() {
+                                Some(feature) => !ctx.contains_hash_set(
+                                    &(feature_ids),
+                                    feature,
+                                    "test SLDPRT hashed identity",
+                                )?,
+                                None => false,
+                            }
+                    })
+                    .then_some(candidate))
+                })?
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     ctx.format_retained(
                         format_args!(
@@ -1456,9 +2086,20 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            for record in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)? {
-                for link in ctx.admit_iter(record.links(), "scan SLDPRT sketch input links").map_err(cadmpeg_core::CodecError::from)? {
-                    let Some(target) = ctx.get_hash_map(&(sketch_entities), link.entity_ref.as_str(), "look up SLDPRT hash key")? else {
+            for record in ctx
+                .admit_iter(&lane.sketch_entities, "scan SLDPRT store values")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                for link in ctx
+                    .admit_iter(record.links(), "scan SLDPRT sketch input links")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
+                    let Some(target) = ctx.get_hash_map(
+                        &(sketch_entities),
+                        link.entity_ref.as_str(),
+                        "look up SLDPRT hash key",
+                    )?
+                    else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                             ctx.format_retained(
                                 format_args!(
@@ -1498,9 +2139,11 @@ impl SldprtNative {
         let (history_lanes, _history_lanes_reservation) =
             ctx.with_scoped_storage("validate SLDPRT history lanes", || {
                 ctx.try_collect_retained_with(
-                    ctx.admit_iter(&self.feature_input_lanes[..], "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?.filter(|lane| {
-                        !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
-                    }),
+                    ctx.admit_iter(&self.feature_input_lanes[..], "scan SLDPRT store values")
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .filter(|lane| {
+                            !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
+                        }),
                     "validate SLDPRT history lanes",
                     |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
                 )
@@ -1510,12 +2153,22 @@ impl SldprtNative {
             &mut expected_histories,
             &history_lanes,
         )?;
-        if ctx.admit_iter(&self.feature_histories, "scan SLDPRT store values").map_err(cadmpeg_core::CodecError::from)?
-            .zip(ctx.admit_iter(&expected_histories, "scan SLDPRT expected histories").map_err(cadmpeg_core::CodecError::from)?)
+        if ctx
+            .admit_iter(&self.feature_histories, "scan SLDPRT store values")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .zip(
+                ctx.admit_iter(&expected_histories, "scan SLDPRT expected histories")
+                    .map_err(cadmpeg_core::CodecError::from)?,
+            )
             .try_fold(false, |found, (history, expected)| {
-                if found { return Ok::<_, cadmpeg_core::CodecError>(true); }
-                Ok(ctx.admit_iter(&history.features, "scan SLDPRT stored history classes")?
-                    .zip(ctx.admit_iter(&expected.features, "scan SLDPRT expected history classes")?)
+                if found {
+                    return Ok::<_, cadmpeg_core::CodecError>(true);
+                }
+                Ok(ctx
+                    .admit_iter(&history.features, "scan SLDPRT stored history classes")?
+                    .zip(
+                        ctx.admit_iter(&expected.features, "scan SLDPRT expected history classes")?,
+                    )
                     .any(|(feature, expected)| feature.input_class != expected.input_class))
             })?
         {
@@ -1695,7 +2348,8 @@ fn relation_instance_shape_valid(
     if record.scalar_refs().is_empty() {
         return Ok(false);
     }
-    let Some(class) = ctx.admit_iter(&lane.classes, "find SLDPRT relation instance class")?
+    let Some(class) = ctx
+        .admit_iter(&lane.classes, "find SLDPRT relation instance class")?
         .find(|class| class.id == record.class_ref)
     else {
         return Ok(false);
@@ -1707,8 +2361,14 @@ fn relation_instance_shape_valid(
     ) {
         return Ok(false);
     }
-    for scalar_ref in ctx.admit_iter(record.scalar_refs(), "scan SLDPRT relation scalar references")? {
-        let Some(scalar) = ctx.admit_iter(&lane.scalars, "find SLDPRT relation instance scalar")?.find(|scalar| scalar.id == *scalar_ref) else {
+    for scalar_ref in ctx.admit_iter(
+        record.scalar_refs(),
+        "scan SLDPRT relation scalar references",
+    )? {
+        let Some(scalar) = ctx
+            .admit_iter(&lane.scalars, "find SLDPRT relation instance scalar")?
+            .find(|scalar| scalar.id == *scalar_ref)
+        else {
             return Ok(false);
         };
         if scalar.feature_ref.as_deref() != Some(record.feature_ref.as_str()) {
@@ -1739,7 +2399,8 @@ fn relation_instance_shape_valid(
                     if matches!(scalar.operands.as_slice(), [candidate]
                         if candidate.kind == first.kind)))
     };
-    let Some(first) = ctx.admit_iter(&lane.scalars, "find SLDPRT first relation scalar")?
+    let Some(first) = ctx
+        .admit_iter(&lane.scalars, "find SLDPRT first relation scalar")?
         .find(|scalar| scalar.id == record.scalar_refs()[0])
     else {
         return Ok(false);
@@ -1749,8 +2410,12 @@ fn relation_instance_shape_valid(
     }
     let mut last_operand_position = None;
     let mut detached = None;
-    for scalar_ref in ctx.admit_iter(record.scalar_refs(), "scan SLDPRT relation scalar references")? {
-        let Some((position, scalar)) = ctx.admit_iter(&lane.scalars, "find SLDPRT relation scalar position")?
+    for scalar_ref in ctx.admit_iter(
+        record.scalar_refs(),
+        "scan SLDPRT relation scalar references",
+    )? {
+        let Some((position, scalar)) = ctx
+            .admit_iter(&lane.scalars, "find SLDPRT relation scalar position")?
             .enumerate()
             .find(|(_, scalar)| scalar.id == *scalar_ref)
         else {
@@ -1793,11 +2458,14 @@ fn repeated_circle_display_shape_valid(
         return Ok(false);
     }
     let scalar_name_value = |scalar: &FeatureInputScalar| {
-        Ok::<_, cadmpeg_core::CodecError>(ctx.admit_iter(names, "find SLDPRT repeated circle scalar name")?
-            .find(|name| name.id == scalar.name)
-            .map(|name| name.value.as_str()))
+        Ok::<_, cadmpeg_core::CodecError>(
+            ctx.admit_iter(names, "find SLDPRT repeated circle scalar name")?
+                .find(|name| name.id == scalar.name)
+                .map(|name| name.value.as_str()),
+        )
     };
-    let Some(first) = ctx.admit_iter(scalars, "find SLDPRT first circle display scalar")?
+    let Some(first) = ctx
+        .admit_iter(scalars, "find SLDPRT first circle display scalar")?
         .find(|scalar| scalar.id == record.scalar_refs()[0])
     else {
         return Ok(false);
@@ -1806,8 +2474,17 @@ fn repeated_circle_display_shape_valid(
         return Ok(false);
     };
     let mut previous_ordinal = None;
-    for (index, scalar_id) in ctx.admit_iter(record.scalar_refs(), "scan SLDPRT repeated circle scalar references")?.enumerate() {
-        let Some(scalar) = ctx.admit_iter(scalars, "find SLDPRT circle display scalar")?.find(|scalar| scalar.id == *scalar_id) else {
+    for (index, scalar_id) in ctx
+        .admit_iter(
+            record.scalar_refs(),
+            "scan SLDPRT repeated circle scalar references",
+        )?
+        .enumerate()
+    {
+        let Some(scalar) = ctx
+            .admit_iter(scalars, "find SLDPRT circle display scalar")?
+            .find(|scalar| scalar.id == *scalar_id)
+        else {
             return Ok(false);
         };
         if previous_ordinal.is_some_and(|ordinal: u32| {
@@ -1826,8 +2503,12 @@ fn repeated_circle_display_shape_valid(
         {
             return Ok(false);
         }
-        for previous_id in ctx.admit_iter(&record.scalar_refs()[..index], "scan SLDPRT prior circle display scalars")? {
-            if !ctx.admit_iter(scalars, "find SLDPRT prior circle display scalar")?
+        for previous_id in ctx.admit_iter(
+            &record.scalar_refs()[..index],
+            "scan SLDPRT prior circle display scalars",
+        )? {
+            if !ctx
+                .admit_iter(scalars, "find SLDPRT prior circle display scalar")?
                 .find(|candidate| candidate.id == *previous_id)
                 .and_then(|previous| previous.operands.first())
                 .is_some_and(|previous| previous.entity_index != operand.entity_index)

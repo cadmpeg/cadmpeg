@@ -171,7 +171,12 @@ fn layered_parameter_aliases_match_materialized_precedence() {
         let materialized = aliases.materialize(owner.as_ref());
         let layered = aliases.for_owner(owner.as_ref());
         for alias in ["Width", "global-id", "local-id", "missing"] {
-            assert_eq!(layered.get(&cadmpeg_test_support::service_decode_context(), alias).unwrap(), materialized.get(alias));
+            assert_eq!(
+                layered
+                    .get(&cadmpeg_test_support::service_decode_context(), alias)
+                    .unwrap(),
+                materialized.get(alias)
+            );
         }
     }
 }
@@ -192,7 +197,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["Width"]
     );
-    assert!(!tokens.iter().any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
+    assert!(!tokens
+        .iter()
+        .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 
     let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
         .unwrap()
@@ -204,7 +211,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["D1@Sketch1"]
     );
-    assert!(named.iter().all(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
+    assert!(named
+        .iter()
+        .all(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 }
 
 #[test]
@@ -589,9 +598,12 @@ fn alias_lookup_refusal_does_not_become_a_missing_alias() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         // Five work units admit one hash lookup of the five-byte alias.
         policy.limits.max_work_units = work_limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = view.get(&ctx, "Width").unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal");
+        };
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
@@ -604,11 +616,23 @@ fn alias_update_lookup_refusal_preserves_the_existing_binding() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One work unit admits the owner step; the five-byte lookup must refuse.
     policy.limits.max_work_units = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::history::parameters::insert_parameter_alias(&ctx, &mut aliases, String::from("Width"), &parameter).unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::history::parameters::insert_parameter_alias(
+        &ctx,
+        &mut aliases,
+        String::from("Width"),
+        &parameter,
+    )
+    .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     assert_eq!(limit.operation, "look up mutable SLDPRT hash key");
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.additional, 5);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(aliases.get("Width"), Some(&Some(parameter)));

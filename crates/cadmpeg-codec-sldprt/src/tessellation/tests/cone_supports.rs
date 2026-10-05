@@ -174,22 +174,26 @@ fn conical_trim_uses_scaled_angular_coordinate() {
         )
     };
 
-    assert!(trim.contains_mesh(
-        &cadmpeg_test_support::service_decode_context(),
-        &mesh(
-            point_at(std::f64::consts::FRAC_PI_4),
-            "synthetic:test:tessellation#inside"
-        ),
-        cadmpeg_ir::transform::Transform::identity(),
-        0.0,
-    ).unwrap());
-    assert!(!trim.contains_mesh(
-        &cadmpeg_test_support::service_decode_context(),
-        &mesh(
-            point_at(3.0 * std::f64::consts::FRAC_PI_4),
-            "synthetic:test:tessellation#outside"
-        ),
-        cadmpeg_ir::transform::Transform::identity(),
-        0.0,
-    ).unwrap());
+    assert!(trim
+        .contains_mesh(
+            &cadmpeg_test_support::service_decode_context(),
+            &mesh(
+                point_at(std::f64::consts::FRAC_PI_4),
+                "synthetic:test:tessellation#inside"
+            ),
+            cadmpeg_ir::transform::Transform::identity(),
+            0.0,
+        )
+        .unwrap());
+    assert!(!trim
+        .contains_mesh(
+            &cadmpeg_test_support::service_decode_context(),
+            &mesh(
+                point_at(3.0 * std::f64::consts::FRAC_PI_4),
+                "synthetic:test:tessellation#outside"
+            ),
+            cadmpeg_ir::transform::Transform::identity(),
+            0.0,
+        )
+        .unwrap());
 }

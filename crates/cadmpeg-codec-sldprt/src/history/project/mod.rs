@@ -179,9 +179,11 @@ impl FeatureProjection {
                 Err(error) => return Err(error),
             };
             let ordinal = |id: &FeatureId| {
-                Ok::<_, CodecError>(ctx.admit_iter(&model.features, "find SLDPRT regeneration ordinal")?
-                    .find(|feature| feature.id == *id)
-                    .map(|feature| feature.ordinal))
+                Ok::<_, CodecError>(
+                    ctx.admit_iter(&model.features, "find SLDPRT regeneration ordinal")?
+                        .find(|feature| feature.id == *id)
+                        .map(|feature| feature.ordinal),
+                )
             };
             let child_ordinal = ordinal(&child)?;
             let parent_ordinal = ordinal(&parent)?;
@@ -243,122 +245,150 @@ pub(crate) fn project_feature_model(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let (mut features, parents) = ctx.admit_iter(&histories[..], "scan SLDPRT project_feature_model values")?.try_fold(
-        (Vec::new(), Vec::new()),
-        |(mut features, mut parents), history| -> Result<_, CodecError> {
-            let source_bindings = unique_source_bindings(ctx, history)?;
-            let mut by_source = HashMap::new();
-            let mut native_by_source = HashMap::new();
-            for (source, binding) in ctx.admit_iter(&source_bindings, "scan SLDPRT project_feature_model values")? {
-                let Some(SourceBinding { native, neutral }) = binding else {
-                    continue;
-                };
-                ctx.insert_hash_map(
-                    &mut by_source,
-                    source_lookup_key(ctx, *source)?,
-                    copy_projected_feature_id(ctx, neutral)?,
-                    "index SLDPRT projected source features",
-                )?;
-                ctx.insert_hash_map(
-                    &mut native_by_source,
-                    source_lookup_key(ctx, *source)?,
-                    *native,
-                    "index SLDPRT native source features",
-                )?;
-            }
-            for feature in ctx.admit_iter(&history.features, "scan SLDPRT project_feature_model values")? {
-                ctx.insert_hash_map(
-                    &mut by_source,
-                    copy_projected_feature_text(ctx, &feature.id)?,
-                    neutral_feature_id_charged(ctx, &feature.id)?,
-                    "index SLDPRT projected source features",
-                )?;
-            }
-            let mut by_native = HashMap::new();
-            let mut features_by_source = HashMap::new();
-            for feature in ctx.admit_iter(&history.features, "scan SLDPRT project_feature_model values")? {
-                if !is_history_metadata_record(ctx, feature, &history.features)? {
-                    ctx.insert_hash_map(
-                        &mut by_native,
-                        feature.id.as_str(),
-                        neutral_feature_id_charged(ctx, &feature.id)?,
-                        "index SLDPRT projected native features",
-                    )?;
-                }
-                if let Some(source) = feature.source_id {
-                    ctx.insert_hash_map(
-                        &mut features_by_source,
-                        source,
-                        feature,
-                        "index SLDPRT native features by source",
-                    )?;
-                }
-            }
-            let source_ordered = ctx.admit_iter(&history.features, "scan SLDPRT source ordered history features")?.any(|feature| {
-                feature.input_class.is_none()
-                    && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-                    && feature.parameters.len() == 1
-                    && feature.source_value().is_some_and(|source| source > 0)
-            });
-            for feature in ctx.admit_iter(&history.features, "scan SLDPRT history metadata features")? {
-                if is_history_metadata_record(ctx, feature, &history.features)? { continue; }
-                let parent = if let Some(parent) = feature
-                    .tree_parent_record_id().map(|parent| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(by_native), parent, "look up SLDPRT hash key")?)}).transpose()?.flatten()
+    let (mut features, parents) = ctx
+        .admit_iter(&histories[..], "scan SLDPRT project_feature_model values")?
+        .try_fold(
+            (Vec::new(), Vec::new()),
+            |(mut features, mut parents), history| -> Result<_, CodecError> {
+                let source_bindings = unique_source_bindings(ctx, history)?;
+                let mut by_source = HashMap::new();
+                let mut native_by_source = HashMap::new();
+                for (source, binding) in
+                    ctx.admit_iter(&source_bindings, "scan SLDPRT project_feature_model values")?
                 {
-                    Some(copy_projected_feature_id(ctx, parent)?)
-                } else if let Some(source) = feature.parent_source_id() {
-                    let key = source_lookup_key(ctx, source)?;
-                    ctx.get_hash_map(&(by_source), &key, "look up SLDPRT hash key")?
-                        .map(|parent| copy_projected_feature_id(ctx, parent))
-                        .transpose()?
-                } else {
-                    None
-                };
-                let projected = cadmpeg_ir::features::Feature {
-                    id: neutral_feature_id_charged(ctx, &feature.id)?,
-                    ordinal: source_ordered
-                        .then(|| feature.source_value().map(u64::from))
-                        .flatten()
-                        .filter(|source| *source > 0)
-                        .unwrap_or(u64::from(feature.ordinal)),
-                    name: (!feature.name.is_empty())
-                        .then(|| copy_projected_feature_text(ctx, &feature.name))
-                        .transpose()?,
-                    suppressed: Some(feature.suppressed),
-                    dependencies: project_feature_dependencies(ctx, feature, &by_source)?,
-                    source_properties: copy_projected_feature_properties(
-                        ctx,
-                        &feature.properties,
-                        "collect SLDPRT projected feature properties",
-                    )?,
-                    source_tag: Some(copy_projected_feature_text(ctx, &feature.xml_tag)?),
-                    source_text: feature
-                        .text
-                        .as_deref()
-                        .map(|text| copy_projected_feature_text(ctx, text))
-                        .transpose()?,
-                    source_content: project_feature_content(ctx, feature, &by_native)?,
-
-                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                        project_definition(
-                            ctx,
+                    let Some(SourceBinding { native, neutral }) = binding else {
+                        continue;
+                    };
+                    ctx.insert_hash_map(
+                        &mut by_source,
+                        source_lookup_key(ctx, *source)?,
+                        copy_projected_feature_id(ctx, neutral)?,
+                        "index SLDPRT projected source features",
+                    )?;
+                    ctx.insert_hash_map(
+                        &mut native_by_source,
+                        source_lookup_key(ctx, *source)?,
+                        *native,
+                        "index SLDPRT native source features",
+                    )?;
+                }
+                for feature in ctx.admit_iter(
+                    &history.features,
+                    "scan SLDPRT project_feature_model values",
+                )? {
+                    ctx.insert_hash_map(
+                        &mut by_source,
+                        copy_projected_feature_text(ctx, &feature.id)?,
+                        neutral_feature_id_charged(ctx, &feature.id)?,
+                        "index SLDPRT projected source features",
+                    )?;
+                }
+                let mut by_native = HashMap::new();
+                let mut features_by_source = BTreeMap::new();
+                for feature in ctx.admit_iter(
+                    &history.features,
+                    "scan SLDPRT project_feature_model values",
+                )? {
+                    if !is_history_metadata_record(ctx, feature, &history.features)? {
+                        ctx.insert_hash_map(
+                            &mut by_native,
+                            feature.id.as_str(),
+                            neutral_feature_id_charged(ctx, &feature.id)?,
+                            "index SLDPRT projected native features",
+                        )?;
+                    }
+                    if let Some(source) = feature.source_id {
+                        ctx.insert_btree_map(
+                            &mut features_by_source,
+                            source,
                             feature,
-                            &by_source,
-                            &native_by_source,
-                            &features_by_source,
-                            &history.features,
+                            "index SLDPRT native features by source",
+                        )?;
+                    }
+                }
+                let source_ordered = ctx
+                    .admit_iter(
+                        &history.features,
+                        "scan SLDPRT source ordered history features",
+                    )?
+                    .any(|feature| {
+                        feature.input_class.is_none()
+                            && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+                            && feature.parameters.len() == 1
+                            && feature.source_value().is_some_and(|source| source > 0)
+                    });
+                for feature in
+                    ctx.admit_iter(&history.features, "scan SLDPRT history metadata features")?
+                {
+                    if is_history_metadata_record(ctx, feature, &history.features)? {
+                        continue;
+                    }
+                    let parent = if let Some(parent) = feature
+                        .tree_parent_record_id()
+                        .map(|parent| {
+                            Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(
+                                &(by_native),
+                                parent,
+                                "look up SLDPRT hash key",
+                            )?)
+                        })
+                        .transpose()?
+                        .flatten()
+                    {
+                        Some(copy_projected_feature_id(ctx, parent)?)
+                    } else if let Some(source) = feature.parent_source_id() {
+                        let key = source_lookup_key(ctx, source)?;
+                        ctx.get_hash_map(&(by_source), &key, "look up SLDPRT hash key")?
+                            .map(|parent| copy_projected_feature_id(ctx, parent))
+                            .transpose()?
+                    } else {
+                        None
+                    };
+                    let projected = cadmpeg_ir::features::Feature {
+                        id: neutral_feature_id_charged(ctx, &feature.id)?,
+                        ordinal: source_ordered
+                            .then(|| feature.source_value().map(u64::from))
+                            .flatten()
+                            .filter(|source| *source > 0)
+                            .unwrap_or(u64::from(feature.ordinal)),
+                        name: (!feature.name.is_empty())
+                            .then(|| copy_projected_feature_text(ctx, &feature.name))
+                            .transpose()?,
+                        suppressed: Some(feature.suppressed),
+                        dependencies: project_feature_dependencies(ctx, feature, &by_source)?,
+                        source_properties: copy_projected_feature_properties(
+                            ctx,
+                            &feature.properties,
+                            "collect SLDPRT projected feature properties",
                         )?,
-                    ),
-                    native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
-                };
-                ctx.reserve_vec(&mut features, 1, "collect SLDPRT projected features")?;
-                features.push(projected);
-                ctx.reserve_vec(&mut parents, 1, "collect SLDPRT projected feature parents")?;
-                parents.push(parent);
-            }
-            Ok((features, parents))
-        },
-    )?;
+                        source_tag: Some(copy_projected_feature_text(ctx, &feature.xml_tag)?),
+                        source_text: feature
+                            .text
+                            .as_deref()
+                            .map(|text| copy_projected_feature_text(ctx, text))
+                            .transpose()?,
+                        source_content: project_feature_content(ctx, feature, &by_native)?,
+
+                        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                            project_definition(
+                                ctx,
+                                feature,
+                                &by_source,
+                                &native_by_source,
+                                &features_by_source,
+                                &history.features,
+                            )?,
+                        ),
+                        native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
+                    };
+                    ctx.reserve_vec(&mut features, 1, "collect SLDPRT projected features")?;
+                    features.push(projected);
+                    ctx.reserve_vec(&mut parents, 1, "collect SLDPRT projected feature parents")?;
+                    parents.push(parent);
+                }
+                Ok((features, parents))
+            },
+        )?;
     let mut regeneration_parents = Vec::new();
     for (child_index, parent) in parents.into_iter().enumerate() {
         let Some(parent) = parent else {
@@ -375,7 +405,10 @@ pub(crate) fn project_feature_model(
         )?;
         let child = FeatureId::mint(child_text).map_err(CodecError::malformed)?;
         let mut tree_parent_index = None;
-        for (index, feature) in ctx.admit_iter(&features, "scan SLDPRT tree parent")?.enumerate() {
+        for (index, feature) in ctx
+            .admit_iter(&features, "scan SLDPRT tree parent")?
+            .enumerate()
+        {
             if feature.id == parent
                 && matches!(
                     feature.evaluation.definition(),
@@ -516,7 +549,8 @@ pub(super) fn bind_offset_plane_references(
                 current,
                 "walk SLDPRT zero offset plane parents",
             )?;
-            let Some(parent) = ctx.get_hash_map(&(parents), current, "look up SLDPRT hash key")? else {
+            let Some(parent) = ctx.get_hash_map(&(parents), current, "look up SLDPRT hash key")?
+            else {
                 break;
             };
             current = parent;
@@ -814,7 +848,9 @@ pub(super) fn bind_offset_plane_references(
             if ctx.contains_key_hash_map(&(frames), &feature.id, "test SLDPRT map key")? {
                 continue;
             }
-            let Some(&(origin, normal, u_axis)) = ctx.get_hash_map(&(frames), reference, "look up SLDPRT hash key")? else {
+            let Some(&(origin, normal, u_axis)) =
+                ctx.get_hash_map(&(frames), reference, "look up SLDPRT hash key")?
+            else {
                 continue;
             };
             let normal_length = normal.norm();
@@ -864,46 +900,56 @@ pub(super) fn bind_offset_plane_references(
             let serialized_reference_frame = serialized_reference_frame(feature);
             let mut candidates_by_root = HashMap::new();
             for candidate in ctx.admit_iter(&*features, "find SLDPRT offset plane candidates")? {
-                if !(candidate.ordinal < feature.ordinal || (serialized_reference_frame.is_some()
-                    && ctx.get_hash_map(&ordinals, &candidate.id, "look up SLDPRT hash key")?
-                        .is_some_and(|(_, _, is_principal, _)| *is_principal)))
-                    || history_key(candidate) != Some(history) { continue; }
-                let Some(&(candidate_origin, candidate_normal, candidate_u_axis)) = ctx.get_hash_map(&frames, &candidate.id, "look up SLDPRT hash key")? else { continue; };
-                    if let Some(serialized_reference_frame) = serialized_reference_frame {
-                        if !plane_frames_match(
-                            serialized_reference_frame,
-                            (candidate_origin, candidate_normal, candidate_u_axis),
-                        ) {
-                            continue;
-                        }
-                    }
-                    let candidate_normal_length = candidate_normal.norm();
-                    let result_normal_length = normal.norm();
-                    let normal_dot = (normal.x * candidate_normal.x
-                        + normal.y * candidate_normal.y
-                        + normal.z * candidate_normal.z)
-                        / (result_normal_length * candidate_normal_length);
-                    if !same_scalar(normal_dot.abs(), 1.0) {
+                if !(candidate.ordinal < feature.ordinal
+                    || (serialized_reference_frame.is_some()
+                        && ctx
+                            .get_hash_map(&ordinals, &candidate.id, "look up SLDPRT hash key")?
+                            .is_some_and(|(_, _, is_principal, _)| *is_principal)))
+                    || history_key(candidate) != Some(history)
+                {
+                    continue;
+                }
+                let Some(&(candidate_origin, candidate_normal, candidate_u_axis)) =
+                    ctx.get_hash_map(&frames, &candidate.id, "look up SLDPRT hash key")?
+                else {
+                    continue;
+                };
+                if let Some(serialized_reference_frame) = serialized_reference_frame {
+                    if !plane_frames_match(
+                        serialized_reference_frame,
+                        (candidate_origin, candidate_normal, candidate_u_axis),
+                    ) {
                         continue;
                     }
-                    let displacement = Vector3::new(
-                        origin.x - candidate_origin.x,
-                        origin.y - candidate_origin.y,
-                        origin.z - candidate_origin.z,
-                    );
-                    let signed_distance = (displacement.x * candidate_normal.x
-                        + displacement.y * candidate_normal.y
-                        + displacement.z * candidate_normal.z)
-                        / candidate_normal_length;
-                    let tangent = Vector3::new(
-                        displacement.x
-                            - candidate_normal.x * signed_distance / candidate_normal_length,
-                        displacement.y
-                            - candidate_normal.y * signed_distance / candidate_normal_length,
-                        displacement.z
-                            - candidate_normal.z * signed_distance / candidate_normal_length,
-                    );
-                if !(same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())) { continue; }
+                }
+                let candidate_normal_length = candidate_normal.norm();
+                let result_normal_length = normal.norm();
+                let normal_dot = (normal.x * candidate_normal.x
+                    + normal.y * candidate_normal.y
+                    + normal.z * candidate_normal.z)
+                    / (result_normal_length * candidate_normal_length);
+                if !same_scalar(normal_dot.abs(), 1.0) {
+                    continue;
+                }
+                let displacement = Vector3::new(
+                    origin.x - candidate_origin.x,
+                    origin.y - candidate_origin.y,
+                    origin.z - candidate_origin.z,
+                );
+                let signed_distance = (displacement.x * candidate_normal.x
+                    + displacement.y * candidate_normal.y
+                    + displacement.z * candidate_normal.z)
+                    / candidate_normal_length;
+                let tangent = Vector3::new(
+                    displacement.x - candidate_normal.x * signed_distance / candidate_normal_length,
+                    displacement.y - candidate_normal.y * signed_distance / candidate_normal_length,
+                    displacement.z - candidate_normal.z * signed_distance / candidate_normal_length,
+                );
+                if !(same_scalar(tangent.norm(), 0.0)
+                    && same_scalar(signed_distance.abs(), distance.get().abs()))
+                {
+                    continue;
+                }
                 let candidate = &candidate.id;
                 let distance = distance.get().abs().copysign(signed_distance);
                 let root = canonical_plane_id(ctx, candidate, &zero_offset_parents)?;
@@ -999,9 +1045,12 @@ fn bind_native_construction_features(
 ) -> Result<(), CodecError> {
     let mut construction_native_refs = HashSet::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
-        for feature in ctx.admit_iter(&history.features, "index SLDPRT native construction sources")? {
+        for feature in ctx.admit_iter(
+            &history.features,
+            "index SLDPRT native construction sources",
+        )? {
             if !matches!(
-                classify(ctx, feature)?,
+                classify(feature),
                 Some(
                     FeatureClass::Sketch
                         | FeatureClass::SketchBlockInstance
@@ -1009,8 +1058,11 @@ fn bind_native_construction_features(
                         | FeatureClass::ProjectedCurve
                         | FeatureClass::CompositeCurve
                 )
-            ) || ctx.contains_hash_set(&(construction_native_refs), feature.id.as_str(), "test SLDPRT hashed identity")?
-            {
+            ) || ctx.contains_hash_set(
+                &(construction_native_refs),
+                feature.id.as_str(),
+                "test SLDPRT hashed identity",
+            )? {
                 continue;
             }
             ctx.insert_hash_set(
@@ -1018,7 +1070,7 @@ fn bind_native_construction_features(
                 feature.id.as_str(),
                 "index SLDPRT native construction sources",
             )?;
-            }
+        }
     }
     let mut feature_ids_by_native = HashMap::new();
     for feature in features.iter() {
@@ -1026,7 +1078,11 @@ fn bind_native_construction_features(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        if ctx.contains_hash_set(&(construction_native_refs), native, "test SLDPRT hashed identity")? {
+        if ctx.contains_hash_set(
+            &(construction_native_refs),
+            native,
+            "test SLDPRT hashed identity",
+        )? {
             let native = copy_projected_feature_text(ctx, native)?;
             let id = copy_projected_feature_id(ctx, &feature.id)?;
             ctx.insert_hash_map(
@@ -1069,7 +1125,12 @@ fn bind_native_construction_features(
             let PlanarProfileRef::Native(native) = profile else {
                 return Ok(());
             };
-            let Some(target) = ctx.get_hash_map(&(feature_ids_by_native), native.as_str(), "look up SLDPRT hash key")? else {
+            let Some(target) = ctx.get_hash_map(
+                &(feature_ids_by_native),
+                native.as_str(),
+                "look up SLDPRT hash key",
+            )?
+            else {
                 return Ok(());
             };
             let target_id = copy_projected_feature_id(ctx, target)?;
@@ -1127,7 +1188,11 @@ fn bind_native_construction_features(
                         ..
                     }) => {
                         ctx.charge_work(1, "bind SLDPRT native construction references")?;
-                        if let Some(target) = ctx.get_hash_map(&(feature_ids_by_native), native.as_str(), "look up SLDPRT hash key")? {
+                        if let Some(target) = ctx.get_hash_map(
+                            &(feature_ids_by_native),
+                            native.as_str(),
+                            "look up SLDPRT hash key",
+                        )? {
                             insert_dependency(dependencies, target)?;
                         }
                     }
@@ -1236,30 +1301,31 @@ struct SourceBinding<'a> {
 fn unique_source_bindings<'a>(
     ctx: &DecodeContext<'_>,
     history: &'a FeatureHistory,
-) -> Result<HashMap<FeatureSource, Option<SourceBinding<'a>>>, CodecError> {
-    let mut bindings = HashMap::new();
-    for feature in &history.features {
-        ctx.charge_work(1, "scan SLDPRT unique feature sources")?;
+) -> Result<BTreeMap<FeatureSource, Option<SourceBinding<'a>>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT unique feature sources";
+    let mut sources = BTreeMap::<FeatureSource, Option<&'a crate::records::Feature>>::new();
+    for feature in ctx.admit_iter(&history.features, OPERATION)? {
         if is_history_metadata_record(ctx, feature, &history.features)? {
             continue;
         }
         let Some(source) = feature.source_id else {
             continue;
         };
-        if let Some(existing) = ctx.get_mut_hash_map(&mut (bindings), &source, "look up mutable SLDPRT hash key")? {
-            *existing = None;
-            continue;
-        }
-        ctx.admit_hash_map_entry(
-            &mut bindings,
-            &source,
-            "index SLDPRT unique feature sources",
-        )?;
-        let binding = SourceBinding {
-            native: feature.id.as_str(),
-            neutral: neutral_feature_id_charged(ctx, &feature.id)?,
-        };
-        bindings.insert(source, Some(binding));
+        ctx.entry_btree_map(&mut sources, source, OPERATION)?
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(feature));
+    }
+    let mut bindings = BTreeMap::new();
+    for (source, feature) in ctx.admit_iter(sources, OPERATION)? {
+        let binding = feature
+            .map(|feature| {
+                Ok::<_, CodecError>(SourceBinding {
+                    native: feature.id.as_str(),
+                    neutral: neutral_feature_id_charged(ctx, &feature.id)?,
+                })
+            })
+            .transpose()?;
+        ctx.insert_btree_map(&mut bindings, source, binding, OPERATION)?;
     }
     Ok(bindings)
 }
@@ -1269,12 +1335,19 @@ pub(crate) fn incomplete_history_reference_features(
     histories: &[FeatureHistory],
 ) -> Result<usize, CodecError> {
     let mut incomplete = 0usize;
-    for history in ctx.admit_iter(histories, "scan SLDPRT incomplete_history_reference_features values")? {
+    for history in ctx.admit_iter(
+        histories,
+        "scan SLDPRT incomplete_history_reference_features values",
+    )? {
         let sources = unique_source_bindings(ctx, history)?;
         let mut native_ids = HashSet::new();
         for feature in &history.features {
             ctx.charge_work(1, "index SLDPRT history feature references")?;
-            if ctx.contains_hash_set(&(native_ids), feature.id.as_str(), "test SLDPRT hashed identity")? {
+            if ctx.contains_hash_set(
+                &(native_ids),
+                feature.id.as_str(),
+                "test SLDPRT hashed identity",
+            )? {
                 continue;
             }
             ctx.insert_hash_set(
@@ -1286,26 +1359,77 @@ pub(crate) fn incomplete_history_reference_features(
         for feature in &history.features {
             ctx.charge_work(1, "scan SLDPRT incomplete history references")?;
             let owner_id = neutral_feature_id_charged(ctx, &feature.id)?;
-            let duplicate_source = match feature
-                .source_id { Some(source) => ctx.get_hash_map(&(sources), &source, "look up SLDPRT hash key")?.is_some_and(Option::is_none), None => false };
+            let duplicate_source = match feature.source_id {
+                Some(source) => ctx
+                    .get_btree_map(&sources, &source, "look up SLDPRT feature source")?
+                    .is_some_and(Option::is_none),
+                None => false,
+            };
             let parent_requested = feature.tree_parent.is_some();
-            let parent_resolved = match feature
-                .tree_parent_record_id() { Some(parent) => ctx.contains_hash_set(&(native_ids), parent, "test SLDPRT hashed identity")?, None => false }
-                || match feature
-                    .parent_source_id() { Some(source) => ctx.get_hash_map(&(sources), &source, "look up SLDPRT hash key")?.is_some_and(Option::is_some), None => false };
-            let incomplete_content = ctx.admit_iter(&feature.content[..], "scan SLDPRT incomplete_history_reference_features values")?.try_fold(false, |found, item| { Ok::<_, cadmpeg_core::CodecError>(found || ( match item {
-                FeatureContent::Feature(child) => !ctx.contains_hash_set(&(native_ids), child.as_str(), "test SLDPRT hashed identity")?,
-                FeatureContent::Dimension(name) => !ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")?,
-                FeatureContent::Text(_) => false,
-            } )) })?;
+            let parent_resolved = match feature.tree_parent_record_id() {
+                Some(parent) => {
+                    ctx.contains_hash_set(&(native_ids), parent, "test SLDPRT hashed identity")?
+                }
+                None => false,
+            } || match feature.parent_source_id() {
+                Some(source) => ctx
+                    .get_btree_map(&sources, &source, "look up SLDPRT feature source")?
+                    .is_some_and(Option::is_some),
+                None => false,
+            };
+            let incomplete_content = ctx
+                .admit_iter(
+                    &feature.content[..],
+                    "scan SLDPRT incomplete_history_reference_features values",
+                )?
+                .try_fold(false, |found, item| {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        found
+                            || (match item {
+                                FeatureContent::Feature(child) => !ctx.contains_hash_set(
+                                    &(native_ids),
+                                    child.as_str(),
+                                    "test SLDPRT hashed identity",
+                                )?,
+                                FeatureContent::Dimension(name) => !ctx.contains_key_btree_map(
+                                    &(feature.parameters),
+                                    name.as_str(),
+                                    "test SLDPRT map key",
+                                )?,
+                                FeatureContent::Text(_) => false,
+                            }),
+                    )
+                })?;
             let mut unresolved_dependency = false;
-            for name in ctx.admit_iter(FEATURE_REFERENCE_PROPERTIES, "scan SLDPRT incomplete_history_reference_features values")? {
-                let Some(value) = ctx.get_btree_map(&feature.properties, *name, "look up SLDPRT ordered key")? else { continue; };
-                for reference in value.split(|character: char| character == ',' || character == ';' || character.is_whitespace()).filter(|reference| !reference.is_empty()) {
-                    unresolved_dependency = unresolved_dependency || (FeatureSource::try_from(reference)
-                        .ok().map(|reference| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(sources), &reference, "look up SLDPRT hash key")?)}).transpose()?.flatten()
-                        .and_then(Option::as_ref)
-                        .is_none_or(|binding| binding.neutral == owner_id));
+            for name in ctx.admit_iter(
+                FEATURE_REFERENCE_PROPERTIES,
+                "scan SLDPRT incomplete_history_reference_features values",
+            )? {
+                let Some(value) =
+                    ctx.get_btree_map(&feature.properties, *name, "look up SLDPRT ordered key")?
+                else {
+                    continue;
+                };
+                for reference in value
+                    .split(|character: char| {
+                        character == ',' || character == ';' || character.is_whitespace()
+                    })
+                    .filter(|reference| !reference.is_empty())
+                {
+                    unresolved_dependency = unresolved_dependency
+                        || (FeatureSource::try_from(reference)
+                            .ok()
+                            .map(|reference| {
+                                Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(
+                                    &sources,
+                                    &reference,
+                                    "look up SLDPRT feature source",
+                                )?)
+                            })
+                            .transpose()?
+                            .flatten()
+                            .and_then(Option::as_ref)
+                            .is_none_or(|binding| binding.neutral == owner_id));
                 }
             }
             if duplicate_source
@@ -1340,13 +1464,24 @@ fn project_feature_content(
         ctx.charge_work(1, OPERATION)?;
         if let FeatureContent::Dimension(name) = content {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-            if ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")? && !names.contains(&name.as_str()) {
+            if ctx.contains_key_btree_map(
+                &(feature.parameters),
+                name.as_str(),
+                "test SLDPRT map key",
+            )? && !names.contains(&name.as_str())
+            {
                 ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
             }
         }
     }
-    for name in ctx.admit_iter(&feature.parameters, "scan SLDPRT project_feature_content map keys")?.map(|(key, _)| key) {
+    for name in ctx
+        .admit_iter(
+            &feature.parameters,
+            "scan SLDPRT project_feature_content map keys",
+        )?
+        .map(|(key, _)| key)
+    {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
         if !names.contains(&name.as_str()) {
             ctx.reserve_vec(&mut names, 1, OPERATION)?;
@@ -1362,7 +1497,10 @@ fn project_feature_content(
             }
             FeatureContent::Dimension(name) => {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-                let Some(ordinal) = ctx.admit_iter(&names[..], "scan SLDPRT project_feature_content values")?.position(|known| *known == name) else {
+                let Some(ordinal) = ctx
+                    .admit_iter(&names[..], "scan SLDPRT project_feature_content values")?
+                    .position(|known| *known == name)
+                else {
                     continue;
                 };
                 charge_projected_text_work(ctx, &feature.id, OPERATION)?;
@@ -1385,7 +1523,9 @@ fn project_feature_content(
                 FeatureSourceContent::Parameter(parameter)
             }
             FeatureContent::Feature(id) => {
-                let Some(target) = ctx.get_hash_map(&(by_native), id.as_str(), "look up SLDPRT hash key")? else {
+                let Some(target) =
+                    ctx.get_hash_map(&(by_native), id.as_str(), "look up SLDPRT hash key")?
+                else {
                     continue;
                 };
                 FeatureSourceContent::Feature(copy_projected_feature_id(ctx, target)?)
@@ -1408,7 +1548,12 @@ fn project_feature_dependencies(
     let owner = neutral_feature_id_charged(ctx, &feature.id)?;
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     for property in FEATURE_REFERENCE_PROPERTIES {
-        let Some(value) = ctx.get_btree_map(&(feature.properties), *property, "look up SLDPRT ordered key")? else {
+        let Some(value) = ctx.get_btree_map(
+            &(feature.properties),
+            *property,
+            "look up SLDPRT ordered key",
+        )?
+        else {
             continue;
         };
         charge_projected_text_work(ctx, value, "scan SLDPRT feature dependencies")?;
@@ -1419,7 +1564,9 @@ fn project_feature_dependencies(
             .filter(|reference| !reference.is_empty())
         {
             ctx.charge_work(1, "scan SLDPRT feature dependencies")?;
-            let Some(dependency) = ctx.get_hash_map(&(by_source), reference, "look up SLDPRT hash key")? else {
+            let Some(dependency) =
+                ctx.get_hash_map(&(by_source), reference, "look up SLDPRT hash key")?
+            else {
                 continue;
             };
             if dependency == &owner || dependencies.contains(dependency) {
@@ -1518,7 +1665,7 @@ fn project_definition(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
-    features_by_source: &HashMap<FeatureSource, &Feature>,
+    features_by_source: &BTreeMap<FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Result<FeatureDefinition, CodecError> {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
@@ -1537,7 +1684,7 @@ fn project_definition(
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
     }
-    let class = classify(ctx, feature)?;
+    let class = classify(feature);
     let projected_pattern = if class == Some(FeatureClass::Pattern) {
         Some(project_pattern(ctx, feature, by_source, native_by_source)?)
     } else {
@@ -1569,7 +1716,16 @@ fn project_definition(
             FeatureOperation::SketchBlockInstance {
                 block: feature
                     .properties
-                    .get("BlockDefinition").map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(by_source), source.as_str(), "look up SLDPRT hash key")?)}).transpose()?.flatten()
+                    .get("BlockDefinition")
+                    .map(|source| {
+                        Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(
+                            &(by_source),
+                            source.as_str(),
+                            "look up SLDPRT hash key",
+                        )?)
+                    })
+                    .transpose()?
+                    .flatten()
                     .map(|id| copy_projected_feature_id(ctx, id))
                     .transpose()?,
                 placement: sketch_block_placement(feature),
@@ -1580,7 +1736,9 @@ fn project_definition(
         return project_offset_plane(ctx, feature, by_source)?
             .map_or_else(|| native_definition(ctx, feature), Ok);
     }
-    if let Some(plane) = principal_plane_in_history(ctx, feature, features_by_source, history_features)? {
+    if let Some(plane) =
+        principal_plane_in_history(ctx, feature, features_by_source, history_features)?
+    {
         return Ok(FeatureDefinition::Operation(
             FeatureOperation::DatumPrincipalPlane { plane },
         ));
@@ -1708,16 +1866,26 @@ fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<Str
     for content in &feature.content {
         ctx.charge_work(1, OPERATION)?;
         if let FeatureContent::Dimension(name) = content {
-            if ctx.contains_key_btree_map(&(feature.parameters), name.as_str(), "test SLDPRT map key")? {
+            if ctx.contains_key_btree_map(
+                &(feature.parameters),
+                name.as_str(),
+                "test SLDPRT map key",
+            )? {
                 let name = copy_projected_feature_text(ctx, name)?;
                 ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
             }
         }
     }
-    for name in ctx.admit_iter(&feature.parameters, "scan SLDPRT parameter_names map keys")?.map(|(key, _)| key) {
+    for name in ctx
+        .admit_iter(&feature.parameters, "scan SLDPRT parameter_names map keys")?
+        .map(|(key, _)| key)
+    {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-        if !ctx.admit_iter(&names[..], "scan SLDPRT parameter_names values")?.any(|known| known == name.as_str()) {
+        if !ctx
+            .admit_iter(&names[..], "scan SLDPRT parameter_names values")?
+            .any(|known| known == name.as_str())
+        {
             let name = copy_projected_feature_text(ctx, name.as_str())?;
             ctx.reserve_vec(&mut names, 1, OPERATION)?;
             names.push(name);

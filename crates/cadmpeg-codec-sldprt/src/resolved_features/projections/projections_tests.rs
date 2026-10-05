@@ -7,8 +7,8 @@ use super::{
 };
 use crate::records::FeatureSource;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputComponentPathEntry,
-    FeatureInputLane, FeatureInputSurfaceSelection,
+    Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
+    FeatureInputSurfaceSelection,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
@@ -16,16 +16,15 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
 use cadmpeg_ir::{
     features::{
-        edge_treatments::RadiusSpec,
-        BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureOperation, UnresolvedFamily,
+        edge_treatments::RadiusSpec, BodySelection, DatumPlaneReference, FaceSelection,
+        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
     },
     scalar::Length,
 };
 use std::collections::BTreeMap;
 
-mod identity_lookups;
 mod character_growth;
+mod identity_lookups;
 mod limits;
 mod patterns;
 mod variable_fillets;
@@ -471,8 +470,14 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     };
 
     crate::test_support::work_refusal_at("format SLDPRT cylinder reference separator", |ctx| {
-        project_unbound_cosmetic_thread_faces(ctx, &mut features.clone(), std::slice::from_ref(&history),
-            &[lane("lane-a", 40), lane("lane-b", 60)], &[], &[])
+        project_unbound_cosmetic_thread_faces(
+            ctx,
+            &mut features.clone(),
+            std::slice::from_ref(&history),
+            &[lane("lane-a", 40), lane("lane-b", 60)],
+            &[],
+            &[],
+        )
     });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
@@ -970,7 +975,12 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     }
 
     crate::test_support::work_refusal_at("format SLDPRT surface cut body separator", |ctx| {
-        project_compact_surface_selections(ctx, &mut features.clone(), &[], &[lane.clone(), lane2.clone()])
+        project_compact_surface_selections(
+            ctx,
+            &mut features.clone(),
+            &[],
+            &[lane.clone(), lane2.clone()],
+        )
     });
     with_projection_context(|ctx| {
         project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])

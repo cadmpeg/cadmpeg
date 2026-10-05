@@ -1,7 +1,6 @@
 //! Compact and current-generation curve endpoint tests.
 
-use super::marker_coordinates;
-use super::super::super::markers::sketch_input_entities;
+use super::super::super::markers::{marker_coordinates, sketch_input_entities};
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind};
 use crate::resolved_features::endpoints::alternate_current_indexed_curve_endpoint_indices;

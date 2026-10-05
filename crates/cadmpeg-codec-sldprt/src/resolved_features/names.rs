@@ -77,7 +77,9 @@ pub(crate) fn object_names(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
-    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
+        .map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
     ctx.charge_work(
         u64_from_index(payload.len()),
@@ -137,7 +139,8 @@ fn decimal_matches(
     Ok(!text.is_empty()
         && (text == "0" || !text.starts_with('0'))
         && text.bytes().all(|byte| byte.is_ascii_digit())
-        && ctx.parse_text::<usize>(text, "parse SLDPRT feature-input identity offset")? == Ok(value))
+        && ctx.parse_text::<usize>(text, "parse SLDPRT feature-input identity offset")?
+            == Ok(value))
 }
 
 fn native_id_matches(
@@ -147,7 +150,8 @@ fn native_id_matches(
     lane_key: &str,
     offset: usize,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    match id.strip_prefix(family)
+    match id
+        .strip_prefix(family)
         .and_then(|tail| tail.strip_prefix(lane_key))
         .and_then(|tail| tail.strip_prefix(':'))
     {
@@ -222,14 +226,22 @@ pub(crate) fn class_declarations_match(
     parent: &str,
     classes: &[FeatureInputClass],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
+        .map_or(parent, |(_, key)| key);
     let mut expected = payload_classes(payload).enumerate();
     for (ordinal, actual) in classes.iter().enumerate() {
         let Some((index, (offset, name))) = expected.next() else {
             return Ok(false);
         };
         if !(index == ordinal
-            && native_id_matches(ctx, &actual.id, "sldprt:feature-input:class#", lane_key, offset)?
+            && native_id_matches(
+                ctx,
+                &actual.id,
+                "sldprt:feature-input:class#",
+                lane_key,
+                offset,
+            )?
             && actual.parent == parent
             && u32::try_from(ordinal) == Ok(actual.ordinal)
             && u64::try_from(offset) == Ok(actual.offset)
@@ -247,14 +259,22 @@ pub(crate) fn object_names_structure_match(
     parent: &str,
     names: &[FeatureInputName],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
+        .map_or(parent, |(_, key)| key);
     let mut expected = payload_names(payload).enumerate();
     for (ordinal, actual) in names.iter().enumerate() {
         let Some((index, (offset, object_id, _))) = expected.next() else {
             return Ok(false);
         };
         if !(index == ordinal
-            && native_id_matches(ctx, &actual.id, "sldprt:feature-input:name#", lane_key, offset)?
+            && native_id_matches(
+                ctx,
+                &actual.id,
+                "sldprt:feature-input:name#",
+                lane_key,
+                offset,
+            )?
             && actual.parent == parent
             && u32::try_from(ordinal) == Ok(actual.ordinal)
             && u64::try_from(offset) == Ok(actual.offset)
@@ -321,7 +341,9 @@ pub(crate) fn class_declarations(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputClass>, cadmpeg_core::CodecError> {
-    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
+        .map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
     for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
         let id = record_id(ctx, "class", lane_key, offset)?;

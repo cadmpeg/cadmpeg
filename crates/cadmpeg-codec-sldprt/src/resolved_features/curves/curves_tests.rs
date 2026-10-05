@@ -13,8 +13,7 @@ use super::{
     compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
     compact_line_region_addresses, complete_ordered_compact_line_profile,
     current_linked_semicircle_record, legacy_extended_rectangle_diagonal_endpoint,
-    ordered_compact_line_profile, resolve_two_center_semicircle_profile,
-    tangent_bounded_curve,
+    ordered_compact_line_profile, resolve_two_center_semicircle_profile, tangent_bounded_curve,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::{
@@ -318,9 +317,11 @@ fn incomplete_closed_profile_clear_propagates_work_refusal() {
     let entities = closed_profile_limit_entities();
     let entities = &entities[..1];
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(closed_marker_profiles_allowing_shared_endpoints(&ctx, entities)
-        .unwrap()
-        .is_empty());
+    assert!(
+        closed_marker_profiles_allowing_shared_endpoints(&ctx, entities)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

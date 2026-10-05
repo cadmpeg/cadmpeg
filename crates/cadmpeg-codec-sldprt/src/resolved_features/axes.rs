@@ -43,7 +43,9 @@ fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
 }
 
 pub(super) fn line_reference_direction(
-    ctx: &DecodeContext<'_>, payload: &[u8], class_offset: u64,
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    class_offset: u64,
 ) -> Result<Option<UnitVector3>, CodecError> {
     let Ok(class_offset) = usize::try_from(class_offset) else {
         return Ok(None);
@@ -62,7 +64,13 @@ pub(super) fn line_reference_direction(
         && payload.get(class_offset + 148..class_offset + 152) == Some(&[0xf8, 0x2a, 0, 0])
     {
         if let Some(direction) = direction_at(class_offset + 200) {
-            direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT line reference directions"))?;
+            direction_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut directions,
+                    direction,
+                    "collect SLDPRT line reference directions",
+                )
+            })?;
         }
     }
     if payload.get(class_offset + 144..class_offset + 156)
@@ -72,7 +80,13 @@ pub(super) fn line_reference_direction(
         && payload.get(class_offset + 160..class_offset + 164) == Some(&[0xf8, 0x2a, 0, 0])
     {
         if let Some(direction) = direction_at(class_offset + 220) {
-            direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT line reference directions"))?;
+            direction_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut directions,
+                    direction,
+                    "collect SLDPRT line reference directions",
+                )
+            })?;
         }
     }
     // Both declared layouts are evaluated before selecting the direction so
@@ -100,7 +114,8 @@ pub(super) fn declared_line_reference_directions(
         return Ok(Vec::new());
     };
     let mut directions = Vec::new();
-    if let Some(direction) = line_reference_direction(ctx, &payload[..end], u64_from_index(class_offset))?
+    if let Some(direction) =
+        line_reference_direction(ctx, &payload[..end], u64_from_index(class_offset))?
     {
         ctx.reserve_vec(
             &mut directions,
@@ -235,7 +250,8 @@ pub(super) fn typed_linear_pattern_dimensions(
             let name_end = class_offset.checked_add(128)?.min(object_end);
             let mut names = lane.names.iter().filter(|name| {
                 name.object_id == Some(ObjectId::Absent)
-                    && (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
+                    && (u64_from_index(class_offset)..u64_from_index(name_end))
+                        .contains(&name.offset)
                     && feature.parameters.contains_key(name.value.as_str())
             });
             names.next().filter(|_| names.next().is_none())
@@ -359,7 +375,13 @@ pub(super) fn compact_line_reference_directions(
             && record.get(134..136) == Some(&[0xff; 2]);
         if record.get(16..24) == Some(&[0; 8]) && shifted_nine_scalar_trailer {
             if let Some(direction) = direction_at(72) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         let shifted_seven_scalar_trailer = (record.get(80..116) == Some(&[0; 36])
@@ -375,7 +397,13 @@ pub(super) fn compact_line_reference_directions(
                     .is_some_and(|values| values.into_iter().all(|value| value != 0)));
         if record.get(16..24) == Some(&[0; 8]) && shifted_seven_scalar_trailer {
             if let Some(direction) = direction_at(56) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         let tagged_trailer = record.get(88..104) == Some(&[0; 16])
@@ -395,7 +423,13 @@ pub(super) fn compact_line_reference_directions(
                     && record.get(142..144) == Some(&[0xff; 2])));
         if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
             if let Some(direction) = direction_at(64) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         let seven_scalar_trailer = record.get(88..96).is_some_and(|bytes| bytes != [0; 8])
@@ -411,7 +445,13 @@ pub(super) fn compact_line_reference_directions(
                 && record.get(140..142) == Some(&[0xff; 2]));
         if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && seven_scalar_trailer {
             if let Some(direction) = direction_at(64) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         if directions.is_empty()
@@ -421,7 +461,13 @@ pub(super) fn compact_line_reference_directions(
             && record.get(112..136) == Some(&[0; 24])
         {
             if let Some(direction) = direction_at(64) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         if directions.is_empty()
@@ -433,7 +479,13 @@ pub(super) fn compact_line_reference_directions(
                 }))
         {
             if let Some(direction) = direction_at(80) {
-                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "collect SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         // The final branch is the legacy unshifted fallback.  It is only a
@@ -445,15 +497,28 @@ pub(super) fn compact_line_reference_directions(
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>();
-                let mut distinct_storage = ctx.reserve_scoped(0, "hold SLDPRT distinct compact line directions")?;
+                let mut distinct_storage =
+                    ctx.reserve_scoped(0, "hold SLDPRT distinct compact line directions")?;
                 let mut distinct = Vec::new();
                 for candidate in candidates {
                     if !distinct.contains(&candidate) {
-                        distinct_storage.with_storage(|| ctx.push_vec(&mut distinct, candidate, "collect SLDPRT distinct compact line directions"))?;
+                        distinct_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut distinct,
+                                candidate,
+                                "collect SLDPRT distinct compact line directions",
+                            )
+                        })?;
                     }
                 }
                 if let [direction] = distinct.as_slice() {
-                    direction_storage.with_storage(|| ctx.push_vec(&mut directions, *direction, "collect SLDPRT compact line directions"))?;
+                    direction_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut directions,
+                            *direction,
+                            "collect SLDPRT compact line directions",
+                        )
+                    })?;
                 }
             } else {
                 directions.extend(direction_at(56));
@@ -991,7 +1056,11 @@ pub(crate) fn enrich_history_revolution_inputs(
     let mut name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, "count SLDPRT revolution feature names")?;
-        if let Some(count) = ctx.get_mut_hash_map(&mut name_counts, feature.name.as_str(), "lookup SLDPRT revolution feature name count")? {
+        if let Some(count) = ctx.get_mut_hash_map(
+            &mut name_counts,
+            feature.name.as_str(),
+            "lookup SLDPRT revolution feature name count",
+        )? {
             *count = count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "count SLDPRT revolution feature names",
@@ -1036,7 +1105,10 @@ pub(crate) fn enrich_history_revolution_inputs(
             Ord::cmp,
             "sort SLDPRT revolution profile sources",
         )?;
-        ctx.dedup_vec(&mut object_ids, "deduplicate SLDPRT revolution profile sources")?;
+        ctx.dedup_vec(
+            &mut object_ids,
+            "deduplicate SLDPRT revolution profile sources",
+        )?;
         if let [object_id] = object_ids.as_slice() {
             feature.source_id = FeatureSource::from_value(*object_id);
         }
@@ -1071,7 +1143,11 @@ pub(crate) fn enrich_history_revolution_inputs(
         profile_sources.push(sources);
         for feature in &history.features {
             ctx.charge_work(1, "index SLDPRT revolution profile owners")?;
-            if let Some(owner) = ctx.get_mut_hash_map(&mut profile_source_owner, feature.id.as_str(), "lookup SLDPRT revolution profile owner")? {
+            if let Some(owner) = ctx.get_mut_hash_map(
+                &mut profile_source_owner,
+                feature.id.as_str(),
+                "lookup SLDPRT revolution profile owner",
+            )? {
                 *owner = history_index;
             } else {
                 ctx.reserve_map(
@@ -1887,10 +1963,14 @@ fn profile_roster_principal_axis_endpoints(
         return Ok(None);
     }
     let mut selected_storage = ctx.reserve_scoped(0, "hold SLDPRT principal axis candidates")?;
-    let selected = selected_storage.with_storage(|| ctx.collect_vec(
-        candidates.iter().filter(|(count, _)| *count == maximum_incidence),
-        "collect SLDPRT principal axis candidates",
-    ))?;
+    let selected = selected_storage.with_storage(|| {
+        ctx.collect_vec(
+            candidates
+                .iter()
+                .filter(|(count, _)| *count == maximum_incidence),
+            "collect SLDPRT principal axis candidates",
+        )
+    })?;
     let [(_, axis)] = selected.as_slice() else {
         return Ok(None);
     };
@@ -1923,9 +2003,12 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         current_code_two || detailed_indexed_curve
     });
     let mut curve_storage = ctx.reserve_scoped(0, "hold SLDPRT implicit axis curves")?;
-    let curve_candidates = curve_storage.with_storage(|| ctx.collect_vec(
-        curve_candidates.take(2), "collect SLDPRT implicit axis curves",
-    ))?;
+    let curve_candidates = curve_storage.with_storage(|| {
+        ctx.collect_vec(
+            curve_candidates.take(2),
+            "collect SLDPRT implicit axis curves",
+        )
+    })?;
     let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, false)?;
     let candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref.as_deref() == Some(profile_native)
@@ -1952,13 +2035,21 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         }
     }
     let mut endpoint_storage = ctx.reserve_scoped(0, "hold SLDPRT implicit axis endpoints")?;
-    let selected_endpoints = endpoint_storage.with_storage(|| ctx.collect_vec(
-        unreferenced_points.iter().copied().filter(|marker| {
-            index_from_u64(marker.offset()).is_some_and(|offset| {
-                lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
-            })
-        }).take(3), "collect SLDPRT implicit axis endpoints",
-    ))?;
+    let selected_endpoints = endpoint_storage.with_storage(|| {
+        ctx.collect_vec(
+            unreferenced_points
+                .iter()
+                .copied()
+                .filter(|marker| {
+                    index_from_u64(marker.offset()).is_some_and(|offset| {
+                        lane.native_payload.get(offset + 76..offset + 80)
+                            == Some(&1u32.to_le_bytes())
+                    })
+                })
+                .take(3),
+            "collect SLDPRT implicit axis endpoints",
+        )
+    })?;
     if let [start, end] = selected_endpoints.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {

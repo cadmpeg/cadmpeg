@@ -2,7 +2,7 @@
 
 #[test]
 fn transforms_identity_deduplication_preserves_output_and_refusal() {
-    use cadmpeg_ir::sketches::{SketchEntityId};
+    use cadmpeg_ir::sketches::SketchEntityId;
     let first = SketchEntityId::mint("synthetic:test:id#a-first").unwrap();
     let second = SketchEntityId::mint("synthetic:test:id#z-second").unwrap();
     let input = [second.clone(), first.clone(), second.clone()];

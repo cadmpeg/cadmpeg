@@ -28,14 +28,22 @@ const SURFACE_EXTENSION_TOKENS: &[(&str, SurfaceExtension)] = &[
 
 /// Parse a native token case-insensitively against a token table, returning the
 /// typed variant or `None` for an unrecognized spelling.
-fn parse_token<T: Clone>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, table: &[(&'static str, T)], raw: &str) -> Result<Option<T>, cadmpeg_core::CodecError> {
-    Ok(ctx.admit_iter(table, "scan SLDPRT feature schema token table")?
+fn parse_token<T: Clone>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    table: &[(&'static str, T)],
+    raw: &str,
+) -> Result<Option<T>, cadmpeg_core::CodecError> {
+    Ok(ctx
+        .admit_iter(table, "scan SLDPRT feature schema token table")?
         .find(|(token, _)| raw.eq_ignore_ascii_case(token))
         .map(|(_, value)| value.clone()))
 }
 
 /// Parse a filled-surface continuity order from its native token.
-pub(crate) fn parse_surface_continuity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, raw: &str) -> Result<Option<SurfaceContinuity>, cadmpeg_core::CodecError> {
+pub(crate) fn parse_surface_continuity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    raw: &str,
+) -> Result<Option<SurfaceContinuity>, cadmpeg_core::CodecError> {
     parse_token(ctx, SURFACE_CONTINUITY_TOKENS, raw)
 }
 
@@ -49,7 +57,10 @@ pub(crate) fn surface_continuity_token(value: SurfaceContinuity) -> &'static str
 }
 
 /// Parse a trim-surface keep region from its native token.
-pub(crate) fn parse_trim_region(ctx: &cadmpeg_core::decode::DecodeContext<'_>, raw: &str) -> Result<Option<TrimRegion>, cadmpeg_core::CodecError> {
+pub(crate) fn parse_trim_region(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    raw: &str,
+) -> Result<Option<TrimRegion>, cadmpeg_core::CodecError> {
     parse_token(ctx, TRIM_REGION_TOKENS, raw)
 }
 
@@ -62,7 +73,10 @@ pub(crate) fn trim_region_token(value: &TrimRegion) -> Option<&'static str> {
 }
 
 /// Parse a surface-extension method from its native token.
-pub(crate) fn parse_surface_extension(ctx: &cadmpeg_core::decode::DecodeContext<'_>, raw: &str) -> Result<Option<SurfaceExtension>, cadmpeg_core::CodecError> {
+pub(crate) fn parse_surface_extension(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    raw: &str,
+) -> Result<Option<SurfaceExtension>, cadmpeg_core::CodecError> {
     parse_token(ctx, SURFACE_EXTENSION_TOKENS, raw)
 }
 

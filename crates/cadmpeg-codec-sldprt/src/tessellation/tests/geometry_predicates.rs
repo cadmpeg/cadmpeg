@@ -78,24 +78,15 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
             .unwrap()
             .is_some()
     );
-    assert!(polygon_contains(
-        &ctx,
-        &concave,
-        Point2::new(1.0, 1.0),
-        CONTAINMENT_TOLERANCE
-    ).unwrap());
-    assert!(polygon_contains(
-        &ctx,
-        &concave,
-        Point2::new(3.0, 3.0),
-        CONTAINMENT_TOLERANCE
-    ).unwrap());
-    assert!(!polygon_contains(
-        &ctx,
-        &concave,
-        Point2::new(1.0, 3.0),
-        CONTAINMENT_TOLERANCE
-    ).unwrap());
+    assert!(
+        polygon_contains(&ctx, &concave, Point2::new(1.0, 1.0), CONTAINMENT_TOLERANCE).unwrap()
+    );
+    assert!(
+        polygon_contains(&ctx, &concave, Point2::new(3.0, 3.0), CONTAINMENT_TOLERANCE).unwrap()
+    );
+    assert!(
+        !polygon_contains(&ctx, &concave, Point2::new(1.0, 3.0), CONTAINMENT_TOLERANCE).unwrap()
+    );
 
     let crossing = vec![
         Point2::new(0.0, 0.0),

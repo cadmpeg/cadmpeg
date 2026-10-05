@@ -255,7 +255,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             };
             let mut owners = Vec::new();
             let mut owners_storage = ctx.reserve_scoped(0, OPERATION)?;
-            for history in ctx.admit_iter(histories, OPERATION)? {
+            for history in ctx.admit_iter(&*histories, OPERATION)? {
                 for feature in ctx.admit_iter(&history.features, OPERATION)? {
                     ctx.charge_work(
                         u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
@@ -313,7 +313,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
         for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
             let mut found_feature = None;
-            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+            'histories: for history in ctx.admit_iter(&*histories, OPERATION)? {
                 for candidate in ctx.admit_iter(&history.features, OPERATION)? {
                     let work =
                         u64_from_index(candidate.input_class.as_ref().map_or(0, String::len))
@@ -355,7 +355,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     continue;
                 }
                 let mut next_feature = None;
-                'next_histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                'next_histories: for history in ctx.admit_iter(&*histories, OPERATION)? {
                     for candidate in ctx.admit_iter(&history.features, OPERATION)? {
                         if ctx.equal(&candidate.id, next_id, OPERATION)? {
                             next_feature = Some(candidate);
@@ -380,7 +380,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     continue;
                 }
                 let mut next_feature = None;
-                'profile_histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                'profile_histories: for history in ctx.admit_iter(&*histories, OPERATION)? {
                     for candidate in ctx.admit_iter(&history.features, OPERATION)? {
                         if ctx.equal(&candidate.id, next_id, OPERATION)? {
                             next_feature = Some(candidate);
@@ -606,8 +606,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 }
                 TerminationVote::Face {
                     reference:
-                        FaceReference::Lane { reference, .. }
-                        | FaceReference::Canonical(reference),
+                        FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
                     ..
                 } => {
                     if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
@@ -802,7 +801,7 @@ pub(crate) fn enrich_history_combine_selections(
             .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
         for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
             let mut found = None;
-            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+            'histories: for history in ctx.admit_iter(&*histories, OPERATION)? {
                 for candidate in ctx.admit_iter(&history.features, OPERATION)? {
                     if ctx.equal(&candidate.id, feature_id, OPERATION)? {
                         found = Some(candidate);
@@ -1016,7 +1015,7 @@ pub(crate) fn enrich_history_sweep_paths(
             .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
         for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
             let mut feature = None;
-            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+            'histories: for history in ctx.admit_iter(&*histories, OPERATION)? {
                 for candidate in ctx.admit_iter(&history.features, OPERATION)? {
                     if ctx.equal(&candidate.id, feature_id, OPERATION)? {
                         feature = Some(candidate);
@@ -1240,7 +1239,7 @@ pub(crate) fn project_surface_sweep_profiles(
         }
     }
     let mut feature_ids_by_native = HashMap::new();
-    for feature in ctx.admit_iter(features, OPERATION)? {
+    for feature in ctx.admit_iter(&*features, OPERATION)? {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
@@ -1604,7 +1603,7 @@ pub(crate) fn project_compact_combine_paths(
     const OPERATION: &str = "project SLDPRT combine paths";
     let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut feature_ids_by_native = HashMap::new();
-    for feature in ctx.admit_iter(features, OPERATION)? {
+    for feature in ctx.admit_iter(&*features, OPERATION)? {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
@@ -1717,7 +1716,7 @@ pub(crate) fn project_compact_combine_paths(
         let mut ordered_storage = ctx.reserve_scoped(0, OPERATION)?;
         for (ordinal, dependency) in dependencies.into_iter().enumerate() {
             let mut order = None;
-            for feature in ctx.admit_iter(features, OPERATION)? {
+            for feature in ctx.admit_iter(&*features, OPERATION)? {
                 if ctx.equal(feature.id.as_str(), dependency.as_str(), OPERATION)? {
                     order = Some(feature.ordinal);
                     break;

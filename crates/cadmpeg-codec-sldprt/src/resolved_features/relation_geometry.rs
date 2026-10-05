@@ -240,8 +240,7 @@ fn spatial_relation_point_line_entities(
         if !matches!(code, 2..=5) {
             continue;
         }
-        let Some(coordinates) =
-            spatial_relation_marker_coordinates(ctx, &lane.native_payload, offset)?
+        let Some(coordinates) = spatial_relation_marker_coordinates(&lane.native_payload, offset)
         else {
             continue;
         };
@@ -309,8 +308,7 @@ fn spatial_relation_point_line_entities(
         if marker_native_code(&lane.native_payload, offset) != Some(0) {
             continue;
         }
-        let Some(coordinates) =
-            spatial_relation_marker_coordinates(ctx, &lane.native_payload, offset)?
+        let Some(coordinates) = spatial_relation_marker_coordinates(&lane.native_payload, offset)
         else {
             continue;
         };
@@ -494,7 +492,7 @@ pub(crate) fn project_spatial_relation_bindings(
         ctx.reserve_scoped(0, "index SLDPRT spatial relation constraints")?;
     let mut constraints_by_native_ref = HashMap::<String, usize>::new();
     for (index, constraint) in ctx
-        .admit_iter(constraints, "index SLDPRT spatial relation constraints")?
+        .admit_iter(&*constraints, "index SLDPRT spatial relation constraints")?
         .enumerate()
     {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
@@ -712,6 +710,8 @@ pub(crate) fn project_relation_point_geometry(
     let mut point_operands = HashSet::new();
     let mut curve_operands = HashSet::new();
     let mut referenced = HashSet::new();
+    let mut link_storage = ctx.reserve_scoped(0, "SLDPRT relation marker link workspace")?;
+    let mut pending = Vec::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT relation-point operand lanes")? {
         for relation in ctx.admit_iter(
             &lane.relation_instances,
@@ -763,11 +763,15 @@ pub(crate) fn project_relation_point_geometry(
                 let Some(id) = operand.entity_ref.as_deref() else {
                     continue;
                 };
-                ctx.insert_hash_set(
+                if ctx.insert_hash_set(
                     &mut referenced,
                     id,
                     "index SLDPRT referenced relation markers",
-                )?;
+                )? {
+                    link_storage.with_storage(|| {
+                        ctx.push_vec(&mut pending, id, "index SLDPRT referenced relation markers")
+                    })?;
+                }
             }
         }
         for marker in
@@ -777,56 +781,78 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             }
             let id = marker.id();
-            ctx.insert_hash_set(
+            if ctx.insert_hash_set(
                 &mut referenced,
                 id,
                 "index SLDPRT referenced relation markers",
-            )?;
+            )? {
+                link_storage.with_storage(|| {
+                    ctx.push_vec(&mut pending, id, "index SLDPRT referenced relation markers")
+                })?;
+            }
+        }
+    }
+    // A marker linked to a referenced marker is referenced too, in either
+    // direction of the link: walk the closure over the link graph once.
+    let mut links_by_marker = HashMap::<&str, Vec<&str>>::new();
+    for lane in ctx.admit_iter(lanes, "index SLDPRT relation marker links")? {
+        for marker in ctx.admit_iter(&lane.sketch_entities, "index SLDPRT relation marker links")? {
+            // A repeated identity keeps the marker the identity index kept.
+            if !ctx
+                .get_hash_map(
+                    &markers_by_id,
+                    marker.id(),
+                    "index SLDPRT relation marker links",
+                )?
+                .is_some_and(|kept| std::ptr::eq(*kept, marker))
+            {
+                continue;
+            }
+            for link in ctx.admit_iter(marker.links(), "index SLDPRT relation marker links")? {
+                for (from, to) in [
+                    (marker.id(), link.entity_ref.as_str()),
+                    (link.entity_ref.as_str(), marker.id()),
+                ] {
+                    link_storage.with_storage(|| {
+                        ctx.push_hash_group(
+                            &mut links_by_marker,
+                            from,
+                            to,
+                            "index SLDPRT relation marker links",
+                            "index SLDPRT relation marker links",
+                        )
+                    })?;
+                }
+            }
         }
     }
     loop {
         ctx.charge_work(1, "expand SLDPRT referenced relation markers")?;
-        let mut linked = Vec::new();
-        for (_, marker) in ctx.admit_iter(&markers_by_id, "scan SLDPRT relation marker links")? {
-            let marker_referenced = ctx.contains_hash_set(
-                &referenced,
-                marker.id(),
-                "check SLDPRT relation marker references",
-            )?;
-            for link in ctx.admit_iter(marker.links(), "scan SLDPRT relation marker links")? {
-                let adjacent = if marker_referenced {
-                    Some(link.entity_ref.as_str())
-                } else if ctx.contains_hash_set(
-                    &referenced,
-                    link.entity_ref.as_str(),
-                    "check SLDPRT adjacent relation marker reference",
-                )? {
-                    Some(marker.id())
-                } else {
-                    None
-                };
-                if let Some(id) = adjacent {
-                    if ctx.contains_hash_set(
-                        &referenced,
-                        id,
-                        "check indexed SLDPRT adjacent relation marker",
-                    )? {
-                        continue;
-                    }
-                    ctx.reserve_vec(&mut linked, 1, "collect SLDPRT adjacent relation markers")?;
-                    linked.push(id);
-                }
-            }
-        }
-        if linked.is_empty() {
+        let Some(id) = pending.pop() else {
             break;
-        }
-        for id in ctx.admit_iter(&linked, "index adjacent SLDPRT relation markers")? {
-            ctx.insert_hash_set(
+        };
+        let Some(adjacent) = ctx.get_hash_map(
+            &links_by_marker,
+            id,
+            "expand SLDPRT referenced relation markers",
+        )?
+        else {
+            continue;
+        };
+        for &adjacent in ctx.admit_iter(adjacent, "expand SLDPRT referenced relation markers")? {
+            if ctx.insert_hash_set(
                 &mut referenced,
-                id,
+                adjacent,
                 "index SLDPRT referenced relation markers",
-            )?;
+            )? {
+                link_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut pending,
+                        adjacent,
+                        "expand SLDPRT referenced relation markers",
+                    )
+                })?;
+            }
         }
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT relation geometry lanes")? {
@@ -843,7 +869,7 @@ pub(crate) fn project_relation_point_geometry(
                 "check SLDPRT relation point operand",
             )?;
             let mut has_existing_point = false;
-            for entity in ctx.admit_iter(entities, "check existing SLDPRT relation points")? {
+            for entity in ctx.admit_iter(&*entities, "check existing SLDPRT relation points")? {
                 if !matches!(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
@@ -884,9 +910,10 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             }
             let mut has_endpoint_reference = false;
-            'entities: for entity in
-                ctx.admit_iter(entities, "check SLDPRT relation point endpoint references")?
-            {
+            'entities: for entity in ctx.admit_iter(
+                &*entities,
+                "check SLDPRT relation point endpoint references",
+            )? {
                 for reference in ctx.admit_iter(
                     &entity.endpoint_refs,
                     "check SLDPRT relation point endpoint references",
@@ -1109,7 +1136,7 @@ pub(crate) fn project_relation_point_geometry(
                 || {
                     let mut present = false;
                     for entity in
-                        ctx.admit_iter(entities, "check existing SLDPRT relation line handle")?
+                        ctx.admit_iter(&*entities, "check existing SLDPRT relation line handle")?
                     {
                         if ctx.equal(
                             &entity.native_ref.as_deref(),
@@ -1205,7 +1232,7 @@ pub(crate) fn project_relation_point_geometry(
                     }
                     let mut already_present_point = false;
                     for entity in ctx.admit_iter(
-                        entities,
+                        &mut *entities,
                         "find existing SLDPRT relation-line endpoint point",
                     )? {
                         if !ctx.equal(
@@ -1310,7 +1337,7 @@ pub(crate) fn project_relation_point_geometry(
             let start = Point2::new(start_u * QUANTUM, start_v * QUANTUM);
             let end = Point2::new(end_u * QUANTUM, end_v * QUANTUM);
             let mut already_present = false;
-            for entity in ctx.admit_iter(entities, "check existing SLDPRT relation lines")? {
+            for entity in ctx.admit_iter(&*entities, "check existing SLDPRT relation lines")? {
                 if !ctx.equal(
                     &entity.sketch,
                     sketch,
@@ -1555,7 +1582,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                         return Ok(false);
                     };
                     let mut found = false;
-                    for entity in ctx.admit_iter(entities, "find direct SLDPRT relation line")? {
+                    for entity in ctx.admit_iter(&*entities, "find direct SLDPRT relation line")? {
                         if !ctx.equal(
                             &entity.sketch,
                             sketch,
@@ -1791,7 +1818,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     return Ok(None);
                 };
                 let mut resolved = None;
-                for entity in ctx.admit_iter(entities, "find SLDPRT point operand geometry")? {
+                for entity in ctx.admit_iter(&*entities, "find SLDPRT point operand geometry")? {
                     if !ctx.equal(
                         &entity.sketch,
                         sketch,
@@ -2025,31 +2052,36 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(end_u * QUANTUM, end_v * QUANTUM),
                 )))
             };
-            let build_lines =
-                |prefer_marker_endpoints: bool| -> Result<Vec<_>, cadmpeg_core::CodecError> {
-                    let mut lines = Vec::with_capacity(line_operands.len());
-                    for &(operand_index, operand) in
-                        ctx.admit_iter(&line_operands, "build SLDPRT relation operand lines")?
-                    {
-                        let markers = if prefer_marker_endpoints {
-                            endpoint_line_markers(operand_index)?
-                                .or_else(|| fallback_line_markers(operand.entity_index))
-                        } else {
-                            fallback_line_markers(operand.entity_index)
-                        };
-                        let Some(markers) = markers else {
-                            return Ok(Vec::new());
-                        };
-                        let Some((start, end)) = transformed_line(markers)? else {
-                            return Ok(Vec::new());
-                        };
-                        let Some(line) = candidate(start, end)? else {
-                            return Ok(Vec::new());
-                        };
-                        lines.push((operand, markers, line));
-                    }
-                    Ok(lines)
-                };
+            let build_lines = |prefer_marker_endpoints: bool| -> Result<
+                (Vec<_>, ScopedReservation<'_>),
+                cadmpeg_core::CodecError,
+            > {
+                let operation = "collect SLDPRT relation operand lines";
+                let mut storage = ctx.reserve_scoped(0, operation)?;
+                let mut lines =
+                    storage.with_storage(|| ctx.collection_vec(line_operands.len(), operation))?;
+                for &(operand_index, operand) in
+                    ctx.admit_iter(&line_operands, "build SLDPRT relation operand lines")?
+                {
+                    let markers = if prefer_marker_endpoints {
+                        endpoint_line_markers(operand_index)?
+                            .or_else(|| fallback_line_markers(operand.entity_index))
+                    } else {
+                        fallback_line_markers(operand.entity_index)
+                    };
+                    let Some(markers) = markers else {
+                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
+                    };
+                    let Some((start, end)) = transformed_line(markers)? else {
+                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
+                    };
+                    let Some(line) = candidate(start, end)? else {
+                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
+                    };
+                    lines.push((operand, markers, line));
+                }
+                Ok((lines, storage))
+            };
             let relation_lines_valid =
                 |lines: &[(&FeatureInputOperand, [&SketchInputEntity; 2], SketchEntity)]| {
                     match relation.family {
@@ -2083,12 +2115,12 @@ pub(crate) fn project_relation_solved_line_geometry(
                     }
                 };
             let mut lines = build_lines(true)?;
-            let mut valid = relation_lines_valid(&lines);
+            let mut valid = relation_lines_valid(&lines.0);
             if !valid {
                 let fallback_lines = build_lines(false)?;
-                if !fallback_lines.is_empty() {
+                if !fallback_lines.0.is_empty() {
                     lines = fallback_lines;
-                    valid = relation_lines_valid(&lines);
+                    valid = relation_lines_valid(&lines.0);
                 }
             }
             if !valid {
@@ -2098,7 +2130,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     let generated_storage =
                         ctx.with_scoped_storage("collect SLDPRT generated solver lines", || {
                             ctx.collect_vec(
-                                lines.iter().map(|(_, _, line)| line),
+                                lines.0.iter().map(|(_, _, line)| line),
                                 "collect SLDPRT generated solver lines",
                             )
                         })?;
@@ -2119,8 +2151,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )?
                             .zip(selected.iter())
                         {
-                            for entity in
-                                ctx.admit_iter(entities, "find SLDPRT dynamic solver-line aliases")?
+                            for entity in ctx
+                                .admit_iter(&*entities, "find SLDPRT dynamic solver-line aliases")?
                             {
                                 if !ctx.equal(
                                     &entity.sketch,
@@ -2175,9 +2207,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 "format SLDPRT dynamic solver-line reference",
                             )?;
                             let mut already_present = false;
-                            for entity in ctx
-                                .admit_iter(entities, "check existing SLDPRT dynamic solver line")?
-                            {
+                            for entity in ctx.admit_iter(
+                                &*entities,
+                                "check existing SLDPRT dynamic solver line",
+                            )? {
                                 if ctx.equal(
                                     &entity.sketch,
                                     sketch,
@@ -2253,7 +2286,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 )?
                 .map_or(relation.feature_ref.as_str(), |(_, key)| key);
             for (operand, markers, line) in
-                ctx.admit_iter(&lines, "append SLDPRT solved relation lines")?
+                ctx.admit_iter(&lines.0, "append SLDPRT solved relation lines")?
             {
                 let geometry_ref = ctx.format_retained(
                     format_args!(
@@ -2264,7 +2297,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 )?;
                 let mut already_present = false;
                 for entity in
-                    ctx.admit_iter(entities, "check existing SLDPRT solved relation line")?
+                    ctx.admit_iter(&*entities, "check existing SLDPRT solved relation line")?
                 {
                     if ctx.equal(
                         &entity.sketch,
@@ -2638,7 +2671,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                     )?;
                     let mut already_present = false;
                     for entity in
-                        ctx.admit_iter(entities, "check existing SLDPRT solved-point geometry")?
+                        ctx.admit_iter(&*entities, "check existing SLDPRT solved-point geometry")?
                     {
                         if ctx.equal(
                             &entity.geometry_ref.as_deref(),
@@ -2805,7 +2838,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             };
             let mut selected_point = None;
             let mut ambiguous_point = false;
-            for entity in ctx.admit_iter(entities, "find SLDPRT dimension-point candidates")? {
+            for entity in ctx.admit_iter(&*entities, "find SLDPRT dimension-point candidates")? {
                 if !ctx.equal(
                     &entity.sketch,
                     *sketch,
@@ -2849,7 +2882,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             )?;
             let mut already_present = false;
             for entity in
-                ctx.admit_iter(entities, "check existing SLDPRT dimension-point geometry")?
+                ctx.admit_iter(&*entities, "check existing SLDPRT dimension-point geometry")?
             {
                 if ctx.equal(
                     &entity.geometry_ref.as_deref(),
@@ -4131,7 +4164,7 @@ pub(crate) fn project_relation_bindings(
         ctx.reserve_scoped(0, "index SLDPRT planar relation constraints")?;
     let mut constraints_by_native_ref = HashMap::<String, usize>::new();
     for (index, constraint) in ctx
-        .admit_iter(constraints, "index SLDPRT planar relation constraints")?
+        .admit_iter(&*constraints, "index SLDPRT planar relation constraints")?
         .enumerate()
     {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
@@ -4577,49 +4610,17 @@ fn record_relation_parameter(
     Ok(())
 }
 
-pub(crate) trait FeatureInputLaneSource:
-    cadmpeg_core::decode::iter_source::IterSource
-{
-    fn lane<'values>(value: <Self::Iter<'values> as Iterator>::Item) -> &'values FeatureInputLane
-    where
-        Self: 'values;
-}
-
-impl FeatureInputLaneSource for [FeatureInputLane] {
-    fn lane<'values>(value: &'values FeatureInputLane) -> &'values FeatureInputLane
-    where
-        Self: 'values,
-    {
-        value
-    }
-}
-
-impl<const N: usize> FeatureInputLaneSource for [FeatureInputLane; N] {
-    fn lane<'values>(value: &'values FeatureInputLane) -> &'values FeatureInputLane
-    where
-        Self: 'values,
-    {
-        value
-    }
-}
-
-impl<'source> FeatureInputLaneSource for Vec<&'source FeatureInputLane> {
-    fn lane<'values>(value: &'values &'source FeatureInputLane) -> &'values FeatureInputLane
-    where
-        Self: 'values,
-    {
-        value
-    }
-}
-
-pub(crate) fn owned_relation_parameters<Lanes>(
+/// Bind each relation instance to the design parameter it drives.
+///
+/// `lanes` holds the lanes themselves or references to them.
+pub(crate) fn owned_relation_parameters<Lane>(
     ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-    lanes: &Lanes,
+    lanes: &[Lane],
 ) -> Result<HashMap<String, Option<cadmpeg_ir::features::ParameterId>>, cadmpeg_core::CodecError>
 where
-    Lanes: FeatureInputLaneSource + ?Sized,
+    Lane: std::borrow::Borrow<FeatureInputLane>,
 {
     let mut parameters_by_scalar_storage =
         ctx.reserve_scoped(0, "index SLDPRT relation scalars")?;
@@ -4638,7 +4639,7 @@ where
     let mut owned = HashMap::new();
     for lane in ctx
         .admit_iter(lanes, "scan SLDPRT relation ownership lanes")?
-        .map(Lanes::lane)
+        .map(|lane| -> &FeatureInputLane { std::borrow::Borrow::borrow(lane) })
     {
         for relation in
             ctx.admit_iter(&lane.relation_instances, "scan SLDPRT relation ownership")?
@@ -4664,7 +4665,7 @@ where
     }
     for lane in ctx
         .admit_iter(lanes, "scan SLDPRT relation ownership lanes")?
-        .map(Lanes::lane)
+        .map(|lane| -> &FeatureInputLane { std::borrow::Borrow::borrow(lane) })
     {
         for relation in
             ctx.admit_iter(&lane.relation_instances, "scan SLDPRT relation ownership")?

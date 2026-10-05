@@ -970,12 +970,21 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
     let mut lookup_lane = lane.clone();
     lookup_lane.relation_instances.clear();
     let lookup_entities = [
-        first.clone().with_endpoint_refs(vec!["shared".into(), "shared".into()]),
-        second.clone().with_endpoint_refs(vec!["shared".into(), "shared".into()]),
+        first
+            .clone()
+            .with_endpoint_refs(vec!["shared".into(), "shared".into()]),
+        second
+            .clone()
+            .with_endpoint_refs(vec!["shared".into(), "shared".into()]),
     ];
     crate::test_support::work_refusal_at("lookup SLDPRT marker endpoint loci", |ctx| {
-        profile_loci_by_marker(ctx, std::slice::from_ref(&feature), std::slice::from_ref(&sketch),
-            &lookup_entities, std::slice::from_ref(&lookup_lane))
+        profile_loci_by_marker(
+            ctx,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&sketch),
+            &lookup_entities,
+            std::slice::from_ref(&lookup_lane),
+        )
     });
     let loci = profile_loci_by_marker(
         &resource_ctx,

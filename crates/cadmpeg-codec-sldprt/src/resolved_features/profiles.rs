@@ -68,7 +68,7 @@ use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::index_from_u64;
@@ -106,7 +106,7 @@ pub(crate) fn bind_sketch_profiles(
         declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)
     })?;
     let mut superseded_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut superseded = HashSet::new();
+    let mut superseded = BTreeSet::new();
     let mut metadata_ids_storage = ctx.reserve_scoped(0, "index SLDPRT profile metadata")?;
     let metadata_ids =
         metadata_ids_storage.with_storage(|| history_metadata_ids(ctx, histories))?;
@@ -224,7 +224,7 @@ pub(crate) fn bind_sketch_profiles(
                     carriers,
                 )? {
                     superseded_storage.with_storage(|| {
-                        ctx.insert_hash_set(
+                        ctx.insert_btree_set(
                             &mut superseded,
                             copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?,
                             OPERATION,
@@ -290,7 +290,7 @@ pub(crate) fn bind_sketch_profiles(
         })?;
     }
     for entity in ctx.admit_iter(&sketch_entities[..], OPERATION)? {
-        if ctx.contains_hash_set(&superseded, entity.sketch.as_str(), OPERATION)? {
+        if ctx.contains_btree_set(&superseded, entity.sketch.as_str(), OPERATION)? {
             removed_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut removed,
@@ -301,7 +301,7 @@ pub(crate) fn bind_sketch_profiles(
         }
     }
     for constraint in ctx.admit_iter(&sketch_constraints[..], OPERATION)? {
-        if ctx.contains_hash_set(&superseded, constraint.sketch.as_str(), OPERATION)? {
+        if ctx.contains_btree_set(&superseded, constraint.sketch.as_str(), OPERATION)? {
             removed_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut removed,
@@ -313,18 +313,18 @@ pub(crate) fn bind_sketch_profiles(
     }
     ctx.retain_vec(
         sketches,
-        |sketch| Ok(!ctx.contains_hash_set(&superseded, sketch.id.as_str(), OPERATION)?),
+        |sketch| Ok(!ctx.contains_btree_set(&superseded, sketch.id.as_str(), OPERATION)?),
         OPERATION,
     )?;
     ctx.retain_vec(
         sketch_entities,
-        |entity| Ok(!ctx.contains_hash_set(&superseded, entity.sketch.as_str(), OPERATION)?),
+        |entity| Ok(!ctx.contains_btree_set(&superseded, entity.sketch.as_str(), OPERATION)?),
         OPERATION,
     )?;
     ctx.retain_vec(
         sketch_constraints,
         |constraint| {
-            Ok(!ctx.contains_hash_set(&superseded, constraint.sketch.as_str(), OPERATION)?)
+            Ok(!ctx.contains_btree_set(&superseded, constraint.sketch.as_str(), OPERATION)?)
         },
         OPERATION,
     )?;
@@ -2855,9 +2855,10 @@ pub(crate) fn project_marker_backed_sketches(
                             Err(_) => continue,
                         };
                 }
-                for entity_index in
-                    ctx.admit_iter(&(0..projected.len()), "scan SLDPRT projected profile markers")?
-                {
+                for entity_index in ctx.admit_iter(
+                    &(0..projected.len()),
+                    "scan SLDPRT projected profile markers",
+                )? {
                     let entity = &mut projected[entity_index];
                     let SketchGeometryDefinition::Native { .. } = *entity.geometry.definition()
                     else {
@@ -3082,9 +3083,10 @@ pub(crate) fn project_sketch_block_profiles(
             {
                 if let Some(name) = feature_object_name(feature, lane) {
                     if !crate::history::classify::is_history_metadata_record(
+                        ctx,
                         feature,
                         &history.features,
-                    ) {
+                    )? {
                         objects_storage.with_storage(|| {
                             ctx.reserve_vec(
                                 &mut objects,

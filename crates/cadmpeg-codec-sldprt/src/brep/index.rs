@@ -5,8 +5,7 @@ use super::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// An exact carrier or a derived intersection carrier.
 pub(super) enum IndexedCurve {
@@ -26,16 +25,16 @@ impl IndexedCurve {
 
 #[derive(Default)]
 pub(super) struct CarrierIndex {
-    curves: HashMap<u16, IndexedCurve>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
+    curves: BTreeMap<u16, IndexedCurve>,
+    surfaces: BTreeMap<u16, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
+    sweeps: BTreeMap<u16, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
+    blends: BTreeMap<u16, blend::BlendCarrier>,
     /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
+    offsets: BTreeMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    blend_support_pairs: BTreeMap<u16, blend::SupportPairCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
@@ -49,7 +48,7 @@ impl CarrierIndex {
     ) -> Result<(), cadmpeg_core::CodecError> {
         match carrier {
             Carrier::Curve(carrier) => {
-                ctx.admit_hash_map_entry(
+                ctx.admit_btree_entry(
                     &mut self.curves,
                     &carrier.attr,
                     "index SLDPRT curve carriers",
@@ -58,7 +57,7 @@ impl CarrierIndex {
                     .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
             Carrier::Surface(carrier) => {
-                ctx.admit_hash_map_entry(
+                ctx.admit_btree_entry(
                     &mut self.surfaces,
                     &carrier.attr,
                     "index SLDPRT surface carriers",
@@ -76,15 +75,12 @@ impl CarrierIndex {
     pub(super) fn curve_attrs(
         &self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<HashSet<u16>, cadmpeg_core::CodecError> {
-        let mut attrs = HashSet::new();
-        ctx.reserve_set(
-            &mut attrs,
-            self.curves.len(),
+    ) -> Result<BTreeSet<u16>, cadmpeg_core::CodecError> {
+        ctx.collect_btree_set(
+            ctx.admit_iter(&self.curves, "collect SLDPRT curve attributes")?
+                .map(|(attr, _)| *attr),
             "collect SLDPRT curve attributes",
-        )?;
-        attrs.extend(self.curves.keys().copied());
-        Ok(attrs)
+        )
     }
 
     pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
@@ -116,7 +112,7 @@ impl CarrierIndex {
         ctx: &DecodeContext<'_>,
         intersection: intersection::IntersectionCarrier,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.admit_hash_map_entry(
+        ctx.admit_btree_entry(
             &mut self.curves,
             &intersection.carrier.attr,
             "index SLDPRT intersection carriers",
@@ -183,15 +179,17 @@ impl CarrierIndex {
     }
 }
 
-fn merge_missing_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
+fn merge_missing_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
-    target: &mut HashMap<K, V>,
-    source: HashMap<K, V>,
+    target: &mut BTreeMap<K, V>,
+    source: BTreeMap<K, V>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (key, value) in source {
-        if !target.contains_key(&key) {
-            ctx.insert_hash_map(target, key, value, operation)?;
+    for (key, value) in ctx.admit_iter(source, operation)? {
+        if let std::collections::btree_map::Entry::Vacant(entry) =
+            ctx.entry_btree_map(target, key, operation)?
+        {
+            entry.insert(value);
         }
     }
     Ok(())

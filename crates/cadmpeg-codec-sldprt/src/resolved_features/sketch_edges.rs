@@ -303,8 +303,7 @@ pub(super) fn project_edge(
         return Ok(None);
     };
     let start = project_point(*start_point, origin, u_axis, v_axis);
-    let Some(end_id) =
-        ctx.get_hash_map(vertices, &edge.end, "resolve SLDPRT sketch_edges keys")?
+    let Some(end_id) = ctx.get_hash_map(vertices, &edge.end, "resolve SLDPRT sketch_edges keys")?
     else {
         return Ok(None);
     };
@@ -327,26 +326,19 @@ pub(super) fn project_edge(
         let operation = "project SLDPRT sketch NURBS edge";
         let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
         let projected = match nurbs.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                ctx.collect_indexed_vec(points.len(), operation, |index| {
-                    Ok(project_point(
-                        points[index].get(),
-                        origin,
-                        u_axis,
-                        v_axis,
-                    ))
-                })?
-            }
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                ctx.collect_indexed_vec(points.len(), operation, |index| {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
+                .collect_indexed_vec(points.len(), operation, |index| {
+                    Ok(project_point(points[index].get(), origin, u_axis, v_axis))
+                })?,
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
+                .collect_indexed_vec(points.len(), operation, |index| {
                     Ok(project_point(
                         points[index].point.get(),
                         origin,
                         u_axis,
                         v_axis,
                     ))
-                })?
-            }
+                })?,
         };
         let weights = match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,

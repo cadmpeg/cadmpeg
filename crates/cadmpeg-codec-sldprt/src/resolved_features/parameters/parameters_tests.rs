@@ -136,15 +136,19 @@ fn native_scalar_must_match_an_existing_discrete_parameter() {
         text: None,
         content: Vec::new(),
     };
-    assert!(native_scalar_matches_discrete_parameter(
-        &feature, "D1", "15", 15.0
-    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(
+        native_scalar_matches_discrete_parameter(&ctx, &feature, "D1", "15", 15.0)
+            .expect("discrete parameter comparison succeeds")
+    );
     assert!(!native_scalar_matches_discrete_parameter(
+        &ctx,
         &feature,
         "D1",
         "15",
         8.371_160_993_642_741e298
-    ));
+    )
+    .expect("discrete parameter comparison succeeds"));
 }
 
 #[test]

@@ -9,7 +9,7 @@
 //! approximate endpoints. A complete width-4 UV record additionally yields
 //! co-parameterized support pcurve caches.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -149,13 +149,13 @@ fn finite_tangent(bytes: &[u8], at: usize) -> bool {
 fn chart_records(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<HashMap<u16, Vec<Chart>>, CodecError> {
-    let mut out: HashMap<u16, Vec<Chart>> = HashMap::new();
+) -> Result<BTreeMap<u16, Vec<Chart>>, CodecError> {
+    let mut out: BTreeMap<u16, Vec<Chart>> = BTreeMap::new();
     for body in record_bodies(bytes, 0x28) {
         let Some((attr, candidates)) = chart_candidates(ctx, bytes, body)? else {
             continue;
         };
-        ctx.admit_hash_map_entry(&mut out, &attr, "collect Parasolid intersection charts")?;
+        ctx.admit_btree_entry(&mut out, &attr, "collect Parasolid intersection charts")?;
         ctx.extend_vec(
             out.entry(attr).or_default(),
             candidates,
@@ -226,10 +226,19 @@ fn chart_candidates(
             ctx.vector_storage(count - 2, "decode Parasolid chart interior points")?;
         for index in 1..count - 1 {
             if let Some(point) = finite_point(bytes, block + index * stride) {
-                ctx.push_vec(&mut (interior_points), point, "decode Parasolid chart interior points")?;
+                ctx.push_vec(
+                    &mut (interior_points),
+                    point,
+                    "decode Parasolid chart interior points",
+                )?;
             }
         }
-        if !extended && first == last && ctx.admit_iter(&interior_points[..], "scan SLDPRT chart_candidates values")?.all(|point| *point == first) {
+        if !extended
+            && first == last
+            && ctx
+                .admit_iter(&interior_points[..], "scan SLDPRT chart_candidates values")?
+                .all(|point| *point == first)
+        {
             continue;
         }
         ctx.push_vec(
@@ -256,7 +265,7 @@ fn term_at(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: usize,
-    out: &mut HashMap<u16, Vec<[f64; 3]>>,
+    out: &mut BTreeMap<u16, Vec<[f64; 3]>>,
 ) -> Result<(), CodecError> {
     let (Some(count), Some(attr)) = (
         View::u32_be_at(bytes, body),
@@ -276,7 +285,7 @@ fn term_at(
             continue;
         }
         if let Some(point) = finite_point(bytes, body + 6 + label_len) {
-            ctx.push_hash_group(
+            ctx.push_btree_group(
                 out,
                 attr,
                 point,
@@ -292,8 +301,8 @@ fn term_at(
 fn term_records(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<HashMap<u16, Vec<[f64; 3]>>, CodecError> {
-    let mut out: HashMap<u16, Vec<[f64; 3]>> = HashMap::new();
+) -> Result<BTreeMap<u16, Vec<[f64; 3]>>, CodecError> {
+    let mut out: BTreeMap<u16, Vec<[f64; 3]>> = BTreeMap::new();
     for body in record_bodies(bytes, 0x29) {
         term_at(ctx, bytes, body, &mut out)?;
     }
@@ -355,7 +364,8 @@ fn uv_at(
             ctx.push_vec(&mut (values), value, "decode Parasolid support UV values")?;
         }
     }
-    Ok(ctx.admit_iter(&values[..], "scan SLDPRT uv_at values")?
+    Ok(ctx
+        .admit_iter(&values[..], "scan SLDPRT uv_at values")?
         .all(|value| value.is_finite())
         .then_some((attr, UvRecord { width, values })))
 }
@@ -364,11 +374,11 @@ fn uv_at(
 fn uv_records(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<HashMap<u16, Vec<UvRecord>>, CodecError> {
-    let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
+) -> Result<BTreeMap<u16, Vec<UvRecord>>, CodecError> {
+    let mut out: BTreeMap<u16, Vec<UvRecord>> = BTreeMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(ctx, bytes, body)? {
-            ctx.push_hash_group(
+            ctx.push_btree_group(
                 &mut out,
                 attr,
                 shape,
@@ -383,7 +393,7 @@ fn uv_records(
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(ctx, bytes, tail + INLINE_UV_TAIL.len())? {
-                ctx.push_hash_group(
+                ctx.push_btree_group(
                     &mut out,
                     attr,
                     shape,
@@ -413,23 +423,52 @@ fn solved_curve(
     let point_count = chart.interior_points.len() + 2;
     let mut parameters =
         ctx.vector_storage(point_count, "construct intersection chart parameters")?;
-    ctx.push_vec(&mut (parameters), parameter, "construct intersection chart parameters")?;
+    ctx.push_vec(
+        &mut (parameters),
+        parameter,
+        "construct intersection chart parameters",
+    )?;
     let mut previous = chart.endpoints[0];
-    for &point in ctx.admit_iter(&chart.interior_points, "scan Parasolid intersection chart points")?
+    for &point in ctx
+        .admit_iter(
+            &chart.interior_points,
+            "scan Parasolid intersection chart points",
+        )?
         .chain(std::iter::once(&chart.endpoints[1]))
     {
         parameter += distance(previous, point) * chart.base_scale;
-        ctx.push_vec(&mut (parameters), parameter, "construct intersection chart parameters")?;
+        ctx.push_vec(
+            &mut (parameters),
+            parameter,
+            "construct intersection chart parameters",
+        )?;
         previous = point;
     }
     let mut points = ctx.vector_storage(point_count, "construct intersection chart points")?;
     ctx.push_vec(&mut (points), start, "construct intersection chart points")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(chart.interior_points.len()), "construct intersection chart points")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(chart.interior_points.len()),
+        "construct intersection chart points",
+    )?;
     points.extend(chart.interior_points.iter().copied());
     ctx.push_vec(&mut (points), end, "construct intersection chart points")?;
-    let reversed = if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] < pair[1]) {
+    let reversed = if ctx
+        .admit_iter(&parameters, "scan Parasolid intersection parameter order")?
+        .windows(
+            std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
+        )
+        .all(|pair| pair[0] < pair[1])
+    {
         false
-    } else if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] > pair[1]) {
+    } else if ctx
+        .admit_iter(&parameters, "scan Parasolid intersection parameter order")?
+        .windows(
+            std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
+        )
+        .all(|pair| pair[0] > pair[1])
+    {
         parameters.reverse();
         points.reverse();
         true
@@ -443,7 +482,10 @@ fn solved_curve(
     };
     let mut knots = ctx.vector_storage(point_count + 2, "construct intersection chart knots")?;
     ctx.push_vec(&mut (knots), first, "construct intersection chart knots")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(parameters.len()), "construct intersection chart knots")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(parameters.len()),
+        "construct intersection chart knots",
+    )?;
     knots.extend(parameters.iter().copied());
     ctx.push_vec(&mut (knots), last, "construct intersection chart knots")?;
     let mut controls = ctx.collection_vec(point_count, "construct intersection curve controls")?;
@@ -519,14 +561,15 @@ fn solved_support_uv(
 
 fn nearest_term(
     ctx: &DecodeContext<'_>,
-    records: &HashMap<u16, Vec<[f64; 3]>>,
+    records: &BTreeMap<u16, Vec<[f64; 3]>>,
     attr: u16,
     endpoint: [f64; 3],
 ) -> Result<Option<([f64; 3], f64)>, CodecError> {
     let Some(points) = records.get(&attr) else {
         return Ok(None);
     };
-    Ok(ctx.admit_iter(points, "scan Parasolid intersection terminators")?
+    Ok(ctx
+        .admit_iter(points, "scan Parasolid intersection terminators")?
         .copied()
         .fold(None, |best, point| {
             let candidate = (point, distance(point, endpoint));
@@ -551,14 +594,14 @@ pub(super) fn scan_intersection_carriers(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
-) -> Result<HashMap<u16, IntersectionCarrier>, CodecError> {
+) -> Result<BTreeMap<u16, IntersectionCarrier>, CodecError> {
     let charts = chart_records(ctx, bytes)?;
     let terms = term_records(ctx, bytes)?;
     let uvs = uv_records(ctx, bytes)?;
     if charts.is_empty() || terms.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(BTreeMap::new());
     }
-    let mut out = HashMap::new();
+    let mut out = BTreeMap::new();
     for (offset, body, _) in composite_records(bytes) {
         let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
             continue;
@@ -645,7 +688,7 @@ pub(super) fn scan_intersection_carriers(
             selected.reversed,
             uvs.get(&uv_ref).map(Vec::as_slice),
         )?;
-        ctx.admit_hash_map_entry(&mut out, &attr, "collect Parasolid intersection carriers")?;
+        ctx.admit_btree_entry(&mut out, &attr, "collect Parasolid intersection carriers")?;
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
                 attr,

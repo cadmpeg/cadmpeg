@@ -185,7 +185,10 @@ fn clone_history_feature(
         None => None,
     };
     let mut dimension_properties = BTreeMap::new();
-    for (name, properties) in ctx.admit_iter(&feature.dimension_properties, "scan SLDPRT clone_history_feature values")? {
+    for (name, properties) in ctx.admit_iter(
+        &feature.dimension_properties,
+        "scan SLDPRT clone_history_feature values",
+    )? {
         ctx.insert_btree_map(
             &mut dimension_properties,
             copy_history_text(ctx, name)?,
@@ -264,7 +267,9 @@ impl CloneCharged for FeatureHistory {
         #[cfg(test)]
         FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         let mut configurations = Vec::new();
-        for configuration in ctx.admit_iter(&self.configurations, "scan SLDPRT clone_charged values")? {
+        for configuration in
+            ctx.admit_iter(&self.configurations, "scan SLDPRT clone_charged values")?
+        {
             let item = clone_history_configuration(ctx, operation, configuration)?;
             ctx.reserve_vec(&mut configurations, 1, operation)?;
             configurations.push(item);

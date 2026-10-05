@@ -430,7 +430,11 @@ fn replacement_unit_source() -> (Vec<u8>, usize) {
 fn unit_name_replacement_refuses_exact_retained_limit() {
     let (source, _) = replacement_unit_source();
     let scan = crate::test_support::container::scan(&source);
-    let section = scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().next().expect("unit-name section");
+    let section = scan
+        .sections(&cadmpeg_test_support::service_decode_context())
+        .unwrap()
+        .next()
+        .expect("unit-name section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -461,7 +465,11 @@ fn unit_name_replacement_refuses_exact_retained_limit() {
 fn unit_name_replacement_refuses_work_before_validation() {
     let (source, length) = replacement_unit_source();
     let scan = crate::test_support::container::scan(&source);
-    let section = scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().next().expect("unit-name section");
+    let section = scan
+        .sections(&cadmpeg_test_support::service_decode_context())
+        .unwrap()
+        .next()
+        .expect("unit-name section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::try_from(length).expect("payload length");

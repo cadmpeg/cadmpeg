@@ -30,9 +30,13 @@ pub(super) fn project_rib(
         .map(|profile| {
             copy_projected_feature_text(
                 ctx,
-                ctx.get_hash_map(&(native_by_source), profile.as_str(), "look up SLDPRT hash key")?
-                    .copied()
-                    .unwrap_or(profile.as_str()),
+                ctx.get_hash_map(
+                    &(native_by_source),
+                    profile.as_str(),
+                    "look up SLDPRT hash key",
+                )?
+                .copied()
+                .unwrap_or(profile.as_str()),
             )
             .map(PlanarProfileRef::native)
         })
@@ -153,7 +157,10 @@ fn project_native_refs<T>(
         .filter(|source| !source.is_empty())
     {
         ctx.reserve_vec(&mut references, 1, "project SLDPRT loft references")?;
-        let reference = ctx.get_hash_map(&(native_by_source), source, "look up SLDPRT hash key")?.copied().unwrap_or(source);
+        let reference = ctx
+            .get_hash_map(&(native_by_source), source, "look up SLDPRT hash key")?
+            .copied()
+            .unwrap_or(source);
         let reference =
             ctx.format_retained(format_args!("{reference}"), "retain SLDPRT loft reference")?;
         references.push(wrap(reference));
@@ -169,9 +176,13 @@ pub(super) fn project_sweep(
     let native_ref = |source: &String| {
         copy_projected_feature_text(
             ctx,
-            ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?
-                .copied()
-                .unwrap_or(source.as_str()),
+            ctx.get_hash_map(
+                &(native_by_source),
+                source.as_str(),
+                "look up SLDPRT hash key",
+            )?
+            .copied()
+            .unwrap_or(source.as_str()),
         )
     };
     let profile = feature
@@ -296,24 +307,40 @@ pub(super) fn project_revolve(
     let ordered_angle = |ordinal| -> Result<Option<cadmpeg_ir::scalar::PositiveAngle>, CodecError> {
         let mut remaining = ordinal;
         for content in ctx.admit_iter(&feature.content, "scan SLDPRT project_revolve values")? {
-            let FeatureContent::Dimension(name) = content else { continue; };
-            let Some(value) = ctx.get_btree_map(&feature.parameters, name.as_str(), "look up SLDPRT ordered key")? else { continue; };
-            let Some(angle) = parse_positive_angle_rad(value) else { continue; };
-            if remaining == 0 { return Ok(Some(angle)); }
+            let FeatureContent::Dimension(name) = content else {
+                continue;
+            };
+            let Some(value) = ctx.get_btree_map(
+                &feature.parameters,
+                name.as_str(),
+                "look up SLDPRT ordered key",
+            )?
+            else {
+                continue;
+            };
+            let Some(angle) = parse_positive_angle_rad(value) else {
+                continue;
+            };
+            if remaining == 0 {
+                return Ok(Some(angle));
+            }
             remaining -= 1;
         }
         Ok(None)
     };
     let angle = |name, ordinal| -> Result<_, CodecError> {
-        let value = ctx.get_btree_map(&(feature
-            .parameters), name, "look up SLDPRT ordered key")?
+        let value = ctx
+            .get_btree_map(&(feature.parameters), name, "look up SLDPRT ordered key")?
             .or_else(|| match name {
                 "Angle" => feature.parameters.get("D1"),
                 "Angle2" => feature.parameters.get("D2"),
                 _ => None,
             })
             .and_then(|value| parse_positive_angle_rad(value));
-        match value { Some(value) => Ok(Some(value)), None => ordered_angle(ordinal) }
+        match value {
+            Some(value) => Ok(Some(value)),
+            None => ordered_angle(ordinal),
+        }
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0)?.map(|angle| RevolveExtent::OneSided {
@@ -332,7 +359,16 @@ pub(super) fn project_revolve(
     };
     let profile = feature
         .properties
-        .get("Profile").map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?)}).transpose()?.flatten()
+        .get("Profile")
+        .map(|source| {
+            Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(
+                &(native_by_source),
+                source.as_str(),
+                "look up SLDPRT hash key",
+            )?)
+        })
+        .transpose()?
+        .flatten()
         .map(|id| copy_projected_feature_text(ctx, id).map(PlanarProfileRef::native))
         .transpose()?;
     let axis = feature

@@ -1,10 +1,15 @@
 //! Variable fillet radius and endpoint ownership tests.
 
-use super::with_projection_context;
 use super::super::variable_fillet_radius_groups;
-use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
-    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
-use cadmpeg_ir::features::{edge_treatments::{RadiusSpec, VariableRadius}, FeatureDefinition, FeatureId, FeatureOperation};
+use super::with_projection_context;
+use crate::records::{
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
+};
+use cadmpeg_ir::features::{
+    edge_treatments::{RadiusSpec, VariableRadius},
+    FeatureDefinition, FeatureId, FeatureOperation,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -438,4 +443,3 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     .expect("fillet resource limits")
     .is_none());
 }
-

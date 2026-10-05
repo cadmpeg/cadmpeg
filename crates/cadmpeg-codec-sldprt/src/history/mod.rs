@@ -39,7 +39,10 @@ fn keyed_attributes<'name, 'value>(
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
-        if ctx.admit_iter(name, "scan SLDPRT property name characters")?.all(char::is_whitespace) {
+        if ctx
+            .admit_iter(name, "scan SLDPRT property name characters")?
+            .all(char::is_whitespace)
+        {
             report_unkeyed_property(ctx, losses, record, None)?;
             continue;
         }
@@ -328,7 +331,11 @@ pub(crate) fn histories(
                         if properties.is_empty() {
                             continue;
                         }
-                        if let Some(previous) = ctx.get_mut_btree_map(&mut (dimension_properties), name, "look up mutable SLDPRT ordered key")? {
+                        if let Some(previous) = ctx.get_mut_btree_map(
+                            &mut (dimension_properties),
+                            name,
+                            "look up mutable SLDPRT ordered key",
+                        )? {
                             *previous = properties;
                         } else {
                             let name = ctx.format_retained(
@@ -350,11 +357,18 @@ pub(crate) fn histories(
                         let Some(name) = dimension.attribute("Name") else {
                             continue;
                         };
-                        if ctx.admit_iter(name, "scan SLDPRT dimension name characters")?.all(char::is_whitespace) {
+                        if ctx
+                            .admit_iter(name, "scan SLDPRT dimension name characters")?
+                            .all(char::is_whitespace)
+                        {
                             continue;
                         }
                         let value = dimension.text().unwrap_or_default().trim();
-                        if let Some(previous) = ctx.get_mut_btree_map(&mut (parameters), name, "look up mutable SLDPRT ordered key")? {
+                        if let Some(previous) = ctx.get_mut_btree_map(
+                            &mut (parameters),
+                            name,
+                            "look up mutable SLDPRT ordered key",
+                        )? {
                             *previous = ctx.format_retained(
                                 format_args!("{value}"),
                                 "retain SLDPRT parameter value",
@@ -396,69 +410,73 @@ pub(crate) fn histories(
                             })
                             .transpose()?
                     };
-                    ctx.push_vec(&mut (features), Feature {
-                        id,
-                        parent: ctx.format_retained(
-                            format_args!("{parent}"),
-                            "retain SLDPRT history parent identity",
-                        )?,
-                        xml_tag: ctx.format_retained(
-                            format_args!("{}", node.tag_name().name()),
-                            "retain SLDPRT feature XML tag",
-                        )?,
-                        tree_parent: node
-                            .ancestors()
-                            .skip(1)
-                            .find_map(|ancestor| {
-                                let record_id = feature_ids.get(&ancestor.range().start)?;
-                                Some(
-                                    ctx.format_retained(
-                                        format_args!("{record_id}"),
-                                        "retain SLDPRT ancestor identity",
+                    ctx.push_vec(
+                        &mut (features),
+                        Feature {
+                            id,
+                            parent: ctx.format_retained(
+                                format_args!("{parent}"),
+                                "retain SLDPRT history parent identity",
+                            )?,
+                            xml_tag: ctx.format_retained(
+                                format_args!("{}", node.tag_name().name()),
+                                "retain SLDPRT feature XML tag",
+                            )?,
+                            tree_parent: node
+                                .ancestors()
+                                .skip(1)
+                                .find_map(|ancestor| {
+                                    let record_id = feature_ids.get(&ancestor.range().start)?;
+                                    Some(
+                                        ctx.format_retained(
+                                            format_args!("{record_id}"),
+                                            "retain SLDPRT ancestor identity",
+                                        )
+                                        .map(|record_id| {
+                                            crate::records::TreeParent::Record {
+                                                record_id,
+                                                source_id: ancestor.attribute("id").and_then(
+                                                    |value| FeatureSource::try_from(value).ok(),
+                                                ),
+                                            }
+                                        }),
                                     )
-                                    .map(|record_id| {
-                                        crate::records::TreeParent::Record {
-                                            record_id,
-                                            source_id: ancestor.attribute("id").and_then(|value| {
-                                                FeatureSource::try_from(value).ok()
-                                            }),
-                                        }
-                                    }),
+                                })
+                                .transpose()?,
+                            source_id: node
+                                .attribute("id")
+                                .and_then(|value| FeatureSource::try_from(value).ok()),
+                            ordinal: u32::try_from(ordinal).map_err(|_| {
+                                ctx.refuse_codec_limit(
+                                    "index SLDPRT history feature ordinals",
+                                    u64::MAX - 1,
+                                    u64::MAX,
                                 )
-                            })
-                            .transpose()?,
-                        source_id: node
-                            .attribute("id")
-                            .and_then(|value| FeatureSource::try_from(value).ok()),
-                        ordinal: u32::try_from(ordinal).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "index SLDPRT history feature ordinals",
-                                u64::MAX - 1,
-                                u64::MAX,
-                            )
-                        })?,
-                        name: ctx.format_retained(
-                            format_args!("{}", node.attribute("Name").unwrap_or("")),
-                            "retain SLDPRT feature name",
-                        )?,
-                        kind: ctx.format_retained(
-                            format_args!(
-                                "{}",
-                                node.attribute("Type")
-                                    .unwrap_or_else(|| node.tag_name().name())
-                            ),
-                            "retain SLDPRT feature kind",
-                        )?,
-                        input_class: None,
-                        suppressed: node
-                            .attribute("Suppressed")
-                            .is_some_and(|value| matches!(value, "1" | "true" | "True")),
-                        parameters,
-                        dimension_properties,
-                        properties,
-                        text,
-                        content,
-                    }, "collect SLDPRT history features")?;
+                            })?,
+                            name: ctx.format_retained(
+                                format_args!("{}", node.attribute("Name").unwrap_or("")),
+                                "retain SLDPRT feature name",
+                            )?,
+                            kind: ctx.format_retained(
+                                format_args!(
+                                    "{}",
+                                    node.attribute("Type")
+                                        .unwrap_or_else(|| node.tag_name().name())
+                                ),
+                                "retain SLDPRT feature kind",
+                            )?,
+                            input_class: None,
+                            suppressed: node
+                                .attribute("Suppressed")
+                                .is_some_and(|value| matches!(value, "1" | "true" | "True")),
+                            parameters,
+                            dimension_properties,
+                            properties,
+                            text,
+                            content,
+                        },
+                        "collect SLDPRT history features",
+                    )?;
                     Ok::<_, CodecError>(features)
                 },
             )?;
