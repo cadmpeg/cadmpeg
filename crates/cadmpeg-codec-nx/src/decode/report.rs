@@ -351,7 +351,7 @@ pub(super) fn build_geometry_report(
         };
         if unmatched_tombstones == 0 {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasApplied, format_args!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                "{deltas_streams} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
@@ -372,16 +372,14 @@ pub(super) fn build_geometry_report(
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
-                 terminal tombstone resolved to an exact current or earlier-added key.",
-                deltas_streams
+                 terminal tombstone resolved to an exact current or earlier-added key."
             ))?;
         } else {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                "{deltas_streams} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
-                 current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                deltas_streams
+                 current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}."
             ))?;
         }
     }
