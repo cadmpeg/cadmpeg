@@ -3273,13 +3273,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
     }
     let mut named = BTreeSet::new();
-    let mut prepared = prepared.into_iter();
-    for _ in ctx.admit_iter(&(0..prepared.len()), "nx completed pcurve attachment")? {
-        let Some((coedge_index, source_index, fin_xmt, pcurve_id, (geometry, metadata))) =
-            prepared.next()
-        else {
-            break;
-        };
+    for (coedge_index, source_index, fin_xmt, pcurve_id, (geometry, metadata)) in
+        ctx.admit_iter(prepared, "nx completed pcurve attachment")?
+    {
         // Two coedges of one fin name the same pcurve; the first one attaches it.
         if !storage.with_storage(|| {
             ctx.insert_btree_set(

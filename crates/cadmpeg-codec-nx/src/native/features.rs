@@ -3737,10 +3737,8 @@ fn assign_operation_header_identities(
     }
     let (identities, _identities_storage) = unique_operation_header_identities(ctx, &keys)?;
     let mut identities = identities.into_iter();
-    for index in ctx.admit_iter(&(0..labels.len()), "assign NX operation header identities")? {
-        let Some(label) = labels.get_mut(index) else {
-            return Err(ctx.refuse_codec_limit("assign NX operation header identities", 0, 1));
-        };
+    // The identities were computed from these labels, one per element in order.
+    for label in ctx.admit_iter(&mut *labels, "assign NX operation header identities")? {
         label.stable_identity = identities.next().flatten();
     }
     Ok(())
@@ -4062,10 +4060,8 @@ pub(super) fn feature_operation_records(
     }
     let (identities, _identities_storage) = unique_operation_header_identities(ctx, &keys)?;
     let mut identities = identities.into_iter();
-    for index in ctx.admit_iter(&(0..records.len()), "assign NX operation record identities")? {
-        let Some(record) = records.get_mut(index) else {
-            return Err(ctx.refuse_codec_limit("assign NX operation record identities", 0, 1));
-        };
+    // The identities were computed from these records, one per element in order.
+    for record in ctx.admit_iter(&mut *records, "assign NX operation record identities")? {
         record.stable_identity = identities.next().flatten();
     }
     Ok(records)
@@ -5749,11 +5745,9 @@ pub(super) fn feature_input_block_identity_groups(
     }
     let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
     let mut groups = Vec::new();
-    let mut by_block = by_block.into_iter();
-    for _ in ctx.admit_iter(&(0..by_block.len()), "visit NX feature input block groups")? {
-        let Some((data_block, mut members)) = by_block.next() else {
-            return Err(ctx.refuse_codec_limit("visit NX feature input block groups", 0, 1));
-        };
+    for (data_block, mut members) in
+        ctx.admit_iter(by_block, "visit NX feature input block groups")?
+    {
         let Some(first) = members.first() else {
             continue;
         };
@@ -5785,7 +5779,6 @@ pub(super) fn feature_input_block_identity_groups(
         )?;
         groups.push((data_block, members));
     }
-    drop(by_block);
     drop(map_reservation);
     ctx.stable_sort_by_key(
         &mut groups,
@@ -5799,11 +5792,7 @@ pub(super) fn feature_input_block_identity_groups(
         .enumerate()
     {
         let mut retained_members = Vec::new();
-        let mut members = members.into_iter();
-        for _ in ctx.admit_iter(&(0..members.len()), "copy NX input block identity members")? {
-            let Some(member) = members.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX input block identity members", 0, 1));
-            };
+        for member in ctx.admit_iter(members, "copy NX input block identity members")? {
             ctx.reserve_vec(&mut retained_members, 1, "NX input block identity members")?;
             retained_members.push(FeatureInputBlockIdentityMember {
                 input_block: ctx
@@ -7112,31 +7101,20 @@ pub(super) fn feature_sketch_records(
         )?;
 
         let mut input_ids = Vec::new();
-        let mut input_blocks = input_blocks.into_iter();
-        for _ in ctx.admit_iter(&(0..input_blocks.len()), "copy NX sketch input identities")? {
-            let Some(input) = input_blocks.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX sketch input identities", 0, 1));
-            };
+        for input in ctx.admit_iter(input_blocks, "copy NX sketch input identities")? {
             let id = ctx.copy_retained_text(&input.id, "NX sketch input identity")?;
             ctx.reserve_vec(&mut input_ids, 1, "NX sketch input identities")?;
             input_ids.push(id);
         }
-        drop(input_blocks);
         drop(input_reservation);
         let mut reference_ids = Vec::new();
-        let mut payload_references = payload_references.into_iter();
-        for _ in ctx.admit_iter(
-            &(0..payload_references.len()),
-            "copy NX sketch reference identities",
-        )? {
-            let Some(reference) = payload_references.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX sketch reference identities", 0, 1));
-            };
+        for reference in
+            ctx.admit_iter(payload_references, "copy NX sketch reference identities")?
+        {
             let id = ctx.copy_retained_text(&reference.id, "NX sketch reference identity")?;
             ctx.reserve_vec(&mut reference_ids, 1, "NX sketch reference identities")?;
             reference_ids.push(id);
         }
-        drop(payload_references);
         drop(reference_reservation);
         let id = replace_operation_text(
             ctx,

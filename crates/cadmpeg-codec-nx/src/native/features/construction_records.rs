@@ -1477,17 +1477,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                 let references = match lane.values {
                     crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
                         let mut references = Vec::new();
-                        let mut values = values.into_iter();
-                        for _ in ctx
-                            .admit_iter(&(0..values.len()), "resolve NX body compact references")?
-                        {
-                            let Some(value) = values.next() else {
-                                return Err(ctx.refuse_codec_limit(
-                                    "resolve NX body compact references",
-                                    0,
-                                    1,
-                                ));
-                            };
+                        for value in ctx.admit_iter(values, "resolve NX body compact references")? {
                             let data_block = charged_unique_offset_data_block(
                                 ctx,
                                 &indexed,
