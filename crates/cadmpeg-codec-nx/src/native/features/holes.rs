@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Holes construction records and extraction.
 
+use super::construction_records::{replace_operation_text, OperationInputStores};
 use super::feature_input_blocks;
 use super::format_feature_history_id;
+use super::payload_content::{block_store, malformed_reason, operation_key};
 
 use super::operation_record::FeatureOperationRecord;
 
@@ -20,7 +22,6 @@ use crate::om::scalar::ShiftedBinary64;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 mod borrowed_wires;
 
@@ -735,9 +736,12 @@ fn symbolic_thread_text_frames<'a>(
     if record.name() != "SYMBOLIC_THREAD" {
         return Ok(None);
     }
-    let mut frames = crate::om::operation_payload_text_frames(ctx, record)?;
-    frames.retain(|frame| frame.marker == crate::om::OperationTextMarker::Text);
-    Ok((frames.len() >= 2).then_some(frames))
+    let frames = crate::om::operation_payload_text_frames(ctx, record)?;
+    let text_frames = ctx
+        .admit_iter(&frames, "count NX symbolic-thread text frames")?
+        .filter(|frame| frame.marker == crate::om::OperationTextMarker::Text)
+        .count();
+    Ok((text_frames >= 2).then_some(frames))
 }
 
 fn owned_symbolic_thread(
@@ -760,12 +764,16 @@ fn owned_symbolic_thread(
     let id =
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
 
-    let mut text_frames = ctx.collection_vec(frames.len(), "NX symbolic thread text frames")?;
+    let mut text_frames = Vec::new();
     let mut frames = frames.into_iter();
-    for ordinal in ctx.admit_iter(&(0..frames.len()), "build NX symbolic-thread text frames")? {
+    let mut ordinal = 0usize;
+    for _ in ctx.admit_iter(&(0..frames.len()), "build NX symbolic-thread text frames")? {
         let Some(frame) = frames.next() else {
             return Err(ctx.refuse_codec_limit("build NX symbolic-thread text frames", 0, 1));
         };
+        if frame.marker != crate::om::OperationTextMarker::Text {
+            continue;
+        }
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
         let frame_id = format_feature_history_id(
@@ -778,18 +786,20 @@ fn owned_symbolic_thread(
         let owner = ctx.copy_retained_text(&id, "NX symbolic thread text frame owner")?;
         let value =
             ctx.copy_retained_text(frame.value.as_str(), "NX symbolic thread text frame value")?;
+        let value = crate::payload_text::PayloadText::new(value)
+            .map_err(|error| malformed_reason(ctx, error, "NX symbolic thread text frame error"))?;
+        let source_offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread text frame offset", 0, 1))?;
+        ctx.reserve_vec(&mut text_frames, 1, "NX symbolic thread text frames")?;
         text_frames.push(FeatureSymbolicThreadTextFrame {
             id: frame_id,
             symbolic_thread: owner,
             ordinal: ordinal_u32,
-            value: crate::payload_text::PayloadText::new(value)
-                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?,
-            source_offset: entry_offset
-                .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX symbolic thread text frame offset", 0, 1)
-                })?,
+            value,
+            source_offset,
         });
+        ordinal += 1;
     }
     Ok(FeatureSymbolicThread {
         id,
@@ -828,39 +838,11 @@ pub(in crate::native) fn feature_symbolic_threads(
                 operation_ordinal,
                 record.offset(),
             )?;
-            ctx.charge_collection_items(1, "NX symbolic threads")
-                .and_then(|()| {
-                    ctx.reserve_capacity(&mut threads, 1, "allocate NX symbolic threads")
-                })?;
+            ctx.reserve_vec(&mut threads, 1, "NX symbolic threads")?;
             threads.push(thread);
         }
     }
     Ok(threads)
-}
-
-fn copy_replaced_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &str,
-    marker: &'static str,
-    replacement: &'static str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let Some(start) = source.find(marker) else {
-        return ctx.copy_retained_text(source, operation);
-    };
-    let end = start
-        .checked_add(marker.len())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    let length = source
-        .len()
-        .checked_sub(marker.len())
-        .and_then(|length| length.checked_add(replacement.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    let mut id = ctx.retained_string(length, operation)?;
-    id.push_str(&source[..start]);
-    id.push_str(replacement);
-    id.push_str(&source[end..]);
-    Ok(id)
 }
 
 fn hole_template_candidates<T>(
@@ -906,16 +888,40 @@ fn hole_template_candidates<T>(
         BTreeMap::<&str, (usize, &FeaturePayloadString, &FeatureOperationLabel)>::new();
     for string in strings {
         ctx.charge_work(1, "join NX hole template strings")?;
-        let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
+        let Some(record) = ctx
+            .get_btree_map(
+                &records_by_id,
+                string.operation_record.as_str(),
+                "find NX hole template record",
+            )?
+            .copied()
+        else {
             continue;
         };
-        let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
+        let Some(label) = ctx
+            .get_btree_map(
+                &labels_by_id,
+                record.operation_label.as_str(),
+                "find NX hole template label",
+            )?
+            .copied()
+        else {
             continue;
         };
-        if !eligible(label) || !string.value.as_str().starts_with("Hole_") {
+        if !eligible(label)
+            || !ctx.starts_with(
+                string.value.as_str(),
+                "Hole_",
+                "check NX hole template string prefix",
+            )?
+        {
             continue;
         }
-        if let Some((count, _, _)) = candidates.get_mut(label.id.as_str()) {
+        if let Some((count, _, _)) = ctx.get_mut_btree_map(
+            &mut candidates,
+            label.id.as_str(),
+            "find NX hole template candidate",
+        )? {
             *count = count
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("count NX hole template candidates", 0, 1))?;
@@ -972,7 +978,7 @@ pub(in crate::native) fn feature_simple_hole_templates(
                 return Ok(None);
             };
             Ok(Some(FeatureSimpleHoleTemplate {
-                id: copy_replaced_id(
+                id: replace_operation_text(
                     ctx,
                     &string.id,
                     "payload-string",
@@ -1011,7 +1017,7 @@ pub(in crate::native) fn feature_threaded_hole_templates(
                 return Ok(None);
             };
             Ok(Some(FeatureThreadedHoleTemplate {
-                id: copy_replaced_id(
+                id: replace_operation_text(
                     ctx,
                     &string.id,
                     "payload-string",
@@ -1070,14 +1076,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
                 operation_ordinal,
                 None,
             )?;
-            ctx.charge_collection_items(1, "NX simple hole repeated scalar lanes")
-                .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut pairs,
-                        1,
-                        "allocate NX simple hole repeated scalar lanes",
-                    )
-                })?;
+            ctx.reserve_vec(&mut pairs, 1, "NX simple hole repeated scalar lanes")?;
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
                 id,
                 operation_label,
@@ -1090,24 +1089,23 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
 
 /// Resolve the tagged block-index pairs following both repeated scalar-lane
 /// witnesses through the unique offset store that owns the operation inputs.
+/// First data block of each (owner store, block ordinal).
+type DataBlockIndex<'b> = BTreeMap<(&'b str, u32), &'b crate::native::om::DataBlock>;
+
 fn simple_hole_block_reference(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    blocks: &[crate::native::om::DataBlock],
+    blocks: &DataBlockIndex<'_>,
     prefix: &str,
     entry_offset: u64,
     (token, offset): (crate::om::reference_index::PayloadIndexToken, usize),
 ) -> Result<Option<SimpleHoleBlockReference>, cadmpeg_core::CodecError> {
-    let Some(block) = ctx.find_by(
-        blocks,
-        |block| {
-            Ok(block.block_ordinal == token.value()
-                && block
-                    .id
-                    .rsplit_once(":block#")
-                    .is_some_and(|(owner, _)| owner == prefix))
-        },
-        "resolve NX simple hole block reference",
-    )?
+    let Some(block) = ctx
+        .get_btree_map(
+            blocks,
+            &(prefix, token.value()),
+            "resolve NX simple hole block reference",
+        )?
+        .copied()
     else {
         return Ok(None);
     };
@@ -1124,7 +1122,7 @@ fn simple_hole_block_reference(
 
 fn simple_hole_reference_pair(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    blocks: &[crate::native::om::DataBlock],
+    blocks: &DataBlockIndex<'_>,
     prefix: &str,
     entry_offset: u64,
     pair: crate::om::simple_hole_references::ReferencePair,
@@ -1148,14 +1146,35 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
     let inputs = feature_input_blocks(ctx, history)?;
+    let input_stores = OperationInputStores::new(ctx, &inputs)?;
     let blocks = data_blocks(ctx, history.container())?;
+    let mut block_index = DataBlockIndex::new();
+    let mut block_index_storage = ctx.reserve_scoped(0, "NX simple hole data block index")?;
+    for block in ctx.admit_iter(&blocks, "index NX simple hole data blocks")? {
+        let Some(owner) = block_store(ctx, &block.id, "find NX simple hole data block owner")?
+        else {
+            continue;
+        };
+        let key = (owner, block.block_ordinal);
+        if ctx.contains_key_btree_map(&block_index, &key, "find NX simple hole data block")? {
+            continue;
+        }
+        block_index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut block_index,
+                key,
+                block,
+                "NX simple hole data block index",
+            )
+        })?;
+    }
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
     {
         let section_key = history_section.key.as_str();
         let entry_offset = history_section.entry_offset;
-        'records: for &(operation_ordinal, record) in ctx.admit_iter(
+        for &(operation_ordinal, record) in ctx.admit_iter(
             &history_section.records,
             "visit NX feature operation records",
         )? {
@@ -1166,46 +1185,38 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
                 operation_ordinal,
                 None,
             )?;
-            let mut prefix = None;
-            let inputs = ctx.admit_iter(&inputs, "find NX simple hole block owner")?;
-            for input in inputs {
-                if input.operation_label != operation_label {
-                    continue;
-                }
-                let Some(candidate) = input
-                    .data_block
-                    .rsplit_once(":block#")
-                    .map(|(owner, _)| owner)
-                else {
-                    continue;
-                };
-                if prefix.is_some_and(|first| first != candidate) {
-                    continue 'records;
-                }
-                prefix = Some(candidate);
-            }
-            let Some(prefix) = prefix else {
+            let (_, Some(prefix)) = input_stores.get(ctx, &operation_label)? else {
                 continue;
             };
             let Some(decoded) = crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(ctx, record.payload_view())? else {
 continue;
 };
-            let first =
-                match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[0]) {
-                    Ok(Some(first)) => first,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        return Err(error);
-                    }
-                };
-            let second =
-                match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[1]) {
-                    Ok(Some(second)) => second,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        return Err(error);
-                    }
-                };
+            let first = match simple_hole_reference_pair(
+                ctx,
+                &block_index,
+                prefix,
+                entry_offset,
+                decoded[0],
+            ) {
+                Ok(Some(first)) => first,
+                Ok(None) => continue,
+                Err(error) => {
+                    return Err(error);
+                }
+            };
+            let second = match simple_hole_reference_pair(
+                ctx,
+                &block_index,
+                prefix,
+                entry_offset,
+                decoded[1],
+            ) {
+                Ok(Some(second)) => second,
+                Ok(None) => continue,
+                Err(error) => {
+                    return Err(error);
+                }
+            };
             let id = format_feature_history_id(
                 ctx,
                 "simple-hole-repeated-scalar-lane-block-references",
@@ -1213,14 +1224,7 @@ continue;
                 operation_ordinal,
                 None,
             )?;
-            ctx.charge_collection_items(1, "NX simple hole block reference lanes")
-                .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut references,
-                        1,
-                        "allocate NX simple hole block reference lanes",
-                    )
-                })?;
+            ctx.reserve_vec(&mut references, 1, "NX simple hole block reference lanes")?;
             references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
                 id,
                 operation_label,
@@ -1240,16 +1244,37 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Result<Vec<FeatureSimpleHoleConstructionGroup>, cadmpeg_core::CodecError> {
     let mut chronology_reservation = ctx.reserve_scoped(0, "NX hole operation chronology")?;
+    let mut section_starts = BTreeMap::<&str, u64>::new();
+    for label in ctx.admit_iter(labels, "find NX hole section starts")? {
+        let section = label.section_link.as_str();
+        if let Some(start) =
+            ctx.get_mut_btree_map(&mut section_starts, &section, "find NX hole section start")?
+        {
+            *start = (*start).min(label.source_offset);
+            continue;
+        }
+        chronology_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut section_starts,
+                section,
+                label.source_offset,
+                "NX hole section starts",
+            )
+        })?;
+    }
     let mut chronology = Vec::new();
     for (index, label) in ctx
         .admit_iter(labels, "build NX hole operation chronology")?
         .enumerate()
     {
         let first_offset = ctx
-            .admit_iter(labels, "find NX hole section start")?
-            .filter(|other| other.section_link == label.section_link)
-            .map(|other| other.source_offset)
-            .fold(label.source_offset, u64::min);
+            .get_btree_map(
+                &section_starts,
+                &label.section_link.as_str(),
+                "find NX hole section start",
+            )?
+            .copied()
+            .unwrap_or(label.source_offset);
         ctx.reserve_scoped_vec(
             &mut chronology_reservation,
             &mut chronology,
@@ -1272,6 +1297,27 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         Ord::cmp,
         "sort NX hole operation chronology",
     )?;
+    let mut position_of = BTreeMap::<&str, usize>::new();
+    let mut position_storage = ctx.reserve_scoped(0, "NX hole chronology positions")?;
+    for (position, (_, label, _)) in ctx
+        .admit_iter(chronology.as_slice(), "index NX simple-hole chronology")?
+        .enumerate()
+    {
+        position_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut position_of,
+                label.id.as_str(),
+                position,
+                "NX hole chronology positions",
+            )
+        })?;
+    }
+    let (lane_groups, _lane_groups_reservation) = ctx.collect_scoped_btree_groups(
+        lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "group NX simple-hole reference lanes",
+    )?;
     let mut grouped_reservation = ctx.reserve_scoped(0, "NX simple hole group index")?;
     let mut grouped = BTreeMap::<
         ([&str; 2], [&str; 2]),
@@ -1280,7 +1326,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             &FeatureSimpleHoleRepeatedScalarLane,
         )>,
     >::new();
-    let mut ambiguous_groups = BTreeSet::<([&str; 2], [&str; 2])>::new();
+    let mut ambiguous_groups = BTreeMap::<([&str; 2], [&str; 2]), usize>::new();
     for reference in ctx.admit_iter(references, "group NX simple-hole references")? {
         let key = (
             reference
@@ -1294,44 +1340,37 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 .each_ref()
                 .map(|reference| reference.data_block.as_str()),
         );
-        let mut matching_lanes = ctx
-            .admit_iter(lanes, "match NX simple-hole reference lanes")?
-            .filter(|lane| lane.operation_label == reference.operation_label);
-        let lane = match (matching_lanes.next(), matching_lanes.next()) {
-            (Some(lane), None) => lane,
-            (Some(_), Some(_)) => {
-                grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<([&str; 2], [&str; 2])>() * 4,
-                ))?;
-                ctx.insert_btree_set(
-                    &mut ambiguous_groups,
-                    key,
-                    "NX ambiguous simple hole groups",
-                )?;
+        let Some(matching_lanes) = ctx.get_btree_map(
+            &lane_groups,
+            reference.operation_label.as_str(),
+            "match NX simple-hole reference lanes",
+        )?
+        else {
+            continue;
+        };
+        let lane = match matching_lanes.as_slice() {
+            [lane] => *lane,
+            [_, _, ..] => {
+                grouped_reservation.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut ambiguous_groups,
+                        key,
+                        matching_lanes.len(),
+                        "NX ambiguous simple hole groups",
+                    )
+                })?;
                 continue;
             }
-            _ => continue,
+            [] => continue,
         };
-        if !grouped.contains_key(&key) {
-            ctx.charge_collection_items(1, "NX simple hole group keys")?;
-            grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(
-                    ([&str; 2], [&str; 2]),
-                    Vec<(
-                        &FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-                        &FeatureSimpleHoleRepeatedScalarLane,
-                    )>,
-                )>() * 4,
-            ))?;
-        }
-        let bucket = grouped.entry(key).or_default();
-        ctx.reserve_scoped_vec(
+        ctx.push_scoped_btree_group(
             &mut grouped_reservation,
-            bucket,
-            1,
+            &mut grouped,
+            key,
+            || (reference, lane),
+            0,
             "NX simple hole group candidates",
         )?;
-        bucket.push((reference, lane));
     }
     let mut groups = Vec::new();
     let mut grouped = grouped.into_iter();
@@ -1339,7 +1378,11 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let Some((key, candidates)) = grouped.next() else {
             return Err(ctx.refuse_codec_limit("visit NX simple-hole groups", 0, 1));
         };
-        if ambiguous_groups.contains(&key) {
+        if ctx.contains_key_btree_map(
+            &ambiguous_groups,
+            &key,
+            "check NX ambiguous simple hole group",
+        )? {
             continue;
         }
         let mut positions_reservation = ctx.reserve_scoped(0, "NX simple hole group positions")?;
@@ -1357,12 +1400,11 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                     1,
                 ));
             };
-            let Some(position) = ctx
-                .admit_iter(
-                    chronology.as_slice(),
-                    "find NX simple-hole chronology position",
-                )?
-                .rposition(|(_, label, _)| label.id == reference.operation_label)
+            let Some(&position) = ctx.get_btree_map(
+                &position_of,
+                reference.operation_label.as_str(),
+                "find NX simple-hole chronology position",
+            )?
             else {
                 missing = true;
                 break;
@@ -1390,19 +1432,29 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         if positioned.len() < 2 {
             continue;
         }
+        let mut seen_labels = BTreeMap::<&str, usize>::new();
         let mut has_duplicate = false;
-        for (index, (_, _, reference, _)) in ctx
+        for (position, (_, _, reference, _)) in ctx
             .admit_iter(positioned.as_slice(), "check NX simple-hole group labels")?
             .enumerate()
         {
-            if ctx.any_by(
-                &positioned[..index],
-                |(_, _, other, _)| Ok(other.operation_label == reference.operation_label),
+            let label = reference.operation_label.as_str();
+            if ctx.contains_key_btree_map(
+                &seen_labels,
+                label,
                 "check NX simple-hole group label uniqueness",
             )? {
                 has_duplicate = true;
                 break;
             }
+            positions_reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut seen_labels,
+                    label,
+                    position,
+                    "NX simple hole group label index",
+                )
+            })?;
         }
         if has_duplicate {
             continue;
@@ -1426,30 +1478,32 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 block_reference,
             });
         }
-        let id_anchor = ctx
-            .admit_iter(members.as_slice(), "choose NX simple-hole group identity")?
-            .fold(&members[0], |first, second| {
-                if first.operation_label <= second.operation_label {
-                    first
-                } else {
-                    second
-                }
-            });
-        let id_key = id_anchor
-            .operation_label
-            .rsplit_once('#')
-            .map_or("unknown", |(_, key)| key);
-        let prefix = "nx:feature-history:simple-hole-construction-group#";
-        let length = prefix
-            .len()
-            .checked_add(id_key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX simple hole group identity", 0, 1))?;
-        let mut id = ctx.retained_string(length, "NX simple hole group identity")?;
-        id.push_str(prefix);
-        id.push_str(id_key);
+        let mut id_anchor = &members[0];
+        for member in ctx.admit_iter(members.as_slice(), "choose NX simple-hole group identity")? {
+            if ctx.compare(
+                &id_anchor.operation_label,
+                &member.operation_label,
+                "compare NX simple-hole group identity labels",
+            )? == std::cmp::Ordering::Greater
+            {
+                id_anchor = member;
+            }
+        }
+        let id_key = operation_key(
+            ctx,
+            &id_anchor.operation_label,
+            "find NX simple-hole group identity key",
+        )?
+        .unwrap_or("unknown");
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:simple-hole-construction-group#{id_key}"),
+            "NX simple hole group identity",
+        )?;
         let members =
             SimpleHoleConstructionMembers::new(members, &DecodeSimpleHoleMemberAdmission { ctx })?
-                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+                .map_err(|error| {
+                    malformed_reason(ctx, error, "NX simple hole construction members error")
+                })?;
         let first_data_blocks = [
             ctx.copy_retained_text(key.0[0], "NX simple hole first block")?,
             ctx.copy_retained_text(key.0[1], "NX simple hole first block")?,
@@ -1540,10 +1594,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
                 operation_ordinal,
                 None,
             )?;
-            ctx.charge_collection_items(1, "NX hole package lanes")
-                .and_then(|()| {
-                    ctx.reserve_capacity(&mut lanes, 1, "allocate NX hole package lanes")
-                })?;
+            ctx.reserve_vec(&mut lanes, 1, "NX hole package lanes")?;
             lanes.push(FeatureHolePackageConstructionGroupLane {
                 id,
                 operation_label,
@@ -1582,24 +1633,32 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
     groups: &[FeatureSimpleHoleConstructionGroup],
 ) -> Result<Vec<FeatureHolePackageConstructionGroupUse>, cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX hole package group candidates")?;
+    let (group_keys, _group_keys_reservation) = ctx.collect_scoped_btree_groups(
+        groups
+            .iter()
+            .map(|group| (simple_hole_group_key(group), group)),
+        "group NX simple-hole group keys",
+    )?;
+    let (lane_keys, _lane_keys_reservation) = ctx.collect_scoped_btree_groups(
+        lanes.iter().map(|lane| (hole_package_lane_key(lane), lane)),
+        "group NX hole package lane keys",
+    )?;
     let mut matches = Vec::new();
     for group in ctx.admit_iter(groups, "join NX hole package groups")? {
         let key = simple_hole_group_key(group);
-        if ctx
-            .admit_iter(groups, "check NX unique simple-hole group")?
-            .filter(|other| simple_hole_group_key(other) == key)
-            .take(2)
-            .count()
-            != 1
-        {
-            continue;
-        }
-        let mut matching_lanes = ctx
-            .admit_iter(lanes, "match NX hole package group lanes")?
-            .filter(|lane| hole_package_lane_key(lane) == key);
-        let (Some(lane), None) = (matching_lanes.next(), matching_lanes.next()) else {
+        let Some([_]) = ctx
+            .get_btree_map(&group_keys, &key, "check NX unique simple-hole group")?
+            .map(Vec::as_slice)
+        else {
             continue;
         };
+        let Some([lane]) = ctx
+            .get_btree_map(&lane_keys, &key, "match NX hole package group lanes")?
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        let lane = *lane;
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut matches,
@@ -1623,7 +1682,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         let Some((group, lane)) = matches.next() else {
             return Err(ctx.refuse_codec_limit("build NX hole package group uses", 0, 1));
         };
-        let id = copy_replaced_id(
+        let id = replace_operation_text(
             ctx,
             &lane.id,
             "hole-package-construction-group-lane",

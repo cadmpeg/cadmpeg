@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane common headers and atomic construction references.
 
+use super::construction_records::OperationInputStores;
+use super::payload_content::block_store;
 use super::{
     charged_unique_offset_data_block, feature_input_blocks, format_feature_history_id,
     DatumPlaneBlockLane, FeatureHistory,
@@ -14,7 +16,6 @@ use serde::{
     ser::{SerializeSeq, SerializeStruct},
     Deserialize, Serialize,
 };
-use std::collections::BTreeSet;
 
 /// A retained common header with an optional decoded construction branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +68,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
 ) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, history)?;
+    let input_stores = OperationInputStores::new(ctx, &inputs)?;
     let mut headers = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -110,45 +112,30 @@ pub(in crate::native) fn feature_datum_plane_headers(
                 operation_ordinal,
                 None,
             )?;
-            let scratch_bytes = inputs.len().checked_mul(128).ok_or_else(|| {
-                ctx.refuse_codec_limit("index NX datum-plane input prefixes", 0, 1)
-            })?;
-            let _prefixes = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(scratch_bytes),
-                "index NX datum-plane input prefixes",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(inputs.len()),
-                "scan NX datum-plane input prefixes",
-            )?;
-            let mut input_prefixes = BTreeSet::new();
-            for input in inputs
-                .iter()
-                .filter(|input| input.operation_label == operation_label)
-            {
-                let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
-                    continue;
-                };
-                ctx.insert_btree_set(&mut input_prefixes, prefix, "NX datum-plane input prefixes")?;
-            }
+            let (_, input_prefix) = input_stores.get(ctx, &operation_label)?;
             let branch = branch
                 .map(|branch| -> Result<Construction, cadmpeg_core::CodecError> {
-                    let resolved = if input_prefixes.len() == 1 {
-                        let input_prefix =
-                            input_prefixes.iter().next().copied().ok_or_else(|| {
-                                ctx.refuse_codec_limit("resolve NX datum-plane input prefix", 0, 1)
-                            })?;
+                    let resolved = if let Some(input_prefix) = input_prefix {
                         branch.resolve(
                             |index| -> Result<Option<String>, cadmpeg_core::CodecError> {
-                                Ok(
-                                    charged_unique_offset_data_block(ctx, &indexed, index)?.filter(
-                                        |data_block| {
-                                            data_block
-                                                .rsplit_once(":block#")
-                                                .is_some_and(|(prefix, _)| prefix == input_prefix)
-                                        },
-                                    ),
-                                )
+                                let Some(data_block) =
+                                    charged_unique_offset_data_block(ctx, &indexed, index)?
+                                else {
+                                    return Ok(None);
+                                };
+                                let in_store = match block_store(
+                                    ctx,
+                                    &data_block,
+                                    "check NX datum-plane block store",
+                                )? {
+                                    Some(prefix) => ctx.equal(
+                                        prefix,
+                                        input_prefix,
+                                        "compare NX datum-plane block store",
+                                    )?,
+                                    None => false,
+                                };
+                                Ok(in_store.then_some(data_block))
                             },
                         )?
                     } else {
