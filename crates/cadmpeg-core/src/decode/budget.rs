@@ -954,6 +954,7 @@ impl<'a> WorkBudget<'a> {
 
     /// Creates a child slice capped by this budget's remainder and attached to
     /// its session. The slice borrows the session, not this budget.
+    #[must_use]
     pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'a> {
         WorkBudget {
             limit: limit.min(self.remaining()),
