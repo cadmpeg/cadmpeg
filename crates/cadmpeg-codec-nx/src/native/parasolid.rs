@@ -154,24 +154,44 @@ impl Clone for ParasolidGroupMember {
     }
 }
 
-/// Retain GROUP records from partition streams and raw deltas overlays.
+/// GROUP records and current GROUP membership of every partition stream.
+pub(super) struct ParasolidGroups {
+    pub(super) records: Vec<ParasolidGroupRecord>,
+    pub(super) members: Vec<ParasolidGroupMember>,
+}
+
+/// One replayed GROUP state event at its inflated stream offset.
+type GroupStateEvent<'a> = (u64, GroupStateChange<'a>);
+
+/// A record that sets the current state of an identity, or a tombstone that clears it.
+#[derive(Clone, Copy)]
+enum GroupStateChange<'a> {
+    Record { xmt: u32, family: &'a RecordFamily },
+    Tombstone(u32),
+}
+
+/// Retain GROUP records and resolve current GROUP membership.
 ///
-/// Deltas records use the partition pairing already selected for topology
-/// reconstruction. A record in an unpaired deltas stream remains exact native
-/// evidence but has no partition-local namespace assignment.
-pub(super) fn parasolid_group_records(
+/// Each partition stream is walked once; its census yields the partition
+/// GROUP records and the partition state that the paired deltas events then
+/// update in stream order. Deltas records use the partition pairing already
+/// selected for topology reconstruction. A record in an unpaired deltas stream
+/// remains exact native evidence but has no partition-local namespace
+/// assignment. Member targets are bound to partition graphs separately by
+/// [`resolve_parasolid_group_member_targets`].
+pub(super) fn parasolid_groups(
     ctx: &DecodeContext<'_>,
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
-    deltas_records: &[ParasolidDeltasRecord],
-) -> Result<Vec<ParasolidGroupRecord>, CodecError> {
+    deltas: &ParasolidDeltasEvents,
+) -> Result<ParasolidGroups, CodecError> {
     let mut paired_partition = HashMap::new();
     let mut pair_storage = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
-    for (&partition, deltas) in ctx.admit_iter(delta_pairs, "NX GROUP delta pair index")? {
+    for (&partition, paired) in ctx.admit_iter(delta_pairs, "NX GROUP delta pair index")? {
         let Ok(partition) = u32::try_from(partition) else {
             continue;
         };
-        for &delta in ctx.admit_iter(deltas, "NX GROUP delta pair index")? {
+        for &delta in ctx.admit_iter(paired, "NX GROUP delta pair index")? {
             pair_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut paired_partition,
@@ -182,7 +202,41 @@ pub(super) fn parasolid_group_records(
             })?;
         }
     }
+    let mut delta_events = BTreeMap::<u32, Vec<GroupStateEvent<'_>>>::new();
+    let mut delta_event_storage = ctx.reserve_scoped(0, "NX GROUP deltas state events")?;
+    for record in ctx.admit_iter(&deltas.records, "NX GROUP deltas state events")? {
+        delta_event_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut delta_events,
+                record.stream_ordinal,
+                (
+                    record.inflated_offset,
+                    GroupStateChange::Record {
+                        xmt: record.xmt,
+                        family: &record.family,
+                    },
+                ),
+                "NX GROUP deltas state events",
+                "NX GROUP deltas state events",
+            )
+        })?;
+    }
+    for tombstone in ctx.admit_iter(&deltas.tombstones, "NX GROUP deltas state events")? {
+        delta_event_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut delta_events,
+                tombstone.stream_ordinal,
+                (
+                    tombstone.inflated_offset,
+                    GroupStateChange::Tombstone(tombstone.xmt),
+                ),
+                "NX GROUP deltas state events",
+                "NX GROUP deltas state events",
+            )
+        })?;
+    }
     let mut groups = Vec::new();
+    let mut members = Vec::new();
     for (stream_ordinal, stream) in ctx
         .admit_iter(streams, "NX GROUP partition streams")?
         .enumerate()
@@ -193,21 +247,14 @@ pub(super) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        let records = crate::deltas::census::walk(ctx, &stream.inflated)?
-            .into_events()
-            .records;
-        let record_count = records.len();
-        let mut records = records.into_iter();
-        for _ in ctx.admit_iter(&(0..record_count), "NX GROUP partition records")? {
-            let Some(record) = records.next() else {
-                break;
-            };
-            let crate::deltas::record_family::RecordFamily::Group {
+        let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
+        for record in ctx.admit_iter(&census.records, "NX GROUP partition records")? {
+            let RecordFamily::Group {
                 node_id,
                 selector,
                 linked_reference_status,
                 references,
-            } = record.family
+            } = &record.family
             else {
                 continue;
             };
@@ -225,19 +272,67 @@ pub(super) fn parasolid_group_records(
                         stream_ordinal: stream_ordinal_u32,
                     },
                     xmt: record.xmt,
-                    node_id,
-                    references,
-                    selector,
-                    linked_reference_status,
+                    node_id: *node_id,
+                    references: *references,
+                    selector: *selector,
+                    linked_reference_status: *linked_reference_status,
                     byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 },
                 "NX GROUP records",
             )?;
         }
+        let mut current = BTreeMap::new();
+        let mut current_storage = ctx.reserve_scoped(0, "NX GROUP current record index")?;
+        let (partition_events, _partition_event_storage) = census_group_events(ctx, &census)?;
+        apply_group_state_events(ctx, &mut current, &mut current_storage, &partition_events)?;
+        let mut complete = true;
+        if let Some(paired) =
+            ctx.get_btree_map(delta_pairs, &stream_ordinal, "NX GROUP delta pair index")?
+        {
+            for &delta in ctx.admit_iter(paired, "NX GROUP delta pair index")? {
+                if delta >= streams.len() {
+                    complete = false;
+                    break;
+                }
+                let Ok(delta) = u32::try_from(delta) else {
+                    complete = false;
+                    break;
+                };
+                let Some(events) =
+                    ctx.get_btree_map(&delta_events, &delta, "NX GROUP deltas state events")?
+                else {
+                    continue;
+                };
+                let (mut ordered, _ordered_storage) =
+                    ctx.copy_temporary_slice(events, "NX GROUP deltas state events")?;
+                ctx.stable_sort_by(
+                    &mut ordered,
+                    |event| &event.0,
+                    Ord::cmp,
+                    "sort NX GROUP state events",
+                )?;
+                apply_group_state_events(ctx, &mut current, &mut current_storage, &ordered)?;
+            }
+        }
+        if !complete {
+            continue;
+        }
+        let (mut records, mut records_storage) =
+            ctx.scoped_vector_storage(current.len(), "NX GROUP current records")?;
+        for (&xmt, &family) in ctx.admit_iter(&current, "NX GROUP current records")? {
+            ctx.reserve_scoped_vec(
+                &mut records_storage,
+                &mut records,
+                1,
+                "NX GROUP current records",
+            )?;
+            records.push((xmt, family));
+        }
+        group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
     }
-    for record in ctx.admit_iter(deltas_records, "NX GROUP deltas records")? {
-        let crate::deltas::record_family::RecordFamily::Group {
+    for record in ctx.admit_iter(&deltas.records, "NX GROUP deltas records")? {
+        let RecordFamily::Group {
             node_id,
             selector,
             linked_reference_status,
@@ -277,7 +372,10 @@ pub(super) fn parasolid_group_records(
         Ord::cmp,
         "sort NX GROUP records",
     )?;
-    Ok(groups)
+    Ok(ParasolidGroups {
+        records: groups,
+        members,
+    })
 }
 
 /// A malformed-record error whose message is copied under the decode budget.
@@ -298,17 +396,16 @@ fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, 
     }
 }
 
+/// Members of every complete GROUP chain among one partition's current records.
 fn group_members_from_records(
     ctx: &DecodeContext<'_>,
     partition_stream_ordinal: u32,
-    records: &[crate::deltas::Record],
+    records: &[(u32, &RecordFamily)],
     members: &mut Vec<ParasolidGroupMember>,
 ) -> Result<(), CodecError> {
-    let (records_by_xmt, _record_storage) = ctx.unique_index(
-        records.iter().map(|record| (record.xmt, record)),
-        "NX GROUP record index",
-    )?;
-    let unique_record = |xmt: u32| -> Result<Option<&crate::deltas::Record>, CodecError> {
+    let (records_by_xmt, _record_storage) =
+        ctx.unique_index(records.iter().copied(), "NX GROUP record index")?;
+    let unique_record = |xmt: u32| -> Result<Option<&RecordFamily>, CodecError> {
         Ok(ctx
             .get_hash_map(&records_by_xmt, &xmt, "NX GROUP record index")?
             .copied()
@@ -316,12 +413,12 @@ fn group_members_from_records(
     };
     let mut groups_by_node = BTreeMap::<u32, Option<(u32, u32)>>::new();
     let mut group_storage = ctx.reserve_scoped(0, "NX GROUP node index")?;
-    for record in ctx.admit_iter(records, "NX GROUP node index")? {
-        if let crate::deltas::record_family::RecordFamily::Group {
+    for &(xmt, family) in ctx.admit_iter(records, "NX GROUP node index")? {
+        if let RecordFamily::Group {
             node_id,
             references,
             ..
-        } = &record.family
+        } = family
         {
             if let Some(unique) =
                 ctx.get_mut_btree_map(&mut groups_by_node, node_id, "NX GROUP node index")?
@@ -332,7 +429,7 @@ fn group_members_from_records(
                     ctx.insert_btree_map(
                         &mut groups_by_node,
                         *node_id,
-                        Some((record.xmt, references[4])),
+                        Some((xmt, references[4])),
                         "NX GROUP node index",
                     )
                 })?;
@@ -359,13 +456,7 @@ fn group_members_from_records(
             seen_storage.with_storage(|| {
                 ctx.insert_hash_set(&mut seen, current, "NX GROUP member seen index")
             })?;
-            let Some(list_record) = unique_record(current)? else {
-                complete = false;
-                break;
-            };
-            let crate::deltas::record_family::RecordFamily::Type91 { references } =
-                &list_record.family
-            else {
+            let Some(RecordFamily::Type91 { references }) = unique_record(current)? else {
                 complete = false;
                 break;
             };
@@ -374,11 +465,11 @@ fn group_members_from_records(
                 break;
             }
             let member_xmt = references[1];
-            let Some(member_record) = unique_record(member_xmt)? else {
+            let Some(member_family) = unique_record(member_xmt)? else {
                 complete = false;
                 break;
             };
-            let Some(target) = GroupMemberTarget::from_record(&member_record.family) else {
+            let Some(target) = GroupMemberTarget::from_record(member_family) else {
                 complete = false;
                 break;
             };
@@ -454,125 +545,77 @@ fn group_member_id(
     Ok(id)
 }
 
-fn apply_group_state_events(
-    ctx: &DecodeContext<'_>,
-    records: &mut BTreeMap<u32, crate::deltas::Record>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    bytes: &[u8],
-) -> Result<(), CodecError> {
-    enum Event {
-        Record(crate::deltas::Record),
-        Tombstone(u32),
-    }
-    let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
-    let record_count = census.records.len();
-    let tombstone_count = census.tombstones.len();
-    let count = record_count
-        .checked_add(tombstone_count)
+/// Orders one partition census's records and tombstones by stream offset.
+fn census_group_events<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    census: &'a Census,
+) -> Result<
+    (
+        Vec<GroupStateEvent<'a>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let count = census
+        .records
+        .len()
+        .checked_add(census.tombstones.len())
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let (mut events, mut events_storage) =
-        ctx.scoped_vector_storage(count, "NX GROUP state events")?;
-    let mut census_records = census.records.into_iter();
-    for _ in ctx.admit_iter(&(0..record_count), "NX GROUP state events")? {
-        let Some(record) = census_records.next() else {
-            break;
-        };
-        ctx.reserve_scoped_vec(&mut events_storage, &mut events, 1, "NX GROUP state events")?;
-        events.push((record.offset, Event::Record(record)));
+    let (mut events, mut storage) = ctx.scoped_vector_storage(count, "NX GROUP state events")?;
+    for record in ctx.admit_iter(&census.records, "NX GROUP state events")? {
+        ctx.reserve_scoped_vec(&mut storage, &mut events, 1, "NX GROUP state events")?;
+        events.push((
+            cadmpeg_core::decode::u64_from_index(record.offset),
+            GroupStateChange::Record {
+                xmt: record.xmt,
+                family: &record.family,
+            },
+        ));
     }
-    let mut census_tombstones = census.tombstones.into_iter();
-    for _ in ctx.admit_iter(&(0..tombstone_count), "NX GROUP state events")? {
-        let Some(tombstone) = census_tombstones.next() else {
-            break;
-        };
-        ctx.reserve_scoped_vec(&mut events_storage, &mut events, 1, "NX GROUP state events")?;
-        events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
+    for tombstone in ctx.admit_iter(&census.tombstones, "NX GROUP state events")? {
+        ctx.reserve_scoped_vec(&mut storage, &mut events, 1, "NX GROUP state events")?;
+        events.push((
+            cadmpeg_core::decode::u64_from_index(tombstone.offset),
+            GroupStateChange::Tombstone(tombstone.xmt),
+        ));
     }
     ctx.stable_sort_by(
         &mut events,
-        |value| &value.0,
+        |event| &event.0,
         Ord::cmp,
         "sort NX GROUP state events",
     )?;
-    let mut events = events.into_iter();
-    for _ in ctx.admit_iter(&(0..count), "NX GROUP current record index")? {
-        let Some((_, event)) = events.next() else {
-            break;
-        };
-        match event {
-            Event::Record(record) => {
-                let xmt = record.xmt;
-                reservation.with_storage(|| {
-                    ctx.insert_btree_map(records, xmt, record, "NX GROUP current record index")
+    Ok((events, storage))
+}
+
+/// Replays ordered state events onto the current record of each identity.
+fn apply_group_state_events<'a>(
+    ctx: &DecodeContext<'_>,
+    current: &mut BTreeMap<u32, &'a RecordFamily>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    events: &[GroupStateEvent<'a>],
+) -> Result<(), CodecError> {
+    for &(_, change) in ctx.admit_iter(events, "NX GROUP current record index")? {
+        match change {
+            GroupStateChange::Record { xmt, family } => {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(current, xmt, family, "NX GROUP current record index")
                 })?;
             }
-            Event::Tombstone(xmt) => {
-                ctx.remove_btree_map(records, &xmt, "NX GROUP current record index")?;
+            GroupStateChange::Tombstone(xmt) => {
+                ctx.remove_btree_map(current, &xmt, "NX GROUP current record index")?;
             }
         }
     }
     Ok(())
 }
 
-/// Resolve current GROUP membership from partition and ordered deltas events.
-pub(super) fn parasolid_group_members(
+/// Bind each GROUP member target to the current topology of its partition.
+pub(super) fn resolve_parasolid_group_member_targets(
     ctx: &DecodeContext<'_>,
-    streams: &[Stream],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+    members: &mut [ParasolidGroupMember],
     parsed: &ParsedStreams<'_>,
-) -> Result<Vec<ParasolidGroupMember>, CodecError> {
-    let mut members = Vec::new();
-    for (stream_ordinal, stream) in ctx
-        .admit_iter(streams, "NX GROUP partition streams")?
-        .enumerate()
-    {
-        if stream.kind() != crate::parasolid::StreamKind::Partition {
-            continue;
-        }
-        let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
-            continue;
-        };
-        let mut current = BTreeMap::new();
-        let mut current_storage = ctx.reserve_scoped(0, "NX GROUP current record index")?;
-        apply_group_state_events(ctx, &mut current, &mut current_storage, &stream.inflated)?;
-        let mut complete = true;
-        if let Some(deltas) =
-            ctx.get_btree_map(delta_pairs, &stream_ordinal, "NX GROUP delta pair index")?
-        {
-            for &delta in ctx.admit_iter(deltas, "NX GROUP delta pair index")? {
-                let Some(stream) = streams.get(delta) else {
-                    complete = false;
-                    break;
-                };
-                apply_group_state_events(
-                    ctx,
-                    &mut current,
-                    &mut current_storage,
-                    &stream.inflated,
-                )?;
-            }
-        }
-        if !complete {
-            continue;
-        }
-        let count = current.len();
-        let (mut records, mut records_storage) =
-            ctx.scoped_vector_storage(count, "NX GROUP current records")?;
-        let mut values = current.into_values();
-        for _ in ctx.admit_iter(&(0..count), "NX GROUP current records")? {
-            let Some(record) = values.next() else {
-                break;
-            };
-            ctx.reserve_scoped_vec(
-                &mut records_storage,
-                &mut records,
-                1,
-                "NX GROUP current records",
-            )?;
-            records.push(record);
-        }
-        group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
-    }
+) -> Result<(), CodecError> {
     for index in ctx.admit_iter(&(0..members.len()), "NX GROUP member targets")? {
         let member = &mut members[index];
         let Ok(partition) = usize::try_from(member.partition_stream_ordinal) else {
@@ -581,7 +624,7 @@ pub(super) fn parasolid_group_members(
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
         member.target = member.target.resolve(graph, member.member_xmt);
     }
-    Ok(members)
+    Ok(())
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
