@@ -139,13 +139,23 @@ scoped_storage_case!(
         Ok((values, reservation))
     }
 );
-scoped_storage_case!(temporary_set_storage, 67, 103, HashSet<u64>, ctx, count, {
-    ctx.temporary_set(count, "temporary set storage")
-});
+// A set sized for one or five values admits the storage for twice that length,
+// and the old-table bound stays live while it is allocated.
+scoped_storage_case!(
+    temporary_set_storage,
+    67,
+    175,
+    peak = (67 + 67, 175 + 175),
+    HashSet<u64>,
+    ctx,
+    count,
+    { ctx.temporary_set(count, "temporary set storage") }
+);
 scoped_storage_case!(
     temporary_set_limit_storage,
     67,
-    103,
+    175,
+    peak = (67 + 67, 175 + 175),
     HashSet<u64>,
     ctx,
     count,
@@ -296,7 +306,8 @@ scoped_storage_case!(collect_scoped_btree_map_storage, 320, 320, BTreeMap<u64, u
 scoped_storage_case!(
     collect_scoped_string_set_storage,
     99,
-    167,
+    303,
+    peak = (99 + 99, 303 + 303),
     HashSet<&'static str>,
     ctx,
     count,
@@ -311,7 +322,8 @@ scoped_storage_case!(
 scoped_storage_case!(
     collect_scoped_string_map_storage,
     131,
-    231,
+    431,
+    peak = (131 + 131, 431 + 431),
     HashMap<&'static str, u64>,
     ctx,
     count,

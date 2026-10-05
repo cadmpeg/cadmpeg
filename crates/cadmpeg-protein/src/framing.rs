@@ -155,25 +155,33 @@ fn frame_records(
             } else {
                 ctx.push_vec(&mut records, frame, "Protein logical record frame")?;
             }
-            let frame = records.last_mut().ok_or_else(|| {
-                CodecError::Malformed("Protein page has no record owner".into())
-            })?;
+            let frame = records
+                .last_mut()
+                .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
             if let Some(scope) = scope.as_deref_mut() {
-                scope.with_storage(|| ctx.extend_from_slice(
-                    &mut frame.bytes, RECORD_MARKER, "Protein copied record range",
-                ))?;
+                scope.with_storage(|| {
+                    ctx.extend_from_slice(
+                        &mut frame.bytes,
+                        RECORD_MARKER,
+                        "Protein copied record range",
+                    )
+                })?;
             } else {
-                ctx.extend_from_slice(&mut frame.bytes, RECORD_MARKER, "Protein copied record range")?;
+                ctx.extend_from_slice(
+                    &mut frame.bytes,
+                    RECORD_MARKER,
+                    "Protein copied record range",
+                )?;
             }
             current = true;
         }
-        let frame = records.last_mut().ok_or_else(|| {
-            CodecError::Malformed("Protein page has no record owner".into())
-        })?;
+        let frame = records
+            .last_mut()
+            .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
         if let Some(scope) = scope.as_deref_mut() {
-            scope.with_storage(|| ctx.extend_from_slice(
-                &mut frame.bytes, payload, "Protein copied record range",
-            ))?;
+            scope.with_storage(|| {
+                ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")
+            })?;
         } else {
             ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")?;
         }
@@ -196,7 +204,9 @@ mod tests {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + 2 * crate::PAGE_SIZE];
         let size_offset = crate::layout::instance_stream_header::DECLARED_SIZE;
         bytes[size_offset..size_offset + 4].copy_from_slice(
-            &u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes(),
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size")
+                .to_le_bytes(),
         );
         for (index, value) in [1_u8, 2].into_iter().enumerate() {
             let start = crate::STREAM_HEADER_LEN + index * crate::PAGE_SIZE;
@@ -208,16 +218,36 @@ mod tests {
         }
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("root");
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("root");
         let records = super::record_frames_admitted(&ctx, &bytes).expect("two start pages");
         let frames = records.frames();
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].logical_offset(), 0);
         let body_len = crate::PAGE_SIZE - crate::layout::record_start_page::BODY;
-        assert_eq!(frames[1].logical_offset(), crate::RECORD_MARKER.len() + body_len);
-        assert_eq!(frames[0].bytes(), [crate::RECORD_MARKER, &[1_u8; crate::PAGE_SIZE - crate::layout::record_start_page::BODY]].concat());
-        assert_eq!(frames[1].bytes(), [crate::RECORD_MARKER, &[2_u8; crate::PAGE_SIZE - crate::layout::record_start_page::BODY]].concat());
+        assert_eq!(
+            frames[1].logical_offset(),
+            crate::RECORD_MARKER.len() + body_len
+        );
+        assert_eq!(
+            frames[0].bytes(),
+            [
+                crate::RECORD_MARKER,
+                &[1_u8; crate::PAGE_SIZE - crate::layout::record_start_page::BODY]
+            ]
+            .concat()
+        );
+        assert_eq!(
+            frames[1].bytes(),
+            [
+                crate::RECORD_MARKER,
+                &[2_u8; crate::PAGE_SIZE - crate::layout::record_start_page::BODY]
+            ]
+            .concat()
+        );
     }
 
     #[test]

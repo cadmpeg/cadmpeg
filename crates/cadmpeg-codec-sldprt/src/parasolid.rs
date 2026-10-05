@@ -466,12 +466,19 @@ pub(crate) fn stream_header(
         let desc_start = desc_len_at + 2;
         let desc_end = desc_start + desc_len;
         Some((payload.get(desc_start..desc_end)?, desc_end))
-    })() else { return Ok(None); };
+    })() else {
+        return Ok(None);
+    };
     // The padding before the length-prefixed schema token is variable. The
     // preceding byte bounds the token separately from the first record.
     let window_end = (desc_end + 64).min(payload.len());
-    let Some(prologue) = payload.get(desc_end..window_end) else { return Ok(None); };
-    let Some(token) = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(ctx, prologue)? else { return Ok(None); };
+    let Some(prologue) = payload.get(desc_end..window_end) else {
+        return Ok(None);
+    };
+    let Some(token) = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(ctx, prologue)?
+    else {
+        return Ok(None);
+    };
     let schema_end = desc_end + token.end();
     let header_work = cadmpeg_core::decode::u64_from_index(description_bytes.len())
         .checked_mul(4)

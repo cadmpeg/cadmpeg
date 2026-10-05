@@ -22,8 +22,14 @@ fn edge_assignment_visits_refuse_materialized_limit() {
 fn edge_assignment_members_refuse_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // Four i64 buckets, four controls, sixteen trailing controls and fifteen padding bytes.
-    policy.limits.max_materialized_bytes = 4 * 8 + 4 + 16 + 15;
+    // The visited set holds four i64 buckets, four controls, sixteen trailing
+    // controls and fifteen padding bytes. The member table needs four
+    // (i64, usize) buckets with the same controls and padding on top of that
+    // live set; the cap is one byte below that total, which also admits the
+    // visited set's own growth peak of twice its storage.
+    let visited_storage = 4 * 8 + 4 + 16 + 15;
+    let members_storage = 4 * 16 + 4 + 16 + 15;
+    policy.limits.max_materialized_bytes = visited_storage + members_storage - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::bipartite_assignment(&[vec![17]], None, &ctx)
         .expect_err("member table exceeds the live visited-set storage allowance");
