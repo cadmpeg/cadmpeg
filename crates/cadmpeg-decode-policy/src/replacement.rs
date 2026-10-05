@@ -77,6 +77,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 _ => (),
             }
         }
+        if name.as_str() == "retain" && matches!(kind, "btree_map" | "btree_set") {
+            return method(&format!("retain_{kind}"));
+        }
+        if kind.starts_with("hash") && matches!(name.as_str(), "remove" | "remove_entry" | "take") {
+            return crate::hash_tables::REMOVAL_REPLACEMENT.to_owned();
+        }
+        if kind.starts_with("hash") && matches!(name.as_str(), "is_subset" | "is_disjoint") {
+            return crate::hash_tables::TRAVERSAL_REPLACEMENT.to_owned();
+        }
         if map
             && matches!(
                 name.as_str(),
