@@ -2206,7 +2206,6 @@ pub(crate) fn decode_dimension_annotation_frames(
         "f3d dimension annotation companions",
     )?;
     let mut intervals_by_stream = CompanionIntervals::of_inputs(ctx, inputs)?;
-    let mut records = RecordOffsetCache::new(ctx)?;
     let mut out = Vec::new();
     // Each stream is decoded once, in the order of its first companion.
     let (streams, _streams_storage) = companion_streams(ctx, companions)?;
@@ -2242,12 +2241,12 @@ pub(crate) fn decode_dimension_annotation_frames(
             })?;
         let (intervals, _interval_storage) =
             annotation_intervals(ctx, inputs, stream, bytes.len(), &mut intervals_by_stream)?;
-        let stream_records = records.get(ctx, stream, bytes)?;
+        let (stream_records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,
             geometry_indices: &geometry_indices,
             sketch_entities: &sketch_entities,
-            records: stream_records,
+            records: &stream_records,
         };
         // The paired header offset of each frame decoded in this stream, by
         // frame offset. A frame's parse depends only on the stream, so a later
