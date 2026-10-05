@@ -72,12 +72,12 @@ fn modern_body_map_refuses_name_and_collection_limits() {
         ),
         (ResourceDimension::MaterializedBytes, "f3d body-map pairs"),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "f3d flattened body-map pairs",
         ),
     ] {
         assert_refuses_at(dimension, operation, |ctx| {
-            body_bindings(ctx, &bytes, &metadata)
+            body_bindings(ctx, &bytes, &metadata).map(|_| ())
         });
     }
 }
