@@ -439,10 +439,8 @@ impl LegacyEntityRun {
         ctx: &DecodeContext<'_>,
     ) -> Result<impl Iterator<Item = &'a LegacyEntityIdentity> + 'a, CodecError> {
         let first = std::iter::once(&self.first_identity);
-        let following = ctx.admit_iter(
-            &self.following_identities,
-            "catia_legacy_identity_visits",
-        )?;
+        let following =
+            ctx.admit_iter(&self.following_identities, "catia_legacy_identity_visits")?;
         Ok(first.chain(following))
     }
 }

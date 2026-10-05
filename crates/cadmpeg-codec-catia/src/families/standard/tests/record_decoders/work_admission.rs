@@ -3,7 +3,10 @@
 
 use super::plane_bounds_record;
 use crate::families::standard::fbb::FbbPopulationLayout;
-use crate::families::standard::records::{AnalyticSurfaceKind, StandardCurveGeometry, StandardCurveSupport, StandardSurfacePopulation, StandardSurfaceRecord, SurfacePrefix};
+use crate::families::standard::records::{
+    AnalyticSurfaceKind, StandardCurveGeometry, StandardCurveSupport, StandardSurfacePopulation,
+    StandardSurfaceRecord, SurfacePrefix,
+};
 use std::collections::HashMap;
 
 #[test]

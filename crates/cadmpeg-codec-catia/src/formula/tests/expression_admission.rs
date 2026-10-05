@@ -117,12 +117,16 @@ fn legacy_symbol_ordinal_scan_propagates_caller_work_refusal() {
 fn legacy_symbol_ordinal_scan_preserves_matching_rules() {
     crate::test_support::with_service_context(|ctx| {
         for symbol in ["#1_", "#1_ /12"] {
-            assert!(super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
-                .expect("service work budget"));
+            assert!(
+                super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
+                    .expect("service work budget")
+            );
         }
         for symbol in ["#1_/", "#1_/x", "#2_"] {
-            assert!(!super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
-                .expect("service work budget"));
+            assert!(
+                !super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
+                    .expect("service work budget")
+            );
         }
     });
 }
@@ -139,8 +143,19 @@ fn formula_string_boundary_admission_preserves_unicode_indices() {
             evaluate: false,
             static_check: false,
         };
-        for (index, expected) in [(0, Some(0)), (1, Some(1)), (2, Some(3)), (3, Some(7)), (4, None)] {
-            assert_eq!(parser.string_boundary("aé😀", index).expect("service work budget"), expected);
+        for (index, expected) in [
+            (0, Some(0)),
+            (1, Some(1)),
+            (2, Some(3)),
+            (3, Some(7)),
+            (4, None),
+        ] {
+            assert_eq!(
+                parser
+                    .string_boundary("aé😀", index)
+                    .expect("service work budget"),
+                expected
+            );
         }
     });
 }
@@ -157,7 +172,8 @@ fn formula_string_boundary_scan_propagates_resource_refusal() {
             evaluate: false,
             static_check: false,
         };
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parser.string_boundary("é", 0) else {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parser.string_boundary("é", 0)
+        else {
             panic!("boundary scan must refuse")
         };
         assert_eq!(limit.operation, "catia_formula_string_boundary");

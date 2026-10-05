@@ -862,16 +862,17 @@ pub(super) fn emit_pcurves(
             let Some((_, _, native_range)) = pcurve_plan.get(&object_id) else {
                 continue;
             };
-            let parameter_range = edge_pcurve_parameters(admission.context(), graph, edge_id, object_id)?
-                .and_then(|parameters| ordered_subrange(parameters, *native_range))
-                .unwrap_or(*native_range)
-                .map(|parameter| {
-                    if parameter.get() == 0.0 {
-                        FiniteReal::ZERO
-                    } else {
-                        parameter
-                    }
-                });
+            let parameter_range =
+                edge_pcurve_parameters(admission.context(), graph, edge_id, object_id)?
+                    .and_then(|parameters| ordered_subrange(parameters, *native_range))
+                    .unwrap_or(*native_range)
+                    .map(|parameter| {
+                        if parameter.get() == 0.0 {
+                            FiniteReal::ZERO
+                        } else {
+                            parameter
+                        }
+                    });
             admission.context().admit_btree_entry(
                 &occurrence_groups,
                 &object_id,

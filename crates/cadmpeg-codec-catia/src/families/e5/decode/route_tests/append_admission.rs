@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::test_support::test_e5::{append_e5_record, e5_torus_stream, e5_torus_topology_stream};
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 #[test]
 fn e5_rollback_surface_append_keeps_unused_torus_and_refuses_move_work() {
@@ -21,13 +21,16 @@ fn e5_rollback_surface_append_keeps_unused_torus_and_refuses_move_work() {
     append_e5_record(&mut stream, 0x01, 96, &[0x81, 0xdf]);
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::e5::graph::parse_topology(ctx, &stream)
-    }).expect("source reference graph admitted").expect("distinct record identities resolve");
+    })
+    .expect("source reference graph admitted")
+    .expect("distinct record identities resolve");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.bodies.len(), 2);
     let file = crate::test_support::test_container::object_main_catpart(&stream);
     let decode = |ctx: &DecodeContext<'_>| {
         let scan = crate::container::scan_bytes(ctx, file.clone())?;
-        let result = super::super::try_decode_e5(ctx, &scan, &mut crate::nurbs::LaneRefusals::new());
+        let result =
+            super::super::try_decode_e5(ctx, &scan, &mut crate::nurbs::LaneRefusals::new());
         if let Err(CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
@@ -51,7 +54,10 @@ fn e5_rollback_surface_append_keeps_unused_torus_and_refuses_move_work() {
     assert_eq!(decoded.ir.model.vertices.len(), 4);
     assert_eq!(decoded.ir.model.points.len(), 4);
     assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
     let refusal = crate::test_support::with_work_refusal("catia_e5_rollback_surfaces", decode);
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_e5_rollback_surfaces"));

@@ -7,12 +7,25 @@ fn zero_face_loop_binding_rows_preserve_work_refusal() {
     let stream = crate::test_support::test_zero_entity::zero_entity_face_loop_support_stream();
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::zero_entity_support_runs_in_range(
-            ctx, &stream, 0..stream.len(), &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &stream,
+            0..stream.len(),
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     };
     let runs = crate::test_support::with_service_context(run).expect("service budget");
     assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].face.as_ref().expect("face").loops.as_ref().expect("loop roster").len(), 1);
+    assert_eq!(
+        runs[0]
+            .face
+            .as_ref()
+            .expect("face")
+            .loops
+            .as_ref()
+            .expect("loop roster")
+            .len(),
+        1
+    );
     let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
         let result = run(ctx);
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
@@ -20,7 +33,9 @@ fn zero_face_loop_binding_rows_preserve_work_refusal() {
         }
         result
     });
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION)
+    );
 }
 
 #[test]
@@ -31,11 +46,20 @@ fn zero_support_slot_range_preserves_work_refusal() {
     stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::zero_entity_support_runs_in_range(
-            ctx, &stream, 0..stream.len(), &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &stream,
+            0..stream.len(),
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     };
     let runs = crate::test_support::with_service_context(run).expect("service budget");
-    let loops = runs[0].face.as_ref().expect("face").loops.as_ref().expect("loop roster");
+    let loops = runs[0]
+        .face
+        .as_ref()
+        .expect("face")
+        .loops
+        .as_ref()
+        .expect("loop roster");
     assert_eq!(loops[0].support_record_ordinals, [2]);
     let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
         let result = run(ctx);
@@ -44,7 +68,9 @@ fn zero_support_slot_range_preserves_work_refusal() {
         }
         result
     });
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION)
+    );
 }
 
 #[test]
@@ -66,6 +92,7 @@ fn zero_member_ranges_preserve_maximum_bounded_count() {
 fn zero_member_ranges_reject_count_above_identifier_extent() {
     let count = std::num::NonZeroUsize::new(
         usize::try_from(u64::from(u32::MAX) + 1).expect("64-bit count"),
-    ).expect("nonzero count");
+    )
+    .expect("nonzero count");
     assert!(super::super::ZeroEntityLoopMembers::try_new(u32::MAX, 1, count).is_none());
 }

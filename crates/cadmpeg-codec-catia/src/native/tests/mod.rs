@@ -3,8 +3,9 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-mod consolidated;
+mod append_admission;
 mod collector_sources;
+mod consolidated;
 mod constraint;
 mod design;
 mod embedded_cylinders;
@@ -12,9 +13,8 @@ mod entity;
 mod entity_suffix;
 mod entity_suffix_framing;
 mod formula_relation;
-mod inventory;
 mod hash_lookups;
-mod append_admission;
+mod inventory;
 mod load;
 mod relation_expression;
 mod relation_program;

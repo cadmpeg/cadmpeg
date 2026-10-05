@@ -19,8 +19,10 @@ fn one_edge_topology() -> StandardTopologyDraft {
                 }),
             }],
         }],
-        edge_rows: vec![EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row")],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+        ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     }

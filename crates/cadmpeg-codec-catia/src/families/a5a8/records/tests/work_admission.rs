@@ -225,10 +225,9 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
             .expect("service multiplicities"),
         [6, 6]
     );
-    require_sticky_work_refusal(
-        "catia_a8_jet_multiplicity_preflight_scan",
-        |ctx| super::super::a8_freeform_curves(ctx, &bytes),
-    );
+    require_sticky_work_refusal("catia_a8_jet_multiplicity_preflight_scan", |ctx| {
+        super::super::a8_freeform_curves(ctx, &bytes)
+    });
     require_work_operations(
         |ctx| curve.multiplicities(ctx),
         &["catia_a8_jet_multiplicity_projection"],
@@ -311,10 +310,9 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
             .map(|rows| rows.concat()),
         Some(vec![2.0; 9])
     );
-    require_sticky_work_refusal(
-        "catia_a8_surface_multiplicity_preflight_scan",
-        |ctx| super::super::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()),
-    );
+    require_sticky_work_refusal("catia_a8_surface_multiplicity_preflight_scan", |ctx| {
+        super::super::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    });
 }
 
 #[test]
@@ -401,10 +399,9 @@ fn mirrored_weight_program_refuses_seed_and_copy_work() {
             .collect::<Vec<_>>(),
         [1.0, 0.8, 0.8, 1.0, 1.0, 0.8, 0.8, 1.0]
     );
-    require_sticky_work_refusal(
-        "catia_a5_weight_mirror_copy",
-        |ctx| super::super::a5_weights(ctx, &bytes, &mut 0, 2, 4, bytes.len()),
-    );
+    require_sticky_work_refusal("catia_a5_weight_mirror_copy", |ctx| {
+        super::super::a5_weights(ctx, &bytes, &mut 0, 2, 4, bytes.len())
+    });
 }
 
 #[test]

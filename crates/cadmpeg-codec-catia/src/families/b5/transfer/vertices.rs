@@ -27,9 +27,10 @@ pub(super) fn transfer_vertex_tolerances(
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
     let mut tolerances = BTreeMap::new();
-    for (&vertex, &tolerance) in ctx
-        .admit_iter(&graph.vertex_tolerances, "catia_b5_transfer_vertex_tolerances_scan")?
-    {
+    for (&vertex, &tolerance) in ctx.admit_iter(
+        &graph.vertex_tolerances,
+        "catia_b5_transfer_vertex_tolerances_scan",
+    )? {
         ctx.insert_btree_map(
             &mut tolerances,
             vertex,
@@ -37,17 +38,14 @@ pub(super) fn transfer_vertex_tolerances(
             "catia_b5_transfer_vertex_tolerances",
         )?;
     }
-    for (&edge, supports) in ctx
-        .admit_iter(supports, "catia_b5_transfer_edge_supports_scan")?
-    {
+    for (&edge, supports) in ctx.admit_iter(supports, "catia_b5_transfer_edge_supports_scan")? {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {
             continue;
         };
         let Some(coordinates) = graph.vertices.edge_points(edge) else {
             continue;
         };
-        for support in ctx.admit_iter(supports, "catia_b5_transfer_support_scan")?
-        {
+        for support in ctx.admit_iter(supports, "catia_b5_transfer_support_scan")? {
             let Some(lifted) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
                 continue;
             };
@@ -158,7 +156,10 @@ pub(super) fn emit_vertices(
     }
     for (rank, vertex) in admission
         .context()
-        .admit_iter(graph.vertices.logical_vertices(), "catia_b5_emit_logical_vertices")?
+        .admit_iter(
+            graph.vertices.logical_vertices(),
+            "catia_b5_emit_logical_vertices",
+        )?
         .enumerate()
     {
         let index = graph.vertices.raw_points().len() + rank;

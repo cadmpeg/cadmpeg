@@ -37,16 +37,16 @@ impl TrimPacket {
         ),
     ) -> Result<Option<Self>, CodecError> {
         let operation = "catia_trim_packet_partition";
-        let mut expected = independent_count.checked_mul(3).ok_or_else(|| {
-            ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
-        })?;
+        let mut expected = independent_count
+            .checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         for length in ctx
             .admit_iter(&strip_lengths, "catia_trim_packet_partition")?
             .chain(ctx.admit_iter(&fan_lengths, "catia_trim_packet_partition")?)
         {
-            expected = expected.checked_add(*length).ok_or_else(|| {
-                ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
-            })?;
+            expected = expected
+                .checked_add(*length)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         }
         if expected != handles.len() {
             return Ok(None);
@@ -145,7 +145,11 @@ impl TrimPacket {
         for &length in ctx.admit_iter(&self.strip_lengths, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for (index, triple) in ctx.admit_iter(strip, operation)?.windows(triple_width).enumerate() {
+            for (index, triple) in ctx
+                .admit_iter(strip, operation)?
+                .windows(triple_width)
+                .enumerate()
+            {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
@@ -233,7 +237,8 @@ mod tests {
             (1, vec![], vec![], vec![0, 1]),
             (0, vec![1], vec![], vec![0, 1]),
         ] {
-            let result = crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args));
+            let result =
+                crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args));
             assert!(result.expect("service resource budget").is_none());
         }
     }

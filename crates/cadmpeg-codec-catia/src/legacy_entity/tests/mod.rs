@@ -488,9 +488,9 @@ fn parses_monotone_identity_suffix_before_legacy_catalog() {
         [1, 4, 7]
     );
     assert!(crate::test_support::with_service_context(|ctx| {
-        runs[0].identities(ctx).map(|mut identities| {
-            identities.all(|identity| u8::from(identity.lead) == 0x81)
-        })
+        runs[0]
+            .identities(ctx)
+            .map(|mut identities| identities.all(|identity| u8::from(identity.lead) == 0x81))
     })
     .expect("legacy identity fixture fits service limits"));
 }

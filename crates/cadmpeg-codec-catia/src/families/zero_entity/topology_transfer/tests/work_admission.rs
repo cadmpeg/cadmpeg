@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
@@ -22,17 +24,26 @@ fn paired_face_fixture(
     ctx: &DecodeContext<'_>,
     unknown_carrier: bool,
 ) -> Result<usize, CodecError> {
-    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-        Point3::new(0.0, 1.0, 0.0)];
-    let runs = [super::run(10, 1, points, false), super::run(11, 4, points, true)];
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let runs = [
+        super::run(10, 1, points, false),
+        super::run(11, 4, points, true),
+    ];
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                points[0], Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-            ).expect("valid plane fixture"),
+                points[0],
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid plane fixture"),
         )),
         source_object: None,
     });
@@ -53,8 +64,10 @@ fn paired_face_fixture(
                     let [start, end] = support.model_endpoints.expect("fixture model endpoints");
                     cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                            end.get(), start.get().vector_from(end.get()),
-                        ).expect("finite reversed fixture line"),
+                            end.get(),
+                            start.get().vector_from(end.get()),
+                        )
+                        .expect("finite reversed fixture line"),
                     ))
                 } else {
                     support.model_curve.clone().expect("fixture model curve")
@@ -81,8 +94,11 @@ fn paired_face_fixture(
 }
 
 fn assert_paired_face_lookup_refusal(operation: &'static str, unknown_carrier: bool) {
-    assert_eq!(crate::test_support::with_service_context(|ctx| paired_face_fixture(ctx, unknown_carrier))
-        .expect("service paired-face fixture"), 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| paired_face_fixture(ctx, unknown_carrier))
+            .expect("service paired-face fixture"),
+        2
+    );
     let result = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = paired_face_fixture(ctx, unknown_carrier);
         if let Err(CodecError::ResourceLimit(limit)) = &result {

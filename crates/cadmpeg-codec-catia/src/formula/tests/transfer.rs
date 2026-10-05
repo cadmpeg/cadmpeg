@@ -1628,17 +1628,28 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 #[test]
 fn formula_entity_index_source_propagates_the_caller_work_refusal() {
     let bytes = standard_catpart_with_typed_formula_inputs(
-        4, false, &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-        "LENGTH", Some(33.0), "#1_-2mm",
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
     );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(!native.entity_records.is_empty());
     crate::test_support::with_work_limit(0, |ctx| {
         let mut ir = CadIr::empty();
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::formula::transfer_parameters(
-            ctx, &mut ir, &native, &mut cadmpeg_ir::Annotations::default(),
-            &crate::decode::ModelingGraphScope::Unresolved,
-        ) else { panic!("entity index source must refuse before scanning") };
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut ir,
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unresolved,
+            )
+        else {
+            panic!("entity index source must refuse before scanning")
+        };
         assert_eq!(limit.operation, "catia_formula_entity_index_visits");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(ir.model.parameters.is_empty());

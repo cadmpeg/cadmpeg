@@ -194,7 +194,10 @@ mod tests {
         })
         .expect("lane admission")
         .expect("finite lane");
-        assert_eq!(values.iter().map(|value| value.get()).collect::<Vec<_>>(), [1.0, -2.0]);
+        assert_eq!(
+            values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+            [1.0, -2.0]
+        );
         for bytes in [vec![0], f64::INFINITY.to_le_bytes().to_vec()] {
             assert!(crate::test_support::with_service_context(|ctx| {
                 super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
@@ -210,15 +213,19 @@ mod tests {
         let work = crate::test_support::with_work_limit(0, |ctx| {
             super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
         });
-        assert!(matches!(work, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(work, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_lane_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
         let slots = crate::test_support::with_collection_limit(0, |ctx| {
             super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
         });
-        assert!(matches!(slots, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(slots, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_lane_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]

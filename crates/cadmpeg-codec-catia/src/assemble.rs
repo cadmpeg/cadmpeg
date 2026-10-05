@@ -1014,23 +1014,39 @@ pub(crate) fn rational_pcurve_arc(
             return Ok(None);
         }
         if index == 0 {
-            ctx.push_vec(&mut control_points, Point2::new(
-                center[0] + radius * start.cos(),
-                center[1] + radius * start.sin(),
-            ), "catia_rational_arc_controls")?;
+            ctx.push_vec(
+                &mut control_points,
+                Point2::new(
+                    center[0] + radius * start.cos(),
+                    center[1] + radius * start.sin(),
+                ),
+                "catia_rational_arc_controls",
+            )?;
             ctx.push_vec(&mut weights, 1.0, "catia_rational_arc_weights")?;
             ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
             knots.extend([range[0]; 3]);
         }
-        ctx.push_vec(&mut control_points, Point2::new(
-            center[0] + radius / middle_weight * middle.cos(),
-            center[1] + radius / middle_weight * middle.sin(),
-        ), "catia_rational_arc_controls")?;
-        ctx.push_vec(&mut control_points, Point2::new(
-            center[0] + radius * end.cos(),
-            center[1] + radius * end.sin(),
-        ), "catia_rational_arc_controls")?;
-        ctx.extend_from_slice(&mut weights, &[middle_weight, 1.0], "catia_rational_arc_weights")?;
+        ctx.push_vec(
+            &mut control_points,
+            Point2::new(
+                center[0] + radius / middle_weight * middle.cos(),
+                center[1] + radius / middle_weight * middle.sin(),
+            ),
+            "catia_rational_arc_controls",
+        )?;
+        ctx.push_vec(
+            &mut control_points,
+            Point2::new(
+                center[0] + radius * end.cos(),
+                center[1] + radius * end.sin(),
+            ),
+            "catia_rational_arc_controls",
+        )?;
+        ctx.extend_from_slice(
+            &mut weights,
+            &[middle_weight, 1.0],
+            "catia_rational_arc_weights",
+        )?;
         if index + 1 < segment_count {
             knots.extend([end; 2]);
         }

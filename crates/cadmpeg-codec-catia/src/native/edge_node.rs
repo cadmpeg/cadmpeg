@@ -344,21 +344,21 @@ pub(super) fn edge_node_wires_charged(
     let mut index_storage = ctx.reserve_scoped(0, "CATIA edge wire identity lookup")?;
     let index = index_storage.with_storage(|| identity_index_charged(ctx, identities))?;
     ctx.try_collect_vec(
-        nodes.into_iter().map(|node| -> Result<_, cadmpeg_core::CodecError> {
-        let vertices = [
-            ctx.copy_retained_text(
-                joined_vertex_charged(ctx, &node, 0, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
-            ctx.copy_retained_text(
-                joined_vertex_charged(ctx, &node, 1, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
-        ];
-        Ok(
-            CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
-        )
-        }),
+        nodes
+            .into_iter()
+            .map(|node| -> Result<_, cadmpeg_core::CodecError> {
+                let vertices = [
+                    ctx.copy_retained_text(
+                        joined_vertex_charged(ctx, &node, 0, &index)?,
+                        "catia_native_edge_wire_vertex_id",
+                    )?,
+                    ctx.copy_retained_text(
+                        joined_vertex_charged(ctx, &node, 1, &index)?,
+                        "catia_native_edge_wire_vertex_id",
+                    )?,
+                ];
+                Ok(CatiaConsolidatedEdgeNodeWire::from_node(node, vertices))
+            }),
         "catia_native_edge_wires",
     )
 }

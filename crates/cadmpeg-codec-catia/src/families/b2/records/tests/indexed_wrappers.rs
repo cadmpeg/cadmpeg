@@ -116,12 +116,8 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
-                crate::families::b2::records::b2_owner_packets_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
-                )?
-                .map(|record| record.pos),
+                crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
                 "catia_test_indexed_owner_packets",
             )
         })
@@ -138,12 +134,8 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
-                crate::families::b2::records::b2_owner_packets_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
-                )?
-                .map(|record| record.pos),
+                crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
                 "catia_test_indexed_owner_packets",
             )
         })
@@ -211,12 +203,8 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
-                crate::families::b2::records::b2_face_nodes_5f_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
-                )?
-                .map(|record| record.pos),
+                crate::families::b2::records::b2_face_nodes_5f_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
                 "catia_test_indexed_face_nodes",
             )
         })
@@ -258,9 +246,7 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
                 crate::families::b2::records::b2_parameter_points_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
+                    ctx, &bytes, &records,
                 )?
                 .map(|record| record.pos),
                 "catia_test_indexed_parameter_points",
@@ -279,12 +265,8 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
-                crate::families::b2::records::b2_line_profiles_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
-                )?
-                .map(|record| record.pos),
+                crate::families::b2::records::b2_line_profiles_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
                 "catia_test_indexed_line_profiles",
             )
         })
@@ -302,9 +284,7 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         crate::test_support::with_service_context(|ctx| {
             ctx.collect_vec(
                 crate::families::b2::records::b2_spatial_circles_from_records(
-                    ctx,
-                    &bytes,
-                    &records,
+                    ctx, &bytes, &records,
                 )?
                 .map(|record| record.pos),
                 "catia_test_indexed_spatial_circles",
@@ -382,7 +362,9 @@ fn b2_revolution_identity_scan_propagates_caller_work_refusal() {
     let records = crate::wire::records::consolidated_records(&bytes);
     // Two record admissions (2 + 2), two circle collector steps, and one outer collector step.
     crate::test_support::with_work_limit(7, |ctx| {
-        let result = crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records);
+        let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
+            ctx, &bytes, &records,
+        );
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
             panic!("revolution identity scan work refusal required")
         };
@@ -396,11 +378,7 @@ fn b2_revolution_circle_record_scan_propagates_work_refusal() {
     let bytes = b2_resolved_revolution_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let service = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_resolved_revolutions_from_records(
-            ctx,
-            &bytes,
-            &records,
-        )
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
     })
     .expect("service context admits the circle and revolution records");
     assert_eq!(service.len(), 1);
@@ -408,9 +386,7 @@ fn b2_revolution_circle_record_scan_propagates_work_refusal() {
     let operation = "catia_b2_family_record_scan";
     let refused = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
-            ctx,
-            &bytes,
-            &records,
+            ctx, &bytes, &records,
         )
         .map(|_| ());
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {

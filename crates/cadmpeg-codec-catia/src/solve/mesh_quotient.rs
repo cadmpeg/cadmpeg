@@ -10434,14 +10434,12 @@ where
         };
         let complete_preference_rejected = Cell::new(false);
         let constrained_complete_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-            let valid = if endpoint_pairs_respect_candidate_domains(
-                pairs,
-                &completed_edge_candidates,
-            ) {
-                complete_solution_valid(pairs)?
-            } else {
-                false
-            };
+            let valid =
+                if endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates) {
+                    complete_solution_valid(pairs)?
+                } else {
+                    false
+                };
             if !valid {
                 complete_preference_rejected.set(true);
             }
