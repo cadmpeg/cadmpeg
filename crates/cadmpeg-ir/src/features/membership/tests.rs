@@ -27,7 +27,10 @@ impl Hash for Colliding {
 
 #[test]
 fn membership_hash_callbacks_admit_once_and_release_the_index() {
-    for allowance in 0..=12 {
+    // Three scan steps; each member is measured (one byte) and hashed (one
+    // callback, one byte); three collision comparisons each read both
+    // one-byte members.
+    for allowance in 0..=18 {
         let hashes = Rc::new(Cell::new(0));
         let comparisons = Rc::new(Cell::new(0));
         let values: Vec<_> = (0..3)
@@ -54,7 +57,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             values.len(),
             |_| true,
         );
-        if allowance < 12 {
+        if allowance < 18 {
             let limit = result.unwrap_err();
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.operation, "collision admission");
@@ -66,7 +69,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             );
         } else {
             assert!(result.unwrap());
-            assert_eq!(hashes.get(), 3);
+            assert_eq!(hashes.get(), 6);
             assert_eq!(comparisons.get(), 3);
             let storage = ctx
                 .reserve_scoped_limit(200, "membership index released")
@@ -75,7 +78,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             let limit = ctx
                 .charge_work_limit(1, "exact membership work")
                 .unwrap_err();
-            assert_eq!(limit.used, 12);
+            assert_eq!(limit.used, 18);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
             );
@@ -123,5 +126,28 @@ fn membership_hasher_refuses_before_copying_each_byte_chunk() {
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );
+    }
+}
+
+#[test]
+fn member_comparison_pays_for_both_hashed_extents() {
+    let long = "x".repeat(1000);
+    for allowance in [1999, 2000] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let admission = DecodeAdmission {
+            ctx: &ctx,
+            operation: "compare members",
+        };
+        let key = || super::MemberKey {
+            value: long.as_str(),
+            admission: &admission,
+            hashed: 1000,
+        };
+        let equal = key() == key();
+        assert_eq!(equal, allowance == 2000);
+        assert_eq!(ctx.finish_session().is_ok(), allowance == 2000);
     }
 }
