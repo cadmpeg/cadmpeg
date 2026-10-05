@@ -2,9 +2,8 @@
 //! Serialized endpoint sources for repeated-face admission tests.
 
 use crate::families::standard::decode::{
-    attach_standard_topology, AttachStandardTopologyInputs, EdgeTableForm,
-    FamilyEntityAdmission, StandardTopologyDiagnostics, StandardTopologyError,
-    StandardTopologyFailure,
+    attach_standard_topology, AttachStandardTopologyInputs, EdgeTableForm, FamilyEntityAdmission,
+    StandardTopologyDiagnostics, StandardTopologyError, StandardTopologyFailure,
 };
 use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
 use cadmpeg_core::decode::DecodeContext;
@@ -17,7 +16,7 @@ use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, FaceLoops, Point, Sense};
 use cadmpeg_ir::AnnotationBuilder;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 fn repeated_triangle_spine() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -103,12 +102,9 @@ fn repeated_triangle_fixture(
     let mut ir = CadIr::empty();
     let shell = ShellId::mint("catia:test:shell#repeated-face-domain").expect("identity grammar");
     let surface_ids = [
-        SurfaceId::mint("catia:test:surface#repeated-face-domain-0")
-            .expect("identity grammar"),
-        SurfaceId::mint("catia:test:surface#repeated-face-domain-1")
-            .expect("identity grammar"),
-        SurfaceId::mint("catia:test:surface#repeated-face-domain-2")
-            .expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#repeated-face-domain-0").expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#repeated-face-domain-1").expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#repeated-face-domain-2").expect("identity grammar"),
     ];
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         PlaneSurface::try_new(
@@ -201,7 +197,7 @@ fn repeated_triangle_fixture(
     ];
     let spine = repeated_triangle_spine();
     let source = repeated_triangle_endpoint_source();
-    let native_edge_faces = HashMap::<u32, HashSet<u32>>::new();
+    let native_edge_faces = HashMap::<u32, Vec<u32>>::new();
     let native_edge_supports = HashMap::new();
     let mut annotations = AnnotationBuilder::new();
     let work_budget = ctx.work_budget(1_000_000);
@@ -284,8 +280,8 @@ pub(super) fn assert_repeated_triangle_work_refusal(operation: &'static str) {
 
     let mut cap = 0;
     for _ in 0..8192 {
-        let (refusal, need) = crate::test_support::with_work_limit(cap, |ctx| {
-            match repeated_triangle_fixture(ctx) {
+        let (refusal, need) =
+            crate::test_support::with_work_limit(cap, |ctx| match repeated_triangle_fixture(ctx) {
                 Err(CodecError::ResourceLimit(refusal)) => {
                     assert_eq!(
                         refusal.dimension,
@@ -301,8 +297,7 @@ pub(super) fn assert_repeated_triangle_work_refusal(operation: &'static str) {
                 }
                 Err(error) => panic!("unexpected refusal before {operation}: {error:?}"),
                 Ok(_) => panic!("repeated-domain input did not reach {operation}"),
-            }
-        });
+            });
         if refusal.operation == operation {
             assert_eq!(
                 refusal.dimension,

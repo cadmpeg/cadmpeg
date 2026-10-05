@@ -49,38 +49,23 @@ fn standard_evidence_store_refuses_each_collection_before_retaining_geometry() {
 }
 
 #[test]
-fn standard_population_object_copy_refuses_retained_limit() {
+fn standard_population_object_index_refuses_work_limit() {
     let stream = b5_closed_triangle_stream();
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..128 {
-        let refusal = crate::test_support::with_retained_limit(cap, |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_standard_population_objects", |ctx| {
             standard_object_evidence_from_streams(
                 ctx,
                 std::slice::from_ref(&stream),
-                &HashSet::new(),
+                &std::collections::BTreeSet::new(),
                 &HashSet::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         });
-        match refusal {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_standard_population_object_bytes" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                cap = error
-                    .used
-                    .checked_add(error.additional)
-                    .expect("bounded fixture");
-            }
-            Ok(_) => panic!("population copy admitted before its limit"),
-            Err(error) => panic!("unexpected population copy refusal: {error}"),
-        }
-    }
-    assert!(reached, "population copy limit was not reached");
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_standard_population_objects"
+    ));
 }
 
 #[test]
@@ -90,7 +75,7 @@ fn standard_object_record_scan_refuses_caller_collection_limit() {
         standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::new(),
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )

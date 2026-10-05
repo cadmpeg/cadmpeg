@@ -368,14 +368,17 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
-            Vec::new(),
-            vec![B5LogicalVertex {
-                object_id: 50,
-                point: crate::test_support::test_b5::point([2.0, 0.0, 0.5]),
-            }],
-            BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
-        ))
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![B5LogicalVertex {
+                    object_id: 50,
+                    point: crate::test_support::test_b5::point([2.0, 0.0, 0.5]),
+                }],
+                BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
+            )
+        })
         .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
@@ -1302,18 +1305,21 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
-            vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]]
-                .into_iter()
-                .map(crate::test_support::test_b5::point)
-                .collect(),
-            Vec::new(),
-            BTreeMap::from([
-                (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
-                (6, [B5VertexRef::Raw(1), B5VertexRef::Raw(2)]),
-                (7, [B5VertexRef::Raw(2), B5VertexRef::Raw(0)]),
-            ]),
-        ))
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]]
+                    .into_iter()
+                    .map(crate::test_support::test_b5::point)
+                    .collect(),
+                Vec::new(),
+                BTreeMap::from([
+                    (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
+                    (6, [B5VertexRef::Raw(1), B5VertexRef::Raw(2)]),
+                    (7, [B5VertexRef::Raw(2), B5VertexRef::Raw(0)]),
+                ]),
+            )
+        })
         .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
@@ -1326,7 +1332,9 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     assert!(ownership_plan(&ctx, &graph)
         .expect("service decode")
         .is_some());
-    assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
+    assert!(
+        loop_chain_closes(&ctx, &graph.loops[&3], graph.vertices.edges()).expect("service budget")
+    );
     let senses = graph.loops[&3].edge_senses(&ctx).expect("service budget");
     assert!(
         orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
@@ -1425,11 +1433,14 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        ))
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+            )
+        })
         .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),

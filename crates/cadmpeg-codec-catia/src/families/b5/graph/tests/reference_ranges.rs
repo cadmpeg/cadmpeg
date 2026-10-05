@@ -1,42 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Count-bounded admission for compact B5 object-reference tokens.
+//! Lazy, caller-charged traversal of compact B5 object-reference tokens.
 
 use crate::families::b5::graph::B5Record;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
-const REFERENCE_RANGE_SCAN: &str = "catia_b5_record_reference_range_scan";
+const LOOP_SURFACE_REFERENCE: &str = "catia_b5_topology_loop_surface_reference";
 
-#[test]
-fn b5_record_reference_range_admission_preserves_lazy_truncation_and_work_refusal() {
-    let record = B5Record {
+fn loop_record(payload: Vec<u8>) -> B5Record {
+    B5Record {
         offset: 0,
         family: 0xb5,
-        class: 0x23,
+        class: 0x62,
         object_id: 40,
-        payload: vec![0x83, 0x18, 30, 0, 0x18, 31, 0, 0x01],
-    };
+        payload,
+    }
+}
 
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::record_references(ctx, &record)
-            .map(|references| references.collect::<Vec<_>>())
+#[test]
+fn b5_record_references_stop_at_the_first_non_reference_token() {
+    let record = loop_record(vec![0x83, 0x18, 30, 0, 0x18, 31, 0, 0x01]);
+    assert_eq!(
+        super::super::record_references(&record).collect::<Vec<_>>(),
+        vec![30, 31]
+    );
+}
+
+#[test]
+fn b5_loop_surface_reference_charges_each_step_it_takes() {
+    let record = loop_record(vec![0x83, 0x18, 30, 0, 0x18, 31, 0, 0x01]);
+    let surfaces = crate::test_support::with_service_context(|ctx| {
+        super::super::topology_surface_references(ctx, std::slice::from_ref(&record))
     })
-    .expect("service record-reference scan budget");
-    assert_eq!(service, vec![30, 31]);
+    .expect("service budget");
+    assert_eq!(surfaces, std::collections::BTreeSet::from([31]));
 
-    let refused = crate::test_support::with_work_refusal(REFERENCE_RANGE_SCAN, |ctx| {
-        let result = super::super::record_references(ctx, &record)
-            .map(|references| references.collect::<Vec<_>>());
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-        }
-        result
+    let refused = crate::test_support::with_work_refusal(LOOP_SURFACE_REFERENCE, |ctx| {
+        super::super::topology_surface_references(ctx, std::slice::from_ref(&record))
     });
     assert!(matches!(
         refused,
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == REFERENCE_RANGE_SCAN
+                && limit.operation == LOOP_SURFACE_REFERENCE
     ));
 }

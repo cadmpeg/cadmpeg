@@ -101,7 +101,7 @@ pub(super) fn ordered_subrange(
 pub(super) fn b5_edge_support_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[B5Support],
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
 ) -> Result<
@@ -114,9 +114,9 @@ pub(super) fn b5_edge_support_definition(
     if ctx
         .admit_iter(supports, "catia_b5_edge_support_domain_scan")?
         .any(|(_, pcurve, range)| {
-        pcurves
-            .get(pcurve)
-            .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
+            pcurves
+                .get(pcurve)
+                .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
         })
     {
         return Ok(None);
@@ -366,7 +366,7 @@ pub(super) fn emit_edges(
     graph: &B5Graph,
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
     let mut edge_id_map = HashMap::new();

@@ -188,22 +188,26 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
         .enumerate()
         .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
+    let terminal = indices
+        .keys()
+        .max()
+        .and_then(|entity_id| entity_id.checked_add(1));
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_row_cells")
     );
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_column_field")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
     })
     .expect("service profile admits parallel reference table");
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
@@ -970,10 +974,12 @@ fn decode_links_design_objects_through_their_owner_record_group() {
 #[test]
 fn parallel_reference_table_rows_propagate_caller_work_refusal() {
     crate::test_support::with_work_limit(1, |ctx| {
-        let rows = (0..2).map(|_| crate::native::CatiaDesignReferenceRow {
-            cells: Vec::new(),
-            matching_design_object: None,
-        }).collect();
+        let rows = (0..2)
+            .map(|_| crate::native::CatiaDesignReferenceRow {
+                cells: Vec::new(),
+                matching_design_object: None,
+            })
+            .collect();
         let error = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), rows)
             .expect_err("two rows exceed the caller work limit");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {

@@ -387,7 +387,7 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
         plan.edge_helix_plan.clear();
         plan
     };
-    let surfaces = std::collections::HashMap::new();
+    let surfaces = std::collections::BTreeMap::new();
     let mut cap = 1;
     let mut reached = false;
     for _ in 0..128 {
@@ -457,7 +457,7 @@ fn b5_region_id_map_refuses_collection_limit_before_growth() {
     })
     .expect("service resource budget")
     .expect("complete B5 plan");
-    let surfaces = std::collections::HashMap::new();
+    let surfaces = std::collections::BTreeMap::new();
     let pcurves = std::collections::HashMap::new();
     let edges = std::collections::HashMap::new();
     let emitted = super::faces::EmittedFaceInputs {
@@ -529,7 +529,7 @@ fn b5_face_loop_and_coedge_emission_refuse_each_collection_limit() {
                 ),
             )
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<std::collections::BTreeMap<_, _>>();
     let edges = graph
         .vertices
         .edges()
@@ -608,7 +608,7 @@ fn b5_ownership_refuses_face_id_collection_limit() {
 }
 
 #[test]
-fn b5_loop_orientation_refuses_loop_id_collection_limit() {
+fn b5_loop_orientation_refuses_edge_group_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
@@ -644,11 +644,11 @@ fn b5_loop_orientation_refuses_loop_id_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits the input limit");
     let Err(error) = super::faces::orient_loop_members(&ctx, &graph, reversed) else {
-        panic!("loop ids exceed the collection limit");
+        panic!("edge groups exceed the collection limit");
     };
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia b5 orientation loop ids"));
+            && limit.operation == "catia b5 orientation edge keys"));
 }
 
 #[test]
@@ -687,7 +687,9 @@ fn assert_b5_incomplete_face_refusal(operation: &'static str) {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let mut graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-    }).expect("service fixture admission").expect("closed triangle graph");
+    })
+    .expect("service fixture admission")
+    .expect("closed triangle graph");
     graph.complete = false;
     assert!(!graph.faces.is_empty());
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
@@ -695,16 +697,22 @@ fn assert_b5_incomplete_face_refusal(operation: &'static str) {
     let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let result = super::transfer(
-            &mut cadmpeg_ir::CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new(),
-            graph.clone(), &payload, &mut crate::nurbs::LaneRefusals::new(), &mut admission,
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            graph.clone(),
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
         );
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
         }
         result
     });
-    assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == operation));
+    assert!(
+        matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == operation)
+    );
 }
 
 #[test]

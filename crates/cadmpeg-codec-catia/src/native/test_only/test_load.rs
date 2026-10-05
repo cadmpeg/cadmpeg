@@ -34,9 +34,9 @@ use crate::native::schema_configuration_chain::{
 use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
-entity_suffix_value, entity_value_schema_selections, object_production, visit_payload_references,
-    range_interval, reference_signature, semantic_entity_indices, store_projection,
-    terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
+    entity_suffix_value, entity_value_schema_selections, object_production, range_interval,
+    reference_signature, semantic_entity_indices, store_projection, terminal_null_entity_id,
+    value_production, visit_payload_references, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
     CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
     CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
@@ -187,8 +187,9 @@ impl CatiaNative {
                 .collect();
             graph.records.sort_by_key(|record| record.ordinal);
         }
+        let class_graphs = graphs.clone();
         let entity_classes_by_graph_identity =
-            crate::test_support::with_service_context(|ctx| entity_class_index(ctx, &graphs))
+            crate::test_support::with_service_context(|ctx| entity_class_index(ctx, &class_graphs))
                 .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let (
             relation_expressions,
@@ -215,9 +216,11 @@ impl CatiaNative {
                 derive_schema_configuration_row_chains(
                     ctx,
                     &entity_records,
-                    &entities_by_graph_identity,
-                    &entity_classes_by_graph_identity,
-                    &terminal_nulls_by_graph,
+                    &CatiaEntityReferenceIndex {
+                        entities: &entities_by_graph_identity,
+                        classes: &entity_classes_by_graph_identity,
+                        maxima: &terminal_nulls_by_graph,
+                    },
                 )
             })
             .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
@@ -263,7 +266,7 @@ impl CatiaNative {
                                         &CatiaEntityReferenceIndex {
                                             entities: &entities_by_graph_identity,
                                             classes: &entity_classes_by_graph_identity,
-                                            terminal_nulls: &terminal_nulls_by_graph,
+                                            maxima: &terminal_nulls_by_graph,
                                         },
                                     )
                                 })
@@ -356,7 +359,7 @@ impl CatiaNative {
                                         &CatiaEntityReferenceIndex {
                                             entities: &entities_by_graph_identity,
                                             classes: &entity_classes_by_graph_identity,
-                                            terminal_nulls: &terminal_nulls_by_graph,
+                                            maxima: &terminal_nulls_by_graph,
                                         },
                                         &relation_expressions,
                                         &relation_expression_entities,
@@ -390,7 +393,7 @@ impl CatiaNative {
                 .filter_map(|(index, record)| Some((record.entity_id()?, index)))
                 .collect::<HashMap<_, _>>();
             let terminal_null_entity_id = crate::test_support::with_service_context(|ctx| {
-                terminal_null_entity_id(ctx, &record_indices)
+                terminal_null_entity_id(ctx, &graph.records)
             })
             .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
             if record_indices.len()
@@ -424,33 +427,32 @@ impl CatiaNative {
                     .and_then(|index| graph.records.get(*index));
                 let expected_references = crate::test_support::with_service_context(|ctx| {
                     let mut references = Vec::new();
-                    visit_payload_references(ctx, &record.payload, |entity_id, payload_offset, source| {
-                        references.push((entity_id, payload_offset, source));
-                        Ok(())
-                    })?;
+                    visit_payload_references(
+                        ctx,
+                        &record.payload,
+                        |entity_id, payload_offset, source| {
+                            references.push((entity_id, payload_offset, source));
+                            Ok(())
+                        },
+                    )?;
                     Ok::<_, cadmpeg_core::CodecError>(references)
                 })
-                .map_err(|error| {
-                    cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string())
-                })?;
+                .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
                 let references_match = expected_references.len() == record.references.len()
-                    && record
-                        .references
-                        .iter()
-                        .zip(&expected_references)
-                        .all(|(actual, (entity_id, payload_offset, source))| {
+                    && record.references.iter().zip(&expected_references).all(
+                        |(actual, (entity_id, payload_offset, source))| {
                             let target = record_indices
                                 .get(entity_id)
                                 .and_then(|index| graph.records.get(*index));
                             actual.entity_id() == *entity_id
                                 && actual.payload_offset() == u64_from_index(*payload_offset)
                                 && actual.source() == source
-                                && actual.is_null()
-                                    == (Some(*entity_id) == terminal_null_entity_id)
+                                && actual.is_null() == (Some(*entity_id) == terminal_null_entity_id)
                                 && actual.target() == target.map(|target| target.id.as_str())
                                 && actual.design_object()
                                     == target.and_then(|target| target.design_object.as_deref())
-                        });
+                        },
+                    );
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.owner != expected_owner
                     || (record.class_ref(), record.storage_ref())

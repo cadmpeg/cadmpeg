@@ -289,9 +289,10 @@ mod tests {
             .expect_err("knot span work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface knot span count");
+        // The two-knot span lane is admitted before its one window is visited.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 1)
+            (0, 0, 2)
         );
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
@@ -314,9 +315,10 @@ mod tests {
         .expect_err("refinement work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface refinement step");
+        // The two-knot span lane is admitted before its one window is visited.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 1)
+            (0, 0, 2)
         );
         assert_eq!(
             nurbs_surface_point_distance(
@@ -346,9 +348,10 @@ mod tests {
                 .expect_err("pole work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface bound pole");
+        // The two-knot span lane is admitted before its one window is visited.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 1)
+            (0, 0, 2)
         );
         assert_eq!(ctx.resource_refusal(), Some(original));
     }

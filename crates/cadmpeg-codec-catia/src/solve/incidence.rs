@@ -4573,7 +4573,8 @@ pub(super) fn partial_face_orientability_viable(
         "catia orientability edge points",
     )?;
     edge_points.extend(assignment.iter().map(|pair| pair.unwrap_or_default()));
-    let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
+    let mut edge_uses = BTreeMap::<usize, Vec<(usize, bool)>>::new();
+    let mut use_count = 0usize;
     let mut boundary_count = 0usize;
     for incident in face_edges {
         let mut selected = Vec::new();
@@ -4735,20 +4736,18 @@ pub(super) fn partial_face_orientability_viable(
                 None => return Ok(false),
             };
             for (edge, reversed) in trail {
-                ctx.admit_hash_map_entry(
+                ctx.push_btree_group(
                     &mut edge_uses,
-                    &edge,
-                    "catia orientability edge use keys",
-                )?;
-                ctx.push_vec(
-                    edge_uses.entry(edge).or_default(),
+                    edge,
                     (boundary, reversed),
+                    "catia orientability edge use keys",
                     "catia orientability edge uses",
                 )?;
+                use_count += 1;
             }
         }
     }
-    if !budget.charge_by(edge_uses.values().map(Vec::len).sum()) {
+    if !budget.charge_by(use_count) {
         return Ok(false);
     }
     Ok(solve_boundary_orientation_constraints(ctx, boundary_count, &edge_uses, false)?.is_some())

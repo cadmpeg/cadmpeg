@@ -5,7 +5,7 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 use cadmpeg_core::decode::u64_from_index;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -585,13 +585,11 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        let profile_weights = match ctx.admit_iter(
-            &profile_weights,
-            "catia_b5_revolution_profile_weight_scan",
-        ) {
-            Ok(weights) => weights,
-            Err(error) => return Some(Err(error.into())),
-        };
+        let profile_weights =
+            match ctx.admit_iter(&profile_weights, "catia_b5_revolution_profile_weight_scan") {
+                Ok(weights) => weights,
+                Err(error) => return Some(Err(error.into())),
+            };
         for (index, profile_weight) in profile_weights.copied().enumerate() {
             let profile_point = profile.pole_rows().point_at(index)?;
             let relative = [
@@ -605,12 +603,11 @@ pub(super) fn revolve_nurbs(
                 Ok(angles) => angles,
                 Err(error) => return Some(Err(error.into())),
             };
-            let angular_weights = match ctx
-                .admit_iter(&angular_weights, "catia_b5_revolution_angular_weight_scan")
-            {
-                Ok(weights) => weights,
-                Err(error) => return Some(Err(error.into())),
-            };
+            let angular_weights =
+                match ctx.admit_iter(&angular_weights, "catia_b5_revolution_angular_weight_scan") {
+                    Ok(weights) => weights,
+                    Err(error) => return Some(Err(error.into())),
+                };
             for ((angle, radial_scale), angular_weight) in
                 angles.copied().zip(angular_weights.copied())
             {
@@ -743,10 +740,10 @@ pub(super) fn emit_surfaces(
     graph: &B5Graph,
     plan: &mut TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
-) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
+) -> Result<BTreeMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
-    let mut surface_ids = HashMap::new();
+    let mut surface_ids = BTreeMap::new();
     for object_id in admission
         .context()
         .admit_iter(&surface_plan, "catia_b5_emitted_surface_id_scan")?
@@ -766,7 +763,7 @@ pub(super) fn emit_surfaces(
             SurfaceId::mint,
             "catia_b5_emitted_surface_id",
         )?;
-        admission.context().insert_hash_map(
+        admission.context().insert_btree_map(
             &mut surface_ids,
             object_id,
             id,
@@ -964,7 +961,8 @@ pub(super) fn emit_surfaces(
         .admit_iter(&surface_ids, "catia_b5_offset_surface_scan")?
         .map(|(object_id, _)| *object_id)
     {
-        let Some(construction_id) = graph.canonical_surface_id(admission.context(), object_id)? else {
+        let Some(construction_id) = graph.canonical_surface_id(admission.context(), object_id)?
+        else {
             continue;
         };
         let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
@@ -1022,7 +1020,7 @@ pub(super) fn emit_surfaces(
 fn emit_extrusion_procedure(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     surface_id: &SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
@@ -1276,7 +1274,7 @@ mod tests {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::AnnotationBuilder;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
@@ -1383,7 +1381,7 @@ mod tests {
 
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
-        let support_ids = HashMap::from([
+        let support_ids = BTreeMap::from([
             (
                 10,
                 SurfaceId::mint("catia:test:surface#support-10".to_string())

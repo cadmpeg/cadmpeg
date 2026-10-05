@@ -82,9 +82,8 @@ fn pcurve_knot_expansion_and_evaluation_refuse_the_caller_limit() {
         if error.operation == "catia_b5_expanded_pcurve_knots")
     );
     assert_eq!(evaluate_pcurve(&pcurve, 0.5), Some([0.5, 0.0]));
-    let domain_limited = crate::test_support::with_work_limit(0, |ctx| {
-        pcurve_parameter_domain(ctx, &pcurve)
-    });
+    let domain_limited =
+        crate::test_support::with_work_limit(0, |ctx| pcurve_parameter_domain(ctx, &pcurve));
     assert!(matches!(
         domain_limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -270,7 +269,7 @@ fn targeted_surface_records_and_resolution_refuse_caller_limits() {
         super::super::collect_object_stream_frames(ctx, &bytes)
     })
     .expect("service budget");
-    let object_ids = HashSet::from([9]);
+    let object_ids = std::collections::BTreeSet::from([9]);
     for (limit, operation) in [
         (1, "catia_b5_targeted_surface_records"),
         (2, "catia_b5_targeted_surface_visited"),
@@ -657,7 +656,7 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
 }
 
 #[test]
-fn loop_sense_vectors_refuse_the_caller_collection_limit() {
+fn loop_edge_senses_refuse_the_caller_collection_limit() {
     let loop_ = B5Loop {
         object_id: 1,
         members: test_loop_members(&[2, 3], &[4, 5]),
@@ -669,19 +668,8 @@ fn loop_sense_vectors_refuse_the_caller_collection_limit() {
         matches!(edges, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_loop_edge_senses")
     );
-    let pcurves = crate::test_support::with_collection_limit(1, |ctx| loop_.pcurve_senses(ctx));
-    assert!(
-        matches!(pcurves, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_loop_pcurve_senses")
-    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
-            .expect("service budget")
-            .len(),
-        2
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| loop_.pcurve_senses(ctx))
             .expect("service budget")
             .len(),
         2
@@ -794,29 +782,22 @@ fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
         family: 0xb5,
         class: 0x21,
         object_id: 2,
-        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(
-            1,
-            [0.0, 0.0],
-            [1.0, 0.0],
-        ),
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
     };
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_pcurve(ctx, &record)
-    })
-    .expect("service pcurve budget");
+    let service =
+        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, &record))
+            .expect("service pcurve budget");
     let pcurve = service.expect("service fixture produces a pcurve");
     assert_eq!(pcurve.multiplicities, [2, 2]);
 
-    let refused = crate::test_support::with_work_refusal(
-        "catia_b5_class21_multiplicities",
-        |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_b5_class21_multiplicities", |ctx| {
             let result = super::super::parse_pcurve(ctx, &record);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
             result
-        },
-    );
+        });
     assert!(matches!(
         refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -832,16 +813,11 @@ fn class21_pcurve_fixed_byte_lanes_refuse_work_before_scan() {
         family: 0xb5,
         class: 0x21,
         object_id: 2,
-        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(
-            1,
-            [0.0, 0.0],
-            [1.0, 0.0],
-        ),
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
     };
 
-    let limited = crate::test_support::with_work_limit(0, |ctx| {
-        super::super::parse_pcurve(ctx, &record)
-    });
+    let limited =
+        crate::test_support::with_work_limit(0, |ctx| super::super::parse_pcurve(ctx, &record));
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -849,9 +825,8 @@ fn class21_pcurve_fixed_byte_lanes_refuse_work_before_scan() {
     ));
 
     // Sixteen knot bytes, two order visits and three multiplicity source steps cost 21 units.
-    let limited = crate::test_support::with_work_limit(21, |ctx| {
-        super::super::parse_pcurve(ctx, &record)
-    });
+    let limited =
+        crate::test_support::with_work_limit(21, |ctx| super::super::parse_pcurve(ctx, &record));
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1053,9 +1028,8 @@ fn canonical_surface_identity_follows_unbounded_aliases_and_rejects_cycles() {
     .expect("service alias traversal budget");
 
     assert_eq!(identities, [Some(30), Some(30), Some(30), None, None]);
-    let limited = crate::test_support::with_work_limit(0, |ctx| {
-        canonical_surface_id(ctx, &aliases, 1)
-    });
+    let limited =
+        crate::test_support::with_work_limit(0, |ctx| canonical_surface_id(ctx, &aliases, 1));
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1545,14 +1519,20 @@ fn one_edge_loop_closes_on_one_native_vertex() {
         surface: 4,
     };
 
-    assert!(loop_chain_closes(
-        &loop_,
-        &BTreeMap::from([(3, [B5VertexRef::Raw(0); 2])])
-    ));
-    assert!(!loop_chain_closes(
-        &loop_,
-        &BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])])
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(loop_chain_closes(
+            ctx,
+            &loop_,
+            &BTreeMap::from([(3, [B5VertexRef::Raw(0); 2])])
+        )
+        .expect("service budget"));
+        assert!(!loop_chain_closes(
+            ctx,
+            &loop_,
+            &BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])])
+        )
+        .expect("service budget"));
+    });
 }
 
 #[test]
@@ -1568,10 +1548,14 @@ fn loop_chain_requires_each_source_native_edge_sense() {
         [(1, [0, 1]), (2, [2, 1]), (3, [2, 0])]
             .map(|(edge, vertices)| (edge, vertices.map(B5VertexRef::Raw))),
     );
-    assert!(loop_chain_closes(&loop_, &edge_vertices));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(loop_chain_closes(ctx, &loop_, &edge_vertices).expect("service budget"));
+    });
 
     loop_.members[1].controls[0] = 1;
-    assert!(!loop_chain_closes(&loop_, &edge_vertices));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(!loop_chain_closes(ctx, &loop_, &edge_vertices).expect("service budget"));
+    });
 }
 
 #[test]

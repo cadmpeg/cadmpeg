@@ -8,8 +8,8 @@ use crate::test_support::test_object_graph::{
 
 fn reference_cohort_native() -> crate::native::CatiaNative {
     let mut distinct_value = [
-        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')',
-        0xfe, 0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
+        0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
     ];
     let records = [
         object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
@@ -52,20 +52,18 @@ fn native_cohort_ordinal_lookup_refuses_work_and_preserves_cohorts() {
         std::slice::from_ref(&native.entity_records[2].id)
     );
 
-    let refused = crate::test_support::with_work_refusal(
-        "catia_native_cohort_ordinal_lookup",
-        |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_native_cohort_ordinal_lookup", |ctx| {
             let result = derive_cohorts(ctx, &native);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(
                     limit.dimension,
                     cadmpeg_core::decode::ResourceDimension::WorkUnits
                 );
-                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
             }
             result
-        },
-    );
+        });
     assert!(matches!(
         refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -90,7 +88,7 @@ fn derive_semantic_indices(
         crate::native::CatiaRelationExpressionIndex,
         crate::native::CatiaRelationExpressionEntityIndex,
         crate::native::CatiaEntityByGraphIdentityIndex,
-        crate::native::CatiaTerminalNullByGraphIndex,
+        crate::native::CatiaMaximumEntityByGraphIndex,
         crate::native::CatiaParameterBindingIndex,
     ),
     cadmpeg_core::CodecError,
@@ -102,10 +100,7 @@ fn derive_semantic_indices(
     )
 }
 
-fn assert_semantic_lookup_refusal(
-    native: &crate::native::CatiaNative,
-    operation: &'static str,
-) {
+fn assert_semantic_lookup_refusal(native: &crate::native::CatiaNative, operation: &'static str) {
     let refused = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = derive_semantic_indices(ctx, native);
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
@@ -113,7 +108,7 @@ fn assert_semantic_lookup_refusal(
                 limit.dimension,
                 cadmpeg_core::decode::ResourceDimension::WorkUnits
             );
-            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
         }
         result.map(|_| ())
     });
@@ -129,10 +124,9 @@ fn native_terminal_maximum_lookup_refuses_work_and_preserves_terminal_identity()
     let native = crate::native::CatiaNative::decode(
         &crate::test_support::test_formula::standard_catpart_with_schema_configuration_row_chain(),
     );
-    let indices = crate::test_support::with_service_context(|ctx| {
-        derive_semantic_indices(ctx, &native)
-    })
-    .expect("service profile admits semantic indices");
+    let indices =
+        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
+            .expect("service profile admits semantic indices");
     let entity = &native.entity_records[0];
     let maximum = native
         .entity_records
@@ -141,20 +135,16 @@ fn native_terminal_maximum_lookup_refuses_work_and_preserves_terminal_identity()
         .map(|candidate| candidate.entity_id)
         .max()
         .expect("graph has an entity");
-    assert_eq!(
-        indices.3.get(&entity.object_graph).copied(),
-        maximum.checked_add(1)
-    );
+    assert_eq!(indices.3.get(&entity.object_graph).copied(), Some(maximum));
     assert_semantic_lookup_refusal(&native, "catia_native_terminal_maximum_lookup");
 }
 
 #[test]
 fn native_binding_graph_lookup_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
-    let indices = crate::test_support::with_service_context(|ctx| {
-        derive_semantic_indices(ctx, &native)
-    })
-    .expect("service profile admits semantic indices");
+    let indices =
+        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
+            .expect("service profile admits semantic indices");
     let entity_record = &native.entity_records[0];
     let parameter = entity_record
         .parameter_value()
@@ -178,10 +168,9 @@ fn native_binding_graph_lookup_refuses_work_and_preserves_parameter_binding() {
 #[test]
 fn native_binding_symbol_lookup_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
-    let indices = crate::test_support::with_service_context(|ctx| {
-        derive_semantic_indices(ctx, &native)
-    })
-    .expect("service profile admits semantic indices");
+    let indices =
+        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
+            .expect("service profile admits semantic indices");
     let entity_record = &native.entity_records[0];
     let parameter = entity_record
         .parameter_value()

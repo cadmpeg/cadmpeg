@@ -28,17 +28,14 @@ pub(super) fn ownership_plan(
     graph: &B5Graph,
 ) -> Result<Option<OwnershipPlan>, CodecError> {
     let mut face_ids = HashSet::new();
-    ctx.reserve_set(
-        &mut face_ids,
-        graph.faces.len(),
-        "catia b5 face ownership ids",
-    )?;
     let mut loop_owners = HashMap::<u32, usize>::new();
     for (face_index, face) in ctx
         .admit_iter(&graph.faces, "catia_b5_ownership_face_scan")?
         .enumerate()
     {
-        if !face_ids.insert(face.object_id) || face.loops.is_empty() {
+        if !ctx.insert_hash_set(&mut face_ids, face.object_id, "catia b5 face ownership ids")?
+            || face.loops.is_empty()
+        {
             return Ok(None);
         }
         for loop_id in ctx.admit_iter(&face.loops, "catia_b5_ownership_face_loops")? {
@@ -56,11 +53,18 @@ pub(super) fn ownership_plan(
         }
     }
     if loop_owners.len() != graph.loops.len()
-        || ctx
-            .admit_iter(&graph.loops, "catia_b5_ownership_loop_validation")?
-            .any(|(loop_id, loop_)| {
-            loop_id != &loop_.object_id || !loop_owners.contains_key(loop_id)
-        })
+        || ctx.any_by(
+            &graph.loops,
+            |(loop_id, loop_)| {
+                Ok(loop_id != &loop_.object_id
+                    || !ctx.contains_key_hash_map(
+                        &loop_owners,
+                        loop_id,
+                        "catia_b5_ownership_loop_validation",
+                    )?)
+            },
+            "catia_b5_ownership_loop_validation",
+        )?
     {
         return Ok(None);
     }
@@ -68,18 +72,21 @@ pub(super) fn ownership_plan(
     let mut parents =
         UnionFind::charged(ctx, graph.faces.len(), "catia b5 ownership union parents")?;
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
-    let mut edge_uses = HashMap::<u32, usize>::new();
+    let mut edge_uses = BTreeMap::<u32, usize>::new();
     for (loop_id, loop_) in ctx.admit_iter(&graph.loops, "catia_b5_ownership_loop_scan")? {
-        let face = loop_owners[loop_id];
+        const OPERATION: &str = "catia b5 ownership edge uses";
+        let Some(&face) = ctx.get_hash_map(&loop_owners, loop_id, "catia b5 loop owners")? else {
+            return Ok(None);
+        };
         for member in ctx.admit_iter(&loop_.members, "catia_b5_ownership_loop_members")? {
             let edge = member.edge;
-            if !graph.vertices.edges().contains_key(&edge) {
+            if !ctx.contains_key_btree_map(graph.vertices.edges(), &edge, OPERATION)? {
                 return Ok(None);
             }
-            if let Some(count) = edge_uses.get_mut(&edge) {
+            if let Some(count) = ctx.get_mut_btree_map(&mut edge_uses, &edge, OPERATION)? {
                 *count += 1;
             } else {
-                ctx.insert_hash_map(&mut edge_uses, edge, 1, "catia b5 ownership edge uses")?;
+                ctx.insert_btree_map(&mut edge_uses, edge, 1, OPERATION)?;
             }
             if let Some(other_face) = ctx.insert_hash_map(
                 &mut first_face_by_edge,
@@ -92,44 +99,43 @@ pub(super) fn ownership_plan(
         }
     }
 
-    let mut labels = HashMap::<usize, usize>::new();
-    ctx.reserve_map(
-        &mut labels,
+    // Components are numbered in the order their first face appears.
+    let mut labels = ctx.alloc_filled(
         graph.faces.len(),
+        None,
         "catia b5 ownership component labels",
     )?;
-    let mut face_components = Vec::new();
-    ctx.reserve_vec(
-        &mut face_components,
-        graph.faces.len(),
-        "catia b5 face components",
-    )?;
-    for (face, _) in ctx.admit_iter(&graph.faces, "catia_b5_ownership_face_indices")?.enumerate() {
-        let root = parents.find(ctx, face)?;
-        let next = labels.len();
-        face_components.push(*labels.entry(root).or_insert(next));
-    }
-    let component_count = labels.len();
+    let mut component_count = 0;
+    let face_components =
+        ctx.collect_indexed_vec(graph.faces.len(), "catia b5 face components", |face| {
+            let root = parents.find(ctx, face)?;
+            Ok(*labels[root].get_or_insert_with(|| {
+                component_count += 1;
+                component_count - 1
+            }))
+        })?;
     let mut closed_components =
         ctx.alloc_filled(component_count, true, "catia b5 closed components")?;
     let mut component_has_edges =
         ctx.alloc_filled(component_count, false, "catia b5 component edge marks")?;
-    for (&edge, &uses) in ctx.admit_iter(&edge_uses, "catia_b5_ownership_edge_uses")? {
-        let component = face_components[first_face_by_edge[&edge]];
+    let mut nonmanifold = false;
+    for (edge, &uses) in ctx.admit_iter(&edge_uses, "catia_b5_ownership_edge_uses")? {
+        let Some(&face) =
+            ctx.get_hash_map(&first_face_by_edge, edge, "catia b5 ownership first faces")?
+        else {
+            continue;
+        };
+        let component = face_components[face];
         component_has_edges[component] = true;
         closed_components[component] &= uses == 2;
+        nonmanifold |= uses > 2;
     }
     let closed_component_count = ctx
         .admit_iter(&closed_components, "catia_b5_closed_component_scan")?
-        .zip(ctx.admit_iter(
-            &component_has_edges,
-            "catia_b5_component_edge_scan",
-        )?)
+        .zip(&component_has_edges)
         .filter(|(closed, has_edges)| **closed && **has_edges)
         .count();
-    let body_kind = if ctx
-        .admit_iter(&edge_uses, "catia_b5_nonmanifold_edge_scan")?
-        .any(|(_, uses)| *uses > 2)
+    let body_kind = if nonmanifold
         || (closed_component_count != 0 && closed_component_count != component_count)
     {
         BodyKind::General
@@ -148,72 +154,46 @@ pub(super) fn ownership_plan(
 pub(super) fn orient_loop_members(
     ctx: &DecodeContext<'_>,
     graph: &B5Graph,
-    mut reversed: BTreeMap<u32, Vec<bool>>,
+    reversed: BTreeMap<u32, Vec<bool>>,
 ) -> Result<Option<BTreeMap<u32, OrientedLoop>>, CodecError> {
-    let mut loop_ids = Vec::new();
-    ctx.reserve_vec(
-        &mut loop_ids,
-        graph.loops.len(),
-        "catia b5 orientation loop ids",
-    )?;
-    loop_ids.extend(graph.loops.keys().copied());
-    let mut node_by_loop = HashMap::new();
-    ctx.reserve_map(
-        &mut node_by_loop,
-        loop_ids.len(),
-        "catia b5 orientation loop index",
-    )?;
-    for (node, loop_id) in ctx
-        .admit_iter(&loop_ids, "catia_b5_orientation_loop_index")?
-        .enumerate()
-    {
-        node_by_loop.insert(*loop_id, node);
-    }
-    if reversed.len() != loop_ids.len()
-        || ctx
-            .admit_iter(&loop_ids, "catia_b5_orientation_loop_validation")?
-            .any(|loop_id| {
-            reversed
-                .get(loop_id)
-                .is_none_or(|senses| senses.len() != graph.loops[loop_id].members.len())
-        })
-    {
+    // Orientation node n is the n-th loop in id order.
+    if reversed.len() != graph.loops.len() {
         return Ok(None);
     }
-
-    let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
-    for loop_id in ctx.admit_iter(&loop_ids, "catia_b5_orientation_edge_groups")? {
-        let node = node_by_loop[loop_id];
+    let mut uses = BTreeMap::<u32, Vec<(usize, bool)>>::new();
+    for (node, (loop_id, loop_)) in ctx
+        .admit_iter(&graph.loops, "catia_b5_orientation_edge_groups")?
+        .enumerate()
+    {
+        let Some(senses) =
+            ctx.get_btree_map(&reversed, loop_id, "catia_b5_orientation_loop_validation")?
+        else {
+            return Ok(None);
+        };
+        if senses.len() != loop_.members.len() {
+            return Ok(None);
+        }
         for (member, &sense) in ctx
-            .admit_iter(&graph.loops[loop_id].members, "catia_b5_orientation_members")?
-            .zip(ctx.admit_iter(
-                &reversed[loop_id],
-                "catia_b5_orientation_member_senses",
-            )?)
+            .admit_iter(&loop_.members, "catia_b5_orientation_members")?
+            .zip(senses)
         {
-            if !uses.contains_key(&member.edge) {
-                ctx.insert_hash_map(
-                    &mut uses,
-                    member.edge,
-                    Vec::new(),
-                    "catia b5 orientation edge keys",
-                )?;
-            }
-            let Some(occurrences) = uses.get_mut(&member.edge) else {
-                return Ok(None);
-            };
-            ctx.push_vec(occurrences, (node, sense), "catia b5 orientation edge uses")?;
+            ctx.push_btree_group(
+                &mut uses,
+                member.edge,
+                (node, sense),
+                "catia b5 orientation edge keys",
+                "catia b5 orientation edge uses",
+            )?;
         }
     }
     let mut constraints = ctx.collect_indexed_vec(
-        loop_ids.len(),
+        graph.loops.len(),
         "catia b5 loop orientation constraints",
         |_| Ok(Vec::<(usize, bool)>::new()),
     )?;
     for [(left, left_reversed), (right, right_reversed)] in ctx
         .admit_iter(&uses, "catia_b5_orientation_occurrence_pairs")?
-        .map(|(_, occurrences)| occurrences)
-        .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
+        .filter_map(|(_, occurrences)| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
     {
         let parity = left_reversed == right_reversed;
         if left == right {
@@ -235,11 +215,11 @@ pub(super) fn orient_loop_members(
     }
 
     let mut flips = ctx.alloc_filled(
-        loop_ids.len(),
+        graph.loops.len(),
         None,
         "catia b5 loop orientation assignments",
     )?;
-    for (root, _) in ctx.admit_iter(&loop_ids, "catia_b5_orientation_root_indices")?.enumerate() {
+    for root in ctx.admit_iter(0..graph.loops.len(), "catia_b5_orientation_root_indices")? {
         if flips[root].is_some() {
             continue;
         }
@@ -251,8 +231,8 @@ pub(super) fn orient_loop_members(
             "catia b5 orientation pending loops",
         )?;
         while let Some((node, flip)) = pending.pop() {
-            for &(neighbor, parity) in ctx
-                .admit_iter(&constraints[node], "catia_b5_orientation_constraints")?
+            for &(neighbor, parity) in
+                ctx.admit_iter(&constraints[node], "catia_b5_orientation_constraints")?
             {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -272,25 +252,21 @@ pub(super) fn orient_loop_members(
     }
 
     let mut oriented = BTreeMap::new();
-    for (node, loop_id) in ctx
-        .admit_iter(&loop_ids, "catia_b5_oriented_loop_materialization")?
-        .copied()
+    // Both maps hold the same keys, so their ordered traversals pair each loop
+    // with its senses.
+    for ((node, (&loop_id, loop_)), (_, senses)) in ctx
+        .admit_iter(&graph.loops, "catia_b5_oriented_loop_materialization")?
         .enumerate()
+        .zip(reversed)
     {
         let Some(flipped) = flips[node] else {
             return Ok(None);
         };
-        let Some(senses) = reversed.remove(&loop_id) else {
-            return Ok(None);
-        };
-        let pcurve_senses = graph.loops[&loop_id].pcurve_senses(ctx)?;
         let members = ctx.collect_vec(
             ctx.admit_iter(&senses, "catia_b5_oriented_loop_senses")?
                 .copied()
-                .zip(ctx.admit_iter(
-                    &pcurve_senses,
-                    "catia_b5_oriented_pcurve_senses",
-                )?)
+                .zip(&loop_.members)
+                .map(|(reversed, member)| (reversed, member.controls[2] == -1))
                 .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
                     reversed: reversed ^ flipped,
                     pcurve_reversed: pcurve_reversed ^ flipped,
@@ -402,7 +378,7 @@ fn b5_face_loops(
     graph: &B5Graph,
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     pcurve_uses: &PcurveUses,
 ) -> Result<cadmpeg_ir::topology::FaceLoops, cadmpeg_core::CodecError> {
     let mut ids = Vec::new();
@@ -491,7 +467,7 @@ fn copy_face_loops(ctx: &DecodeContext<'_>, loops: &FaceLoops) -> Result<FaceLoo
 
 /// References to the records emitted by the preceding B5 passes.
 pub(super) struct EmittedFaceInputs<'a> {
-    pub(super) surface_ids: &'a HashMap<u32, SurfaceId>,
+    pub(super) surface_ids: &'a BTreeMap<u32, SurfaceId>,
     pub(super) pcurve_uses: &'a PcurveUses,
     pub(super) edge_ids: &'a HashMap<u32, EdgeId>,
 }
@@ -678,7 +654,7 @@ pub(super) fn emit_faces(
         );
     }
 
-    let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
+    let mut coedges_by_edge = BTreeMap::<u32, Vec<usize>>::new();
     for (face_index, face) in admission
         .context()
         .admit_iter(&graph.faces, "catia_b5_emit_face_scan")?
@@ -766,7 +742,11 @@ pub(super) fn emit_faces(
                 "catia_b5_emitted_loop_id",
             )?;
             let mut coedge_ids_by_member = Vec::new();
-            for (index, _) in admission.context().admit_iter(&loop_.members, "catia_b5_coedge_member_indices")?.enumerate() {
+            for (index, _) in admission
+                .context()
+                .admit_iter(&loop_.members, "catia_b5_coedge_member_indices")?
+                .enumerate()
+            {
                 let text = admission.context().format_retained(
                     format_args!("catia:b5:coedge#{loop_id_value}-{index}"),
                     "catia_b5_coedge_id",
@@ -876,14 +856,11 @@ pub(super) fn emit_faces(
                     )?;
                 }
                 let arena_index = ir.model.coedges.len();
-                admission.context().admit_hash_map_entry(
+                admission.context().push_btree_group(
                     &mut coedges_by_edge,
-                    &edge,
-                    "catia_b5_coedges_by_edge",
-                )?;
-                admission.context().push_vec(
-                    coedges_by_edge.entry(edge).or_default(),
+                    edge,
                     arena_index,
+                    "catia_b5_coedges_by_edge",
                     "catia_b5_coedge_radial_occurrences",
                 )?;
                 let coedge_record_id =
@@ -1098,15 +1075,18 @@ mod tests {
             parameter_incidences: BTreeMap::new(),
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
-            vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
-                points
-                    .into_iter()
-                    .map(crate::test_support::test_b5::point)
-                    .collect(),
-                Vec::new(),
-                edge_vertices,
-            ))
-        .expect("service vertex admission budget")
+            vertices: crate::test_support::with_service_context(|ctx| {
+                crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                    ctx,
+                    points
+                        .into_iter()
+                        .map(crate::test_support::test_b5::point)
+                        .collect(),
+                    Vec::new(),
+                    edge_vertices,
+                )
+            })
+            .expect("service vertex admission budget")
             .expect("valid vertex bindings"),
             edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),
@@ -1135,7 +1115,7 @@ mod tests {
                 &graph,
                 &graph.faces[0],
                 &orientations,
-                &HashMap::from([(
+                &BTreeMap::from([(
                     10,
                     SurfaceId::mint("catia:test:surface#surface%2310".to_string())
                         .expect("identity grammar")

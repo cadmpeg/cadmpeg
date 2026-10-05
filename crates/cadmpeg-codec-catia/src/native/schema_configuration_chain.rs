@@ -2,14 +2,14 @@
 //! Ordered configuration-row paths and their compatible wire projection.
 
 use super::{
-    CatiaEntityClassByGraphIdentityIndex, CatiaEntityReference, CatiaSchemaConfigurationRowLink,
-    CatiaTerminalNullByGraphIndex,
+    entity_reference, CatiaEntityReference, CatiaEntityReferenceIndex,
+    CatiaSchemaConfigurationRowLink,
 };
 use crate::native::entity_record::CatiaEntityRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One complete ordered schema-configuration chain formed by exact `configrow` links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,12 +172,10 @@ impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
 pub(super) fn derive_schema_configuration_row_chains(
     ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+    references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<Vec<CatiaSchemaConfigurationRowChain>, CodecError> {
     let mut row_ids = HashSet::new();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
+    let mut groups = BTreeMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in ctx.admit_iter(records, "catia_configuration_record_visits")? {
         let Some(link) = &entity.schema_configuration_row_link() else {
             continue;
@@ -187,40 +185,26 @@ pub(super) fn derive_schema_configuration_row_chains(
             (entity.object_graph.as_str(), entity.entity_id),
             "catia_configuration_row_ids",
         )?;
-        let key = (
-            entity.object_graph.as_str(),
-            link.class_reference.entity_id(),
-        );
-        let group = ctx.entry_hash_map(&mut groups, key, "catia_configuration_groups")?;
-        ctx.push_vec(
-            group.or_default(),
+        ctx.push_btree_group(
+            &mut groups,
+            (
+                entity.object_graph.as_str(),
+                link.class_reference.entity_id(),
+            ),
             (entity.entity_id, link),
+            "catia_configuration_groups",
             "catia_configuration_group_links",
         )?;
     }
-    let mut groups = ctx.collect_vec(
-        ctx.admit_iter(&groups, "catia_configuration_group_collection")?,
-        "catia_configuration_sorted_groups",
-    )?;
-    ctx.stable_sort_by(
-        &mut groups,
-        |value| &value.0,
-        Ord::cmp,
-        "catia_configuration_sorted_groups_sort",
-    )?;
 
     let mut chains = Vec::new();
-    for (key, links) in ctx.admit_iter(&groups, "catia_configuration_sorted_group_visits")? {
-        let (graph, root) = **key;
-        let links = *links;
+    for (&(graph, root), links) in
+        ctx.admit_iter(&groups, "catia_configuration_sorted_group_visits")?
+    {
+        const SUCCESSORS: &str = "catia_configuration_successors";
         let mut successors = HashMap::new();
-        for (row, link) in ctx.admit_iter(links, "catia_configuration_group_link_visits")? {
-            ctx.insert_hash_map(
-                &mut successors,
-                *row,
-                *link,
-                "catia_configuration_successors",
-            )?;
+        for &(row, link) in ctx.admit_iter(links, "catia_configuration_group_link_visits")? {
+            ctx.insert_hash_map(&mut successors, row, link, SUCCESSORS)?;
         }
         if successors.len() != links.len() {
             continue;
@@ -228,58 +212,52 @@ pub(super) fn derive_schema_configuration_row_chains(
         let mut row_ids_in_order = Vec::new();
         let mut visited = HashSet::new();
         let mut current = root;
-        while let Some(link) = successors.get(&current).copied() {
+        while let Some(&link) = ctx.get_hash_map(&successors, &current, SUCCESSORS)? {
             if !ctx.insert_hash_set(&mut visited, current, "catia_configuration_visited")? {
                 break;
             }
             ctx.push_vec(&mut row_ids_in_order, current, "catia_configuration_order")?;
             current = link.successor.entity_id();
         }
-        if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
+        if visited.len() != links.len()
+            || ctx.contains_hash_set(&row_ids, &(graph, current), "catia_configuration_row_ids")?
+        {
             continue;
         }
         let Some(last_row) = row_ids_in_order.last() else {
             continue;
         };
-        let Some(last_link) = successors.get(last_row) else {
+        let Some(last_link) = ctx.get_hash_map(&successors, last_row, SUCCESSORS)? else {
             continue;
         };
         let terminal = copy_reference(ctx, &last_link.successor)?;
         let mut chain_links = Vec::new();
         for &row_id in ctx.admit_iter(&row_ids_in_order, "catia_configuration_order_visits")? {
-            let link = successors[&row_id];
+            let Some(link) = ctx.get_hash_map(&successors, &row_id, SUCCESSORS)? else {
+                continue;
+            };
             let successor_id = link.successor.entity_id();
             let intervening_entities = if row_id < successor_id {
                 let mut between = Vec::new();
                 for entity in ctx
                     .admit_iter(records, "catia_configuration_between_entity_visits")?
-                    .filter(|entity| {
-                    entity.object_graph == graph
-                        && entity.entity_id > row_id
-                        && entity.entity_id < successor_id
-                }) {
-                    let reference = charged_entity_reference(
-                        ctx,
-                        graph,
-                        entity.entity_id,
-                        entities,
-                        entity_classes,
-                        terminal_nulls,
-                    )?;
+                    .filter(|entity| entity.entity_id > row_id && entity.entity_id < successor_id)
+                {
+                    if !ctx.equal_bytes(
+                        entity.object_graph.as_bytes(),
+                        graph.as_bytes(),
+                        "catia_configuration_between_graph",
+                    )? {
+                        continue;
+                    }
+                    let reference = entity_reference(ctx, graph, entity.entity_id, references)?;
                     ctx.push_vec(&mut between, reference, "catia_configuration_between")?;
                 }
                 Some(between)
             } else {
                 None
             };
-            let row = charged_entity_reference(
-                ctx,
-                graph,
-                row_id,
-                entities,
-                entity_classes,
-                terminal_nulls,
-            )?;
+            let row = entity_reference(ctx, graph, row_id, references)?;
             ctx.push_vec(
                 &mut chain_links,
                 CatiaSchemaConfigurationRowChainLink {
@@ -290,9 +268,15 @@ pub(super) fn derive_schema_configuration_row_chains(
                 "catia_configuration_chain_links",
             )?;
         }
-        let Some((namespace, graph_key)) = graph.split_once('#') else {
+        let Some((namespace, graph_key)) =
+            ctx.split_once(graph, "#", "catia_configuration_graph_namespace")?
+        else {
             continue;
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(namespace.len()),
+            "catia_configuration_namespace_components",
+        )?;
         let mut components = namespace.split(':');
         let (Some(format), Some(scope), Some(_kind), None) = (
             components.next(),
@@ -344,35 +328,6 @@ fn copy_reference(
                 .map(|name| ctx.copy_retained_text(name, "catia_configuration_class_name"))
                 .transpose()?,
         },
-    })
-}
-
-fn charged_entity_reference(
-    ctx: &DecodeContext<'_>,
-    graph: &str,
-    entity_id: u32,
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Result<CatiaEntityReference, CodecError> {
-    if terminal_nulls.get(graph).copied() == Some(entity_id) {
-        return Ok(CatiaEntityReference::Null { entity_id });
-    }
-    let entity = ctx
-        .admit_iter(entities, "catia_configuration_entity_lookup")?
-        .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id);
-    let Some((_, entity)) = entity else {
-        return Ok(CatiaEntityReference::Unresolved { entity_id });
-    };
-    let class_name = ctx
-        .admit_iter(entity_classes, "catia_configuration_class_lookup")?
-        .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id)
-        .map(|(_, name)| ctx.copy_retained_text(name, "catia_configuration_class_name"))
-        .transpose()?;
-    Ok(CatiaEntityReference::Resolved {
-        entity_id,
-        entity: ctx.copy_retained_text(entity, "catia_configuration_entity_id")?,
-        class_name,
     })
 }
 

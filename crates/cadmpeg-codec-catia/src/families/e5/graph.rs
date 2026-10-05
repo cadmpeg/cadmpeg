@@ -584,7 +584,9 @@ pub(crate) fn parse_topology(
                 return None;
             }
             let mut resolved_loops = Vec::new();
-            for (loop_position, &loop_id) in admitted!(ctx.admit_iter(&face.loops, "catia_e5_raw_face_loop_scan")).enumerate() {
+            for (loop_position, &loop_id) in
+                admitted!(ctx.admit_iter(&face.loops, "catia_e5_raw_face_loop_scan")).enumerate()
+            {
                 let raw = loops.get(&loop_id)?;
                 if raw.surface != face.surface {
                     return None;
@@ -603,7 +605,9 @@ pub(crate) fn parse_topology(
                 if reversed.len() != raw.edges.len() {
                     return None;
                 }
-                for pcurve_id in admitted!(ctx.admit_iter(&raw.pcurves, "catia_e5_raw_loop_pcurve_validation_scan")) {
+                for pcurve_id in admitted!(
+                    ctx.admit_iter(&raw.pcurves, "catia_e5_raw_loop_pcurve_validation_scan")
+                ) {
                     let pcurve = pcurves.get(pcurve_id)?;
                     let surface = match pcurve {
                         E5Pcurve::Line { surface, .. }
@@ -615,8 +619,10 @@ pub(crate) fn parse_topology(
                         return None;
                     }
                 }
-                for (pcurve_id, edge_id) in admitted!(ctx.admit_iter(&raw.pcurves, "catia_e5_raw_loop_pcurve_scan"))
-                    .zip(admitted!(ctx.admit_iter(&raw.edges, "catia_e5_raw_loop_edge_scan")))
+                for (pcurve_id, edge_id) in
+                    admitted!(ctx.admit_iter(&raw.pcurves, "catia_e5_raw_loop_pcurve_scan")).zip(
+                        admitted!(ctx.admit_iter(&raw.edges, "catia_e5_raw_loop_edge_scan")),
+                    )
                 {
                     let edge = edges.get(edge_id)?;
                     if !vertex_ids.contains(&edge.start_vertex)
@@ -637,7 +643,9 @@ pub(crate) fn parse_topology(
                         return None;
                     }
                     let support = curve_supports.get(&edge.support)?;
-                    for reference in admitted!(ctx.admit_iter(support.pcurves(), "catia_e5_support_reference_scan")) {
+                    for reference in admitted!(
+                        ctx.admit_iter(support.pcurves(), "catia_e5_support_reference_scan")
+                    ) {
                         match curve_support_reference_closes(
                             ctx,
                             *reference,
@@ -673,12 +681,16 @@ pub(crate) fn parse_topology(
                     },
                 ));
                 let mut members = Vec::new();
-                for ((&pcurve, &edge_use), &reversed) in admitted!(ctx.admit_iter(
-                    &raw.pcurves,
-                    "catia_e5_resolved_member_pcurve_scan"
-                ))
-                .zip(admitted!(ctx.admit_iter(&raw.edges, "catia_e5_resolved_member_edge_scan")))
-                .zip(admitted!(ctx.admit_iter(&reversed, "catia_e5_resolved_member_orientation_scan")))
+                for ((&pcurve, &edge_use), &reversed) in
+                    admitted!(ctx.admit_iter(&raw.pcurves, "catia_e5_resolved_member_pcurve_scan"))
+                        .zip(admitted!(ctx.admit_iter(
+                            &raw.edges,
+                            "catia_e5_resolved_member_edge_scan"
+                        )))
+                        .zip(admitted!(ctx.admit_iter(
+                            &reversed,
+                            "catia_e5_resolved_member_orientation_scan"
+                        )))
                 {
                     if let Err(error) = ctx.push_vec(
                         &mut members,
@@ -753,7 +765,9 @@ pub(crate) fn parse_topology(
         if !bodies.is_empty() {
             let mut roster = Vec::new();
             for body in admitted!(ctx.admit_iter(&bodies, "catia_e5_body_roster_scan")) {
-                for &face in admitted!(ctx.admit_iter(&body.faces, "catia_e5_body_face_roster_scan")) {
+                for &face in
+                    admitted!(ctx.admit_iter(&body.faces, "catia_e5_body_face_roster_scan"))
+                {
                     if let Err(error) = ctx.push_vec(&mut roster, face, "catia_e5_body_face_roster")
                     {
                         return Some(Err(error));
@@ -1150,7 +1164,8 @@ fn parse_nurbs_pcurve(
         &mut knots,
         "catia_e5_pcurve_knot_scan",
         finite_f64_le,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let mut multiplicities = Vec::new();
@@ -1167,7 +1182,8 @@ fn parse_nurbs_pcurve(
         &mut multiplicities,
         "catia_e5_pcurve_multiplicity_scan",
         |view| view.u32_le(),
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let Some(max_control_count) = view
@@ -1204,7 +1220,8 @@ fn parse_nurbs_pcurve(
         &mut control_points,
         "catia_e5_pcurve_control_scan",
         |view| Some([finite_f64_le(view)?, finite_f64_le(view)?]),
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
@@ -1308,15 +1325,8 @@ fn read_finite_lane(
     }
     let mut values = Vec::new();
     ctx.reserve_vec(&mut values, count, operation)?;
-    let Some(()) = read_fixed_items(
-        ctx,
-        view,
-        count,
-        8,
-        &mut values,
-        operation,
-        finite_f64_le,
-    )? else {
+    let Some(()) = read_fixed_items(ctx, view, count, 8, &mut values, operation, finite_f64_le)?
+    else {
         return Ok(None);
     };
     Ok(Some(values))
@@ -1333,15 +1343,10 @@ fn read_u32_lane(
     }
     let mut values = Vec::new();
     ctx.reserve_vec(&mut values, count, operation)?;
-    let Some(()) = read_fixed_items(
-        ctx,
-        view,
-        count,
-        4,
-        &mut values,
-        operation,
-        |view| view.u32_le(),
-    )? else {
+    let Some(()) = read_fixed_items(ctx, view, count, 4, &mut values, operation, |view| {
+        view.u32_le()
+    })?
+    else {
         return Ok(None);
     };
     Ok(Some(values))
@@ -1463,7 +1468,10 @@ fn parse_jet_pcurve(
     for ((((((knot, multiplicity), u), v), du), dv), (ddu, ddv)) in ctx
         .admit_iter(&knots, "catia_e5_jet_knot_site_scan")?
         .copied()
-        .zip(ctx.admit_iter(&multiplicities, "catia_e5_jet_multiplicity_site_scan")?.copied())
+        .zip(
+            ctx.admit_iter(&multiplicities, "catia_e5_jet_multiplicity_site_scan")?
+                .copied(),
+        )
         .zip(ctx.admit_iter(&x, "catia_e5_jet_x_site_scan")?.copied())
         .zip(ctx.admit_iter(&y, "catia_e5_jet_y_site_scan")?.copied())
         .zip(ctx.admit_iter(&dx, "catia_e5_jet_dx_site_scan")?.copied())
@@ -1533,224 +1541,228 @@ fn plane_digon_orientation_hint(
     const EPS_PLANE_DIGON: f64 = 1.0e-8;
 
     (|| -> Option<Result<Sign, CodecError>> {
-    macro_rules! admitted {
-        ($value:expr) => {
-            match $value {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error.into())),
-            }
-        };
-    }
-    let PlaneDigonOrientationHintInputs {
-        face_trailer_sign,
-        surface_class,
-        pcurve_ids,
-        edge_ids,
-        reversed,
-        outer,
-        edges,
-        pcurves,
-        curve_supports,
-        bounds,
-    } = inputs;
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error.into())),
+                }
+            };
+        }
+        let PlaneDigonOrientationHintInputs {
+            face_trailer_sign,
+            surface_class,
+            pcurve_ids,
+            edge_ids,
+            reversed,
+            outer,
+            edges,
+            pcurves,
+            curve_supports,
+            bounds,
+        } = inputs;
 
-    if surface_class != Some(0xc8)
-        || pcurve_ids.len() != 2
-        || edge_ids.len() != 2
-        || reversed.len() != 2
-        || !matches!(outer, Some(true | false))
-    {
-        return None;
-    }
-    let [first_pcurve_id, second_pcurve_id] = *pcurve_ids else {
-        return None;
-    };
-    let [first_edge_id, second_edge_id] = *edge_ids else {
-        return None;
-    };
-    let first_edge = edges.get(&first_edge_id)?;
-    let second_edge = edges.get(&second_edge_id)?;
-    let same_endpoints = (first_edge.start_vertex == second_edge.start_vertex
-        && first_edge.end_vertex == second_edge.end_vertex)
-        || (first_edge.start_vertex == second_edge.end_vertex
-            && first_edge.end_vertex == second_edge.start_vertex);
-    if !same_endpoints || first_edge.support == second_edge.support {
-        return None;
-    }
-
-    let [first_pcurve, second_pcurve] = [
-        pcurves.get(&first_pcurve_id)?,
-        pcurves.get(&second_pcurve_id)?,
-    ];
-    let [E5Pcurve::Jet {
-        surface: first_surface,
-        sites: first_sites,
-        range: first_range,
-    }, E5Pcurve::Jet {
-        surface: second_surface,
-        sites: second_sites,
-        range: second_range,
-    }] = [first_pcurve, second_pcurve]
-    else {
-        return None;
-    };
-    if first_surface != second_surface || first_sites.len() < 2 || second_sites.len() < 2 {
-        return None;
-    }
-
-    let close = |left: f64, right: f64| {
-        left.is_finite()
-            && right.is_finite()
-            && (left - right).abs() <= EPS_PLANE_DIGON * (1.0 + left.abs().max(right.abs()))
-    };
-    let close_point =
-        |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
-    let first_start = first_sites.first()?.point.map(FiniteReal::get);
-    let first_end = first_sites.last()?.point.map(FiniteReal::get);
-    let second_start = second_sites.first()?.point.map(FiniteReal::get);
-    let second_end = second_sites.last()?.point.map(FiniteReal::get);
-    let same_endpoint_pair = (close_point(first_start, second_start)
-        && close_point(first_end, second_end))
-        || (close_point(first_start, second_end) && close_point(first_end, second_start));
-    if !same_endpoint_pair {
-        return None;
-    }
-    let center = [
-        (first_start[0] + first_end[0]) * 0.5,
-        (first_start[1] + first_end[1]) * 0.5,
-    ];
-    let first_start_radius = (first_start[0] - center[0]).hypot(first_start[1] - center[1]);
-    let first_end_radius = (first_end[0] - center[0]).hypot(first_end[1] - center[1]);
-    let second_center = [
-        (second_start[0] + second_end[0]) * 0.5,
-        (second_start[1] + second_end[1]) * 0.5,
-    ];
-    let second_start_radius =
-        (second_start[0] - second_center[0]).hypot(second_start[1] - second_center[1]);
-    let second_end_radius =
-        (second_end[0] - second_center[0]).hypot(second_end[1] - second_center[1]);
-    if !close_point(center, second_center)
-        || !first_start_radius.is_finite()
-        || !first_end_radius.is_finite()
-        || !second_start_radius.is_finite()
-        || !second_end_radius.is_finite()
-        || first_start_radius <= EPS_PLANE_DIGON
-        || !close(first_start_radius, first_end_radius)
-        || !close(first_start_radius, second_start_radius)
-        || !close(first_start_radius, second_end_radius)
-    {
-        return None;
-    }
-    let first_radius = first_start_radius;
-    for site in admitted!(ctx.admit_iter(first_sites, "catia_e5_plane_digon_first_site_scan"))
-        .chain(admitted!(ctx.admit_iter(second_sites, "catia_e5_plane_digon_second_site_scan")))
-    {
-        if !close(
-            (site.point[0].get() - center[0]).hypot(site.point[1].get() - center[1]),
-            first_radius,
-        ) {
+        if surface_class != Some(0xc8)
+            || pcurve_ids.len() != 2
+            || edge_ids.len() != 2
+            || reversed.len() != 2
+            || !matches!(outer, Some(true | false))
+        {
             return None;
         }
-    }
-    let native_arc_sign = |start: [f64; 2], derivative: [f64; 2]| {
-        let radial = [start[0] - center[0], start[1] - center[1]];
-        let derivative_norm = derivative[0].hypot(derivative[1]);
-        let radial_norm = radial[0].hypot(radial[1]);
-        let cross = radial[0] * derivative[1] - radial[1] * derivative[0];
-        (derivative_norm.is_finite()
-            && radial_norm.is_finite()
-            && derivative_norm > EPS_PLANE_DIGON
-            && radial_norm > EPS_PLANE_DIGON
-            && cross.is_finite()
-            && cross.abs() > EPS_PLANE_DIGON * radial_norm * derivative_norm)
-            .then_some(if cross > 0.0 {
+        let [first_pcurve_id, second_pcurve_id] = *pcurve_ids else {
+            return None;
+        };
+        let [first_edge_id, second_edge_id] = *edge_ids else {
+            return None;
+        };
+        let first_edge = edges.get(&first_edge_id)?;
+        let second_edge = edges.get(&second_edge_id)?;
+        let same_endpoints = (first_edge.start_vertex == second_edge.start_vertex
+            && first_edge.end_vertex == second_edge.end_vertex)
+            || (first_edge.start_vertex == second_edge.end_vertex
+                && first_edge.end_vertex == second_edge.start_vertex);
+        if !same_endpoints || first_edge.support == second_edge.support {
+            return None;
+        }
+
+        let [first_pcurve, second_pcurve] = [
+            pcurves.get(&first_pcurve_id)?,
+            pcurves.get(&second_pcurve_id)?,
+        ];
+        let [E5Pcurve::Jet {
+            surface: first_surface,
+            sites: first_sites,
+            range: first_range,
+        }, E5Pcurve::Jet {
+            surface: second_surface,
+            sites: second_sites,
+            range: second_range,
+        }] = [first_pcurve, second_pcurve]
+        else {
+            return None;
+        };
+        if first_surface != second_surface || first_sites.len() < 2 || second_sites.len() < 2 {
+            return None;
+        }
+
+        let close = |left: f64, right: f64| {
+            left.is_finite()
+                && right.is_finite()
+                && (left - right).abs() <= EPS_PLANE_DIGON * (1.0 + left.abs().max(right.abs()))
+        };
+        let close_point =
+            |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
+        let first_start = first_sites.first()?.point.map(FiniteReal::get);
+        let first_end = first_sites.last()?.point.map(FiniteReal::get);
+        let second_start = second_sites.first()?.point.map(FiniteReal::get);
+        let second_end = second_sites.last()?.point.map(FiniteReal::get);
+        let same_endpoint_pair = (close_point(first_start, second_start)
+            && close_point(first_end, second_end))
+            || (close_point(first_start, second_end) && close_point(first_end, second_start));
+        if !same_endpoint_pair {
+            return None;
+        }
+        let center = [
+            (first_start[0] + first_end[0]) * 0.5,
+            (first_start[1] + first_end[1]) * 0.5,
+        ];
+        let first_start_radius = (first_start[0] - center[0]).hypot(first_start[1] - center[1]);
+        let first_end_radius = (first_end[0] - center[0]).hypot(first_end[1] - center[1]);
+        let second_center = [
+            (second_start[0] + second_end[0]) * 0.5,
+            (second_start[1] + second_end[1]) * 0.5,
+        ];
+        let second_start_radius =
+            (second_start[0] - second_center[0]).hypot(second_start[1] - second_center[1]);
+        let second_end_radius =
+            (second_end[0] - second_center[0]).hypot(second_end[1] - second_center[1]);
+        if !close_point(center, second_center)
+            || !first_start_radius.is_finite()
+            || !first_end_radius.is_finite()
+            || !second_start_radius.is_finite()
+            || !second_end_radius.is_finite()
+            || first_start_radius <= EPS_PLANE_DIGON
+            || !close(first_start_radius, first_end_radius)
+            || !close(first_start_radius, second_start_radius)
+            || !close(first_start_radius, second_end_radius)
+        {
+            return None;
+        }
+        let first_radius = first_start_radius;
+        for site in
+            admitted!(ctx.admit_iter(first_sites, "catia_e5_plane_digon_first_site_scan")).chain(
+                admitted!(ctx.admit_iter(second_sites, "catia_e5_plane_digon_second_site_scan")),
+            )
+        {
+            if !close(
+                (site.point[0].get() - center[0]).hypot(site.point[1].get() - center[1]),
+                first_radius,
+            ) {
+                return None;
+            }
+        }
+        let native_arc_sign = |start: [f64; 2], derivative: [f64; 2]| {
+            let radial = [start[0] - center[0], start[1] - center[1]];
+            let derivative_norm = derivative[0].hypot(derivative[1]);
+            let radial_norm = radial[0].hypot(radial[1]);
+            let cross = radial[0] * derivative[1] - radial[1] * derivative[0];
+            (derivative_norm.is_finite()
+                && radial_norm.is_finite()
+                && derivative_norm > EPS_PLANE_DIGON
+                && radial_norm > EPS_PLANE_DIGON
+                && cross.is_finite()
+                && cross.abs() > EPS_PLANE_DIGON * radial_norm * derivative_norm)
+                .then_some(if cross > 0.0 {
+                    Sign::Positive
+                } else {
+                    Sign::Negative
+                })
+        };
+        let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
+            let start = bound_representation_parameter(bounds, edge.parameter_start, pcurve_id)?;
+            let end = bound_representation_parameter(bounds, edge.parameter_end, pcurve_id)?;
+            let bound_span = end.get() - start.get();
+            let native_span = native_range[1] - native_range[0];
+            if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
+                return None;
+            }
+            Some(if bound_span * native_span > 0.0 {
                 Sign::Positive
             } else {
                 Sign::Negative
             })
-    };
-    let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
-        let start = bound_representation_parameter(bounds, edge.parameter_start, pcurve_id)?;
-        let end = bound_representation_parameter(bounds, edge.parameter_end, pcurve_id)?;
-        let bound_span = end.get() - start.get();
-        let native_span = native_range[1] - native_range[0];
-        if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
+        };
+        let first_direction = signed_parameter_direction(
+            first_edge,
+            first_pcurve_id,
+            first_range.map(FiniteReal::get),
+        )?
+        .combine(if reversed[0] {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        });
+        let second_direction = signed_parameter_direction(
+            second_edge,
+            second_pcurve_id,
+            second_range.map(FiniteReal::get),
+        )?
+        .combine(if reversed[1] {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        });
+        let first_winding = native_arc_sign(
+            first_start,
+            first_sites.first()?.first_derivatives.map(FiniteReal::get),
+        )?
+        .combine(first_direction);
+        let second_winding = native_arc_sign(
+            second_start,
+            second_sites.first()?.first_derivatives.map(FiniteReal::get),
+        )?
+        .combine(second_direction);
+        if first_winding != second_winding {
             return None;
         }
-        Some(if bound_span * native_span > 0.0 {
+
+        let first_support = curve_supports.get(&first_edge.support)?;
+        let second_support = curve_supports.get(&second_edge.support)?;
+        if !first_support.is_intersection()
+            || !second_support.is_intersection()
+            || !first_support.pcurves().contains(&first_pcurve_id)
+            || !second_support.pcurves().contains(&second_pcurve_id)
+        {
+            return None;
+        }
+        let mut intervals =
+            [first_support.range, second_support.range].map(|range| range.map(FiniteReal::get));
+        for interval in &mut intervals {
+            if interval[0] == interval[1] {
+                return None;
+            }
+            if interval[0] > interval[1] {
+                interval.swap(0, 1);
+            }
+        }
+        if intervals[0][0] > intervals[1][0] {
+            intervals.swap(0, 1);
+        }
+        let first_span = intervals[0][1] - intervals[0][0];
+        let second_span = intervals[1][1] - intervals[1][0];
+        if !close(first_span, second_span) || !close(intervals[0][1], intervals[1][0]) {
+            return None;
+        }
+
+        let role_sign = if outer == Some(true) {
             Sign::Positive
         } else {
             Sign::Negative
-        })
-    };
-    let first_direction = signed_parameter_direction(
-        first_edge,
-        first_pcurve_id,
-        first_range.map(FiniteReal::get),
-    )?
-    .combine(if reversed[0] {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    });
-    let second_direction = signed_parameter_direction(
-        second_edge,
-        second_pcurve_id,
-        second_range.map(FiniteReal::get),
-    )?
-    .combine(if reversed[1] {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    });
-    let first_winding = native_arc_sign(
-        first_start,
-        first_sites.first()?.first_derivatives.map(FiniteReal::get),
-    )?
-    .combine(first_direction);
-    let second_winding = native_arc_sign(
-        second_start,
-        second_sites.first()?.first_derivatives.map(FiniteReal::get),
-    )?
-    .combine(second_direction);
-    if first_winding != second_winding {
-        return None;
-    }
-
-    let first_support = curve_supports.get(&first_edge.support)?;
-    let second_support = curve_supports.get(&second_edge.support)?;
-    if !first_support.is_intersection()
-        || !second_support.is_intersection()
-        || !first_support.pcurves().contains(&first_pcurve_id)
-        || !second_support.pcurves().contains(&second_pcurve_id)
-    {
-        return None;
-    }
-    let mut intervals =
-        [first_support.range, second_support.range].map(|range| range.map(FiniteReal::get));
-    for interval in &mut intervals {
-        if interval[0] == interval[1] {
-            return None;
-        }
-        if interval[0] > interval[1] {
-            interval.swap(0, 1);
-        }
-    }
-    if intervals[0][0] > intervals[1][0] {
-        intervals.swap(0, 1);
-    }
-    let first_span = intervals[0][1] - intervals[0][0];
-    let second_span = intervals[1][1] - intervals[1][0];
-    if !close(first_span, second_span) || !close(intervals[0][1], intervals[1][0]) {
-        return None;
-    }
-
-    let role_sign = if outer == Some(true) {
-        Sign::Positive
-    } else {
-        Sign::Negative
-    };
-    Some(Ok(face_trailer_sign.combine(role_sign).combine(first_winding)))
+        };
+        Some(Ok(face_trailer_sign
+            .combine(role_sign)
+            .combine(first_winding)))
     })()
     .transpose()
 }
@@ -1775,32 +1787,36 @@ fn solve_absolute_orientation(
         location_count,
         "catia e5 orientation locations",
     )?;
-    for (face_index, face) in ctx.admit_iter(&*faces, "catia_e5_orientation_location_face_scan")?.enumerate() {
-        for (loop_index, loop_) in ctx.admit_iter(&face.loops, "catia_e5_orientation_location_loop_scan")?.enumerate() {
+    for (face_index, face) in ctx
+        .admit_iter(&*faces, "catia_e5_orientation_location_face_scan")?
+        .enumerate()
+    {
+        for (loop_index, loop_) in ctx
+            .admit_iter(&face.loops, "catia_e5_orientation_location_loop_scan")?
+            .enumerate()
+        {
             if !loop_.members.is_empty() {
                 locations.push((face_index, loop_index));
             }
         }
     }
-    let mut occurrences = HashMap::<u32, Vec<(usize, Sign)>>::new();
-    for (node, &(face_index, loop_index)) in ctx.admit_iter(&locations, "catia_e5_orientation_location_scan")?.enumerate() {
+    let mut occurrences = BTreeMap::<u32, Vec<(usize, Sign)>>::new();
+    for (node, &(face_index, loop_index)) in ctx
+        .admit_iter(&locations, "catia_e5_orientation_location_scan")?
+        .enumerate()
+    {
         let loop_ = &faces[face_index].loops[loop_index];
         for member in ctx.admit_iter(&loop_.members, "catia_e5_orientation_loop_member_scan")? {
-            ctx.admit_hash_map_entry(
+            let sign = if member.reversed {
+                Sign::Negative
+            } else {
+                Sign::Positive
+            };
+            ctx.push_btree_group(
                 &mut occurrences,
-                &member.edge_use,
+                member.edge_use,
+                (node, sign),
                 "catia e5 orientation edge occurrence keys",
-            )?;
-            ctx.push_vec(
-                occurrences.entry(member.edge_use).or_default(),
-                (
-                    node,
-                    if member.reversed {
-                        Sign::Negative
-                    } else {
-                        Sign::Positive
-                    },
-                ),
                 "catia e5 orientation edge occurrences",
             )?;
         }
@@ -1827,7 +1843,10 @@ fn solve_absolute_orientation(
         )?;
     }
     let mut solved = ctx.alloc_filled(locations.len(), None, "catia e5 orientation assignments")?;
-    for (root, _) in ctx.admit_iter(&locations, "catia_e5_orientation_root_scan")?.enumerate() {
+    for (root, _) in ctx
+        .admit_iter(&locations, "catia_e5_orientation_root_scan")?
+        .enumerate()
+    {
         if solved[root].is_some() {
             continue;
         }
@@ -1843,7 +1862,9 @@ fn solve_absolute_orientation(
         while cursor < component.len() {
             let (node, value) = component[cursor];
             cursor += 1;
-            for &(neighbor, relation) in ctx.admit_iter(&adjacency[node], "catia_e5_orientation_neighbor_scan")? {
+            for &(neighbor, relation) in
+                ctx.admit_iter(&adjacency[node], "catia_e5_orientation_neighbor_scan")?
+            {
                 let expected = value.combine(relation);
                 match solved[neighbor] {
                     Some(actual) if actual != expected => consistent = false,
@@ -1860,7 +1881,10 @@ fn solve_absolute_orientation(
             }
         }
         if !consistent {
-            for &(node, _) in ctx.admit_iter(&component, "catia_e5_orientation_inconsistent_component_scan")? {
+            for &(node, _) in ctx.admit_iter(
+                &component,
+                "catia_e5_orientation_inconsistent_component_scan",
+            )? {
                 solved[node] = None;
             }
             continue;
@@ -1874,7 +1898,9 @@ fn solve_absolute_orientation(
             let candidate = hint.combine(value);
             match exact_flip {
                 Some(existing) if existing != candidate => {
-                    for &(component_node, _) in ctx.admit_iter(&component, "catia_e5_orientation_hint_conflict_scan")? {
+                    for &(component_node, _) in
+                        ctx.admit_iter(&component, "catia_e5_orientation_hint_conflict_scan")?
+                    {
                         solved[component_node] = None;
                     }
                     consistent = false;
@@ -1888,7 +1914,9 @@ fn solve_absolute_orientation(
             continue;
         }
         if let Some(flip) = exact_flip {
-            for &(node, value) in ctx.admit_iter(&component, "catia_e5_orientation_exact_flip_scan")? {
+            for &(node, value) in
+                ctx.admit_iter(&component, "catia_e5_orientation_exact_flip_scan")?
+            {
                 solved[node] = Some(value.combine(flip));
             }
         } else {
@@ -1901,13 +1929,18 @@ fn solve_absolute_orientation(
                 .count();
             let minus_matches = component.len() - plus_matches;
             if minus_matches > plus_matches {
-                for &(node, value) in ctx.admit_iter(&component, "catia_e5_orientation_trailer_flip_scan")? {
+                for &(node, value) in
+                    ctx.admit_iter(&component, "catia_e5_orientation_trailer_flip_scan")?
+                {
                     solved[node] = Some(value.flipped());
                 }
             }
         }
     }
-    for (node, &(face_index, loop_index)) in ctx.admit_iter(&locations, "catia_e5_orientation_apply_scan")?.enumerate() {
+    for (node, &(face_index, loop_index)) in ctx
+        .admit_iter(&locations, "catia_e5_orientation_apply_scan")?
+        .enumerate()
+    {
         let Some(g) = solved[node] else {
             continue;
         };
@@ -1929,7 +1962,10 @@ fn solve_absolute_orientation(
             loop_.members.len(),
             "catia e5 oriented members",
         )?;
-        for serialized_index in ctx.admit_iter(&indices, "catia_e5_orientation_member_index_scan")?.copied() {
+        for serialized_index in ctx
+            .admit_iter(&indices, "catia_e5_orientation_member_index_scan")?
+            .copied()
+        {
             oriented_members.push(E5OrientedMember {
                 serialized_index,
                 reversed: loop_.members[serialized_index].reversed ^ flip,
@@ -1937,7 +1973,9 @@ fn solve_absolute_orientation(
         }
         loop_.oriented_members = Some(oriented_members);
     }
-    Ok(ctx.admit_iter(&solved, "catia_e5_orientation_consistency_scan")?.all(Option::is_some))
+    Ok(ctx
+        .admit_iter(&solved, "catia_e5_orientation_consistency_scan")?
+        .all(Option::is_some))
 }
 
 fn parse_bodies(
@@ -2046,40 +2084,40 @@ fn parse_body_root(
 }
 
 fn records<'a>(
-ctx: &DecodeContext<'_>,
-bytes: &'a [u8],
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
 ) -> Result<impl Iterator<Item = Record<'a>> + 'a, CodecError> {
-let mut skip_until = 0usize;
-Ok(ctx
-.admit_iter(bytes, "catia_e5_graph_record_scan")?
-.enumerate()
-.filter_map(move |(start, byte)| {
-if start < skip_until || *byte != 0xe5 {
-return None;
-}
-let marker_end = start.checked_add(3)?;
-if bytes.get(start..marker_end) != Some(&[0xe5, 0x0d, 0x03]) {
-return None;
-}
-let id_offset = start.checked_add(9)?;
-let id = View::u32_le_at(bytes, id_offset)?;
-let size_offset = start.checked_add(5)?;
-let size = View::u16_le_at(bytes, size_offset).map(usize::from)?;
-let length = size.checked_add(13)?;
-let end = start.checked_add(length)?;
-if end > bytes.len() {
-return None;
-}
-let class_offset = start.checked_add(3)?;
-let class = bytes.get(class_offset).copied()?;
-let payload_start = start.checked_add(13)?;
-skip_until = end;
-Some(Record {
-class,
-id,
-payload: &bytes[payload_start..end],
-})
-}))
+    let mut skip_until = 0usize;
+    Ok(ctx
+        .admit_iter(bytes, "catia_e5_graph_record_scan")?
+        .enumerate()
+        .filter_map(move |(start, byte)| {
+            if start < skip_until || *byte != 0xe5 {
+                return None;
+            }
+            let marker_end = start.checked_add(3)?;
+            if bytes.get(start..marker_end) != Some(&[0xe5, 0x0d, 0x03]) {
+                return None;
+            }
+            let id_offset = start.checked_add(9)?;
+            let id = View::u32_le_at(bytes, id_offset)?;
+            let size_offset = start.checked_add(5)?;
+            let size = View::u16_le_at(bytes, size_offset).map(usize::from)?;
+            let length = size.checked_add(13)?;
+            let end = start.checked_add(length)?;
+            if end > bytes.len() {
+                return None;
+            }
+            let class_offset = start.checked_add(3)?;
+            let class = bytes.get(class_offset).copied()?;
+            let payload_start = start.checked_add(13)?;
+            skip_until = end;
+            Some(Record {
+                class,
+                id,
+                payload: &bytes[payload_start..end],
+            })
+        }))
 }
 
 fn parse_face(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<RawFace>, CodecError> {
@@ -2303,10 +2341,7 @@ fn solve_loop_chain(
         && solutions.len() == 2
         && ctx
             .admit_iter(&solutions[0], "catia_e5_chain_solution_left_scan")?
-            .zip(ctx.admit_iter(
-                &solutions[1],
-                "catia_e5_chain_solution_right_scan",
-            )?)
+            .zip(ctx.admit_iter(&solutions[1], "catia_e5_chain_solution_right_scan")?)
             .all(|(left, right)| left != right)
     {
         let selected = ctx
@@ -2323,8 +2358,7 @@ fn solve_loop_chain(
 mod tests {
     use super::{
         curve_support_reference_closes, parse_body_root, parse_bounds, parse_jet_pcurve,
-        parse_nurbs_pcurve,
-        parse_pcurve, parse_topology, plane_digon_orientation_hint, records,
+        parse_nurbs_pcurve, parse_pcurve, parse_topology, plane_digon_orientation_hint, records,
         solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport,
         E5CurveSupportKind, E5Edge, E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite,
         E5Topology, Record, Sign,
@@ -3147,12 +3181,7 @@ mod tests {
         e5_test_context!(ctx);
         let mut bytes = vec![0; 20];
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, 0x00]);
-        assert_eq!(
-            records(&ctx, &bytes)
-                .expect("service decode")
-                .count(),
-            0
-        );
+        assert_eq!(records(&ctx, &bytes).expect("service decode").count(), 0);
         assert!(parse_topology(&ctx, &bytes)
             .expect("service decode")
             .is_none());

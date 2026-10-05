@@ -255,7 +255,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         standard_object_evidence_from_streams(
             ctx,
             &[stream.clone(), stream.clone()],
-            &HashSet::from([10]),
+            &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -276,7 +276,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         standard_object_evidence_from_streams(
             ctx,
             &[stream, conflicting],
-            &HashSet::from([10]),
+            &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -314,11 +314,14 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        ))
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+            )
+        })
         .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
@@ -398,7 +401,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
         standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::from([120]),
+            &std::collections::BTreeSet::from([120]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -613,19 +616,18 @@ fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
 fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
     let tau = std::f64::consts::TAU;
     assert!(crate::test_support::with_service_context(|ctx| {
-        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[
-            [0.0, 1.0],
-            [1.0, 3.0],
-            [3.0, tau],
-        ])
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[0.0, 1.0], [1.0, 3.0], [3.0, tau]])
     })
     .expect("service resource budget"));
     assert!(crate::test_support::with_service_context(|ctx| {
-        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[
-            [0.0, std::f64::consts::PI],
-            [0.0, std::f64::consts::PI],
-            [std::f64::consts::PI, tau],
-        ])
+        circular_ranges_are_nonoverlapping_or_coincident(
+            ctx,
+            &[
+                [0.0, std::f64::consts::PI],
+                [0.0, std::f64::consts::PI],
+                [std::f64::consts::PI, tau],
+            ],
+        )
     })
     .expect("service resource budget"));
     assert!(!crate::test_support::with_service_context(|ctx| {
@@ -1026,7 +1028,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
 }
 
 #[test]
-fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
+fn plane_normal_map_refuses_before_growth() {
     let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
         pos: 0,
         target: 10,
@@ -1040,18 +1042,13 @@ fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
     })
     .expect("service resource budget");
     assert_eq!(normals.len(), 1);
-    for (cap, operation) in [
-        (0, "catia_plane_normal_candidates"),
-        (1, "catia_plane_normals"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| {
-                standard_plane_normals_from_face_frames(ctx, &records, &frames)
-            }),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == operation
-        ));
-    }
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| {
+            standard_plane_normals_from_face_frames(ctx, &records, &frames)
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_plane_normals"
+    ));
 }
 
 #[test]
