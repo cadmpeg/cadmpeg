@@ -203,9 +203,9 @@ pub fn removals(
     name: &str,
 ) -> usize {
     let mut removed = usize::from(map.remove(name).is_some()); // finding: uncharged_decode_work
-    removed += usize::from(set.take(&1).is_some());
+    removed += usize::from(set.take(&1).is_some()); // finding: uncharged_decode_work
     if let std::collections::hash_map::Entry::Occupied(entry) = map.entry(key) { // finding: uncharged_decode_work
-        removed += usize::from(entry.remove());
+        removed += usize::from(entry.remove()); // finding: uncharged_decode_work
     }
     removed
 }

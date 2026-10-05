@@ -100,6 +100,11 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
+    #[cfg(test)]
+    pub(super) fn retained_used(&self) -> u64 {
+        self.retained.get()
+    }
+
     pub(super) fn decompressed_used(&self) -> u64 {
         self.decompressed.get()
     }
