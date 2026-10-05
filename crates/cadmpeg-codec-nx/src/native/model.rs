@@ -41,23 +41,21 @@ use crate::native::features::FeatureHistory;
 
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
-    display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
-    display_jt_geometric_transform_attributes, display_jt_group_node_data, display_jt_indices,
-    display_jt_initial_face_degree_symbols, display_jt_instance_nodes,
-    display_jt_material_attributes, display_jt_partition_nodes, display_jt_polygon_meshes,
-    display_jt_range_lod_nodes, display_jt_segments, display_jt_shape_lod_bindings,
-    display_jt_shape_lod_elements, display_jt_string_property_atoms,
-    display_jt_topology_packet_sequences, display_jt_tri_strip_lod_headers,
-    display_jt_tri_strip_shape_nodes, display_jt_vertex_colors, display_jt_vertex_coordinates,
+    display_jt_compressed_element_sequences, display_jt_documents, display_jt_indices,
+    display_jt_initial_face_degree_symbols, display_jt_polygon_meshes, display_jt_scene_nodes,
+    display_jt_segments, display_jt_shape_lod_bindings, display_jt_shape_lod_elements,
+    display_jt_string_property_atoms, display_jt_topology_packet_sequences,
+    display_jt_tri_strip_lod_headers, display_jt_vertex_colors, display_jt_vertex_coordinates,
     display_jt_vertex_flags, display_jt_vertex_normals, display_jt_vertex_texture_coordinates,
     DisplayJtBaseNodeData, DisplayJtCompressedVertexRecordsHeader,
     DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
     DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
-    DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
-    DisplayJtStringPropertyAtom, DisplayJtTopologyArrays, DisplayJtTopologyPacketSequence,
-    DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
-    DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
-    DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+    DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtSceneNodes,
+    DisplayJtShapeLodBinding, DisplayJtStringPropertyAtom, DisplayJtTopologyArrays,
+    DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode,
+    DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+    DisplayJtVertexFlagInputs, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
 };
 use super::features::construction_records::{
     data_block_object_frames, feature_block_construction_payloads,
@@ -1016,46 +1014,16 @@ impl NativeModel {
             display_jt_string_property_atoms(ctx, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
             display_jt_shape_lod_bindings(ctx, container, &display_jt_segments)?;
-        let display_jt_base_node_data =
-            display_jt_base_node_data(ctx, container, &display_jt_segments, &display_jt_documents)?;
-        let display_jt_group_node_data = display_jt_group_node_data(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_instance_nodes =
-            display_jt_instance_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
-        let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_material_attributes = display_jt_material_attributes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_partition_nodes = display_jt_partition_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
-        let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+        let DisplayJtSceneNodes {
+            base_nodes: display_jt_base_node_data,
+            group_nodes: display_jt_group_node_data,
+            instance_nodes: display_jt_instance_nodes,
+            transforms: display_jt_geometric_transform_attributes,
+            materials: display_jt_material_attributes,
+            partition_nodes: display_jt_partition_nodes,
+            range_lod_nodes: display_jt_range_lod_nodes,
+            tri_strip_shape_nodes: display_jt_tri_strip_shape_nodes,
+        } = display_jt_scene_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let feature_datum_csys_constructions =
             feature_datum_csys_constructions(ctx, &feature_history)?;
         let feature_datum_csys_payloads =
