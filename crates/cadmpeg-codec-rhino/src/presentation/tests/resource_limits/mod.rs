@@ -956,13 +956,13 @@ fn presentation_install_scan(fixture: InstallFixture) -> &'static crate::contain
         InstallFixture::LayersOnly => &LAYERS,
     };
     cell.get_or_init(|| {
-        let with_groups = !matches!(fixture, InstallFixture::LayersOnly);
-        let with_objects = matches!(fixture, InstallFixture::Full);
-        let with_layers = !matches!(fixture, InstallFixture::GroupsOnly);
         use crate::test_support::test_dump::{
             class_wrapper, crc_chunk, minimal_document, object_record_with_attribute_userdata,
             table, tagged_attributes,
         };
+        let with_groups = !matches!(fixture, InstallFixture::LayersOnly);
+        let with_objects = matches!(fixture, InstallFixture::Full);
+        let with_layers = !matches!(fixture, InstallFixture::GroupsOnly);
         let archive = ArchiveVersion::V5;
         let mut groups = vec![0x1f];
         groups.extend(7_i32.to_le_bytes());
