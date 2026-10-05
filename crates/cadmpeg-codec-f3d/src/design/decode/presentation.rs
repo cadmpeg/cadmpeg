@@ -13,7 +13,7 @@ use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::reference_runs::admit_reference_values;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
-use crate::design::decode::meta::typed_primary_frames;
+use crate::design::decode::meta::{guid_matches, has_base_type, typed_primary_frames};
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
@@ -29,6 +29,9 @@ use crate::design::presentation::{
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
+
+/// The registered type GUID and record version of one Design entity.
+type EntityType<'a> = (&'a crate::records::mesh::DesignRelaxedGuidText, u32);
 
 /// One typed browser-node record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,23 +77,6 @@ pub(crate) enum BodyPresentationOwner {
     Bare,
 }
 
-/// Whether `frame` registers `base_type_guid` as its base type, compared
-/// without ASCII case.
-fn has_base_type(
-    ctx: &DecodeContext<'_>,
-    frame: &crate::design::decode::meta::TypedPrimaryFrame<'_>,
-    base_type_guid: &str,
-) -> Result<bool, CodecError> {
-    let Some(base) = frame.design_type.base_type_guid.value() else {
-        return Ok(false);
-    };
-    ctx.eq_ignore_ascii_case(
-        base.as_str(),
-        base_type_guid,
-        "match F3D presentation base type",
-    )
-}
-
 /// Decode every browser node whose dynamic class resolves to the registered
 /// browser-node type. The record body is ten zero bytes, an LP-UTF16 GUID, the
 /// hidden flag, `01 01`, and the owning Design entity suffix.
@@ -100,13 +86,15 @@ pub(super) fn browser_node_records(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    let frames = typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d browser-node frames", || {
+        typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")
+    })?;
     for frame in ctx.admit_iter(&frames, "scan F3D browser-node frames")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
         }
         if frame.design_type.module != DESIGN_MODULE_FUSION
-            || !has_base_type(ctx, frame, BROWSER_NODE_BASE_TYPE_GUID)?
+            || !has_base_type(frame.design_type, BROWSER_NODE_BASE_TYPE_GUID)
         {
             return Err(crate::design::text::malformed_design(
                 ctx,
@@ -183,7 +171,8 @@ pub(super) fn browser_node_records(
 }
 
 /// The only browser node owned by `entity_suffix` whose GUID equals
-/// `node_guid` without ASCII case. The search stops at a second match.
+/// `node_guid` without ASCII case. The search stops at a second match; each
+/// GUID comparison reads at most the 36 bytes of a node GUID.
 fn unique_browser_node<'nodes>(
     ctx: &DecodeContext<'_>,
     nodes: &'nodes [BrowserNodeRecord],
@@ -192,8 +181,7 @@ fn unique_browser_node<'nodes>(
 ) -> Result<Option<&'nodes BrowserNodeRecord>, CodecError> {
     let operation = "find F3D body presentation browser node";
     let matches = |node: &BrowserNodeRecord| -> Result<bool, CodecError> {
-        Ok(node.entity_suffix == entity_suffix
-            && ctx.eq_ignore_ascii_case(&node.guid, node_guid, operation)?)
+        Ok(node.entity_suffix == entity_suffix && node.guid.eq_ignore_ascii_case(node_guid))
     };
     let Some(first) = ctx.position_by(nodes, matches, operation)? else {
         return Ok(None);
@@ -218,19 +206,22 @@ pub(crate) fn body_presentations(
         ctx.with_scoped_storage("f3d presentation entity types", || entity_types(ctx, meta))?;
 
     let mut out = Vec::new();
-    let frames = typed_primary_frames(
-        ctx,
-        bytes,
-        meta,
-        BODY_PRESENTATION_TYPE_GUID,
-        "body-presentation",
-    )?;
+    let (frames, _frames_storage) =
+        ctx.with_scoped_storage("f3d body-presentation frames", || {
+            typed_primary_frames(
+                ctx,
+                bytes,
+                meta,
+                BODY_PRESENTATION_TYPE_GUID,
+                "body-presentation",
+            )
+        })?;
     for frame in ctx.admit_iter(&frames, "scan F3D body-presentation frames")? {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
         }
         if frame.design_type.module != DESIGN_MODULE_BODY
-            || !has_base_type(ctx, frame, BODY_PRESENTATION_BASE_TYPE_GUID)?
+            || !has_base_type(frame.design_type, BODY_PRESENTATION_BASE_TYPE_GUID)
         {
             return Err(crate::design::text::malformed_design(
                 ctx,
@@ -348,25 +339,27 @@ fn copy_browser_node(
 fn entity_types<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     meta: &'a crate::metastream::MetaStream,
-) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
+) -> Result<HashMap<u64, EntityType<'a>>, CodecError> {
     let mut out = HashMap::new();
     for design_type in ctx.admit_iter(&meta.types, "scan F3D presentation entity types")? {
         for entity_id in
             admit_reference_values(ctx, &design_type.entities, "scan F3D presentation entities")?
                 .copied()
         {
-            if ctx.contains_key_hash_map(&out, &entity_id, "find F3D presentation entity type")? {
+            if ctx
+                .insert_hash_map(
+                    &mut out,
+                    entity_id,
+                    (&design_type.type_guid, design_type.version),
+                    "f3d presentation entity types",
+                )?
+                .is_some()
+            {
                 return Err(crate::design::text::malformed_design(
                     ctx,
                     format_args!("F3D Design entity {entity_id} has multiple registered types"),
                 ));
             }
-            ctx.insert_hash_map(
-                &mut out,
-                entity_id,
-                (design_type.type_guid.as_str(), design_type.version),
-                "f3d presentation entity types",
-            )?;
         }
     }
     Ok(out)
@@ -376,7 +369,7 @@ fn entity_types<'a>(
 /// without ASCII case) at `version`.
 fn entity_has_type(
     ctx: &DecodeContext<'_>,
-    entity_types: &HashMap<u64, (&str, u32)>,
+    entity_types: &HashMap<u64, EntityType<'_>>,
     entity: u64,
     type_guid: &str,
     version: u32,
@@ -386,8 +379,7 @@ fn entity_has_type(
     else {
         return Ok(false);
     };
-    Ok(*registered_version == version
-        && ctx.eq_ignore_ascii_case(guid, type_guid, "match F3D presentation entity type")?)
+    Ok(*registered_version == version && guid_matches(guid, type_guid))
 }
 
 fn presentation_material(
@@ -396,7 +388,7 @@ fn presentation_material(
     start: usize,
     end: usize,
     entity_suffix: u64,
-    entity_types: &HashMap<u64, (&str, u32)>,
+    entity_types: &HashMap<u64, EntityType<'_>>,
 ) -> Result<Option<PresentationMaterial>, CodecError> {
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
@@ -522,13 +514,7 @@ fn presentation_material(
         let visual_preset = match skip_zeros(bytes, after_visual_marker, end) {
             Some(at) if legacy => {
                 lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
-                    .map(|(value, _)| -> Result<_, CodecError> {
-                        Ok(ctx
-                            .starts_with(&value, "Prism-", "match F3D visual preset prefix")?
-                            .then_some((at, value)))
-                    })
-                    .transpose()?
-                    .flatten()
+                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
             }
             _ => None,
         };

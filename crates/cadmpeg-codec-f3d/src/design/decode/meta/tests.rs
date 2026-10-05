@@ -289,6 +289,32 @@ fn typed_primary_frames_charge_all_collections() {
 }
 
 #[test]
+fn typed_primary_frames_name_the_first_repeated_registration() {
+    let type_guid = "00000000-0000-0000-0000-000000000001";
+    let meta = crate::metastream::MetaStream {
+        types: vec![crate::design::test_support::design_type(
+            type_guid,
+            None,
+            0,
+            "Test",
+            vec![5, 3, 5, 3],
+        )],
+        records: Vec::new(),
+        secondary_records: Vec::new(),
+    };
+    let error = crate::design::test_support::with_test_decode_context(|ctx| {
+        super::typed_primary_frames(ctx, &[], &meta, type_guid, "test")
+            .err()
+            .unwrap()
+    });
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("entity 5 is registered more than once")),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::HashMap;
