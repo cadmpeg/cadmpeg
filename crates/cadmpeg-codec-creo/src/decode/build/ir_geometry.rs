@@ -404,7 +404,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     )?;
     let mut decoded_type24_round_edge_envelope_count = 0usize;
     for record in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo parameters transfer coverage traversal",
     )? {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -1091,7 +1091,7 @@ mod tests {
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
         let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.rows = vec![
+        scan.surfaces.rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![
             crate::surface::SurfaceRow {
                 id: 5,
                 kind: crate::surface::SurfaceKind::Plane,
@@ -1110,7 +1110,7 @@ mod tests {
                 next_surface: 0,
                 offset: 11,
             },
-        ];
+        ]);
         scan.curves.topology_rows = vec![
             crate::curve::CurveTopologyRow {
                 id: 10,

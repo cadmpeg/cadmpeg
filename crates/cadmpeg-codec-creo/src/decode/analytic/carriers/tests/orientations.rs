@@ -236,7 +236,7 @@ fn rowless_round_pairs_refuse_collection_limit() {
         &ctx,
         &BTreeSet::from([23]),
         &[table],
-        &rows,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
     )
     .expect_err("pair refused");
     assert_refusal(&error, "creo rowless round cylinder pairs");
@@ -254,7 +254,7 @@ fn rowless_face_orientation_nodes_refuse_collection_limit() {
         &ctx,
         &BTreeSet::from([23]),
         &[table],
-        &rows,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         &BTreeSet::from([12]),
     )
     .expect_err("orientation node refused");

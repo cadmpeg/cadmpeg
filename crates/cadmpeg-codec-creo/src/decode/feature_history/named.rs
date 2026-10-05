@@ -574,7 +574,10 @@ mod tests {
         );
 
         let mut foreign_surface = valid_scan();
-        foreign_surface.surfaces.rows[1].feature_id = 51;
+        foreign_surface
+            .surfaces
+            .rows
+            .edit(|rows| rows[1].feature_id = 51);
         assert_eq!(
             surface_intersect_feature_definition(
                 &cadmpeg_test_support::service_decode_context(),

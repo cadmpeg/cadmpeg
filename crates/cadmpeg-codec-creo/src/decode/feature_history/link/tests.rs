@@ -223,7 +223,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )?);
         assert!(!section_entity_is_generated_profile(
             ctx,
@@ -232,7 +232,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             std::slice::from_ref(&malformed),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )?);
         Ok::<(), CodecError>(())
     })
@@ -249,7 +249,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         11,
         &[crate::surface::SurfaceKind::Plane],
         std::slice::from_ref(&table),
-        &rows,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
     )
     .expect_err("feature table lookup exceeds the work limit");
     assert!(
@@ -299,7 +299,17 @@ fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
         &[],
         ResourceDimension::WorkUnits,
         "creo blind generated profile surface kind lookup",
-        |ctx| section_entity_is_generated_profile(ctx, true, Some(7), 11, &plane, &tables, &rows),
+        |ctx| {
+            section_entity_is_generated_profile(
+                ctx,
+                true,
+                Some(7),
+                11,
+                &plane,
+                &tables,
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            )
+        },
     );
     let limit = match refusal {
         CodecError::ResourceLimit(limit)
@@ -316,12 +326,26 @@ fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
     policy.limits.max_work_units = cap;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    assert!(
-        !section_entity_is_generated_profile(&ctx, true, Some(7), 11, &plane, &tables, &rows,)
-            .expect("the Plane-only gate returns before scanning blind profiles")
-    );
+    assert!(!section_entity_is_generated_profile(
+        &ctx,
+        true,
+        Some(7),
+        11,
+        &plane,
+        &tables,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+    )
+    .expect("the Plane-only gate returns before scanning blind profiles"));
     assert!(!crate::decode::with_test_decode_ctx(|ctx| {
-        section_entity_is_generated_profile(ctx, true, Some(7), 11, &plane, &tables, &rows)
+        section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &plane,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile preserves the Plane-only nonmatch"));
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
@@ -332,7 +356,7 @@ fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
             11,
             &[crate::surface::SurfaceKind::Cylinder],
             &tables,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )
     })
     .expect("service profile admits the matching blind profile"));
@@ -379,7 +403,7 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )?);
         table.entries[0].entity_id = 30;
         let table = table.with_surface_ids([30, 32]);
@@ -390,7 +414,7 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             &[table],
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )?);
         Ok::<(), CodecError>(())
     })
@@ -450,7 +474,7 @@ fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = ordered_family_surface_bindings_for_feature(
         &ctx,
-        &rows,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         17,
         &[table],
         &order,
@@ -481,7 +505,7 @@ fn ordered_generated_surface_binding_keeps_identity_under_service_policy() {
     let bindings = crate::decode::with_test_decode_ctx(|ctx| {
         ordered_family_surface_bindings_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             17,
             &[table],
             &order,

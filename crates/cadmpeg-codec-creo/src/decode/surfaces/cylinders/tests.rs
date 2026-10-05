@@ -1711,11 +1711,11 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         body_offset: 0,
         offset: 0,
     });
-    scan.surfaces.rows = vec![
+    scan.surfaces.rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![
         row(10, crate::surface::SurfaceKind::Plane),
         row(11, crate::surface::SurfaceKind::Plane),
         row(13, crate::surface::SurfaceKind::Cylinder),
-    ];
+    ]);
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             23,
@@ -1906,7 +1906,7 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
             ctx,
             &std::collections::BTreeSet::from([23]),
             &[table],
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ))
         .expect("service duplicate-row pair admitted")
         .is_empty()

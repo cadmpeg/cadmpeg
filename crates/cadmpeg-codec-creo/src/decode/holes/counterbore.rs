@@ -574,7 +574,7 @@ pub(in crate::decode) fn counterbore_axis_placement(
 pub(in crate::decode) fn counterbore_support_axis_placement(
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     frames: &[crate::surface::PlaneLocalSystem],
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     (table.feature_id == feature_id).then_some(())?;

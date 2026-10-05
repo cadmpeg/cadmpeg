@@ -12,7 +12,7 @@ use crate::feature::entity::FeatureEntityTable;
 use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
 use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
-    SurfaceKind, SurfaceParameterRecord, SurfaceRow,
+    SurfaceKind, SurfaceParameterRecord,
 };
 use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale, unit_length};
 use cadmpeg_core::decode::DecodeContext;
@@ -129,7 +129,7 @@ impl FeatureSectionTransform {
 
 pub(crate) struct PlacementSources<'a> {
     pub(crate) datums: &'a [DatumPlaneRecord],
-    pub(crate) surface_rows: &'a [SurfaceRow],
+    pub(crate) surface_rows: &'a crate::surface::SurfaceRows,
     pub(crate) model_planes: &'a [PlaneLocalSystem],
     pub(crate) outline_planes: &'a [OutlinePlane],
     pub(crate) plane_envelopes: &'a [PlaneEnvelopeRecord],

@@ -250,7 +250,7 @@ pub(in super::super) fn placed_sketch_curve_ref(
 }
 
 fn unique_feature_surface_row(
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     surface_id: u32,
     feature_id: u32,
     expected_kind: crate::surface::SurfaceKind,

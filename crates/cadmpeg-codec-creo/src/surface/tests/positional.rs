@@ -348,8 +348,20 @@ fn positional_surface_parameter_lookup_rejects_repeated_identity() {
     let [record] = records.as_slice() else {
         panic!("expected one positional parameter record");
     };
-    assert_eq!(unique_surface_parameter(&records, 7), Some(record));
-    assert!(unique_surface_parameter(&[record.clone(), record.clone()], 7).is_none());
+    assert_eq!(
+        unique_surface_parameter(
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(records.to_vec()),
+            7
+        ),
+        Some(record)
+    );
+    assert!(unique_surface_parameter(
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(
+            [record.clone(), record.clone()].to_vec()
+        ),
+        7
+    )
+    .is_none());
 }
 
 #[test]

@@ -162,7 +162,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             10,
@@ -174,7 +174,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -187,7 +187,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             10,
@@ -199,7 +199,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -212,7 +212,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -277,7 +277,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -290,7 +290,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_family_surface_bindings_for_feature(
             ctx,
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             17,
             std::slice::from_ref(&table),
             &order,
@@ -318,7 +318,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             8,
             &[crate::surface::SurfaceKind::Cylinder],
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ))
         .expect("admitted test lookup")
     );
@@ -338,7 +338,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
             ],
             std::slice::from_ref(&table),
-            &extrusion_rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
         ))
         .expect("admitted test lookup")
     );
@@ -350,7 +350,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             9,
             &[crate::surface::SurfaceKind::Spline],
             std::slice::from_ref(&table),
-            &extrusion_rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
         ))
         .expect("admitted test lookup")
     );
@@ -365,7 +365,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
             ],
             std::slice::from_ref(&table),
-            &extrusion_rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
         ))
         .expect("admitted test lookup")
     );
@@ -377,7 +377,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             10,
             &[crate::surface::SurfaceKind::Cylinder],
             &[table],
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ))
         .expect("admitted test lookup")
     );
@@ -441,7 +441,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service stepped form"),
         Some(HoleForm::Counterbore)
@@ -451,7 +451,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service stepped ambiguity"),
         None
@@ -463,7 +463,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service stepped form"),
         None
@@ -536,7 +536,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service split-patch form"),
         Some(HoleForm::Counterbore)
@@ -546,7 +546,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service split-patch ambiguity"),
         None
@@ -561,7 +561,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&missing_plane_companion),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service missing companion"),
         None
@@ -573,7 +573,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service nonplanar form"),
         None
@@ -588,7 +588,12 @@ fn assert_split_patch_collection_refusal(operation: &'static str) {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        stepped_hole_form(&ctx, 9, std::slice::from_ref(&table), &rows)
+        stepped_hole_form(
+            &ctx,
+            9,
+            std::slice::from_ref(&table),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     };
     assert_eq!(
         run(DecodePolicy::service()).expect("service split-patch form"),
@@ -656,8 +661,13 @@ fn assert_paired_hole_collection_refusal(operation: &'static str) {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        simple_drilled_hole_recipe(&ctx, 9, std::slice::from_ref(&table), &rows)
-            .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
+        simple_drilled_hole_recipe(
+            &ctx,
+            9,
+            std::slice::from_ref(&table),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+        .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
     };
     assert_eq!(
         run(DecodePolicy::service()).expect("service drilled recipe"),
@@ -711,7 +721,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service drilled recipe")
         .map(|recipe| recipe.dimension_family),
@@ -722,7 +732,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         )
         .map(|recipe| recipe.is_none()))
         .expect("service drilled ambiguity")
@@ -742,7 +752,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&extended),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service extended recipe")
         .map(|recipe| recipe.dimension_family),
@@ -760,7 +770,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&unknown_family),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service unknown family")
         .is_none()
@@ -775,7 +785,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service source-zero recipe")
         .is_some()
@@ -787,7 +797,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         ))
         .expect("service duplicate source-zero recipe")
         .is_none()
@@ -800,7 +810,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             &[table],
-            &rows
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
         )
         .map(|recipe| recipe.is_none()))
         .expect("service missing cone recipe")
@@ -1689,7 +1699,12 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     };
 
     assert_eq!(
-        counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
+        counterbore_support_axis_placement(
+            9,
+            &table,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            std::slice::from_ref(&frame)
+        ),
         Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0))
                 .expect("finite point fixture"),
@@ -1697,22 +1712,29 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
                 .expect("valid direction fixture"),
         })
     );
-    assert!(
-        counterbore_support_axis_placement(10, &table, &rows, std::slice::from_ref(&frame),)
-            .is_none()
-    );
+    assert!(counterbore_support_axis_placement(
+        10,
+        &table,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        std::slice::from_ref(&frame),
+    )
+    .is_none());
     let mut incomplete = frame.clone();
     incomplete.slots[6] = None;
     assert!(counterbore_support_axis_placement(
         9,
         &table,
-        &rows,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         std::slice::from_ref(&incomplete),
     )
     .is_none());
-    assert!(
-        counterbore_support_axis_placement(9, &table, &rows, &[frame.clone(), frame]).is_none()
-    );
+    assert!(counterbore_support_axis_placement(
+        9,
+        &table,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        &[frame.clone(), frame]
+    )
+    .is_none());
 }
 
 #[test]
@@ -1880,7 +1902,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ))
         .expect("service pair admitted"),
         vec![(12, 13, 47)]
@@ -1890,7 +1912,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::new(),
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ))
         .expect("service empty pair admitted")
         .is_empty()
@@ -1901,7 +1923,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             &BTreeSet::from([12]),
         ))
         .expect("service rowless orientation admitted"),
@@ -1912,7 +1934,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             &BTreeSet::new(),
         ))
         .expect("service absent orientation admitted")
@@ -1925,7 +1947,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             &[table],
-            &materialized_rowless,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(materialized_rowless.to_vec()),
         ))
         .expect("service materialized row admitted")
         .is_empty()

@@ -2141,7 +2141,7 @@ fn plane_candidates(
             return true;
         }
         match ctx.admit_iter(
-            &scan.surfaces.rows,
+            &*scan.surfaces.rows,
             "creo plane candidate surface identity count",
         ) {
             Ok(rows) => rows.filter(|row| row.id == *id).take(2).count() < 2,

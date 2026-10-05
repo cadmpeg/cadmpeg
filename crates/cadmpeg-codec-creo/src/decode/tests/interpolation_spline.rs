@@ -63,8 +63,15 @@ fn thicken_plane_offset_with_service(
     planes: &BTreeMap<u32, PlaneEquation>,
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<(f64, ThickenSide)> {
-    crate::decode::with_test_decode_ctx(|ctx| thicken_plane_offset(ctx, transitions, planes, rows))
-        .expect("service profile admits thicken plane offsets")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        thicken_plane_offset(
+            ctx,
+            transitions,
+            planes,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+    })
+    .expect("service profile admits thicken plane offsets")
 }
 
 fn feature_surface_transitions_with_service(
@@ -73,7 +80,12 @@ fn feature_surface_transitions_with_service(
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<Vec<(u32, u32)>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        feature_surface_transitions(ctx, feature_id, tables, rows)
+        feature_surface_transitions(
+            ctx,
+            feature_id,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile admits surface transitions")
 }
@@ -84,7 +96,12 @@ fn surface_transition_dependencies_with_service(
     rows: &[crate::surface::SurfaceRow],
 ) -> Vec<u32> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        surface_transition_dependencies(ctx, feature_id, tables, rows)
+        surface_transition_dependencies(
+            ctx,
+            feature_id,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile admits transition dependencies")
 }

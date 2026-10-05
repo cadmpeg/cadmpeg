@@ -186,7 +186,7 @@ pub(in super::super) fn transfer_positional_tori(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx.admit_iter(
-        &scan.surfaces.rows,
+        &*scan.surfaces.rows,
         "creo transfer positional tori rows traversal",
     )? {
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
@@ -217,7 +217,7 @@ pub(in super::super) fn transfer_positional_tori(
     }
     let mut transferred = 0;
     for record in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo transfer positional tori parameters traversal",
     )? {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -345,7 +345,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     }
     let mut transferred = 0;
     for record in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo transfer positional line extrusion planes parameters traversal",
     )? {
         if replay_bound_surfaces.contains(&record.surface_id) {

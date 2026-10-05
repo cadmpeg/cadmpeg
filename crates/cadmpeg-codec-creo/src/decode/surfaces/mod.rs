@@ -61,11 +61,14 @@ fn native_surface_namespace(
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
     let visible_present = ctx
-        .admit_iter(&scan.surfaces.rows, "creo visible surface namespace search")?
+        .admit_iter(
+            &*scan.surfaces.rows,
+            "creo visible surface namespace search",
+        )?
         .any(|row| row.id == surface_id);
     let nonvisible_present = ctx
         .admit_iter(
-            &scan.surfaces.nonvisible_rows,
+            &*scan.surfaces.nonvisible_rows,
             "creo nonvisible surface namespace search",
         )?
         .any(|row| row.id == surface_id);
@@ -129,14 +132,16 @@ pub(super) fn unique_native_surface_row<'a>(
     scan: &'a ContainerScan<'_>,
     surface_id: u32,
 ) -> Option<&'a crate::surface::SurfaceRow> {
-    let mut rows = scan
-        .surfaces
-        .rows
-        .iter()
-        .chain(&scan.surfaces.nonvisible_rows)
-        .filter(|row| row.id == surface_id);
-    let row = rows.next()?;
-    rows.next().is_none().then_some(row)
+    let visible = &scan.surfaces.rows;
+    let nonvisible = &scan.surfaces.nonvisible_rows;
+    match (
+        visible.contains_id(surface_id),
+        nonvisible.contains_id(surface_id),
+    ) {
+        (true, false) => visible.unique(surface_id),
+        (false, true) => nonvisible.unique(surface_id),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

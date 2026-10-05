@@ -99,7 +99,13 @@ fn fc05_caps_service(
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    fc05_cylinder_cap_pairs(&ctx, circles, topology, surfaces).expect("service cap pairs")
+    fc05_cylinder_cap_pairs(
+        &ctx,
+        circles,
+        topology,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(surfaces.to_vec()),
+    )
+    .expect("service cap pairs")
 }
 
 fn pcurve_endpoints_service(
@@ -227,11 +233,14 @@ fn fc05_caps_with_collection_limit(
         &ctx,
         &[first, second],
         &[topology(20, 11, 100), topology(21, 12, 200)],
-        &[
-            surface(10, crate::surface::SurfaceKind::Cylinder),
-            surface(11, crate::surface::SurfaceKind::Plane),
-            surface(12, crate::surface::SurfaceKind::Plane),
-        ],
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(
+            [
+                surface(10, crate::surface::SurfaceKind::Cylinder),
+                surface(11, crate::surface::SurfaceKind::Plane),
+                surface(12, crate::surface::SurfaceKind::Plane),
+            ]
+            .to_vec(),
+        ),
     )
 }
 

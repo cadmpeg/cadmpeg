@@ -490,9 +490,9 @@ pub(in crate::decode) fn placed_carriers(
     let mut row_ids = BTreeSet::new();
     let mut row_counts = BTreeMap::<u32, usize>::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo placed carrier visible rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo placed carrier visible rows")?
         .chain(ctx.admit_iter(
-            &scan.surfaces.nonvisible_rows,
+            &*scan.surfaces.nonvisible_rows,
             "creo placed carrier nonvisible rows",
         )?)
     {
@@ -512,7 +512,7 @@ pub(in crate::decode) fn placed_carriers(
         ),
     ] {
         for row in ctx
-            .admit_iter(namespace_rows, "creo placed carrier namespace rows")?
+            .admit_iter(&**namespace_rows, "creo placed carrier namespace rows")?
             .filter(|row| row_counts.get(&row.id) == Some(&1))
         {
             if let Some(carrier) =
@@ -649,7 +649,7 @@ fn positional_cylinder_carrier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
-    parameters: &[crate::surface::SurfaceParameterRecord],
+    parameters: &crate::surface::SurfaceParameters,
     ir: &CadIr,
     source_carriers: &SourceUnitCarriers,
 ) -> Result<Option<CarrierEquation>, cadmpeg_core::CodecError> {
@@ -1135,7 +1135,7 @@ pub(in crate::decode) fn rowless_round_face_orientations(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     available_surfaces: &BTreeSet<u32>,
 ) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
     let mut orientations = BTreeMap::new();
@@ -1168,9 +1168,9 @@ pub(in crate::decode) fn native_face_orientations(
 ) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
     let mut source_ids = BTreeSet::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo native face visible rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo native face visible rows")?
         .chain(ctx.admit_iter(
-            &scan.surfaces.nonvisible_rows,
+            &*scan.surfaces.nonvisible_rows,
             "creo native face nonvisible rows",
         )?)
     {

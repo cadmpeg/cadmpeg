@@ -336,7 +336,8 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    scan.surfaces.rows = vec![row(11, 3), row(201, 17)];
+    scan.surfaces.rows =
+        crate::surface::unique_rows::UniqueIdRows::from_rows(vec![row(11, 3), row(201, 17)]);
     scan
 }
 

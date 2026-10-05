@@ -73,12 +73,23 @@ fn dependency_collection_error(limit: u64, operation: &'static str, route: &str)
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = match route {
-        "parent" => native_feature_dependency_ids(&ctx, &[parent], &[], &[], &[], &[], (17, &[]))
-            .map(|_| ()),
-        "owned" | "output" => {
-            feature_output_surface_dependencies(&ctx, &[owned, consumer], &[surface], 17)
-                .map(|_| ())
-        }
+        "parent" => native_feature_dependency_ids(
+            &ctx,
+            &[parent],
+            &[],
+            &[],
+            &[],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
+            (17, &[]),
+        )
+        .map(|_| ()),
+        "owned" | "output" => feature_output_surface_dependencies(
+            &ctx,
+            &[owned, consumer],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows([surface].to_vec()),
+            17,
+        )
+        .map(|_| ()),
         "entity" => feature_entity_dependencies(&ctx, &[producer, consumer], 17).map(|_| ()),
         "merge" => {
             surface_merge_entity_dependencies(&ctx, &[], &[replay], &[producer], 17).map(|_| ())

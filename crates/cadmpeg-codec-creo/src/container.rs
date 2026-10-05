@@ -495,20 +495,20 @@ pub(crate) struct ReferenceScan {
 pub(crate) struct SurfaceScan {
     /// Typed fixed-prefix surface rows from the selected material model
     /// geometry namespace. Parameter bodies are decoded separately.
-    pub(crate) rows: Vec<SurfaceRow>,
+    pub(crate) rows: surface::SurfaceRows,
     /// Typed fixed-prefix rows from the separate invisible and construction
     /// surface namespace.
-    pub(crate) nonvisible_rows: Vec<SurfaceRow>,
+    pub(crate) nonvisible_rows: surface::SurfaceRows,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
-    pub(crate) cross_section_rows: Vec<SurfaceRow>,
+    pub(crate) cross_section_rows: surface::SurfaceRows,
     /// Bounded scalar parameter bodies from positional surface rows.
-    pub(crate) parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) parameters: surface::SurfaceParameters,
     /// Bounded scalar parameter bodies from the separate invisible and
     /// construction surface namespace.
-    pub(crate) nonvisible_parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) nonvisible_parameters: surface::SurfaceParameters,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
-    pub(crate) cross_section_parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) cross_section_parameters: surface::SurfaceParameters,
     /// Complete positional contour-chain entries from the selected material
     /// model geometry namespace.
     pub(crate) contours: Vec<SurfaceContourRecord>,
@@ -3421,6 +3421,29 @@ pub(crate) fn scan_bytes<'a>(
     let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
     let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
     let cross_section_surface_parameters = cross_section_surface_parameters(ctx, &sections)?;
+    let nonvisible_surface_rows = surface::SurfaceRows::new(
+        ctx,
+        nonvisible_surface_rows,
+        "creo nonvisible surface row index",
+    )?;
+    let surface_rows = surface::SurfaceRows::new(ctx, surface_rows, "creo surface row index")?;
+    let cross_section_surface_rows = surface::SurfaceRows::new(
+        ctx,
+        cross_section_surface_rows,
+        "creo cross-section surface row index",
+    )?;
+    let nonvisible_surface_parameters = surface::SurfaceParameters::new(
+        ctx,
+        nonvisible_surface_parameters,
+        "creo nonvisible surface parameter index",
+    )?;
+    let surface_parameters =
+        surface::SurfaceParameters::new(ctx, surface_parameters, "creo surface parameter index")?;
+    let cross_section_surface_parameters = surface::SurfaceParameters::new(
+        ctx,
+        cross_section_surface_parameters,
+        "creo cross-section surface parameter index",
+    )?;
     let nonvisible_surface_contours = surface_contours(ctx, &nonvisible_geometry_sections)?;
     let surface_contours = surface_contours(ctx, &model_geometry_sections)?;
     let cross_section_surface_contours = cross_section_surface_contours(ctx, &sections)?;

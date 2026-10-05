@@ -79,7 +79,7 @@ pub(in super::super) fn native_feature_dependency_ids(
     operations: &[crate::feature::operations::FeatureOperation],
     entity_tables: &[crate::feature::entity::FeatureEntityTable],
     surface_merge_replay_affected_ids: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     feature: (u32, &[u32]),
 ) -> Result<Vec<u32>, CodecError> {
     let (feature_id, prototype_dependencies) = feature;
@@ -145,7 +145,7 @@ pub(in super::super) fn native_feature_dependency_ids(
 pub(in super::super) fn feature_output_surface_dependencies(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     feature_id: u32,
 ) -> Result<Vec<u32>, CodecError> {
     let mut owned_storage = ctx.reserve_scoped(0, "Creo owned dependency entities")?;

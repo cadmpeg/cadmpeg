@@ -481,7 +481,9 @@ fn plane_branch_propagation_round_refuses_work_limit() {
 
 fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = stored_frame_branch_scan(false);
-    scan.surfaces.rows[1].kind = crate::surface::SurfaceKind::Cylinder;
+    scan.surfaces
+        .rows
+        .edit(|rows| rows[1].kind = crate::surface::SurfaceKind::Cylinder);
     let frame = crate::surface::PositionalCylinderFrame::new(
         [0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],

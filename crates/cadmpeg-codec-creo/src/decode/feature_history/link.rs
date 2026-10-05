@@ -146,7 +146,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     table: &crate::feature::entity::FeatureEntityTable,
     entry: &crate::feature::entity::FeatureEntityTableEntry,
     expected_kinds: &[crate::surface::SurfaceKind],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
     if entry.source_entity_id().is_none() {
         return Ok(false);
@@ -199,7 +199,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
     source_entity_id: u32,
     expected_kinds: &[crate::surface::SurfaceKind],
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
     if !segment_table_complete {
         return Ok(false);
@@ -349,7 +349,7 @@ pub(in super::super) fn section_generated_profile_surface_kinds(
 
 pub(in super::super) fn ordered_analytic_surface_id_for_feature(
     ctx: &DecodeContext<'_>,
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
     order: &crate::feature::definitions::FeatureOrderTable,
@@ -364,7 +364,7 @@ pub(in super::super) fn ordered_analytic_surface_id_for_feature(
 
 pub(in super::super) fn analytic_surface_id_for_feature(
     ctx: &DecodeContext<'_>,
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
     external_id: u32,
@@ -385,7 +385,7 @@ pub(in super::super) fn analytic_surface_id_for_feature(
 
 pub(in super::super) fn insert_ordered_family_surface_binding(
     ctx: &DecodeContext<'_>,
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     order: &crate::feature::definitions::FeatureOrderTable,
@@ -423,7 +423,7 @@ pub(in super::super) fn insert_ordered_family_surface_binding(
 
 pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     ctx: &DecodeContext<'_>,
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     order: &crate::feature::definitions::FeatureOrderTable,
