@@ -1299,21 +1299,28 @@ fn layer_fixture(
     (data, tables)
 }
 
+/// Whether a ladder fixture's layer records carry the writer-version stamp.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LayerStamp {
+    WriterVersion,
+    Unstamped,
+}
+
 /// Which singleton-bearing tables a metadata ladder fixture carries, and
-/// whether its layer records carry the writer-version stamp.
+/// how its layer records are stamped.
 #[derive(Clone, Copy)]
 struct MetadataTables {
     properties: bool,
     settings: bool,
     layers: bool,
-    stamped: bool,
+    stamp: LayerStamp,
 }
 
 const ALL_METADATA_TABLES: MetadataTables = MetadataTables {
     properties: true,
     settings: true,
     layers: true,
-    stamped: true,
+    stamp: LayerStamp::WriterVersion,
 };
 
 fn metadata_limit_operations(
@@ -1340,12 +1347,12 @@ fn metadata_limit_operations_for(
 ) -> Vec<&'static str> {
     let (data, mut layer_tables) = layer_fixture(
         extension,
-        carried.stamped.then_some(200_912_010),
+        (carried.stamp == LayerStamp::WriterVersion).then_some(200_912_010),
         1,
         source_id,
         userdata,
     );
-    if carried.stamped {
+    if carried.stamp == LayerStamp::WriterVersion {
         layer_tables.remove(0);
     }
     let mut tables = Vec::new();
@@ -1443,7 +1450,7 @@ fn metadata_materialized_operations() -> &'static [&'static str] {
             properties: false,
             settings: false,
             layers: true,
-            stamped: false,
+            stamp: LayerStamp::Unstamped,
         };
         [
             (ALL_METADATA_TABLES, [0x44; 16]),
@@ -1452,7 +1459,7 @@ fn metadata_materialized_operations() -> &'static [&'static str] {
                     properties: false,
                     settings: true,
                     layers: false,
-                    stamped: true,
+                    stamp: LayerStamp::WriterVersion,
                 },
                 [0x44; 16],
             ),

@@ -75,13 +75,6 @@ pub(super) enum LinearGrowth {
     PrechargedBytes,
 }
 
-/// A hash table growth admitted before its allocation.
-struct HashGrowth<'a> {
-    reservation: ScopedReservation<'a>,
-    bound: u64,
-    counted: u64,
-}
-
 impl DecodeContext<'_> {
     /// Charges the next source step before it can yield or run an adapter.
     /// Callers supply a fixed-step source or adapters over admitted bases.
@@ -1120,7 +1113,7 @@ impl DecodeContext<'_> {
     /// bounds the old table's storage, at least two units per bucket, which
     /// pays for this measuring walk and the rehash's own walk. When it rehashes
     /// in place, both walks are paid by the charged removals and insertions
-    /// since the last rehash, as `admit_hash_growth` states.
+    /// since the last rehash, as `charge_hash_growth` states.
     fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
         len: usize,
@@ -1188,18 +1181,18 @@ impl DecodeContext<'_> {
     // when at least half the real capacity has been removed or filled since
     // the last rehash, so the charged removals and insertions since then pay
     // for its walk.
-    fn admit_hash_growth<T>(
+    fn charge_hash_growth<T>(
         &self,
         len: usize,
         capacity: usize,
         count: usize,
         operation: &'static str,
-    ) -> Result<Option<HashGrowth<'_>>, ResourceLimit> {
+    ) -> Result<(u64, ScopedReservation<'_>), ResourceLimit> {
         let required = len
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required <= capacity {
-            return Ok(None);
+            return Ok((0, self.reserve_scoped_limit(0, operation)?));
         }
         let minimum = match std::mem::size_of::<T>() {
             0..=1 => 14,
@@ -1212,24 +1205,23 @@ impl DecodeContext<'_> {
             .max(minimum);
         let bound = u64_from_index(self.hash_storage_bytes::<T>(largest, operation)?);
         self.charge_work_limit(bound, operation)?;
-        Ok(Some(HashGrowth {
-            reservation: self.reserve_scoped_limit(bound, operation)?,
-            bound,
-            counted: u64_from_index(self.hash_storage_bytes::<T>(capacity, operation)?),
-        }))
+        Ok((bound, self.reserve_scoped_limit(bound, operation)?))
     }
 
-    /// Releases a finished growth's scoped bound and charges its retained
-    /// storage from the table's real capacity.
-    fn settle_hash_growth<T>(
+    /// Retains a grown table's storage from its real capacity, less the
+    /// storage of the capacity counted before it grew.
+    fn retain_hash_growth<T>(
         &self,
-        growth: HashGrowth<'_>,
+        counted: usize,
         capacity: usize,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        let grown = u64_from_index(self.hash_storage_bytes::<T>(capacity, operation)?);
-        drop(growth.reservation);
-        self.charge_retained_limit(grown.saturating_sub(growth.counted), operation)
+        let grown = self.hash_storage_bytes::<T>(capacity, operation)?;
+        let before = self.hash_storage_bytes::<T>(counted, operation)?;
+        if grown > before {
+            self.charge_retained_limit(u64_from_index(grown - before), operation)?;
+        }
+        Ok(())
     }
 
     /// Reserves hash set entries after charging their slots.
@@ -1253,18 +1245,17 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        let Some(growth) =
-            self.admit_hash_growth::<T>(values.len(), values.capacity(), count, operation)?
-        else {
-            return Ok(());
-        };
-        debug_assert!(required > values.capacity());
-        self.charge_rehash(values.len(), values.iter(), operation)?;
-        values.try_reserve(count).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(growth.bound, operation)
-        })?;
-        Ok(self.settle_hash_growth::<T>(growth, values.capacity(), operation)?)
+        let counted = values.capacity();
+        let (bound, growth) =
+            self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
+        if required > counted {
+            self.charge_rehash(values.len(), values.iter(), operation)?;
+        }
+        values
+            .try_reserve(count)
+            .map_err(|_| self.budget.retained_allocation_failed(bound, operation))?;
+        drop(growth);
+        Ok(self.retain_hash_growth::<T>(counted, values.capacity(), operation)?)
     }
 
     /// Reserves hash map entries after charging their slots.
@@ -1288,18 +1279,17 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        let Some(growth) =
-            self.admit_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?
-        else {
-            return Ok(());
-        };
-        debug_assert!(required > values.capacity());
-        self.charge_rehash(values.len(), values.keys(), operation)?;
-        values.try_reserve(count).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(growth.bound, operation)
-        })?;
-        Ok(self.settle_hash_growth::<(K, V)>(growth, values.capacity(), operation)?)
+        let counted = values.capacity();
+        let (bound, growth) =
+            self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
+        if required > counted {
+            self.charge_rehash(values.len(), values.keys(), operation)?;
+        }
+        values
+            .try_reserve(count)
+            .map_err(|_| self.budget.retained_allocation_failed(bound, operation))?;
+        drop(growth);
+        Ok(self.retain_hash_growth::<(K, V)>(counted, values.capacity(), operation)?)
     }
 
     // A B-tree node stores at most 11 key/value lanes, 12 child pointers,
@@ -1547,17 +1537,15 @@ impl DecodeContext<'_> {
         let mut reservation = self.reserve_scoped_limit(0, operation)?;
         let mut values = HashSet::new();
         reservation.with_storage_limit(|| {
-            let growth =
-                self.admit_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
+            let (bound, growth) =
+                self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
             self.charge_collection_items_limit(u64_from_index(count), operation)?;
-            let Some(growth) = growth else {
-                return Ok(());
-            };
             values.try_reserve(count).map_err(|_| {
                 self.budget
-                    .retained_allocation_failed_limit(growth.bound, operation)
+                    .retained_allocation_failed_limit(bound, operation)
             })?;
-            self.settle_hash_growth::<T>(growth, values.capacity(), operation)
+            drop(growth);
+            self.retain_hash_growth::<T>(0, values.capacity(), operation)
         })?;
         Ok((values, reservation))
     }
