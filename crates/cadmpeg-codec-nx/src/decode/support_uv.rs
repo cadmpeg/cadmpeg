@@ -13,6 +13,7 @@ use super::blend::{
     BlendContactSeedCache, BlendParameterGrid, BlendParameterGridCache, BoundaryInverseTarget,
     CircularBlendDefinition,
 };
+use super::emit::procedural_curve_owners;
 use super::geometry_work::{same_text, GeometryWorkBudget};
 use super::offset::{
     coarse_model_surface_parameters,
@@ -26,7 +27,7 @@ use super::pcurves::{
     endpoint_witness_for_candidate, linear_nurbs_curve_endpoint_witness_with_index,
     pcurve_edge_endpoint_contract_with_index, pcurve_matches_edge_endpoint_contract,
     pcurve_surface_endpoints_with_index_and_budget, procedural_curve_owner,
-    procedural_curve_owners, procedural_curve_position, procedural_curve_positions,
+    procedural_curve_position, procedural_curve_positions,
     surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
@@ -549,7 +550,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
             .map(|procedural| (procedural.id.as_str(), procedural)),
         "nx validated procedural index",
     )?;
-    let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+    let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
     for (procedural_id, samples, _, _) in ctx.admit_iter(pending, "nx validated lane traversal")? {
         let Some(procedural) = ctx
@@ -1089,7 +1090,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     let mut invalid_storage = ctx.reserve_scoped(0, "nx inconsistent support UV lanes")?;
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
@@ -1336,7 +1337,7 @@ fn complete_support_uv_wave(
         let mut replacement_storage = ctx.reserve_scoped(0, "nx support UV replacements")?;
         {
             let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-            let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+            let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
             let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
             let (cache_backed_constructions, _cache_backed_storage) = ctx
                 .collect_scoped_string_set(
@@ -2100,7 +2101,7 @@ fn complete_coupled_support_uv(
     let mut replacement_storage = ctx.reserve_scoped(0, "nx coupled support UV replacements")?;
     {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
         let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
         for (procedural_id, samples, fit_tolerance, serialized) in
@@ -2908,7 +2909,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 )
             })?;
         }
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, ir)?;
+        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
         let mut candidates =
             BTreeMap::<(&CurveId, &SurfaceId), Vec<(&PcurveGeometry, [f64; 2], Option<f64>)>>::new(
             );
