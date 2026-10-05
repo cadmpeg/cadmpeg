@@ -74,7 +74,10 @@ impl ObjectSection {
         if entities.len() > references.len() {
             return Ok(None);
         }
-        for (reference, entity) in ctx.admit_iter(&references, "scan SWIFT object references")?.zip(ctx.admit_iter(&entities, "scan SWIFT object entities")?) {
+        for (reference, entity) in ctx
+            .admit_iter(&references, "scan SWIFT object references")?
+            .zip(ctx.admit_iter(&entities, "scan SWIFT object entities")?)
+        {
             let work = reference
                 .class
                 .len()
@@ -274,20 +277,43 @@ impl TopologyIdentityIndex {
     }
 }
 
-fn face_id_for_attribute<'a>(ctx: &DecodeContext<'_>, faces: &'a [Face], attr: u16) -> Result<Option<&'a FaceId>, CodecError> {
+fn face_id_for_attribute<'a>(
+    ctx: &DecodeContext<'_>,
+    faces: &'a [Face],
+    attr: u16,
+) -> Result<Option<&'a FaceId>, CodecError> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    Ok(unique_id_for_attribute(ctx.admit_iter(faces, "scan SWIFT face attribute identities")?.map(|face| &face.id), &prefix, FaceId::as_str))
+    Ok(unique_id_for_attribute(
+        ctx.admit_iter(faces, "scan SWIFT face attribute identities")?
+            .map(|face| &face.id),
+        &prefix,
+        FaceId::as_str,
+    ))
 }
 
-fn edge_id_for_attribute<'a>(ctx: &DecodeContext<'_>, edges: &'a [Edge], attr: u16) -> Result<Option<&'a EdgeId>, CodecError> {
+fn edge_id_for_attribute<'a>(
+    ctx: &DecodeContext<'_>,
+    edges: &'a [Edge],
+    attr: u16,
+) -> Result<Option<&'a EdgeId>, CodecError> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    Ok(unique_id_for_attribute(ctx.admit_iter(edges, "scan SWIFT edge attribute identities")?.map(|edge| &edge.id), &prefix, EdgeId::as_str))
+    Ok(unique_id_for_attribute(
+        ctx.admit_iter(edges, "scan SWIFT edge attribute identities")?
+            .map(|edge| &edge.id),
+        &prefix,
+        EdgeId::as_str,
+    ))
 }
 
-fn vertex_id_for_attribute<'a>(ctx: &DecodeContext<'_>, vertices: &'a [Vertex], attr: u16) -> Result<Option<&'a VertexId>, CodecError> {
+fn vertex_id_for_attribute<'a>(
+    ctx: &DecodeContext<'_>,
+    vertices: &'a [Vertex],
+    attr: u16,
+) -> Result<Option<&'a VertexId>, CodecError> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
     Ok(unique_id_for_attribute(
-        ctx.admit_iter(vertices, "scan SWIFT vertex attribute identities")?.map(|vertex| &vertex.id),
+        ctx.admit_iter(vertices, "scan SWIFT vertex attribute identities")?
+            .map(|vertex| &vertex.id),
         &prefix,
         VertexId::as_str,
     ))
@@ -382,20 +408,27 @@ pub(crate) fn annotations(
         pattern_hole_nominals,
     )?
     .annotations;
-    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+    for (reference, entity) in ctx
+        .admit_iter(
+            &root.annotations.references,
+            "scan SWIFT annotation references",
+        )?
         .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
         let Some(prefix) = pmi_id_charged(ctx, &reference.id)?.map(PmiId::into_string) else {
             continue;
         };
-        for annotation in ctx.admit_iter(&projected, "scan SLDPRT annotations values")?.filter(|annotation| {
-            annotation.id.as_str() == prefix
-                || annotation
-                    .id
-                    .as_str()
-                    .strip_prefix(&prefix)
-                    .is_some_and(|suffix| suffix.starts_with(':'))
-        }) {
+        for annotation in ctx
+            .admit_iter(&projected, "scan SLDPRT annotations values")?
+            .filter(|annotation| {
+                annotation.id.as_str() == prefix
+                    || annotation
+                        .id
+                        .as_str()
+                        .strip_prefix(&prefix)
+                        .is_some_and(|suffix| suffix.starts_with(':'))
+            })
+        {
             crate::annotations::note(
                 ctx,
                 annotations,
@@ -430,7 +463,11 @@ pub(crate) fn pattern_hole_nominal_context(
         let Some(suffix) = name.strip_prefix("LPattern") else {
             continue;
         };
-        if suffix.is_empty() || !ctx.admit_iter(suffix, "scan SLDPRT pattern name digits")?.all(|character| character.is_ascii_digit()) {
+        if suffix.is_empty()
+            || !ctx
+                .admit_iter(suffix, "scan SLDPRT pattern name digits")?
+                .all(|character| character.is_ascii_digit())
+        {
             continue;
         }
         if !pattern
@@ -471,7 +508,11 @@ pub(crate) fn pattern_hole_nominal_context(
                 u64_from_index(candidate.dependencies.len()),
                 "swift pattern hole dependencies",
             )?;
-            if !ctx.admit_iter(candidate.dependencies.as_slice(), "scan SLDPRT pattern_hole_nominal_context values")?
+            if !ctx
+                .admit_iter(
+                    candidate.dependencies.as_slice(),
+                    "scan SLDPRT pattern_hole_nominal_context values",
+                )?
                 .any(|dependency| dependency == seed)
                 || !candidate
                     .native_ref
@@ -500,7 +541,11 @@ pub(crate) fn pattern_hole_nominal_context(
             format_args!("Hole Pattern{suffix}"),
             "swift pattern semantic name",
         )?;
-        if let Some(value) = ctx.get_mut_btree_map(&mut (candidates), &semantic_name, "look up mutable SLDPRT ordered key")? {
+        if let Some(value) = ctx.get_mut_btree_map(
+            &mut (candidates),
+            &semantic_name,
+            "look up mutable SLDPRT ordered key",
+        )? {
             *value = None;
         } else {
             ctx.insert_btree_map(
@@ -561,13 +606,22 @@ pub(crate) fn unsupported_annotation_classes(
 }
 
 fn has_root_marker(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
-    Ok(scan.sections(ctx)?.try_fold(false, |found, section| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-        section
-            .name()
-            .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
-            && ctx.admit_iter(section.payload(), "scan SWIFT root class marker")?.windows(std::num::NonZeroUsize::new(ROOT_CLASS.len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
-                .any(|window| window == ROOT_CLASS.as_bytes())
-    } )) })?)
+    Ok(scan.sections(ctx)?.try_fold(false, |found, section| {
+        Ok::<_, cadmpeg_core::CodecError>(
+            found
+                || ({
+                    section
+                        .name()
+                        .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
+                        && ctx
+                            .admit_iter(section.payload(), "scan SWIFT root class marker")?
+                            .windows(std::num::NonZeroUsize::new(ROOT_CLASS.len()).ok_or_else(
+                                || cadmpeg_core::CodecError::malformed("zero scan window width"),
+                            )?)
+                            .any(|window| window == ROOT_CLASS.as_bytes())
+                }),
+        )
+    })?)
 }
 
 fn scan_root(
@@ -829,11 +883,17 @@ fn read_objects(
         let (Some(id), Some(class)) = (pstr(cursor), pstr(cursor)) else {
             return Ok(None);
         };
-        ctx.push_vec(&mut (references), Reference {
-            id: ctx.format_retained(format_args!("{id}"), "copy SWIFT object reference ID")?,
-            class: ctx
-                .format_retained(format_args!("{class}"), "copy SWIFT object reference class")?,
-        }, "collect SWIFT object references")?;
+        ctx.push_vec(
+            &mut (references),
+            Reference {
+                id: ctx.format_retained(format_args!("{id}"), "copy SWIFT object reference ID")?,
+                class: ctx.format_retained(
+                    format_args!("{class}"),
+                    "copy SWIFT object reference class",
+                )?,
+            },
+            "collect SWIFT object references",
+        )?;
     }
     let mut entities = Vec::new();
     loop {
@@ -881,7 +941,9 @@ fn read_related(
     };
     let mut descriptors_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut descriptors = Vec::new();
-    descriptors_storage.with_storage(|| ctx.reserve_capacity(&mut descriptors, count, "collect SWIFT related descriptors"))?;
+    descriptors_storage.with_storage(|| {
+        ctx.reserve_capacity(&mut descriptors, count, "collect SWIFT related descriptors")
+    })?;
     for _ in 0..count {
         ctx.charge_work(1, "parse SWIFT related descriptors")?;
         let (Some(name), Some(class)) = (pstr(cursor), pstr(cursor)) else {
@@ -891,7 +953,13 @@ fn read_related(
             ctx.format_retained(format_args!("{name}"), "copy SWIFT related name")?,
             ctx.format_retained(format_args!("{class}"), "copy SWIFT related class")?,
         );
-        descriptors_storage.with_storage(|| ctx.push_vec(&mut descriptors, descriptor, "collect SWIFT related descriptors"))?;
+        descriptors_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut descriptors,
+                descriptor,
+                "collect SWIFT related descriptors",
+            )
+        })?;
     }
     let mut related = Vec::new();
     for (name, class) in descriptors {
@@ -1096,7 +1164,11 @@ fn project_with_topology(
     }
     let feature_index = feature_index(ctx, root)?;
     let mut datum_ids = BTreeMap::new();
-    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+    for (reference, entity) in ctx
+        .admit_iter(
+            &root.annotations.references,
+            "scan SWIFT annotation references",
+        )?
         .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
         if !(short_class(&entity.class) == "GdtDatum"
@@ -1120,7 +1192,11 @@ fn project_with_topology(
     }
     let mut projected = Vec::new();
     let mut unsupported = BTreeMap::new();
-    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+    for (reference, entity) in ctx
+        .admit_iter(
+            &root.annotations.references,
+            "scan SWIFT annotation references",
+        )?
         .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
         if short_class(&entity.class) != "GdtDatum" {
@@ -1141,7 +1217,11 @@ fn project_with_topology(
         };
         record_projection(ctx, &mut unsupported, reference, entity, disposition)?;
     }
-    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+    for (reference, entity) in ctx
+        .admit_iter(
+            &root.annotations.references,
+            "scan SWIFT annotation references",
+        )?
         .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
         if short_class(&entity.class) == "GdtDatum" {
@@ -1182,10 +1262,12 @@ fn project_with_topology(
                 u64_from_index(projected.len()),
                 "match SWIFT datum-system references",
             )?;
-            let existing_system = ctx.admit_iter(&projected[..], "scan SLDPRT project_with_topology values")?.find(|annotation| {
-                matches!(&annotation.definition, PmiDefinition::DatumSystem { references }
+            let existing_system = ctx
+                .admit_iter(&projected[..], "scan SLDPRT project_with_topology values")?
+                .find(|annotation| {
+                    matches!(&annotation.definition, PmiDefinition::DatumSystem { references }
                     if *references == tolerance.references)
-            });
+                });
             let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
             } else if let Some(existing) = existing_system {
@@ -1491,15 +1573,16 @@ fn implicit_dimension_nominal(
         "GdtDistanceBetween" => {
             directional_distance(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
-        "GdtCounterBore" => {
-            counterbore_from_direct_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
-        }
+        "GdtCounterBore" => counterbore_from_direct_geometry(ctx, entity, feature_index)?
+            .map(ImplicitNominal::Exact),
         "GdtCounterSinkDiameter" => {
             countersink_diameter_from_direct_geometry(ctx, entity, feature_index)?
                 .map(ImplicitNominal::Exact)
         }
-        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(ctx, entity, feature_index)?
-            .map(ImplicitNominal::Exact),
+        "GdtCounterSinkAngle" => {
+            countersink_angle_from_direct_geometry(ctx, entity, feature_index)?
+                .map(ImplicitNominal::Exact)
+        }
         _ => None,
     };
     let Some(source) = source else {
@@ -1513,7 +1596,9 @@ fn implicit_dimension_nominal(
             .copied()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value <= 9)
-            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered)).transpose()?.flatten(),
+            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered))
+            .transpose()?
+            .flatten(),
         ImplicitNominal::RenderedOrExact {
             kind,
             geometry,
@@ -1524,7 +1609,9 @@ fn implicit_dimension_nominal(
             .copied()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value <= 9)
-            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered)).transpose()?.flatten()
+            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered))
+            .transpose()?
+            .flatten()
             .or(Some(FiniteReal::from(exact))),
     })
 }
@@ -1541,7 +1628,10 @@ fn diameter_from_applied_geometry(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let contributors = diameter_contributors(ctx, annotation, feature_index)?;
-    Ok(unique_diameter(ctx.admit_iter(&contributors, "scan SLDPRT applied hole diameters")?.copied()))
+    Ok(unique_diameter(
+        ctx.admit_iter(&contributors, "scan SLDPRT applied hole diameters")?
+            .copied(),
+    ))
 }
 
 fn directional_distance(
@@ -1603,8 +1693,22 @@ fn closed_slot_feature_size_distance(
         let [first_reference, second_reference] = annotation.features.references.as_slice() else {
             return Ok::<_, cadmpeg_core::CodecError>(None);
         };
-        let first = match ctx.get_btree_map(&(feature_index), first_reference.id.as_str(), "look up SLDPRT ordered key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let second = match ctx.get_btree_map(&(feature_index), second_reference.id.as_str(), "look up SLDPRT ordered key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+        let first = match ctx.get_btree_map(
+            &(feature_index),
+            first_reference.id.as_str(),
+            "look up SLDPRT ordered key",
+        )? {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
+        let second = match ctx.get_btree_map(
+            &(feature_index),
+            second_reference.id.as_str(),
+            "look up SLDPRT ordered key",
+        )? {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
         Ok::<_, cadmpeg_core::CodecError>(Some(
             match (short_class(&first.class), short_class(&second.class)) {
                 ("GdtCylinder", "GdtCompoundClosedSlot3D") => (
@@ -1622,7 +1726,8 @@ fn closed_slot_feature_size_distance(
                 _ => return Ok::<_, cadmpeg_core::CodecError>(None),
             },
         ))
-    })()? else {
+    })()?
+    else {
         return Ok(None);
     };
     if !feature_reaches(
@@ -1636,22 +1741,71 @@ fn closed_slot_feature_size_distance(
         return Ok(None);
     }
     (|| {
-        let slot_geometry = &match unique_related(slot, "NomClosedSlot") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-        let cylinder_geometry = &match unique_related(cylinder, "NomCylinder") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-        let length = match PositiveReal::new(match slot_geometry.doubles.get("Length").copied() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let width = match PositiveReal::new(match slot_geometry.doubles.get("Width").copied() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
-        let radius = match PositiveReal::new(match cylinder_geometry.doubles.get("R").copied() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+        let slot_geometry = &match unique_related(slot, "NomClosedSlot") {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }
+        .entity;
+        let cylinder_geometry = &match unique_related(cylinder, "NomCylinder") {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }
+        .entity;
+        let length = match PositiveReal::new(match slot_geometry.doubles.get("Length").copied() {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }) {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
+        let width = match PositiveReal::new(match slot_geometry.doubles.get("Width").copied() {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }) {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
+        let radius = match PositiveReal::new(match cylinder_geometry.doubles.get("R").copied() {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }) {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        };
         if length <= width || !diameters_equivalent(radius.get() * 2.0, width.get()) {
             return Ok::<_, cadmpeg_core::CodecError>(None);
         }
         let [slot_normal_i, slot_normal_j, slot_normal_k] =
-            match vector(ctx, slot_geometry, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-        let [longitude_i, longitude_j, longitude_k] =
-            match vector(ctx, slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-        let [slot_x, slot_y, slot_z] = match vector(ctx, slot_geometry, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-        let [axis_i, axis_j, axis_k] = match vector(ctx, cylinder_geometry, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+            match vector(ctx, slot_geometry, ["I", "J", "K"])? {
+                Some(value) => value,
+                None => return Ok::<_, cadmpeg_core::CodecError>(None),
+            }
+            .get();
+        let [longitude_i, longitude_j, longitude_k] = match vector(
+            ctx,
+            slot_geometry,
+            ["LongitudeI", "LongitudeJ", "LongitudeK"],
+        )? {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }
+        .get();
+        let [slot_x, slot_y, slot_z] = match vector(ctx, slot_geometry, ["X", "Y", "Z"])? {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }
+        .get();
+        let [axis_i, axis_j, axis_k] = match vector(ctx, cylinder_geometry, ["I", "J", "K"])? {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        }
+        .get();
         let [cylinder_x, cylinder_y, cylinder_z] =
-            match vector(ctx, cylinder_geometry, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+            match vector(ctx, cylinder_geometry, ["X", "Y", "Z"])? {
+                Some(value) => value,
+                None => return Ok::<_, cadmpeg_core::CodecError>(None),
+            }
+            .get();
         let [direction_i, direction_j, direction_k] = direction;
         if !approximately_equal(slot_normal_i.hypot(slot_normal_j).hypot(slot_normal_k), 1.0)
             || !approximately_equal(longitude_i.hypot(longitude_j).hypot(longitude_k), 1.0)
@@ -1681,9 +1835,11 @@ fn closed_slot_feature_size_distance(
         let longitudinal = displacement_x * longitude_i
             + displacement_y * longitude_j
             + displacement_z * longitude_k;
-        Ok::<_, cadmpeg_core::CodecError>((approximately_equal(displacement_norm, longitudinal.abs())
-            && approximately_equal(longitudinal.abs(), (length.get() - width.get()) / 2.0))
-        .then_some(length))
+        Ok::<_, cadmpeg_core::CodecError>(
+            (approximately_equal(displacement_norm, longitudinal.abs())
+                && approximately_equal(longitudinal.abs(), (length.get() - width.get()) / 2.0))
+            .then_some(length),
+        )
     })()
 }
 
@@ -1696,7 +1852,7 @@ fn feature_reaches(
     depth: usize,
 ) -> Result<bool, CodecError> {
     ctx.charge_work(1, "traverse SWIFT feature reachability")?;
-    if visited.contains(id) {
+    if ctx.contains_btree_set(visited, id, "check SWIFT reachability path")? {
         return Ok(false);
     }
     admit_swift_depth(ctx, depth, "traverse SWIFT feature reachability")?;
@@ -1705,7 +1861,9 @@ fn feature_reaches(
         ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT reachability path")?;
     let result = (|| {
-        let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+        let Some(feature) =
+            ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+        else {
             return Ok(false);
         };
         let next_depth = depth.checked_add(1).ok_or_else(|| {
@@ -1728,26 +1886,36 @@ fn feature_reaches(
     result
 }
 
-fn identity_transform(ctx: &cadmpeg_core::decode::DecodeContext<'_>, transform: &Entity) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok::<_, cadmpeg_core::CodecError>([
-        ("R1C1", 1.0),
-        ("R1C2", 0.0),
-        ("R1C3", 0.0),
-        ("R2C1", 0.0),
-        ("R2C2", 1.0),
-        ("R2C3", 0.0),
-        ("R3C1", 0.0),
-        ("R3C2", 0.0),
-        ("R3C3", 1.0),
-        ("X", 0.0),
-        ("Y", 0.0),
-        ("Z", 0.0),
-    ]
-    .into_iter().try_fold(true, |found, (name, expected)| { Ok::<_, cadmpeg_core::CodecError>(found && ( {
-        ctx.get_btree_map(&(transform
-            .doubles), name, "look up SLDPRT ordered key")?
-            .is_some_and(|value| approximately_equal(*value, expected))
-    } )) })?)
+fn identity_transform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    transform: &Entity,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok::<_, cadmpeg_core::CodecError>(
+        [
+            ("R1C1", 1.0),
+            ("R1C2", 0.0),
+            ("R1C3", 0.0),
+            ("R2C1", 0.0),
+            ("R2C2", 1.0),
+            ("R2C3", 0.0),
+            ("R3C1", 0.0),
+            ("R3C2", 0.0),
+            ("R3C3", 1.0),
+            ("X", 0.0),
+            ("Y", 0.0),
+            ("Z", 0.0),
+        ]
+        .into_iter()
+        .try_fold(true, |found, (name, expected)| {
+            Ok::<_, cadmpeg_core::CodecError>(
+                found
+                    && ({
+                        ctx.get_btree_map(&(transform.doubles), name, "look up SLDPRT ordered key")?
+                            .is_some_and(|value| approximately_equal(*value, expected))
+                    }),
+            )
+        })?,
+    )
 }
 
 fn location_projection(
@@ -1756,7 +1924,8 @@ fn location_projection(
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+    let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+    else {
         return Ok(None);
     };
     Ok(match short_class(&feature.class) {
@@ -1774,16 +1943,35 @@ fn location_projection(
                 0,
                 &mut projections,
             )?;
-            unique_measurement(ctx.admit_iter(&projections, "scan SLDPRT rotational projections")?.copied())
+            unique_measurement(
+                ctx.admit_iter(&projections, "scan SLDPRT rotational projections")?
+                    .copied(),
+            )
         }
         _ => None,
     })
 }
 
-fn plane_projection(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity, direction: [f64; 3]) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
-    let plane = &match unique_related(feature, "NomPlane") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let [normal_i, normal_j, normal_k] = match vector(ctx, plane, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [point_x, point_y, point_z] = match vector(ctx, plane, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+fn plane_projection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+    direction: [f64; 3],
+) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
+    let plane = &match unique_related(feature, "NomPlane") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let [normal_i, normal_j, normal_k] = match vector(ctx, plane, ["I", "J", "K"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [point_x, point_y, point_z] = match vector(ctx, plane, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
     let [direction_i, direction_j, direction_k] = direction;
     if !approximately_equal(normal_i.hypot(normal_j).hypot(normal_k), 1.0)
         || !approximately_equal(
@@ -1793,13 +1981,32 @@ fn plane_projection(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Ent
     {
         return Ok::<_, cadmpeg_core::CodecError>(None);
     }
-    Ok::<_, cadmpeg_core::CodecError>(FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k))
+    Ok::<_, cadmpeg_core::CodecError>(FiniteReal::new(
+        point_x * direction_i + point_y * direction_j + point_z * direction_k,
+    ))
 }
 
-fn axis_projection(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity, geometry: &str, direction: [f64; 3]) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
-    let axis = &match unique_related(feature, geometry) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let [axis_i, axis_j, axis_k] = match vector(ctx, axis, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [point_x, point_y, point_z] = match vector(ctx, axis, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+fn axis_projection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+    geometry: &str,
+    direction: [f64; 3],
+) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
+    let axis = &match unique_related(feature, geometry) {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let [axis_i, axis_j, axis_k] = match vector(ctx, axis, ["I", "J", "K"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [point_x, point_y, point_z] = match vector(ctx, axis, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
     let [direction_i, direction_j, direction_k] = direction;
     if !approximately_equal(axis_i.hypot(axis_j).hypot(axis_k), 1.0)
         || !approximately_equal(
@@ -1809,7 +2016,9 @@ fn axis_projection(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Enti
     {
         return Ok::<_, cadmpeg_core::CodecError>(None);
     }
-    Ok::<_, cadmpeg_core::CodecError>(FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k))
+    Ok::<_, cadmpeg_core::CodecError>(FiniteReal::new(
+        point_x * direction_i + point_y * direction_j + point_z * direction_k,
+    ))
 }
 
 fn collect_rotational_projections(
@@ -1830,7 +2039,9 @@ fn collect_rotational_projections(
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT rotational path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT rotational path")?;
     let result = (|| {
-        let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+        let Some(feature) =
+            ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+        else {
             return Ok(());
         };
         let projection = match short_class(&feature.class) {
@@ -1907,7 +2118,12 @@ fn empty_pattern_hole_nominal(
     let [reference] = annotation.features.references.as_slice() else {
         return Ok(None);
     };
-    let Some(pattern) = ctx.get_btree_map(&(feature_index), reference.id.as_str(), "look up SLDPRT ordered key")? else {
+    let Some(pattern) = ctx.get_btree_map(
+        &(feature_index),
+        reference.id.as_str(),
+        "look up SLDPRT ordered key",
+    )?
+    else {
         return Ok(None);
     };
     if short_class(&pattern.class) != "GdtPattern" || !pattern.features.references.is_empty() {
@@ -1938,7 +2154,15 @@ fn empty_pattern_hole_nominal(
     else {
         return Ok(None);
     };
-    Ok(pattern_hole_nominals.map(|nominals| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_btree_map(&(nominals), name, "look up SLDPRT ordered key")?.copied())}).transpose()?.flatten())
+    Ok(pattern_hole_nominals
+        .map(|nominals| {
+            Ok::<_, cadmpeg_core::CodecError>(
+                ctx.get_btree_map(&(nominals), name, "look up SLDPRT ordered key")?
+                    .copied(),
+            )
+        })
+        .transpose()?
+        .flatten())
 }
 
 fn hole_diameter_excluding_counterbore(
@@ -1986,14 +2210,17 @@ fn hole_diameter_excluding_counterbore(
     };
     let contributors = diameter_contributors(ctx, annotation, feature_index)?;
     let mut removed_counterbore = false;
-    let remaining = ctx.admit_iter(&contributors, "scan SLDPRT hole diameter contributors")?.copied().filter(|value| {
-        if diameters_equivalent(value.get(), counterbore_diameter.get()) {
-            removed_counterbore = true;
-            false
-        } else {
-            true
-        }
-    });
+    let remaining = ctx
+        .admit_iter(&contributors, "scan SLDPRT hole diameter contributors")?
+        .copied()
+        .filter(|value| {
+            if diameters_equivalent(value.get(), counterbore_diameter.get()) {
+                removed_counterbore = true;
+                false
+            } else {
+                true
+            }
+        });
     let remaining_diameter = unique_diameter(remaining);
     Ok(removed_counterbore.then_some(remaining_diameter).flatten())
 }
@@ -2004,7 +2231,10 @@ fn diameter_contributors(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Vec<PositiveReal>, CodecError> {
     let mut values = Vec::new();
-    for reference in ctx.admit_iter(&annotation.features.references, "scan SLDPRT diameter_contributors values")? {
+    for reference in ctx.admit_iter(
+        &annotation.features.references,
+        "scan SLDPRT diameter_contributors values",
+    )? {
         collect_diameter_contributors(
             ctx,
             &reference.id,
@@ -2034,7 +2264,9 @@ fn collect_diameter_contributors(
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT diameter path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT diameter path")?;
     let result = (|| {
-        let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+        let Some(feature) =
+            ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+        else {
             return Ok(());
         };
         let radius = match short_class(&feature.class) {
@@ -2084,8 +2316,10 @@ fn depth_nominal(
         .get("IsThreadDepth")
         .is_some_and(|value| *value != 0)
     {
-        return Ok(thread_depth_from_direct_geometry(ctx, annotation, feature_index)?
-            .map(ImplicitNominal::Exact));
+        return Ok(
+            thread_depth_from_direct_geometry(ctx, annotation, feature_index)?
+                .map(ImplicitNominal::Exact),
+        );
     }
     if let Some(exact) = direct_cylinder_depth(ctx, annotation, feature_index)? {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
@@ -2134,7 +2368,8 @@ fn counterbore_depth_from_sibling(
         {
             continue;
         }
-        let Some(cylinder) = unique_direct_feature(ctx, candidate, feature_index, "GdtCylinder")? else {
+        let Some(cylinder) = unique_direct_feature(ctx, candidate, feature_index, "GdtCylinder")?
+        else {
             continue;
         };
         if !plane_terminates_cylinder(ctx, plane, cylinder)? {
@@ -2155,14 +2390,30 @@ fn counterbore_depth_from_sibling(
 }
 
 fn unique_direct_feature<'a>(
-    ctx: &DecodeContext<'_>, annotation: &Entity,
-    feature_index: &BTreeMap<&str, &'a Entity>, class: &str,
+    ctx: &DecodeContext<'_>,
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &'a Entity>,
+    class: &str,
 ) -> Result<Option<&'a Entity>, CodecError> {
     let mut selected = None;
-    for reference in ctx.admit_iter(&annotation.features.references, "scan SWIFT direct feature candidates")? {
-        let Some(feature) = ctx.get_btree_map(feature_index, reference.id.as_str(), "look up SLDPRT ordered key")? else { continue; };
-        if short_class(&feature.class) != class { continue; }
-        if selected.is_some() { return Ok(None); }
+    for reference in ctx.admit_iter(
+        &annotation.features.references,
+        "scan SWIFT direct feature candidates",
+    )? {
+        let Some(feature) = ctx.get_btree_map(
+            feature_index,
+            reference.id.as_str(),
+            "look up SLDPRT ordered key",
+        )?
+        else {
+            continue;
+        };
+        if short_class(&feature.class) != class {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(None);
+        }
         selected = Some(*feature);
     }
     Ok(selected)
@@ -2177,7 +2428,12 @@ fn direct_feature_context<'a>(
     let mut context = BTreeSet::new();
     for reference in &annotation.features.references {
         ctx.charge_work(1, "scan SWIFT feature context")?;
-        if ctx.get_btree_map(&(feature_index), reference.id.as_str(), "look up SLDPRT ordered key")?
+        if ctx
+            .get_btree_map(
+                &(feature_index),
+                reference.id.as_str(),
+                "look up SLDPRT ordered key",
+            )?
             .is_some_and(|feature| short_class(&feature.class) == operation_class)
         {
             continue;
@@ -2191,7 +2447,11 @@ fn direct_feature_context<'a>(
     Ok((!context.is_empty()).then_some(context))
 }
 
-fn plane_terminates_cylinder(ctx: &cadmpeg_core::decode::DecodeContext<'_>, plane_feature: &Entity, cylinder_feature: &Entity) -> Result<bool, cadmpeg_core::CodecError> {
+fn plane_terminates_cylinder(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    plane_feature: &Entity,
+    cylinder_feature: &Entity,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(plane) = unique_related(plane_feature, "NomPlane").map(|object| &object.entity) else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
@@ -2208,11 +2468,13 @@ fn plane_terminates_cylinder(ctx: &cadmpeg_core::decode::DecodeContext<'_>, plan
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
-    let Some([plane_i, plane_j, plane_k]) = vector(ctx, plane, ["I", "J", "K"])?.map(FiniteVector::get)
+    let Some([plane_i, plane_j, plane_k]) =
+        vector(ctx, plane, ["I", "J", "K"])?.map(FiniteVector::get)
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
-    let Some([plane_x, plane_y, plane_z]) = vector(ctx, plane, ["X", "Y", "Z"])?.map(FiniteVector::get)
+    let Some([plane_x, plane_y, plane_z]) =
+        vector(ctx, plane, ["X", "Y", "Z"])?.map(FiniteVector::get)
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
@@ -2221,7 +2483,8 @@ fn plane_terminates_cylinder(ctx: &cadmpeg_core::decode::DecodeContext<'_>, plan
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
-    let Some([axis_x, axis_y, axis_z]) = vector(ctx, cylinder, ["I", "J", "K"])?.map(FiniteVector::get)
+    let Some([axis_x, axis_y, axis_z]) =
+        vector(ctx, cylinder, ["I", "J", "K"])?.map(FiniteVector::get)
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
@@ -2230,21 +2493,23 @@ fn plane_terminates_cylinder(ctx: &cadmpeg_core::decode::DecodeContext<'_>, plan
     else {
         return Ok::<_, cadmpeg_core::CodecError>(false);
     };
-    Ok::<_, cadmpeg_core::CodecError>(approximately_equal(plane_i.hypot(plane_j).hypot(plane_k), 1.0)
-        && approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
-        && approximately_equal(
-            (plane_i * axis_x + plane_j * axis_y + plane_k * axis_z).abs(),
-            1.0,
-        )
-        && approximately_equal(
-            (origin_x - plane_x) * plane_i
-                + (origin_y - plane_y) * plane_j
-                + (origin_z - plane_z) * plane_k,
-            0.0,
-        )
-        && approximately_equal(origin_x, bottom_x)
-        && approximately_equal(origin_y, bottom_y)
-        && approximately_equal(origin_z, bottom_z))
+    Ok::<_, cadmpeg_core::CodecError>(
+        approximately_equal(plane_i.hypot(plane_j).hypot(plane_k), 1.0)
+            && approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
+            && approximately_equal(
+                (plane_i * axis_x + plane_j * axis_y + plane_k * axis_z).abs(),
+                1.0,
+            )
+            && approximately_equal(
+                (origin_x - plane_x) * plane_i
+                    + (origin_y - plane_y) * plane_j
+                    + (origin_z - plane_z) * plane_k,
+                0.0,
+            )
+            && approximately_equal(origin_x, bottom_x)
+            && approximately_equal(origin_y, bottom_y)
+            && approximately_equal(origin_z, bottom_z),
+    )
 }
 
 fn direct_cylinder_depth(
@@ -2252,13 +2517,9 @@ fn direct_cylinder_depth(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_direct_features(
-        ctx,
-        annotation,
-        feature_index,
-        "GdtCylinder",
-        |feature| nominal_cylinder_depth(ctx, feature),
-    )
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCylinder", |feature| {
+        nominal_cylinder_depth(ctx, feature)
+    })
 }
 
 fn thread_depth_from_direct_geometry(
@@ -2267,18 +2528,20 @@ fn thread_depth_from_direct_geometry(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_direct_features(ctx, annotation, feature_index, "GdtCylinder", |feature| {
-        Ok::<_, cadmpeg_core::CodecError>(feature
-            .integers
-            .get("IsThreaded")
-            .is_some_and(|value| *value != 0)
-            .then(|| {
-                feature
-                    .doubles
-                    .get("ThreadDepth")
-                    .copied()
-                    .and_then(PositiveReal::new)
-            })
-            .flatten())
+        Ok::<_, cadmpeg_core::CodecError>(
+            feature
+                .integers
+                .get("IsThreaded")
+                .is_some_and(|value| *value != 0)
+                .then(|| {
+                    feature
+                        .doubles
+                        .get("ThreadDepth")
+                        .copied()
+                        .and_then(PositiveReal::new)
+                })
+                .flatten(),
+        )
     })
 }
 
@@ -2318,7 +2581,14 @@ fn counterbore_from_direct_geometry(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_direct_features(ctx, annotation, feature_index, "GdtCylinder", |feature| {
-        Ok::<_, cadmpeg_core::CodecError>(PositiveReal::new(match nominal_radius(ctx, feature, "NomCylinder")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get() * 2.0))
+        Ok::<_, cadmpeg_core::CodecError>(PositiveReal::new(
+            match nominal_radius(ctx, feature, "NomCylinder")? {
+                Some(value) => value,
+                None => return Ok::<_, cadmpeg_core::CodecError>(None),
+            }
+            .get()
+                * 2.0,
+        ))
     })
 }
 
@@ -2327,13 +2597,9 @@ fn countersink_diameter_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_direct_features(
-        ctx,
-        annotation,
-        feature_index,
-        "GdtCone",
-        |feature| nominal_cone_top_diameter(ctx, feature),
-    )
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCone", |feature| {
+        nominal_cone_top_diameter(ctx, feature)
+    })
 }
 
 fn countersink_angle_from_direct_geometry(
@@ -2341,7 +2607,9 @@ fn countersink_angle_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCone", |feature| Ok(nominal_cone_angle(feature)))
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCone", |feature| {
+        Ok(nominal_cone_angle(feature))
+    })
 }
 
 fn measurement_from_applied_geometry(
@@ -2350,7 +2618,10 @@ fn measurement_from_applied_geometry(
     mut measurement: impl FnMut(&str) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
-    for reference in ctx.admit_iter(&annotation.features.references, "scan SWIFT applied measurement features")? {
+    for reference in ctx.admit_iter(
+        &annotation.features.references,
+        "scan SWIFT applied measurement features",
+    )? {
         let Some(value) = measurement(&reference.id)? else {
             continue;
         };
@@ -2366,18 +2637,38 @@ fn measurement_from_applied_geometry(
 }
 
 fn measurement_from_direct_features(
-    ctx: &DecodeContext<'_>, annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>, class: &str,
+    ctx: &DecodeContext<'_>,
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    class: &str,
     measurement: impl Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
-    for reference in ctx.admit_iter(&annotation.features.references, "scan SWIFT direct measurement features")? {
-        let Some(feature) = ctx.get_btree_map(feature_index, reference.id.as_str(), "look up SLDPRT ordered key")? else { continue; };
-        if short_class(&feature.class) != class { continue; }
-        let Some(value) = measurement(feature)? else { continue; };
+    for reference in ctx.admit_iter(
+        &annotation.features.references,
+        "scan SWIFT direct measurement features",
+    )? {
+        let Some(feature) = ctx.get_btree_map(
+            feature_index,
+            reference.id.as_str(),
+            "look up SLDPRT ordered key",
+        )?
+        else {
+            continue;
+        };
+        if short_class(&feature.class) != class {
+            continue;
+        }
+        let Some(value) = measurement(feature)? else {
+            continue;
+        };
         if let Some(prior) = first {
-            if !approximately_equal(value.get(), prior.get()) { return Ok(None); }
-        } else { first = Some(value); }
+            if !approximately_equal(value.get(), prior.get()) {
+                return Ok(None);
+            }
+        } else {
+            first = Some(value);
+        }
     }
     Ok(first)
 }
@@ -2400,17 +2691,22 @@ fn rendered_nominal(
         304.8,
         1000.0,
     ];
-    let Ok(exponent) = i32::try_from(decimal_places) else { return Ok(None); };
+    let Ok(exponent) = i32::try_from(decimal_places) else {
+        return Ok(None);
+    };
     let precision = 10.0_f64.powi(exponent);
     let mut candidate: Option<FiniteReal> = None;
     let mut ambiguous = false;
     for scale in ctx.admit_iter(LENGTH_SCALES_MM, "scan SWIFT rendered unit scales")? {
         let rendered = (raw_mm.get() / scale * precision).round() / precision;
-        for value in ctx.admit_iter(rendered_dimensions, "scan SWIFT rendered dimension values")?
+        for value in ctx
+            .admit_iter(rendered_dimensions, "scan SWIFT rendered dimension values")?
             .filter(|value| value.kind == kind && value.decimal_places == decimal_places)
         {
             if approximately_equal(value.value.get(), rendered) {
-                let Some(measured) = FiniteReal::new(value.value.get() * scale) else { return Ok(None); };
+                let Some(measured) = FiniteReal::new(value.value.get() * scale) else {
+                    return Ok(None);
+                };
                 if let Some(first) = candidate {
                     ambiguous |= !approximately_equal(measured.get(), first.get());
                 } else {
@@ -2475,28 +2771,50 @@ fn decode_rendered_utf16(
     text: &mut String,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let mut view = View::over_retained(payload);
-    if view.seek(start).is_none() { return Ok(None); }
+    if view.seek(start).is_none() {
+        return Ok(None);
+    }
     let mut remaining = units;
     while remaining > 0 {
-        let Some(unit) = view.u16_le() else { return Ok(None); };
-        let Some(next_remaining) = remaining.checked_sub(1) else { return Ok(None); };
+        let Some(unit) = view.u16_le() else {
+            return Ok(None);
+        };
+        let Some(next_remaining) = remaining.checked_sub(1) else {
+            return Ok(None);
+        };
         remaining = next_remaining;
         let codepoint = if (0xd800..=0xdbff).contains(&unit) {
-            if remaining == 0 { return Ok(None); }
-            let Some(low) = view.u16_le() else { return Ok(None); };
-            let Some(next_remaining) = remaining.checked_sub(1) else { return Ok(None); };
+            if remaining == 0 {
+                return Ok(None);
+            }
+            let Some(low) = view.u16_le() else {
+                return Ok(None);
+            };
+            let Some(next_remaining) = remaining.checked_sub(1) else {
+                return Ok(None);
+            };
             remaining = next_remaining;
-            if !(0xdc00..=0xdfff).contains(&low) { return Ok(None); }
-            let Some(upper) = u32::from(unit & 0x03ff).checked_shl(10) else { return Ok(None); };
-            let Some(upper) = 0x10000u32.checked_add(upper) else { return Ok(None); };
-            let Some(codepoint) = upper.checked_add(u32::from(low & 0x03ff)) else { return Ok(None); };
+            if !(0xdc00..=0xdfff).contains(&low) {
+                return Ok(None);
+            }
+            let Some(upper) = u32::from(unit & 0x03ff).checked_shl(10) else {
+                return Ok(None);
+            };
+            let Some(upper) = 0x10000u32.checked_add(upper) else {
+                return Ok(None);
+            };
+            let Some(codepoint) = upper.checked_add(u32::from(low & 0x03ff)) else {
+                return Ok(None);
+            };
             codepoint
         } else if (0xdc00..=0xdfff).contains(&unit) {
             return Ok(None);
         } else {
             u32::from(unit)
         };
-        let Some(character) = char::from_u32(codepoint) else { return Ok(None); };
+        let Some(character) = char::from_u32(codepoint) else {
+            return Ok(None);
+        };
         ctx.push_retained_char(&mut *text, character, "append SLDPRT decoded character")?;
     }
     Ok(Some(()))
@@ -2521,7 +2839,8 @@ fn rendered_dimension_literals(
         let mut remainder = text;
         while let Some((_, tail)) = remainder.split_once(token) {
             let literal = tail.trim_start();
-            let end = ctx.admit_iter(literal.as_bytes(), "scan SWIFT rendered literal bytes")?
+            let end = ctx
+                .admit_iter(literal.as_bytes(), "scan SWIFT rendered literal bytes")?
                 .copied()
                 .position(|byte| !byte.is_ascii_digit() && !matches!(byte, b'.' | b'+' | b'-'))
                 .unwrap_or(literal.len());
@@ -2529,7 +2848,11 @@ fn rendered_dimension_literals(
             if let Some((_, fractional)) = literal.split_once('.') {
                 let parsed = literal.parse::<f64>().ok();
                 let places = u32::try_from(fractional.len()).ok();
-                if !fractional.is_empty() && ctx.admit_iter(fractional.as_bytes(), "scan SWIFT rendered fraction bytes")?.all(|byte| byte.is_ascii_digit()) {
+                if !fractional.is_empty()
+                    && ctx
+                        .admit_iter(fractional.as_bytes(), "scan SWIFT rendered fraction bytes")?
+                        .all(|byte| byte.is_ascii_digit())
+                {
                     if let (Some(value), Some(decimal_places)) = (parsed, places) {
                         if let Some(value) = PositiveReal::new(value) {
                             ctx.reserve_vec(
@@ -2559,7 +2882,13 @@ fn depth_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| { if short_class(&feature.class) == "GdtCylinder" { nominal_cylinder_depth(ctx, feature) } else { Ok(None) } })
+    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
+        if short_class(&feature.class) == "GdtCylinder" {
+            nominal_cylinder_depth(ctx, feature)
+        } else {
+            Ok(None)
+        }
+    })
 }
 
 fn width_for_feature(
@@ -2569,18 +2898,15 @@ fn width_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| {Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
+    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
+        Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
             "GdtCompoundWidth" => nominal_measurement(ctx, feature, "NomCompoundWidth", "Width")?,
-            "GdtCompoundClosedSlot3D" => nominal_measurement(ctx, feature, "NomClosedSlot", "Width")?,
+            "GdtCompoundClosedSlot3D" => {
+                nominal_measurement(ctx, feature, "NomClosedSlot", "Width")?
+            }
             _ => None,
-        })},
-    )
+        })
+    })
 }
 
 fn radius_for_feature(
@@ -2590,13 +2916,8 @@ fn radius_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| {Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
+    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
+        Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
             "GdtFillet" => feature
                 .doubles
                 .get("Radius")
@@ -2605,8 +2926,8 @@ fn radius_for_feature(
             "GdtCylinder" => nominal_radius(ctx, feature, "NomCylinder")?,
             "GdtSphere" => nominal_radius(ctx, feature, "NomSphere")?,
             _ => None,
-        })},
-    )
+        })
+    })
 }
 
 fn length_for_feature(
@@ -2616,17 +2937,14 @@ fn length_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| {Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
-            "GdtCompoundClosedSlot3D" => nominal_measurement(ctx, feature, "NomClosedSlot", "Length")?,
+    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
+        Ok::<_, cadmpeg_core::CodecError>(match short_class(&feature.class) {
+            "GdtCompoundClosedSlot3D" => {
+                nominal_measurement(ctx, feature, "NomClosedSlot", "Length")?
+            }
             _ => None,
-        })},
-    )
+        })
+    })
 }
 
 fn measurement_for_feature(
@@ -2646,7 +2964,9 @@ fn measurement_for_feature(
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT measurement path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT measurement path")?;
     let result = (|| {
-        let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+        let Some(feature) =
+            ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+        else {
             return Ok(None);
         };
         if let Some(measurement) = direct_measurement(feature)? {
@@ -2686,32 +3006,87 @@ fn measurement_for_feature(
     result
 }
 
-fn child_feature_ids<'a>(ctx: &DecodeContext<'_>, feature: &'a Entity) -> Result<impl Iterator<Item = &'a str> + 'a, CodecError> {
-    Ok(ctx.admit_iter(&feature.features.references, "scan SWIFT child feature references")?
+fn child_feature_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    feature: &'a Entity,
+) -> Result<impl Iterator<Item = &'a str> + 'a, CodecError> {
+    Ok(ctx
+        .admit_iter(
+            &feature.features.references,
+            "scan SWIFT child feature references",
+        )?
         .map(|reference| reference.id.as_str())
         .chain(direct_subfeature_ids(ctx, feature)?.into_iter().flatten()))
 }
 
-fn nominal_radius(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity, name: &str) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
+fn nominal_radius(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+    name: &str,
+) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
     nominal_measurement(ctx, feature, name, "R")
 }
 
-fn nominal_measurement(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity, object: &str, field: &str) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
+fn nominal_measurement(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+    object: &str,
+    field: &str,
+) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
     Ok::<_, cadmpeg_core::CodecError>(PositiveReal::new(
-        match ctx.get_btree_map(&(match unique_related(feature, object) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }
-            .entity
-            .doubles), field, "look up SLDPRT ordered key")?
-            .copied() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) },
+        match ctx
+            .get_btree_map(
+                &(match unique_related(feature, object) {
+                    Some(value) => value,
+                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                }
+                .entity
+                .doubles),
+                field,
+                "look up SLDPRT ordered key",
+            )?
+            .copied()
+        {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        },
     ))
 }
 
-fn nominal_cylinder_depth(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
-    let cylinder = &match unique_related(feature, "NomCylinder") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let top = &match unique_related(feature, "NomTop") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let bottom = &match unique_related(feature, "NomBottom") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let [i, j, k] = match vector(ctx, cylinder, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [top_x, top_y, top_z] = match vector(ctx, top, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [bottom_x, bottom_y, bottom_z] = match vector(ctx, bottom, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+fn nominal_cylinder_depth(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
+    let cylinder = &match unique_related(feature, "NomCylinder") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let top = &match unique_related(feature, "NomTop") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let bottom = &match unique_related(feature, "NomBottom") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let [i, j, k] = match vector(ctx, cylinder, ["I", "J", "K"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [top_x, top_y, top_z] = match vector(ctx, top, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [bottom_x, bottom_y, bottom_z] = match vector(ctx, bottom, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
     let axis_norm = i.hypot(j).hypot(k);
     if !approximately_equal(axis_norm, 1.0) {
         return Ok::<_, cadmpeg_core::CodecError>(None);
@@ -2721,9 +3096,11 @@ fn nominal_cylinder_depth(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature
     let dz = top_z - bottom_z;
     let displacement = dx.hypot(dy).hypot(dz);
     let axial = (dx * i + dy * j + dz * k).abs();
-    Ok::<_, cadmpeg_core::CodecError>(approximately_equal(displacement, axial)
-        .then_some(axial)
-        .and_then(PositiveReal::new))
+    Ok::<_, cadmpeg_core::CodecError>(
+        approximately_equal(displacement, axial)
+            .then_some(axial)
+            .and_then(PositiveReal::new),
+    )
 }
 
 fn nominal_cone_angle(feature: &Entity) -> Option<PositiveReal> {
@@ -2736,14 +3113,45 @@ fn nominal_cone_angle(feature: &Entity) -> Option<PositiveReal> {
     (angle.get() < std::f64::consts::PI).then_some(angle)
 }
 
-fn nominal_cone_top_diameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Entity) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
-    let cone = &match unique_related(feature, "NomCone") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let top = &match unique_related(feature, "NomTop") { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.entity;
-    let angle = match nominal_cone_angle(feature) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [axis_x, axis_y, axis_z] = match vector(ctx, cone, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [apex_x, apex_y, apex_z] = match vector(ctx, cone, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [top_i, top_j, top_k] = match vector(ctx, top, ["I", "J", "K"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
-    let [top_x, top_y, top_z] = match vector(ctx, top, ["X", "Y", "Z"])? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.get();
+fn nominal_cone_top_diameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &Entity,
+) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
+    let cone = &match unique_related(feature, "NomCone") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let top = &match unique_related(feature, "NomTop") {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .entity;
+    let angle = match nominal_cone_angle(feature) {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [axis_x, axis_y, axis_z] = match vector(ctx, cone, ["I", "J", "K"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [apex_x, apex_y, apex_z] = match vector(ctx, cone, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [top_i, top_j, top_k] = match vector(ctx, top, ["I", "J", "K"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
+    let [top_x, top_y, top_z] = match vector(ctx, top, ["X", "Y", "Z"])? {
+        Some(value) => value,
+        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    }
+    .get();
     if !approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
         || !approximately_equal(top_i.hypot(top_j).hypot(top_k), 1.0)
         || !approximately_equal(
@@ -2764,7 +3172,11 @@ fn nominal_cone_top_diameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feat
     Ok::<_, cadmpeg_core::CodecError>(PositiveReal::new(axial * (angle / 2.0).tan() * 2.0))
 }
 
-fn vector<const N: usize>(ctx: &DecodeContext<'_>, entity: &Entity, names: [&str; N]) -> Result<Option<FiniteVector<N>>, CodecError> {
+fn vector<const N: usize>(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+    names: [&str; N],
+) -> Result<Option<FiniteVector<N>>, CodecError> {
     let mut components = [0.0; N];
     let mut missing = false;
     for (component, name) in components.iter_mut().zip(names) {
@@ -2773,7 +3185,11 @@ fn vector<const N: usize>(ctx: &DecodeContext<'_>, entity: &Entity, names: [&str
             None => missing = true,
         }
     }
-    Ok(if missing { None } else { FiniteVector::new(components) })
+    Ok(if missing {
+        None
+    } else {
+        FiniteVector::new(components)
+    })
 }
 
 fn unique_measurement<T: Copy + Into<f64>>(mut values: impl Iterator<Item = T>) -> Option<T> {
@@ -2802,20 +3218,32 @@ fn approximately_equal(left: f64, right: f64) -> bool {
     (left - right).abs() <= scale * EPS_SWIFT_APPROXIMATELY_EQUAL_E9
 }
 
-fn deviation(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn deviation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Entity,
     nominal: Option<FiniteReal>,
     limit_key: &str,
     tolerance_key: &str,
 ) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
-    let tolerance = FiniteReal::new(match ctx.get_btree_map(&(entity.doubles), tolerance_key, "look up SLDPRT ordered key")?.copied() { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) });
+    let tolerance = FiniteReal::new(
+        match ctx
+            .get_btree_map(
+                &(entity.doubles),
+                tolerance_key,
+                "look up SLDPRT ordered key",
+            )?
+            .copied()
+        {
+            Some(value) => value,
+            None => return Ok::<_, cadmpeg_core::CodecError>(None),
+        },
+    );
     if tolerance.map(FiniteReal::get) != Some(0.0) {
         return Ok::<_, cadmpeg_core::CodecError>(tolerance);
     }
     if let (Some(nominal), Some(limit)) = (
         nominal,
-        ctx.get_btree_map(&(entity
-            .doubles), limit_key, "look up SLDPRT ordered key")?
+        ctx.get_btree_map(&(entity.doubles), limit_key, "look up SLDPRT ordered key")?
             .copied()
             .and_then(FiniteReal::new)
             .filter(|limit| limit.get() != 0.0),
@@ -2846,16 +3274,26 @@ fn datum_references(
         let Some(collection) = unique_related(entity, name) else {
             continue;
         };
-        let applied_count = ctx.admit_iter(&collection.entity.related[..], "scan SLDPRT datum_references values")?
+        let applied_count = ctx
+            .admit_iter(
+                &collection.entity.related[..],
+                "scan SLDPRT datum_references values",
+            )?
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
             .count();
-        for datum in ctx.admit_iter(&collection.entity.related, "project SWIFT datum references")?
+        for datum in ctx
+            .admit_iter(&collection.entity.related, "project SWIFT datum references")?
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
         {
             let [reference] = datum.entity.annotations.references.as_slice() else {
                 continue;
             };
-            let Some(id) = ctx.get_btree_map(&(datum_ids), reference.id.as_str(), "look up SLDPRT ordered key")? else {
+            let Some(id) = ctx.get_btree_map(
+                &(datum_ids),
+                reference.id.as_str(),
+                "look up SLDPRT ordered key",
+            )?
+            else {
                 continue;
             };
             ctx.reserve_vec(&mut result, 1, "collect SWIFT datum references")?;
@@ -2914,12 +3352,15 @@ fn targets(
                 )? {
                     return Ok(true);
                 }
-                if !ctx.admit_iter(source_id, "scan SWIFT target source characters")?
+                if !ctx
+                    .admit_iter(source_id, "scan SWIFT target source characters")?
                     .any(|character| !character.is_whitespace())
                 {
                     return Ok(false);
                 }
-                let Some(feature) = ctx.get_btree_map(&(feature_index), source_id, "look up SLDPRT ordered key")? else {
+                let Some(feature) =
+                    ctx.get_btree_map(&(feature_index), source_id, "look up SLDPRT ordered key")?
+                else {
                     ctx.reserve_vec(&mut targets, 1, "collect SWIFT shape-aspect targets")?;
                     targets.push(shape_aspect_target(ctx, source_id)?);
                     return Ok(true);
@@ -3015,10 +3456,16 @@ fn visit_cad_identifiers(
             visit(identifier)?;
         }
     }
-    for child in ctx.admit_iter(&entity.features.entities, "scan SLDPRT visit_cad_identifiers values")? {
+    for child in ctx.admit_iter(
+        &entity.features.entities,
+        "scan SLDPRT visit_cad_identifiers values",
+    )? {
         visit_cad_identifiers(ctx, child, visit)?;
     }
-    for child in ctx.admit_iter(&entity.annotations.entities, "scan SLDPRT visit_cad_identifiers values")? {
+    for child in ctx.admit_iter(
+        &entity.annotations.entities,
+        "scan SLDPRT visit_cad_identifiers values",
+    )? {
         visit_cad_identifiers(ctx, child, visit)?;
     }
     for related in ctx.admit_iter(&entity.related, "scan SLDPRT visit_cad_identifiers values")? {
@@ -3036,7 +3483,8 @@ fn visit_expanded_feature_ids<'a>(
 ) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("expand SWIFT target features")?;
     ctx.charge_work(1, "expand SWIFT target features")?;
-    let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")? else {
+    let Some(feature) = ctx.get_btree_map(&(feature_index), id, "look up SLDPRT ordered key")?
+    else {
         return visit(id);
     };
     if short_class(&feature.class) != "GdtPattern" {
@@ -3061,12 +3509,20 @@ fn visit_expanded_feature_ids<'a>(
     Ok(true)
 }
 
-fn direct_subfeature_ids<'a>(ctx: &DecodeContext<'_>, feature: &'a Entity) -> Result<Option<impl Iterator<Item = &'a str> + 'a>, CodecError> {
-    let Some(collection) = unique_related(feature, "SubFeatures") else { return Ok(None); };
+fn direct_subfeature_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    feature: &'a Entity,
+) -> Result<Option<impl Iterator<Item = &'a str> + 'a>, CodecError> {
+    let Some(collection) = unique_related(feature, "SubFeatures") else {
+        return Ok(None);
+    };
     if collection.entity.related.is_empty() {
         return Ok(None);
     }
-    for applied in ctx.admit_iter(&collection.entity.related, "validate SWIFT direct subfeatures")? {
+    for applied in ctx.admit_iter(
+        &collection.entity.related,
+        "validate SWIFT direct subfeatures",
+    )? {
         if !applied.class.ends_with(".GdtAppliedFeature") {
             return Ok(None);
         }
@@ -3074,17 +3530,23 @@ fn direct_subfeature_ids<'a>(ctx: &DecodeContext<'_>, feature: &'a Entity) -> Re
             return Ok(None);
         };
     }
-    Ok(Some(ctx.admit_iter(&collection.entity.related, "scan SWIFT direct subfeatures")?.filter_map(|applied| {
-        applied
-            .entity
-            .features
-            .references
-            .first()
-            .map(|reference| reference.id.as_str())
-    })))
+    Ok(Some(
+        ctx.admit_iter(&collection.entity.related, "scan SWIFT direct subfeatures")?
+            .filter_map(|applied| {
+                applied
+                    .entity
+                    .features
+                    .references
+                    .first()
+                    .map(|reference| reference.id.as_str())
+            }),
+    ))
 }
 
-fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &Entity) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+fn tolerance_modifiers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &Entity,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut values = integer_modifier(entity.integers.get("Modifier").copied());
     for (key, name) in [
         ("IsFreeState", "free_state"),
@@ -3092,8 +3554,15 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
         ("IsToBeInspected", "inspection"),
         ("IsTangentPlane", "tangent_plane"),
     ] {
-        if ctx.get_btree_map(&(entity.integers), key, "look up SLDPRT ordered key")?.is_some_and(|value| *value != 0) {
-            ctx.push_vec(&mut (values), name.into(), "collect SLDPRT decoded vector items")?;
+        if ctx
+            .get_btree_map(&(entity.integers), key, "look up SLDPRT ordered key")?
+            .is_some_and(|value| *value != 0)
+        {
+            ctx.push_vec(
+                &mut (values),
+                name.into(),
+                "collect SLDPRT decoded vector items",
+            )?;
         }
     }
     if entity
@@ -3106,9 +3575,17 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
             .get("ProjectedZoneValue")
             .and_then(|v| NonNegativeReal::new(*v))
         {
-            ctx.push_vec(&mut (values), format!("projected_zone:{}_mm", value.get()), "collect SLDPRT decoded vector items")?;
+            ctx.push_vec(
+                &mut (values),
+                format!("projected_zone:{}_mm", value.get()),
+                "collect SLDPRT decoded vector items",
+            )?;
         } else {
-            ctx.push_vec(&mut (values), "projected_zone".into(), "collect SLDPRT decoded vector items")?;
+            ctx.push_vec(
+                &mut (values),
+                "projected_zone".into(),
+                "collect SLDPRT decoded vector items",
+            )?;
         }
     }
     if entity
@@ -3121,9 +3598,17 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
             .get("MaxTolerance")
             .and_then(|v| NonNegativeReal::new(*v))
         {
-            ctx.push_vec(&mut (values), format!("maximum_tolerance:{}_mm", value.get()), "collect SLDPRT decoded vector items")?;
+            ctx.push_vec(
+                &mut (values),
+                format!("maximum_tolerance:{}_mm", value.get()),
+                "collect SLDPRT decoded vector items",
+            )?;
         } else {
-            ctx.push_vec(&mut (values), "maximum_tolerance".into(), "collect SLDPRT decoded vector items")?;
+            ctx.push_vec(
+                &mut (values),
+                "maximum_tolerance".into(),
+                "collect SLDPRT decoded vector items",
+            )?;
         }
     }
     Ok::<_, cadmpeg_core::CodecError>(values)
